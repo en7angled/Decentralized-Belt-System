@@ -1,0 +1,99 @@
+@startuml ProtocolUsecases
+!theme toy
+title: Usecases Diagram for Decentalized Belt System Protocol
+
+
+
+entity Organisation
+actor Practitioner
+actor Master
+control Genesis as "Genesis\nAuthority"
+
+
+left to right direction
+
+
+package GenesisPhase {
+
+    usecase GrantRedeemableRank as "Grant Redeemable\n Master Rank"
+    usecase AcceptRedeemableRank as "Accept Redeemable\n Master Rank"
+
+    GrantRedeemableRank <.up. "<<extends>>" AcceptRedeemableRank
+
+}
+
+package LegacyPhase {
+
+
+    usecase InitPractitioner as "Initiate Practitioner Profile \n(Initial Rank)"
+    usecase InitOrganisation as "Initiate Organisation Profile"
+    usecase UpdateProfileInfo as "Update\n Profile Information"
+
+
+    usecase Promote as "Promote \n Rank"
+    usecase AcceptRank as "Accept \n Rank"
+
+    usecase AcceptAchievement as "Accept \n Achievement"
+    usecase AcceptMembership as "Accept \n Membership"
+
+    usecase GrantAchievement as "Award \n Achievement"
+    usecase GrantMembership as "Grant \n Membership"
+    usecase EndMembership as "End \n Membership"
+
+    rectangle AdminFeatures  as " Admin Features
+    ---
+    - Treasury Spending
+    - Update Protocol Params
+    - Retire Rank
+    - Rebuild Lineage
+    .etc
+    "
+
+    Promote .left..> "<<include>>" AcceptRank
+    GrantMembership <.up. "<<extends>>" AcceptMembership
+    GrantAchievement <.up. "<<extends>>" AcceptAchievement
+
+
+}
+
+
+
+
+package DAO_Phase as "DAO Phase"{
+    usecase GovernanceVote as "Vote on proposal\n with rank power"
+    usecase GovernanceProposal as "Initiate proposal"
+}
+
+
+
+
+Practitioner <|--- Master
+
+
+
+Genesis             -up-->     GrantRedeemableRank
+Genesis             -left->    AdminFeatures
+
+
+Master       "1..*"  -->     Promote
+
+Practitioner        -->     AcceptRank
+
+Practitioner        -->     InitPractitioner
+Practitioner        -->     EndMembership
+Practitioner        -down->     UpdateProfileInfo
+Practitioner        -down->     AcceptAchievement
+Practitioner        -down->     AcceptMembership
+
+Organisation        -up->     UpdateProfileInfo
+Organisation        --up->     InitOrganisation
+Organisation        --up->     EndMembership
+Organisation        --up->     GrantAchievement
+Organisation        --up->     GrantMembership
+
+Master              -->     AcceptRedeemableRank
+
+Practitioner        ---->    GovernanceProposal
+Practitioner        ---->    GovernanceVote
+
+@enduml

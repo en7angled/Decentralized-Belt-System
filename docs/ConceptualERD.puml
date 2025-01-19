@@ -1,0 +1,107 @@
+@startuml ConceptualERD
+!theme toy
+
+title: Conceptual Entity Relationship Diagram for BJJ DApp
+
+
+
+Enum Rank {}
+
+
+abstract Profile {
+    + id :: ProfileID
+    + achievements :: [AchievementID]
+    + memberships :: [MembershipID]
+    metadata
+}
+
+
+
+
+entity Organisation_Profile  
+
+class Membership {
+    id :: MembershipID
+    academy :: ProfileID
+    start_date :: Date
+    + <<optional>> end_date :: Date
+}
+
+
+
+class Achievement {
+    + id :: AchievementID
+    + awarded_date :: Date
+    + awarded_by :: ProfileID
+    + metadata
+}
+
+note bottom of Achievement
+ Stripes, Medals, Diplomas
+, Seminars, Camps
+, Workshops etc.
+end note
+
+entity Practitioner_Profile {
+    + current_rank :: RankID
+    + past_ranks :: [RankID]
+}
+
+
+class Rank {
+    + id :: RankID
+    + rank :: RankType
+    + awarded_by :: ProfileID
+    + start_date :: Date
+    + <<optional>> end_date :: Date
+
+}
+
+enum RankType
+
+protocol PromotionProtocol as "Rank\nPromotion\nProtocol"
+
+
+Rank ||-|| RankType : is of
+
+
+Profile <|-- Practitioner_Profile : type of
+Profile <|-up- Organisation_Profile : type of
+
+
+Practitioner_Profile ||--{ Practitioner_Profile : Awards \nrank
+
+(Practitioner_Profile,Practitioner_Profile) . Rank
+
+Practitioner_Profile ||-{ Rank : has
+
+
+
+Organisation_Profile ||-down-{ Profile : "Awards \nachievement"
+
+(Organisation_Profile,Profile) . Achievement
+
+Profile ||--{ Achievement : has
+
+
+
+Organisation_Profile ||-down-{ Profile : "Manage \n membership"
+
+(Organisation_Profile,Profile) . Membership
+
+Membership  }--|| Profile : has
+
+
+
+RankType ||--|| PromotionProtocol : is granted according to
+
+
+Rank <|-- CurrentRank
+Rank <|-- PastRank
+
+
+
+Practitioner_Profile "1" ||-- "1" CurrentRank
+Practitioner_Profile "0" --{ "Many" PastRank
+@enduml
+
