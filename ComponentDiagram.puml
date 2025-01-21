@@ -1,0 +1,88 @@
+@startuml ComponentDiagram-RaffleDApp-version2
+!theme toy
+
+title "Components Diagram"
+
+skinparam component {
+    BackgroundColor<<DApp>> Orange
+    BackgroundColor<<3rdParty>> LightCoral
+}
+skinparam cloud {
+    BackgroundColor LightBlue
+}
+skinparam node {
+    BackgroundColor Blue
+    FontColor White
+}
+
+
+Actor User
+
+component WebBrowser {
+    component BrowserWallet as "Browser Wallet\neg. Eternl,Lace..." <<3rdParty>>
+    component UI as "FrontEnd" <<DApp>>
+}
+
+component BackEnd  {
+
+    node CardanoNode  as "Cardano\nNode"
+
+    component WebServer <<DApp>> 
+    component Interactions  <<DApp>> as "Interactions\nService" {
+        control TxBuilding as "Transaction\nBuilding"
+
+    }
+    component Lookups <<DApp>> as "Lookups\nService"
+    component ChainSync <<DApp>>  as "Chain Sync\nService"
+    database  LocalDB as "Persistance\n" {
+        collections c as "ranks\nachievements\nmemberships"
+    }
+
+    portin webserverPort as "."
+    portin interactionsPort as "."
+    portin queryPort as "."
+
+    Interactions -->> CardanoNode : query
+    ChainSync -->> LocalDB : update
+    ChainSync -->> CardanoNode : monitor
+    Lookups -->> LocalDB : query
+
+    Interactions - interactionsPort
+    Lookups - queryPort
+    WebServer - webserverPort
+
+}
+interface InteractionsAPI as "Interactions API"
+interface QueryAPI as "Query API"
+interactionsPort -up- InteractionsAPI
+queryPort -up- QueryAPI
+
+
+
+'  component WebServer as "WebServer\nStatic Content"
+
+
+
+ 
+
+cloud BlockchainNetwork as "Cardano Blockchain\nNetwork" {
+    note as SmarContracts
+    Smart Contracts &
+    Minting Policies
+    for BJJ Protocol
+    end note
+}
+
+
+User -> UI : use
+WebBrowser - webserverPort
+UI --> InteractionsAPI : use
+UI --> QueryAPI : use
+
+UI -down-> BrowserWallet : "constructed\ntx"
+User -> BrowserWallet : "sign tx"
+BrowserWallet --> BlockchainNetwork : "submit\n signed tx"
+ 
+CardanoNode -- BlockchainNetwork
+
+@enduml
