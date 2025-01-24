@@ -1,0 +1,36 @@
+@startuml UpdateProfile
+
+title: Sequence Diagram : Update Profile Information
+caption: Decentalized Belt System Protocol
+
+!theme toy
+
+skinparam control<< Spending Validator >>  {
+    BackgroundColor LightBlue
+}
+skinparam control<< Minting Policy >>    {
+    BackgroundColor MediumPurple
+}
+
+
+actor ProfileOwner #white
+entity Cardano as "Cardano\nTransaction" #blue
+
+
+control ProfilesV as "Profiles" << Spending Validator >>
+
+create Cardano
+ProfileOwner -> Cardano --++ : Update Profile
+Cardano -> ProfileOwner: Spend Profile User Token
+Cardano -> ProfilesV ++ : Update Profile Data
+ProfilesV -> ProfilesV : Validates\n Profile Rules
+ProfilesV --> Cardano --: ok
+
+Cardano -> ProfileOwner : Profile User Token
+
+
+
+
+
+@enduml
+

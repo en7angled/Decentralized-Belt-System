@@ -1,12 +1,12 @@
 @startuml ProtocolUsecases
 !theme toy
-title: Usecases Diagram for Decentalized Belt System Protocol
-
+title: Use Cases Diagram 
+caption: Decentalized Belt System Protocol 
 
 
 entity Organisation
-actor Practitioner
-actor Master
+actor Practitioner #white 
+actor Master #black
 control Genesis as "Genesis\nAuthority"
 
 
@@ -35,9 +35,11 @@ package LegacyPhase {
 
     usecase AcceptAchievement as "Accept \n Achievement"
     usecase AcceptMembership as "Accept \n Membership"
+    usecase RequestMembership as "Request \n Membership"
 
     usecase GrantAchievement as "Award \n Achievement"
     usecase GrantMembership as "Grant \n Membership"
+    usecase AcceptRequestMembership as "Accept \n Membership Request"
     usecase EndMembership as "End \n Membership"
 
     rectangle AdminFeatures  as " Admin Features
@@ -49,9 +51,10 @@ package LegacyPhase {
     .etc
     "
 
-    Promote .left..> "<<include>>" AcceptRank
+    Promote <.left.. "<<extends>>" AcceptRank
     GrantMembership <.up. "<<extends>>" AcceptMembership
     GrantAchievement <.up. "<<extends>>" AcceptAchievement
+    AcceptRequestMembership .up.> "<<extends>>" RequestMembership
 
 
 }
@@ -84,12 +87,14 @@ Practitioner        -->     EndMembership
 Practitioner        -down->     UpdateProfileInfo
 Practitioner        -down->     AcceptAchievement
 Practitioner        -down->     AcceptMembership
+Practitioner        -down->     RequestMembership
 
 Organisation        -up->     UpdateProfileInfo
 Organisation        --up->     InitOrganisation
 Organisation        --up->     EndMembership
 Organisation        --up->     GrantAchievement
 Organisation        --up->     GrantMembership
+Organisation        --up->     AcceptRequestMembership
 
 Master              -->     AcceptRedeemableRank
 
@@ -97,3 +102,4 @@ Practitioner        ---->    GovernanceProposal
 Practitioner        ---->    GovernanceVote
 
 @enduml
+

@@ -1,0 +1,89 @@
+@startuml Memberships
+
+title: Sequence Diagram : Memberships
+caption: Decentalized Belt System Protocol
+
+!theme toy
+
+skinparam control<< Spending Validator >>  {
+    BackgroundColor LightBlue
+}
+skinparam control<< Minting Policy >>    {
+    BackgroundColor MediumPurple
+}
+
+
+actor IssuerProfile as "Organisation\nOwner" #orange
+actor MemberProfile as "Member" #yellow
+entity Cardano as "Cardano\nTransaction" #blue
+
+control ProfilesV as "Profiles" << Spending Validator >>
+
+== Start Membership ==
+
+alt Grant-First
+    group Granting
+        create Cardano
+            IssuerProfile -> Cardano --++ : Grant Membership
+            Cardano -> IssuerProfile: Spend Issuer's Profile User Token
+            Cardano -> ProfilesV ++ : Grant Membership
+            ProfilesV -> ProfilesV : Validates\n Profile Rules
+            ProfilesV --> Cardano --: ok
+            Cardano -> IssuerProfile -- : Profile User Token 
+        end group
+
+    group Accepting
+        create Cardano
+            MemberProfile -> Cardano --++ : Accepts Membership
+            Cardano -> MemberProfile: Spend Member's Profile User Token
+            Cardano -> ProfilesV ++ : Accept Membership
+            ProfilesV -> ProfilesV : Validates\n Profile Rules
+            ProfilesV --> Cardano --: ok
+            Cardano -> MemberProfile -- : Profile User Token
+    end group
+    
+else Request-First
+    group Requesting
+        create Cardano
+            MemberProfile -> Cardano --++ : Requests Membership
+            Cardano -> MemberProfile: Spend Member's Profile User Token
+            Cardano -> ProfilesV ++ : Requests Membership
+            ProfilesV -> ProfilesV : Validates\n Profile Rules
+            ProfilesV --> Cardano --: ok
+            Cardano -> MemberProfile -- : Profile User Token
+    end group
+    group Accepting Request
+        create Cardano
+            IssuerProfile -> Cardano --++ : Accepts Membership Request
+            Cardano -> IssuerProfile: Spend Issuer's Profile User Token
+            Cardano -> ProfilesV ++ : Accepts Membership Request
+            ProfilesV -> ProfilesV : Validates\n Profile Rules
+            ProfilesV --> Cardano --: ok
+            Cardano -> IssuerProfile -- : Profile User Token 
+    end group
+end 
+
+
+== End Membership ==
+
+    alt IssuerEnds
+        create Cardano
+            IssuerProfile -> Cardano --++ : End Membership
+            Cardano -> IssuerProfile: Spend Issuer's Profile User Token
+            Cardano -> ProfilesV ++ : End Membership
+            ProfilesV -> ProfilesV : Validates\n Profile Rules
+            ProfilesV --> Cardano --: ok
+            Cardano -> IssuerProfile -- : Profile User Token 
+    else MemberEnds
+        create Cardano
+            MemberProfile -> Cardano --++ : End Membership
+            Cardano -> MemberProfile: Spend Member's Profile User Token
+            Cardano -> ProfilesV ++ : End Membership
+            ProfilesV -> ProfilesV : Validates\n Profile Rules
+            ProfilesV --> Cardano --: ok
+            Cardano -> MemberProfile -- : Profile User Token
+    end group
+
+
+@enduml
+

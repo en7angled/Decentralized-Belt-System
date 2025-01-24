@@ -1,10 +1,18 @@
-@startuml ComponentDiagram-RaffleDApp-version2
+@startuml ComponentDiagram 
 !theme toy
 
 title "Components Diagram"
+caption: BJJ-DApp - Decentalized Belt System for Decentralized Belt System for Brazilian Jiu Jitsu
+
+
+skinparam interface {
+    BackgroundColor Orange
+}
 
 skinparam component {
     BackgroundColor<<DApp>> Orange
+    FontSize Black
+
     BackgroundColor<<3rdParty>> LightCoral
 }
 skinparam cloud {
@@ -23,7 +31,7 @@ component WebBrowser {
     component UI as "FrontEnd" <<DApp>>
 }
 
-component BackEnd  {
+component BackEnd #LightGray {
 
     node CardanoNode  as "Cardano\nNode"
 
@@ -76,10 +84,10 @@ cloud BlockchainNetwork as "Cardano Blockchain\nNetwork" {
 
 User -> UI : use
 WebBrowser - webserverPort
-UI --> InteractionsAPI : use
-UI --> QueryAPI : use
+UI --> InteractionsAPI : build\n tx
+UI --> QueryAPI : query
 
-UI -down-> BrowserWallet : "constructed\ntx"
+UI -down-> BrowserWallet : "sign\n built tx"
 User -> BrowserWallet : "sign tx"
 BrowserWallet --> BlockchainNetwork : "submit\n signed tx"
  

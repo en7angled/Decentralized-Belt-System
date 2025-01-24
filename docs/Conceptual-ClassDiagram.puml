@@ -1,8 +1,8 @@
-@startuml ConceptualERD
+@startuml Conceptual-ClassDiagram
 !theme toy
 
-title: Conceptual Entity Relationship Diagram for BJJ DApp
-
+title: Conceptual Entity Relationship Diagram  
+caption: Decentalized Belt System Protocol 
 
 
 Enum Rank {}
@@ -12,13 +12,19 @@ abstract Profile {
     + id :: ProfileID
     + achievements :: [AchievementID]
     + memberships :: [MembershipID]
+    + updateProfileInfo(metadata)
+    + acceptAchievement(achievement)
+    + startMembership(membership)
+    + endMembership(membership)
     metadata
 }
 
 
 
 
-entity Organisation_Profile  
+entity Organisation_Profile  {
+    + awardAchievement(achievement)
+}
 
 class Membership {
     id :: MembershipID
@@ -54,6 +60,7 @@ class Rank {
     + awarded_by :: ProfileID
     + start_date :: Date
     + <<optional>> end_date :: Date
+    + promote(Rank)
 
 }
 
