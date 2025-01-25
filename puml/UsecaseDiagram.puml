@@ -46,9 +46,6 @@ package LegacyPhase {
     ---
     - Treasury Spending
     - Update Protocol Params
-    - Retire Rank
-    - Rebuild Lineage
-    .etc
     "
 
     Promote <.left.. "<<extends>>" AcceptRank
@@ -65,6 +62,14 @@ package LegacyPhase {
 package DAO_Phase as "DAO Phase"{
     usecase GovernanceVote as "Vote on proposal\n with rank power"
     usecase GovernanceProposal as "Initiate proposal"
+    rectangle AdminFeatures2  as " Proposal Types:
+    ---
+    - Treasury Spending
+    - Update Protocol Params
+    - Retire Rank
+    - Rebuild Lineage
+    .etc
+    "
 }
 
 
