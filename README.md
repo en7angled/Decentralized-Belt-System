@@ -1,8 +1,7 @@
-# Decentralized Belt System for Brazilian Jiu Jitsu
+# Decentralized Belt System for Brazilian Jiu Jitsu 🥋 
 
 
-
-- [Decentralized Belt System for Brazilian Jiu Jitsu](#decentralized-belt-system-for-brazilian-jiu-jitsu)
+- [Decentralized Belt System for Brazilian Jiu Jitsu 🥋](#decentralized-belt-system-for-brazilian-jiu-jitsu-)
   - [1. Overview](#1-overview)
   - [2. Key Features](#2-key-features)
   - [3. Architecture \& Components](#3-architecture--components)
