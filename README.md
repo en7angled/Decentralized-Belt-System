@@ -151,7 +151,7 @@ The system seeks to:
 ### 2.4 Phases
 
 > **Disclaimer**  
-> This phase is not part of the scope of proposal 1300081. The DAO Phase is beyond the initial scope; it’s included in the documentation to outline the long-term vision and ensure the initial architectural design can accommodate these capabilities later on. Documenting future development also reduces ambiguity about the project’s ultimate goals.
+> DAO Phase is not part of the scope of proposal 1300081. The is beyond the initial scope; it’s included in the documentation to outline the long-term vision and ensure the initial architectural design can accommodate these capabilities later on. Documenting future development also reduces ambiguity about the project’s ultimate goals.
 >
 
 ![GantChart](out/puml/GantChartDiagram-phases/GantChartDiagram-phases.png)
@@ -170,7 +170,7 @@ During this phase **Protocol parameters** and **administrative features** are co
 
   
 #### DAO Phase 
-
+>  Not part of the scope of proposal 1300081.
 
 In the DAO phase all **core features** of the Legacy Phase remain available but the **administrative control** transitions from **Genesis Authority** to a **DAO**  and all the governance decisions (treasury spending, parameter changes, etc.) will happen via **rank-weighted** voting.
 
@@ -304,10 +304,8 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
    - **Postcondition**: Practitioner’s achievement list is updated
 
 ### 3.5 DAO (Decentralized Autonomous Organization)
+>  Not part of the scope of proposal 1300081.
 
-> **Disclaimer**  
-> This phase is not part of the scope of proposal 1300081.
-> 
 1. **Initiate Governance Proposal**  
    - **Goal**: Propose changes to protocol parameters or treasury spending  
    - **Precondition**: DAO Phase has begun
