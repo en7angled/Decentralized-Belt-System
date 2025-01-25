@@ -56,6 +56,8 @@ For more details, see :
 ├── on-chain          # Cardano smart contracts (spending validators and minting policies)
 ├── frontend          # Frontend code 
 ├── docs              # Documentation, specifications, diagrams
+├── puml              # Plantuml diagrams
+├── out               # Images of plantuml diagrams
 └── README.md         # This file
 
 ```
