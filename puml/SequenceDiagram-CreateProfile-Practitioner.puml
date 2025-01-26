@@ -1,0 +1,43 @@
+@startuml CreateProfile-Practitioner
+
+title: Sequence Diagram : Create Practitioner Profile
+caption: Decentalized Belt System Protocol
+
+!theme toy
+
+skinparam control<< Spending Validator >>  {
+    BackgroundColor LightBlue
+}
+skinparam control<< Minting Policy >>    {
+    BackgroundColor MediumPurple
+}
+
+
+actor Practitioner #white
+entity Cardano as "Cardano\nTransaction" #blue
+
+control RankMP as "Ranks" << Minting Policy >>
+control ProfilesMP as "Profiles" << Minting Policy >>
+control RanksV as "Ranks" << Spending Validator >>
+control ProfilesV as "Profiles" << Spending Validator >>
+
+create Cardano
+Practitioner -> Cardano --++ : Create Profile
+
+Cardano -> RankMP ++ : Mints 1st Rank
+RankMP -> RankMP : Validates\n Promoting Rules
+RankMP --> Cardano --: 1st Rank
+
+
+Cardano -> ProfilesMP ++ : Mints New Profile
+ProfilesMP -> ProfilesMP : Validates\n Profile Rules
+ProfilesMP --> Cardano --: New Profile
+
+Cardano -> RanksV : Locks 1st Rank
+Cardano -> ProfilesV : Locks Profile Ref Token
+Cardano -> Practitioner --: Sents Profile User Token
+
+
+
+@enduml
+

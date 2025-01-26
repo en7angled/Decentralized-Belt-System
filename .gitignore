@@ -37,9 +37,6 @@ node_modules
 .psci
 output
 
-# Plantuml
-out
-
 .direnv
 
 # Other
