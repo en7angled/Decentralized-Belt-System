@@ -64,8 +64,12 @@ The application described in this document (the **BJJ-DApp**) is a client that a
 
 ### 1.4 Definitions, Acronyms, and Abbreviations
 
-- **DApp**: Decentralized Application  
-- **DAO**: Decentralized Autonomous Organization 
+| Name    | Description |
+| -------- | ------- |
+| **DApp** | Decentralized Application |
+| **DAO**  | Decentralized Autonomous Organization |
+| **NFT**  |	Non-Fungible Token |
+| **UTxO**  |	Unspent Transaction Output |
 
 
 
@@ -77,25 +81,25 @@ The application described in this document (the **BJJ-DApp**) is a client that a
 
 ### 1.6 Intended Audience and Reading Suggestions
 
-- **BJJ practitioners** looking for an immutable record of their rank progress  
-- **BJJ instructors/masters** needing a tamper-proof system to manage promotions  
-- **Academies/DOJOs/Organizations** wanting to grant memberships or achievements to their members  
-- **Developers** interested in blockchain-based solutions for sports or martial arts  
+- **BJJ practitioners** looking for an immutable record of their rank progress.  
+- **BJJ instructors/masters** needing a tamper-proof system to manage promotions.  
+- **Academies/DOJOs/Organizations** wanting to grant memberships or achievements to their members.  
+- **Developers** interested in blockchain-based solutions for sports or martial arts.  
 
 
 ### 1.7 Objectives and Benefits
 
 The system seeks to:
 
-- **Ensure transparency** in rank progression and lineage  
-- **Facilitate trust** among practitioners, organizations, and the community  
-- Provide a **sustainable governance model** for the BJJ community  
-- Leverage the **security** and **scalability** of Cardano
+- **Ensure transparency** in rank progression and lineage.  
+- **Facilitate trust** among practitioners, organizations, and the community.  
+- Provide a **sustainable governance model** for the BJJ community.  
+- Leverage the **security** and **scalability** of Cardano.
 
 ### 1.8 Differentiators
 
-- Built on the **Cardano** blockchain, ensuring low-cost transactions, high security, and global reach  
-- **Rank-weighted voting** for DAO governance, allowing senior practitioners more influence in protocol decisions
+- Built on the **Cardano** blockchain, ensuring low-cost transactions, high security, and global reach.  
+- **Rank-weighted voting** for DAO governance, allowing senior practitioners more influence in protocol decisions.
 - **Self-Sustainability**: Unlike traditional systems that rely on external funding or central oversight, this protocol automatically accumulates fees (e.g., from rank promotions, memberships, or achievements) into a community treasury. Through its DAO governance mechanisms, the entire BJJ community decides how to allocate these funds—enabling self-sustaining support for initiatives that benefit practitioners, academies, and organizations.
 
 ---
@@ -135,9 +139,9 @@ The system seeks to:
 
 **Profile**: Entity representing a user or organization in the system. There will be two types of profiles: 
    - **Practitioner Profile**: Holds current rank, past ranks, achievements, memberships (active and closed). Practitioner profiles will be able to promote ranks of other practitioners profiles based on the [Protocol Promotion Rules](#annex-3-protocol-promotion-rules-simplified).  
-   - **Organization Profile**: Can grant memberships and award achievements to practitioners or other organisations. Organisation profiles can also hold achievements and memberships.
+   - **Organization Profile**: Can grant memberships and award achievements to practitioners or other organisations. Organisation profiles can also hold achievements and memberships.  
 
-- 
+
 ![ClassDiagram](../out/puml/Conceptual-ClassDiagram/Conceptual-ClassDiagram.png)
 
 ![State-Achievement](../out/puml/StateDiagram-Achievement/AchievementLifecycle.png)
@@ -186,40 +190,40 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
 1. **Grant Redeemable Master Rank**  
    - **Goal**: Issue redeemable vouchers to recognized Masters. These vouchers represent their rank and allow them to onboard into the system during the Genesis Phase.
    - **Precondition**: Verified list of existing Masters and their contact information.
-   - **Postcondition**: Masters receive vouchers representing their rank
+   - **Postcondition**: Masters receive vouchers representing their rank.
 
 2. **Treasury Spending**  
    - **Goal**: The Genesis Authority can spend treasury funds during the Legacy Phase for various protocol needs (e.g., marketing, development, operational expenses).
 .
    - **Precondition**:
-       - The system is in the **Legacy Phase**, and the GA still holds administrative privileges.  
+       - The system is in the Legacy Phase, and the Genesis Authority still holds administrative privileges.  
        - Sufficient funds have accumulated in the treasury from onboarding, promotion, and achievement fees.
 
    - **Postcondition**: 
-     - The treasury funds are **deducted** from the Treasury contract
-     - The spending record is **immutably stored** on-chain, accessible for future auditing and transparency.
+     - The treasury funds are deducted from the Treasury contract
+     - The spending record is immutably stored on-chain accessible for future auditing and transparency.
 
 1. **Updating Protocol Parameters**  
-   - **Goal**: The Genesis Authority can **configure or update** certain parameters (e.g., fees, rules for promotions, maximum membership duration) as needed before the system transitions to DAO control.
+   - **Goal**: The Genesis Authority can configure or update certain parameters (e.g., fees, rules for promotions, maximum membership duration) as needed before the system transitions to DAO control.
 .
-   - **Precondition**: The system is in the **Legacy Phase**, and the GA still holds administrative privileges.  
+   - **Precondition**: The system is in the Legacy Phase, and the Genesis Authority still holds administrative privileges.  
 
-   - **Postcondition**:The **updated parameters** take effect immediately.
+   - **Postcondition**:The updated parameters take effect immediately.
 
 
 ### 3.2 Master
 
 1. **Accept Redeemable Master Rank**  
    - **Goal**: Redeem a voucher to claim Master rank in the system.  
-   - **Precondition**: Master has received a valid voucher  
-   - **Postcondition**: Practitioner Profile is created/updated with Master rank
+   - **Precondition**: Master has received a valid voucher. 
+   - **Postcondition**: He's practitioner profile is created with he's Master rank.
 
 2. **Promote Rank**  
-   - **Goal**: Promote practitioners to higher ranks  
+   - **Goal**: Promote practitioners to higher ranks.  
    - **Precondition**: 
-     - Practitioner profile exists
-     - Master's profile exists and it's rank is recognized by the protocol  
-   - **Postcondition**: Rank promotion authization is reflected on-chain
+     - Practitioner profile exists.
+     - Master's profile exists and it's rank is recognized by the protocol.  
+   - **Postcondition**: Rank promotion authorization is reflected on-chain.
 
 ![Sequence-Promotion](../out/puml/SequenceDiagram-RankPromotion/RankPromotion.png)
 
@@ -227,47 +231,46 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
 ### 3.3 Practitioner
 
 1. **Initiate Practitioner Profile**  
-   - **Goal**: Create a profile and initialize it with a starting rank (e.g., white belt)  
-   - **Precondition**: None
-   - **Postcondition**: Practitioner’s on-chain profile is created
+   - **Goal**: Create a profile and initialize it with a starting rank (e.g., white belt).
+   - **Precondition**: None.
+   - **Postcondition**: Practitioner’s on-chain profile is created.
 
 ![Sequence-CreateProfilePractitioner](../out/puml/SequenceDiagram-CreateProfile-Practitioner/CreateProfile-Practitioner.png)
 
 
 2. **Update Profile Information**  
-   - **Goal**: Update personal details (academy, metadata, etc.)  
-   - **Precondition**: Profile exists 
-   - **Postcondition**: Profile reflects the new information on-chain
+   - **Goal**: Update personal details (academy, metadata, etc.).  
+   - **Precondition**: Profile exists. 
+   - **Postcondition**: Profile reflects the new information on-chain.
 
 ![Sequence-UpdateProfile](../out/puml/SequenceDiagram-UpdateProfile/UpdateProfile.png)
 
 3. **Accept Achievement**  
-   - **Goal**: Accept an achievement (competition medals, seminar attendance, stripes, etc.)  
-   - **Precondition**: Organization has awarded the achievement  
-   - **Postcondition**: Practitioner’s achievements list is updated
+   - **Goal**: Accept an achievement (competition medals,diplomas etc.)  
+   - **Precondition**: Organization has awarded the achievement.  
+   - **Postcondition**: Practitioner’s achievements list is updated.
   
 ![Sequence-Achievement](../out/puml/SequenceDiagram-Achievements/Achievements.png)
 
 4. **Accept Rank**  
-   - **Goal**: Accept a promotion from a Master  
-   - **Precondition**: A Master has granted a promotion  
-   - **Postcondition**: Practitioner’s rank record is updated
+   - **Goal**: Accept a promotion from a Master.  
+   - **Precondition**: A Master has granted a promotion.  
+   - **Postcondition**: Practitioner’s rank record is updated.
 
 5. **Accept Membership**  
-   - **Goal**: Accept a membership offered by an Organization  
-   - **Precondition**: Organization has granted membership  
-   - **Postcondition**: Practitioner’s membership list is updated
-
+   - **Goal**: Accept a membership offered by an Organization . 
+   - **Precondition**: Organization has granted membership.
+   - **Postcondition**: Practitioner’s membership list is updated.
 
 6. **Request Membership**  
-   - **Goal**: Request membership from an Organization  
-   - **Precondition**: Practitioner has an existing profile  
-   - **Postcondition**: Membership request is reflected on-chain
+   - **Goal**: Request membership to an Organization. 
+   - **Precondition**: Practitioner has an existing profile.  
+   - **Postcondition**: Membership request is reflected on-chain.
 
 7. **End Membership**  
-   - **Goal**: Terminate an existing membership  
-   - **Precondition**: Membership is active 
-   - **Postcondition**: Membership is marked as ended, with the end date on-chain
+   - **Goal**: Terminate an existing membership.  
+   - **Precondition**: Membership is active. 
+   - **Postcondition**: Membership is marked as ended, with the end date on-chain.
   
 ![Sequence-Memberships](../out/puml/SequenceDiagram-Memberships/Memberships.png)
 
@@ -275,46 +278,46 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
 ### 3.4 Organization
 
 1. **Initiate Organization Profile**  
-   - **Goal**: Create an Organization Profile to manage memberships/achievements  
-   - **Precondition**: None
-   - **Postcondition**: Organization’s on-chain profile is created
+   - **Goal**: Create an Organization Profile to manage memberships/achievements.  
+   - **Precondition**: None.
+   - **Postcondition**: Organization’s on-chain profile is created.
 
 
 ![Sequence-CreateProfileOrg](../out/puml/SequenceDiagram-CreateProfile-Organisation/CreateProfile-Organisation.png)
 
 2. **Update Profile Information**  
-   - **Goal**: Update organizational details  
-   - **Precondition**: Profile exists
-   - **Postcondition**: Organization's profile reflects the new information on-chain
+   - **Goal**: Update organization's profile details.  
+   - **Precondition**: Profile exists.
+   - **Postcondition**: Organization's profile reflects the new information on-chain.
 
 3. **Grant Membership**  
-   - **Goal**: Offer memberships to practitioners or other organizations  
+   - **Goal**: Offer memberships to practitioners or other organizations.  
    - **Precondition**: Organisation exists, member's profile exists.
-   - **Postcondition**: Membership is pending acceptance
+   - **Postcondition**: Membership is pending acceptance.
 
 4. **End Membership**  
-   - **Goal**: Terminate an existing membership  
-   - **Precondition**: Membership is active 
-   - **Postcondition**: Membership is marked as ended, with the end date on-chain
+   - **Goal**: Terminate an existing membership.
+   - **Precondition**: Membership is active. 
+   - **Postcondition**: Membership is marked as ended, with the end date on-chain.
 
 
 5. **Award Achievement**  
-   - **Goal**: Grant achievements (seminars, camps, medals, stripes) 
+   - **Goal**: Grant achievements (seminars, camps, medals, etc.). 
    - **Precondition**: Organisation exists, member's profile exists. 
-   - **Postcondition**: Practitioner’s achievement list is updated
+   - **Postcondition**: Practitioner’s achievement list is updated.
 
 ### 3.5 DAO (Decentralized Autonomous Organization)
 >  Not part of the scope of proposal 1300081.
 
 1. **Initiate Governance Proposal**  
-   - **Goal**: Propose changes to protocol parameters or treasury spending  
-   - **Precondition**: DAO Phase has begun
-   - **Postcondition**: Proposal is open for discussion and voting
+   - **Goal**: Propose changes to protocol parameters or treasury spending.  
+   - **Precondition**: DAO Phase has begun 
+   - **Postcondition**: Proposal is open for discussion and voting.
 
 2. **Vote on Proposal with Rank Power**  
-   - **Goal**: Vote on proposals using rank-weighted power  
-   - **Precondition**: A proposal is active 
-   - **Postcondition**: Proposal passes or fails based on voting results
+   - **Goal**: Vote on proposals using rank-weighted power.  
+   - **Precondition**: A proposal is active.
+   - **Postcondition**: Proposal passes or fails based on voting results.
 
 ---
 
@@ -325,7 +328,7 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
 1. **Onboarding / Profile Creation**  
    - **As a practitioner**, I want to create my profile so that I have an on-chain identity to track my rank and history.  
    - **Acceptance Criteria**:  
-     - Practitioner can mint a “Profile NFT.”  
+     - Practitioner mints a “Profile NFT.”  
      - Initial rank is assigned (e.g., White Belt).  
      - Profile is visible in on-chain explorer.
 
@@ -333,34 +336,34 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
    - **As a practitioner**, I want to view my entire promotion history (current and past ranks) so I can see how I’ve progressed over time.  
    - **Acceptance Criteria**:  
      - System displays a chronological list of ranks and awarding authority.  
-     - Achievements/memberships are listed in the timeline.
+     - Achievements & memberships are listed in the timeline.
 
 3. **Update Profile Info**  
    - **As a practitioner**, I want to update my profile (e.g., if I switch academies or add a new affiliation) so that the system accurately reflects my current status.  
    - **Acceptance Criteria**:  
-     - Profile NFT can be updated with new metadata.  
-     - Only the profile owner can authorize changes.
+     - Profile NFT is updated with the new information.  
 
 4. **Accept a Promotion**  
    - **As a practitioner**, I want to confirm a new rank from a Master so that it becomes valid on the blockchain.  
    - **Acceptance Criteria**:  
-     - Master can initiate the rank promotion.  
-     - Practitioner can accept.  
-     - On-chain record updates “current_rank” and “past_ranks.”
+     - Master initiates the rank promotion.  
+     - Practitioner accepts.  
+     - On-chain profile current rank and past ranks are updated.
 
 5. **Accept a Membership**  
    - **As a practitioner**, I want to accept membership from an organization so that I can be recognized as part of that group.  
    - **Acceptance Criteria**:  
      - Organization initiates membership creation.  
-     - Practitioner signs membership acceptance.  
+     - Practitioner accepts membership.  
      - Membership is added to practitioner profile.
 
 6. **Request Membership**  
-   - **As a practitioner**, I want to request membership to an organization so that I can officially join them on-chain.  
+   - **As a practitioner**, I want to request membership to an organization so that I can be recognized as part of that group.  
    - **Acceptance Criteria**:  
-     - Practitioner initiates request transaction.  
-     - Organization must confirm acceptance.
-
+     - Practitioner initiates a membership request .  
+     - Organization  accepts the membership request.  
+     - Membership is added to practitioner profile.
+  
 7. **Accept an Achievement**  
    - **As a practitioner**, I want to add achievements (diplomas, medals, etc.) to my record so I can showcase them publicly.  
    - **Acceptance Criteria**:  
@@ -371,7 +374,7 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
    - **As a practitioner**, I want to end membership with an organization so that my profile accurately reflects my current affiliations.  
    - **Acceptance Criteria**:  
      - Practitioner or Organization ends membership.  
-     - End date is recorded on-chain.
+     - End date is recorded and membership is updated in practitioner profile.
 
 
 ### 4.2 Master User Stories
@@ -380,55 +383,54 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
    - **As a master**, I want to redeem my master-rank voucher so that my rank is recognized on-chain.  
    - **Acceptance Criteria**:  
      - Voucher is valid and unexpired.  
-     - Master’s profile is created/updated with the recognized rank.
+     - Master’s profile is created with the recognized rank.
 
 2. **Promote Practitioners**  
    - **As a master**, I want to promote students to higher ranks so that their progress is recognized.  
    - **Acceptance Criteria**:  
-     - Master’s rank must be high enough for the target promotion.  
-     - Practitioner must confirm acceptance.  
-     - Rank record is permanently updated on the practitioner’s profile.
+     - Master’s rank is high enough for the target promotion.  
+     - Practitioner accepts the promotion.  
+     - Rank record is updated on the practitioner’s profile.
 
 3. **Award Achievements**  
    - **As a master**, I want to award stripes or other achievements to students so their progress is recognized between belt promotions.  
    - **Acceptance Criteria**:  
-     - Master can create an achievement record.  
-     - Practitioner confirms acceptance.
+     - Master creates an achievement record.  
+     - Practitioner confirms achievement.
 
 
 ### 4.3 Organization User Stories
 
-1. **Create an Organization Profile**  
+2. **Create an Organization Profile**  
    - **As an organization**, I want to create an on-chain profile so that I can manage memberships and grant achievements.  
    - **Acceptance Criteria**:  
      - Organization NFT is minted.  
      - Profile details are recorded.
+     - Profile is visible in on-chain explorer.
 
-2. **Grant Membership**  
+3. **Update Organization Profile**  
+   - **As an organization**, I want to update my profile so that the information remains current.  
+   - **Acceptance Criteria**:  
+     - Profile NFT is updated with the new information. 
+   
+4. **Grant Membership**  
    - **As an organization**, I want to offer membership to practitioners so that they can officially be affiliated with my academy.  
    - **Acceptance Criteria**:  
-     - Membership is granted by the organisation
-     - Practitioner must accept.  
+     - Membership is granted by the organisation.
+     - Practitioner accepts.  
      - Membership details (start date, membership type) are added to the practitioner’s profile.
 
-3. **Accept Membership Request**  
-   - **As an organization**, I want to approve membership requests 
+5. **Accept Membership Request**  
+   - **As an organization**, I want to approve membership requests of practitioners so that they can officially be affiliated with my academy.  
    - **Acceptance Criteria**:  
      - Membership is accepted by the organisation
      - Membership details (start date, membership type) are added to the practitioner’s profile.
 
-4. **Award Achievements**  
+6. **Award Achievements**  
    - **As an organization**, I want to grant achievements (eg. medals , diplomas) so that practitioners can record them.  
    - **Acceptance Criteria**:  
-     - Achievement transaction is created by the organization.  
-     - Practitioner accepts to finalize.
-
-5. **Update Organization Profile**  
-   - **As an organization**, I want to update my profile so that the information remains current.  
-   - **Acceptance Criteria**:  
-     - Profile NFT can be updated with new metadata.  
-     - Only the profile owner can authorize changes.
-
+     - Organisation creates an achievement record.  
+     - Practitioner confirms achievement.
 
 
 ## Conclusion
@@ -456,6 +458,7 @@ This **Decentralized Belt System** aims to bring **trust, transparency, and sust
   - Onboarding Fee  
   - Promotion Fee  
   - Achievement Issue Fee
+  - Membership Changes Fee
 
 
 ---
@@ -476,7 +479,7 @@ The promotion mechanism for belts and stripes considers:
 
 - **Practitioner’s age** (e.g., children vs. adult belt progression)  
 - **Time spent at current rank** (minimum months/years at a rank)  
-- **Rank of the person granting the promotion** (brown belts can only promote up to certain ranks, black belts have broader powers, etc.)
+- **Rank of the practitioner granting the promotion** (brown belts can only promote up to certain ranks, black belts have broader powers, etc.)
 
 ### Granting Rights
 
