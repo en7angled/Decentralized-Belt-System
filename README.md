@@ -1,3 +1,5 @@
+![Banner](out/puml/CARDANO-BJJ-BANNER.jpeg)
+
 # Decentralized Belt System for Brazilian Jiu Jitsu 🥋 
 
 - [Decentralized Belt System for Brazilian Jiu Jitsu 🥋](#decentralized-belt-system-for-brazilian-jiu-jitsu-)
@@ -91,4 +93,3 @@ This project is funded by [F13 - Project Catalyst ID: #1300081](https://projectc
 
 ---
 
-![Banner](out/puml/Cardano_BJJ_Banner.JPG)
