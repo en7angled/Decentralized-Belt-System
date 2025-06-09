@@ -53,11 +53,12 @@ library
   import:             common-options, plinth-ghc-options
   default-language:   Haskell2010
   exposed-modules:
-    MyLib
     Onchain.CIP68
     Onchain.ProfilesValidator
+    Onchain.PromotionsValidator
     Onchain.RanksValidator
     Onchain.Types
+    Onchain.Utils
 
   if !(impl(ghcjs) || os(ghcjs))
     build-depends: plutus-tx-plugin

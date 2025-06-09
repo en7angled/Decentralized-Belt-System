@@ -2,6 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 -- Required for `makeLift`:
 {-# LANGUAGE ScopedTypeVariables #-}
+---
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-optimize #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-remove-trace #-}
@@ -9,21 +10,21 @@
 
 module Onchain.ProfilesValidator where
 
-import Data.Aeson (FromJSON, ToJSON)
 import GHC.Generics (Generic)
+import Onchain.CIP68 (CIP68Datum, MetadataFields)
+import Onchain.Types (Profile)
+import Onchain.Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
-import PlutusLedgerApi.V1 (AssetClass (AssetClass), flattenValue, scriptHashAddress)
-import PlutusLedgerApi.V1.Value (assetClassValue, geq)
 import PlutusLedgerApi.V3
 import PlutusTx
-import PlutusTx.AssocMap
 import PlutusTx.Blueprint
+import PlutusTx.Prelude
 import Prelude qualified
 
 -- | Parameters :
 newtype ProfilesParams = ProfilesParams ()
-  deriving stock (Generic, Prelude.Show, Prelude.Eq)
-  deriving anyclass (ToJSON, FromJSON)
+  deriving stock (Generic, Prelude.Show)
+  deriving anyclass (HasBlueprintDefinition)
 
 -- | Generate `Lift` instance for the custom parameter type with Template Haskell.
 --  Allows argument value to be pre-compiled to UPLC, so the compiled parameterized script can be applied to it.
@@ -33,69 +34,38 @@ makeIsDataSchemaIndexed ''ProfilesParams [('ProfilesParams, 0)]
 
 -- | Custom redeemer :
 data ProfilesRedeemer
-  = ProfilesRedeemer ()
-  deriving stock (Generic, Prelude.Show, Prelude.Eq)
-  deriving anyclass (ToJSON, FromJSON)
+  = CreateProfile TxOutRef MetadataFields Profile
+  | UpdateProfile MetadataFields
+  | DeleteProfile
+  deriving stock (Generic, Prelude.Show)
+  deriving anyclass (HasBlueprintDefinition)
 
-data ProfilesDatum = ProfilesDatum ()
-  deriving stock (Generic, Prelude.Show, Prelude.Eq)
-  deriving anyclass (ToJSON, FromJSON)
+makeIsDataSchemaIndexed ''ProfilesRedeemer [('CreateProfile, 0), ('UpdateProfile, 1), ('DeleteProfile, 2)]
 
-makeIsDataSchemaIndexed ''ProfilesDatum [('ProfilesDatum, 0)]
+type ProfilesDatum = CIP68Datum Profile
 
--- | For custom types with multiple constructors, `makeIsDataIndexed` must be used to generate ToData/FromData instances.
---  Unlike `unstableMakeIsData`, this generates `BuiltinData` values with constructors indexed in a stable order.
+--------------------------------------
+-- Profiles Validator
+--------------------------------------
 
--- ----------------
--- -- NFTs METADATA
--- ----------------
+{-# INLINEABLE profilesLambda #-}
+profilesLambda :: ProfilesParams -> ScriptContext -> Bool
+profilesLambda params (ScriptContext TxInfo {..} (Redeemer bredeemer) scriptInfo) =
+  let redeemer = unsafeFromBuiltinData @ProfilesRedeemer bredeemer
+   in case (scriptInfo, redeemer) of
+        (MintingScript cs@(CurrencySymbol bshash), CreateProfile seedTxOutRef metadata profile) -> True
+        (MintingScript cs@(CurrencySymbol bshash), DeleteProfile) -> True
+        (SpendingScript txOutRef mdatum, UpdateProfile metadata) -> True
+        (SpendingScript txOutRef mdatum, DeleteProfile) -> True
+        _ -> False
 
--- -- 2. Define Lambda
+-- | Lose the types
+profilesUntyped :: ProfilesParams -> BuiltinData -> BuiltinUnit
+profilesUntyped params =
+  mkUntypedLambda (profilesLambda params)
 
--- -- | Helper function to check if the correct quantity of the given asset is minted in the transaction.
--- checkMintAmount :: CurrencySymbol -> TokenName -> NFTAction -> Value -> Bool
--- checkMintAmount cs tn mode minted =
---   let q = case mode of
---         MintingNFT _ -> 1
---         BurningNFT -> -1
---    in pany (\(cs', tn', q') -> cs' #== cs && tn' #== tn && q' #== q) $ flattenValue minted
--- {-# INLINEABLE checkMintAmount #-}
-
--- -- | Typed parameterized minting policy lambda.
--- nftLambda :: PolicyParam -> AScriptContext -> Bool
--- nftLambda (PolicyParam oref tn) (AScriptContext ATxInfo {..} (Redeemer bredeemer) (MintingScript cs@(CurrencySymbol bshash))) =
---   case fromBuiltinData bredeemer of
---     Nothing -> traceError "invalid redeemer"
---     Just mode ->
---       let (!refAC, !userAC) = generateRefAndUserAC $ AssetClass (cs, tn)
---           !refNFT = assetClassValue refAC 1
---           !userNFT = assetClassValue userAC 1
---        in -- check a list of conditions that must be met to mint with the policy
---           pand $
---             traceIfFalse
---               "Tx must mint JUST raffle's ref and user NFTs"
---               (txInfoMint #== (refNFT #+ userNFT))
---               : case mode of
---                 -- if minting, the UTxO parameterizing the policy must be consumed as an input
---                 MintingNFT token_data ->
---                   [ traceIfFalse "UTxO not consumed" $ hasTxInWithRef oref txInfoInputs,
---                     hasTxOutWithInlineDatumAnd
---                       (mkCIP68Datum token_data) -- has corect inline datum
---                       (`geq` refNFT) -- has ref token
---                       (#== scriptHashAddress (ScriptHash bshash)) -- is locked to validator
---                       txInfoOutputs
---                   ]
---                 BurningNFT -> [] -- if burning, no additional conditions are required: construct a singleton list with empty tail
--- nftLambda _ _ = False -- TODO The spending part ..with user
--- {-# INLINEABLE nftLambda #-}
-
--- -- | Lose types
--- nftUntyped :: PolicyParam -> BuiltinData -> BuiltinUnit
--- nftUntyped policyParm =
---   mkUntypedLambda (nftLambda policyParm)
-
--- -- | Compile the untyped lambda to a UPLC script and splice back to Haskell.
--- nftCompile :: PolicyParam -> CompiledCode (BuiltinData -> BuiltinUnit)
--- nftCompile mp =
---   $$(compile [||nftUntyped||])
---     `unsafeApplyCode` liftCode plcVersion110 mp
+-- | Compile the untyped lambda to a UPLC script and splice back to Haskell.
+profilesCompile :: ProfilesParams -> CompiledCode (BuiltinData -> BuiltinUnit)
+profilesCompile params =
+  $$(compile [||profilesUntyped||])
+    `unsafeApplyCode` liftCode plcVersion110 params
