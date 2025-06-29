@@ -59,6 +59,15 @@ library
     Onchain.RanksValidator
     Onchain.Types
     Onchain.Utils
+    TxBuilding.Context
+    TxBuilding.Exceptions
+    TxBuilding.Interactions
+    TxBuilding.Lookups
+    TxBuilding.Operations
+    TxBuilding.Skeletons
+    TxBuilding.Transactions
+    TxBuilding.Utils
+    TxBuilding.Validators
 
   if !(impl(ghcjs) || os(ghcjs))
     build-depends: plutus-tx-plugin
@@ -77,10 +86,12 @@ library
 
   --- Cardano specific dependencies
   build-depends:
-    , plutus-core        ^>=1.46.0.0
-    , plutus-ledger-api  ^>=1.46.0.0
-    , plutus-tx          ^>=1.46.0.0
-    , plutus-tx-plugin   ^>=1.46.0.0
+    , atlas-cardano
+    , cardano-api
+    , plutus-core
+    , plutus-ledger-api
+    , plutus-tx
+    , plutus-tx-plugin
 
   hs-source-dirs:     src
   default-extensions:

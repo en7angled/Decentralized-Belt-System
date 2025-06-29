@@ -1,3 +1,5 @@
+packages: ./
+
 repository cardano-haskell-packages
   url: https://chap.intersectmbo.org/
   secure: True
@@ -9,16 +11,50 @@ repository cardano-haskell-packages
     c00aae8461a256275598500ea0e187588c35a5d5d7454fb57eac18d9edb86a56
     d4a35cd3121aa00d18544bb0ac01c3e1691d618f462c46129271bccf39f7e8ee
 
+tests: true
 
 -- repeating the index-state for hackage to work around hackage.nix parsing limitation
-index-state: 2025-05-13T23:46:16Z
+index-state: 2025-04-15T19:49:23Z
 
-
+-- NOTE: Do not bump chap index beyond that used by target cardano-node version.
 index-state:
-  -- Bump both the following dates if you need newer packages from Hackage
-  , hackage.haskell.org 2025-05-13T23:46:16Z
-  -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2025-06-07T03:18:32Z
+  , hackage.haskell.org 2025-04-15T19:49:23Z
+  , cardano-haskell-packages 2025-04-11T16:42:25Z
 
-packages:
-  ./.
+-- Atlas Cardano library (using the same tag as atlas-examples)
+source-repository-package
+  type: git
+  location: https://github.com/geniusyield/atlas
+  tag: 4675309b7851d40f549544e23282e944353e75b5
+  --sha256: sha256-jYtuCxfoLZZzPVylYJxJF0GbPCpHuBiZnxxzhDwo6y0=
+
+-- TODO: Default value should be @direct@ in upcoming 3.10 version of cabal, omit this line then.
+test-show-details: direct
+
+package cardano-crypto-praos
+  flags: -external-libsodium-vrf
+
+source-repository-package
+  type: git
+  location: https://github.com/maestro-org/haskell-sdk
+  tag: 3e39a6d485d7c6f98222b1ca58aed2fb45e5ff27
+  --sha256: sha256-plfrSgirKf7WGESYvEBqBkR1s673Qd0ZhGs0KzGfOig=
+
+-- TODO: Temporary, until proposed changes are in upstream (track https://github.com/mlabs-haskell/clb/pull/73)
+source-repository-package
+  type: git
+  location: https://github.com/mlabs-haskell/clb
+  tag: f33e486279029c6dc38a4527ff587443f8cdf373
+  --sha256: sha256-77CoSzJEwZDGtkcquPcP6INdO2eDHqAwZ8o04ybMhrQ=
+  subdir:
+    clb
+
+package postgresql-libpq
+  flags: +use-pkg-config
+
+-- Temporary until latest version is available on Hackage (or CHaP for that matter). Track https://github.com/IntersectMBO/cardano-addresses/issues/294.
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/cardano-addresses
+  tag: d611632fc3d616d5b4038a70f864bf2613c125d0
+  --sha256: sha256-vQ2XB95kw05IZuRkyK4cPQtaKZ1bZAoLtN9GrOOwQvM=

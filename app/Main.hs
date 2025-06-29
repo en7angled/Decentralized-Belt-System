@@ -1,4 +1,5 @@
-module Main (main) where
+module Main where
+
 
 main :: IO ()
 main = do
