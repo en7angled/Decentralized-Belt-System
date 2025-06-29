@@ -1,31 +1,21 @@
 module TxBuilding.Utils where
 
 import Cardano.Api (Key (getVerificationKey), castVerificationKey)
-import Control.Monad.Except (MonadError, throwError)
-import Data.Aeson (decodeFileStrict)
-import Data.Either.Extra
-import Data.List (find)
-import Data.Text (Text)
-import Data.Text qualified as T
-import Data.Text.IO qualified
-import GeniusYield.TxBuilder.Class (enclosingSlotFromTime', scriptAddress, slotToBeginTime)
+import Control.Monad.Except (throwError)
+import GeniusYield.TxBuilder.Class (enclosingSlotFromTime', slotToBeginTime)
 import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
-import GeniusYield.TxBuilder.Query.Class (GYTxQueryMonad, GYTxUserQueryMonad, utxosAtAddress)
-import GeniusYield.Types (Ada, GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYSlot, GYUTxO, GYUTxOs, GYValue, assetClassToPlutus, foldMapUTxOs, fromValue, paymentKeyHash, utxoOutDatum, utxoValue, utxosFromList, utxosToList, valueAssets, valueToPlutus)
+import GeniusYield.TxBuilder.Query.Class (GYTxQueryMonad)
+import GeniusYield.Types (Ada, GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYSlot, GYTokenName, GYUTxO, GYUTxOs, GYValue, foldMapUTxOs, fromValue, paymentKeyHash, utxoOutDatum, utxoValue, valueToPlutus)
 import GeniusYield.Types.Address (addressFromPaymentKeyHash)
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
 import GeniusYield.Types.Slot (unsafeSlotFromInteger)
 import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
-import Onchain.CIP68 (CIP68Datum, MetadataFields (..), extra, metadata, mkCIP68Datum)
+import Onchain.CIP68 (CIP68Datum, extra)
 import Onchain.Types qualified as Onchain
-import PlutusLedgerApi.V1.Interval qualified
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import PlutusTx.Builtins (emptyByteString)
-import System.Directory.Extra
 import TxBuilding.Exceptions (ProfileException (..))
-import TxBuilding.Validators
 
 ------------------------------------------------------------------------------------------------
 
@@ -57,63 +47,13 @@ gySlotFromPOSIXTime :: (GYTxQueryMonad m) => POSIXTime -> m GYSlot
 gySlotFromPOSIXTime ptime = do
   enclosingSlotFromTime' (timeFromPlutus ptime)
 
-veryFarPosixDate :: POSIXTime
-veryFarPosixDate = POSIXTime 999999999999999999
-
-showLink :: GYNetworkId -> T.Text -> T.Text -> T.Text
-showLink nid txId hash = case nid of
-  GYMainnet -> "https://cardanoscan.io/transaction/" <> txId <> "?tab=utxo"
-  GYTestnetPreprod -> "https://preprod.cardanoscan.io/transaction/" <> txId <> "?tab=utxo"
-  GYTestnetPreview -> "https://preview.cardanoscan.io/transaction/" <> txId <> "?tab=utxo"
-  GYTestnetLegacy -> txId
-  GYPrivnet _f -> txId
-
--- | Get UTxO with state token at validator address
-getUTxOWithStateToken :: (GYTxUserQueryMonad m, MonadError GYTxMonadException m) => GYAssetClass -> GYAddress -> m GYUTxO
-getUTxOWithStateToken stateTokenId validatorAddr = do
-  utxos <- utxosAtAddress validatorAddr Nothing
-  case findUTxOWithStateToken stateTokenId utxos of
-    Just utxo -> return utxo
-    Nothing -> throwError (GYApplicationException ProfileNotFound)
-
--- | Find UTxO with state token in a list of UTxOs
-findUTxOWithStateToken :: GYAssetClass -> GYUTxOs -> Maybe GYUTxO
-findUTxOWithStateToken stateTokenId utxos = do
-  let utxoList = utxosToList utxos
-  find (\utxo -> hasValidStateToken utxo) utxoList
-
--- | Get UTxO with state token at specific addresses
-getUTxOWithStateTokenAtAddresses :: (GYTxUserQueryMonad m, MonadError GYTxMonadException m) => GYAssetClass -> [GYAddress] -> m GYUTxO
-getUTxOWithStateTokenAtAddresses stateTokenId addrs = do
-  utxosList <- mapM (\addr -> utxosAtAddress addr Nothing) addrs
-  let allUtxos = foldMap utxosToList utxosList
-  case findUTxOWithStateToken stateTokenId (utxosFromList allUtxos) of
-    Just utxo -> return utxo
-    Nothing -> throwError (GYApplicationException ProfileNotFound)
-
--- | Check if UTxO has valid state token
-hasValidStateToken :: GYUTxO -> Bool
-hasValidStateToken gyOut =
-  let gyValue = utxoValue gyOut
-      gyAssets = valueAssets gyValue
-   in any (== stateTokenId) gyAssets
-  where
-    stateTokenId = undefined -- TODO: Implement when we have the actual state token
+-- | Get
 
 -- | Get inline datum and value from UTxO
 getInlineDatumAndValue :: GYUTxO -> Maybe (GYDatum, GYValue)
 getInlineDatumAndValue utxo = case utxoOutDatum utxo of
   GYOutDatumInline datum -> Just (datum, utxoValue utxo)
   _ -> Nothing
-
--- | Get profile state data and value from asset class
-getProfileStateDataAndValue :: (GYTxUserQueryMonad m, MonadError GYTxMonadException m) => GYAssetClass -> m (Onchain.Profile, Value)
-getProfileStateDataAndValue profileRefAC = do
-  profilesValidatorAddr <- scriptAddress profilesValidatorGY
-  profileStateUTxO <- getUTxOWithStateToken profileRefAC profilesValidatorAddr
-  case profileAndValueFromUTxO profileStateUTxO of
-    Just (profile, value) -> return (profile, value)
-    Nothing -> throwError (GYApplicationException InvalidProfileData)
 
 -- | Extract profile and value from UTxO
 profileAndValueFromUTxO :: GYUTxO -> Maybe (Onchain.Profile, Value)
@@ -129,33 +69,6 @@ profileDatumFromDatum gyDatum = do
   let plutusDatum = datumToPlutus' gyDatum
   fromBuiltinData plutusDatum
 
--- | Get profile value and metadata from UTxO
-profileValueAndMetadataFromUTxO :: GYUTxO -> Maybe (Onchain.Profile, Value, MetadataFields)
-profileValueAndMetadataFromUTxO profileStateUTxO = do
-  (gyDatum, gyValue) <- getInlineDatumAndValue profileStateUTxO
-  cip68Datum <- profileDatumFromDatum gyDatum
-  let pVal = valueToPlutus gyValue
-      -- TODO: Extract actual BuiltinByteString values from metadata
-      meta1 = emptyByteString
-      meta2 = emptyByteString
-      meta3 = emptyByteString
-  return (extra cip68Datum, pVal, Metadata222 meta1 meta2 meta3)
-
-------------------------------------------------------------------------------------------------
-
--- * OnChainProfileData Token Utils
-
-------------------------------------------------------------------------------------------------
-
--- TODO: Add profile token utilities when minting policy is implemented
--- isProfileRefAC :: GYAssetClass -> Bool
--- isProfileRefAC (GYToken gyMP gyTN) =
---   (gyMP == mintingPolicyId profilesMintingPolicyGY)
---     && hasRefPrefix (tokenNameToPlutus gyTN)
--- isProfileRefAC _ = False
-
--- hasValidProfileRefToken :: GYUTxO -> Bool
--- hasValidProfileRefToken gyOut =
---   let gyValue = utxoValue gyOut
---       gyAssets = valueAssets gyValue
---    in any isProfileRefAC gyAssets
+tnFromGYAssetClass :: (MonadError GYTxMonadException m) => GYAssetClass -> m GYTokenName
+tnFromGYAssetClass (GYToken _ gyProfileRefTN) = return gyProfileRefTN
+tnFromGYAssetClass _ = throwError (GYApplicationException InvalidAssetClass)

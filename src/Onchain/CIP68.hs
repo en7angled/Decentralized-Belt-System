@@ -9,7 +9,6 @@ import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.AssocMap qualified
 import PlutusTx.Blueprint
-import PlutusTx.Builtins (serialiseData)
 import PlutusTx.Prelude
 import Prelude qualified
 

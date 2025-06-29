@@ -19,6 +19,7 @@ data ProfileException
   | InsufficientFunds
   | InvalidMetadata
   | InvalidAssetClass
+  
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
 
 instance Exception ProfileException where

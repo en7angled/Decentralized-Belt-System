@@ -1,8 +1,5 @@
 module TxBuilding.Skeletons where
 
-import Control.Monad.Except (MonadError, throwError)
-import Control.Monad.Reader.Class
-import Data.Text (Text)
 import GeniusYield.Examples.Limbo
 import GeniusYield.TxBuilder
 import GeniusYield.Types
@@ -10,9 +7,12 @@ import Onchain.CIP68 (MetadataFields, deriveUserFromRefTN, generateRefAndUserTN)
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
 import Onchain.Types qualified as Onchain
 import Onchain.Utils (tokenNameFromTxOutRef)
+import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
+import PlutusLedgerApi.V3 qualified as V3
 import TxBuilding.Exceptions (ProfileException (..))
+import TxBuilding.Lookups (getUTxOWithProfileStateToken, getUtxoWithTokenAtAddresses)
 import TxBuilding.Utils
 import TxBuilding.Validators
 
@@ -21,6 +21,17 @@ import TxBuilding.Validators
 -- * CIP-68 Utils
 
 ------------------------------------------------------------------------------------------------
+
+gyGenerateRefAndUserAC :: (GYTxUserQueryMonad m) => GYTxOutRef -> m (GYAssetClass, GYAssetClass)
+gyGenerateRefAndUserAC seedTxOutRef = do
+  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
+  let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
+  let (pRefTN, pUserTN) = generateRefAndUserTN $ tokenNameFromTxOutRef seedTxOutRefPlutus
+  let refAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, pRefTN)
+  let userAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, pUserTN)
+  gyRefAC <- assetClassFromPlutus' refAC
+  gyUserAC <- assetClassFromPlutus' userAC
+  return (gyRefAC, gyUserAC)
 
 gyDeriveUserFromRefAC :: (GYTxUserQueryMonad m) => GYAssetClass -> m GYAssetClass
 gyDeriveUserFromRefAC (GYToken mp gyProfileRefTN) = do
@@ -85,12 +96,11 @@ txIsValidForSafeEra = do
   validUntil <- gySlotFromPOSIXTime afterSafeEraTime
   return $ isValidBetween now validUntil
 
-txMustSpendStateFromRefScriptWithRedeemer :: (GYTxUserQueryMonad m, MonadError GYTxMonadException m, ToData a) => GYTxOutRef -> GYAssetClass -> a -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
-txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId redeemer gyValidator =
+txMustSpendStateFromRefScriptWithRedeemer :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYAssetClass -> GYRedeemer -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
+txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyValidator =
   do
-    let gyRedeemer = redeemerFromPlutusData redeemer
     validatorAddr <- scriptAddress gyValidator
-    stateUTxO <- getUTxOWithStateToken stateTokenId validatorAddr
+    stateUTxO <- getUTxOWithProfileStateToken stateTokenId validatorAddr
     (gyDatum, _v) <- gyGetInlineDatumAndValue' stateUTxO
     return $
       mustHaveInput
@@ -102,16 +112,16 @@ txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId redeemer gyVali
     gyGetInlineDatumAndValue' :: (MonadError GYTxMonadException m) => GYUTxO -> m (GYDatum, GYValue)
     gyGetInlineDatumAndValue' utxo = maybe (throwError (GYApplicationException ProfileNotFound)) return $ getInlineDatumAndValue utxo
 
-txMustHaveStateAsRefInput :: (GYTxUserQueryMonad m, MonadError GYTxMonadException m) => GYAssetClass -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
+txMustHaveStateAsRefInput :: (GYTxUserQueryMonad m) => GYAssetClass -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
 txMustHaveStateAsRefInput stateTokenId gyValidator = do
   validatorAddr <- scriptAddress gyValidator
-  stateUTxO <- getUTxOWithStateToken stateTokenId validatorAddr
+  stateUTxO <- getUTxOWithProfileStateToken stateTokenId validatorAddr
   return $ mustHaveRefInput (utxoRef stateUTxO)
 
-txMustSpendFromAddress :: (GYTxUserQueryMonad m, MonadError GYTxMonadException m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)
+txMustSpendFromAddress :: (GYTxUserQueryMonad m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendFromAddress tokenId addrs = do
   do
-    tokenUtxo <- getUTxOWithStateTokenAtAddresses tokenId addrs
+    tokenUtxo <- getUtxoWithTokenAtAddresses tokenId addrs
     return $
       mustHaveInput
         GYTxIn
@@ -119,47 +129,36 @@ txMustSpendFromAddress tokenId addrs = do
             gyTxInWitness = GYTxInWitnessKey
           }
 
-txMustLockStateWithInlineDatumAndValue :: (GYTxUserQueryMonad m, ToData a) => GYScript 'PlutusV3 -> a -> Value -> m (GYTxSkeleton 'PlutusV3)
-txMustLockStateWithInlineDatumAndValue validator todata pValue = do
+txMustLockStateWithInlineDatumAndValue :: (GYTxUserQueryMonad m, ToData a) => GYScript 'PlutusV3 -> a -> GYValue -> m (GYTxSkeleton 'PlutusV3)
+txMustLockStateWithInlineDatumAndValue validator todata value = do
   validatorAddressGY <- scriptAddress validator
-  gyValue <- valueFromPlutus' pValue
+
   let gyDatum = datumFromPlutusData todata
   return $
     mustHaveOutput -- pays profile ref token to validator address with valid datum
       GYTxOut
         { gyTxOutAddress = validatorAddressGY,
           gyTxOutDatum = Just (gyDatum, GYTxOutUseInlineDatum),
-          gyTxOutValue = gyValue,
+          gyTxOutValue = value,
           gyTxOutRefS = Nothing
         }
 
-createProfileSkeleton :: (GYTxUserQueryMonad m) => GYTxOutRef -> TxOutRef -> MetadataFields -> Onchain.ProfileType -> m (GYTxSkeleton 'PlutusV3, GYAssetClass)
-createProfileSkeleton mpRefScript seedTxOutRef metadata profileType = do
-  let redeemer = CreateProfile seedTxOutRef metadata profileType
-      gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
-      profilesMP = GYMintReference @'PlutusV3 mpRefScript profilesValidatorGY
-  let (profileRefTN, profileUserTN) = generateRefAndUserTN $ tokenNameFromTxOutRef seedTxOutRef
-  let profileRefAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, profileRefTN)
-  let profileUserAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, profileUserTN)
-  gyProfileRefTN <- tokenNameFromPlutus' (snd . unAssetClass $ profileRefAC)
-  gyProfileUserTN <- tokenNameFromPlutus' (snd . unAssetClass $ profileUserAC)
-  gyProfileRefAC <- assetClassFromPlutus' profileRefAC
-  return
-    ( mconcat
-        [ mustMint profilesMP gyRedeemer gyProfileRefTN 1,
-          mustMint profilesMP gyRedeemer gyProfileUserTN 1
-        ],
-      gyProfileRefAC
-    )
+txCIP68UserAndRef :: (GYTxUserQueryMonad m) => Bool -> GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
+txCIP68UserAndRef mintOrBurn mpRefScript mpScript gyRedeemer gyProfileRefAC = do
+  let mp = GYMintReference @'PlutusV3 mpRefScript mpScript
+  gyProfileRefTN <- tnFromGYAssetClass gyProfileRefAC
+  gyProfileUserTN <- gyDeriveUserFromRefTN gyProfileRefTN
+  return $
+    mconcat
+      [ mustMint mp gyRedeemer gyProfileRefTN (if mintOrBurn then 1 else negate 1),
+        mustMint mp gyRedeemer gyProfileUserTN (if mintOrBurn then 1 else negate 1)
+      ]
 
-deleteProfileSkeleton :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
-deleteProfileSkeleton mpRefScript (GYToken _ gyProfileRefTN) = do
-  let redeemer = DeleteProfile
-      gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
-      profilesMP = GYMintReference @'PlutusV3 mpRefScript profilesValidatorGY
-  gyProfileUserTN <- tokenNameFromPlutus' $ deriveUserFromRefTN (tokenNameToPlutus gyProfileRefTN)
-  return $ mconcat $ (\tn -> mustMint profilesMP gyRedeemer tn (negate 1)) <$> [gyProfileUserTN, gyProfileUserTN]
-deleteProfileSkeleton _ _ = throwError (GYApplicationException InvalidAssetClass)
+txMustMintCIP68UserAndRef :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
+txMustMintCIP68UserAndRef = txCIP68UserAndRef True
+
+txMustBurnCIP68UserAndRef :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
+txMustBurnCIP68UserAndRef = txCIP68UserAndRef False
 
 addRefScriptSkeleton :: (GYTxQueryMonad m) => GYScript 'PlutusV3 -> m (GYTxSkeleton v)
 addRefScriptSkeleton sc = do
@@ -169,11 +168,3 @@ addRefScriptSkeleton sc = do
 addRefScriptToAddressSkeleton :: (GYTxQueryMonad m) => GYAddress -> GYScript 'PlutusV3 -> m (GYTxSkeleton v)
 addRefScriptToAddressSkeleton addr sc = do
   return $ mustHaveOutput (mkGYTxOut addr mempty (datumFromPlutusData ())) {gyTxOutRefS = Just $ GYPlutusScript sc}
-
-payProfileUserNFTToAddressSkeleton :: (GYTxUserQueryMonad m) => GYAddress -> TxOutRef -> m (GYTxSkeleton 'PlutusV3)
-payProfileUserNFTToAddressSkeleton recipient seedTxOutRef = do
-  let (_profileRefTN, profileUserTN) = generateRefAndUserTN $ tokenNameFromTxOutRef seedTxOutRef
-  let profileUserAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, profileUserTN)
-  let profileUserNFTp = assetClassValue profileUserAC 1
-  profileUserNFT <- valueFromPlutus' profileUserNFTp
-  txIsPayingValueToAddress recipient profileUserNFT

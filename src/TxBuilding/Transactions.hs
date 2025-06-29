@@ -1,13 +1,7 @@
 module TxBuilding.Transactions where
 
-import Control.Monad.Reader.Class
-import GeniusYield.Imports hiding (fromMaybe)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
-import Onchain.CIP68 (MetadataFields)
-import Onchain.Types qualified as Onchain
-import TxBuilding.Context
-import TxBuilding.Operations
 
 ------------------------------------------------------------------------------------------------
 
@@ -53,7 +47,7 @@ import TxBuilding.Operations
 ------------------------------------------------------------------------------------------------
 
 -- | Build and submit transaction
-buildTx :: (GYTxUserQueryMonad m, GYTxBuilderMonad m, GYTxMonad m) => GYTxSkeleton 'PlutusV3 -> m GYTxId
+buildTx :: (GYTxMonad m) => GYTxSkeleton 'PlutusV3 -> m GYTxId
 buildTx skeleton = do
   txBody <- buildTxBody skeleton
   tx <- signTxBody txBody

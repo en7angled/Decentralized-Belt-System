@@ -1,7 +1,7 @@
 module TxBuilding.Context where
 
-import GeniusYield.Types
 import GHC.Generics (Generic)
+import GeniusYield.Types
 import Prelude qualified
 
 ------------------------------------------------------------------------------------------------
@@ -12,7 +12,9 @@ import Prelude qualified
 
 -- | Context for profile transaction building operations
 data ProfileTxBuildingContext = ProfileTxBuildingContext
-  { profilesValidatorRef :: GYTxOutRef
+  { profilesValidatorRef :: GYTxOutRef,
+    prmotionsValidatorRef :: GYTxOutRef,
+    ranksValidatorRef :: GYTxOutRef
   }
   deriving stock (Generic, Prelude.Show)
 
@@ -24,6 +26,9 @@ data ProfileTxBuildingContext = ProfileTxBuildingContext
 
 -- | Default context for testing and development
 defaultProfileTxBuildingContext :: ProfileTxBuildingContext
-defaultProfileTxBuildingContext = ProfileTxBuildingContext
-  { profilesValidatorRef = Prelude.undefined -- TODO: Set proper default value when needed
-  } 
+defaultProfileTxBuildingContext =
+  ProfileTxBuildingContext
+    { profilesValidatorRef = Prelude.undefined, -- TODO: Set proper default value when needed
+      prmotionsValidatorRef = Prelude.undefined, -- TODO: Set proper default value when needed
+      ranksValidatorRef = Prelude.undefined -- TODO: Set proper default value when needed
+    }
