@@ -13,7 +13,7 @@ import PlutusTx.Prelude
 ------------------------------------------------------------------------------------------------
 
 profilesValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-profilesValidatorPlutus = profilesCompile (ProfilesParams ())
+profilesValidatorPlutus = profilesCompile (ProfilesParams ranksValidatorHashPlutus)
 
 profilesValidatorGY :: GYScript 'PlutusV3
 profilesValidatorGY = validatorFromPlutus profilesValidatorPlutus
@@ -23,6 +23,24 @@ profilesValidatorHashGY = validatorHash profilesValidatorGY
 
 profilesValidatorHashPlutus :: ScriptHash
 profilesValidatorHashPlutus = validatorHashToPlutus profilesValidatorHashGY
+
+------------------------------------------------------------------------------------------------
+
+-- *  Define Profile Validator
+
+------------------------------------------------------------------------------------------------
+
+ranksValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
+ranksValidatorPlutus = profilesCompile (ProfilesParams undefined)
+
+ranksValidatorGY :: GYScript 'PlutusV3
+ranksValidatorGY = validatorFromPlutus ranksValidatorPlutus
+
+ranksValidatorHashGY :: GYScriptHash
+ranksValidatorHashGY = validatorHash ranksValidatorGY
+
+ranksValidatorHashPlutus :: ScriptHash
+ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
 
 ------------------------------------------------------------------------------------------------
 

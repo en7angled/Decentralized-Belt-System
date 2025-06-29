@@ -35,9 +35,11 @@ createProfileTX recipient metadata profileType = do
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
   let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
-  let profileCIP68Datum = mkCIP68Datum (Onchain.mkProfile seedTxOutRefPlutus profileType) metadata
+  let profilesMintingPolicy = mintingPolicyIdToCurrencySymbol $ mintingPolicyId profilesValidatorGY
+  let ranksMintingPolicy = mintingPolicyIdToCurrencySymbol $ mintingPolicyId ranksValidatorGY
+  let profileCIP68Datum = mkCIP68Datum (Onchain.mkProfile profilesMintingPolicy ranksMintingPolicy seedTxOutRefPlutus profileType) metadata
   (profileRefAC, profileUserAC) <- gyGenerateRefAndUserAC seedTxOutRef
-  isMintingCIP68UserAndRef <- txMustMintCIP68UserAndRef profilesScriptRef profilesValidatorGY gyRedeemer profileRefAC
+  isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef profilesScriptRef profilesValidatorGY gyRedeemer profileRefAC
   isLockingProfileState <-
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
@@ -47,9 +49,11 @@ createProfileTX recipient metadata profileType = do
   return
     ( mconcat
         [ isSpendingSeedUTxO,
-          isMintingCIP68UserAndRef,
+          isMintingProfileCIP68UserAndRef,
           isLockingProfileState,
           isPayingProfileUserNFT
+          ---- TODO: Mint rank NFT
+          ---- TODO: Lock rank state at rank validator
         ],
       profileRefAC
     )

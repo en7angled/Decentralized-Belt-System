@@ -5,7 +5,8 @@ module Onchain.Types where
 import GHC.Generics (Generic)
 import Onchain.Utils
 import PlutusLedgerApi.Data.V1 (POSIXTime)
-import PlutusLedgerApi.V3 (TxOutRef)
+import PlutusLedgerApi.V1.Value (AssetClass (..))
+import PlutusLedgerApi.V3 (CurrencySymbol, TxOutRef)
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Eq
@@ -26,17 +27,9 @@ data ProfileType
 
 makeIsDataSchemaIndexed ''ProfileType [('Practitioner, 0), ('Organization, 1)]
 
-newtype ProfileId = ProfileId BuiltinByteString
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
+type ProfileId = AssetClass
 
-makeIsDataSchemaIndexed ''ProfileId [('ProfileId, 0)]
-
-newtype RankId = RankId BuiltinByteString
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''RankId [('RankId, 0)]
+type RankId = AssetClass
 
 data Profile
   = Profile
@@ -49,11 +42,17 @@ data Profile
 
 makeIsDataSchemaIndexed ''Profile [('Profile, 0)]
 
-mkProfile :: TxOutRef -> ProfileType -> Profile
-mkProfile seedTxOutRef profileType =
+mkProfile :: CurrencySymbol -> CurrencySymbol -> TxOutRef -> ProfileType -> Profile
+mkProfile profilesMintingPolicy ranksMintingPolicy seedTxOutRef Practitioner =
   Profile
-    { profileId = ProfileId (nameFromTxOutRef seedTxOutRef),
-      profileType = profileType,
+    { profileId = AssetClass (profilesMintingPolicy, tokenNameFromTxOutRef seedTxOutRef),
+      profileType = Practitioner,
+      currentRank = Just (AssetClass (ranksMintingPolicy, tokenNameFromTxOutRef seedTxOutRef))
+    }
+mkProfile profilesMintingPolicy _ranksMintingPolicy seedTxOutRef Organization =
+  Profile
+    { profileId = AssetClass (profilesMintingPolicy, tokenNameFromTxOutRef seedTxOutRef),
+      profileType = Organization,
       currentRank = Nothing
     }
 
@@ -93,28 +92,28 @@ baseRank belt = case belt of
   RedAndWhite -> 28
   Red -> 29
 
-data BJJRank
-  = BJJRank Belt Stripe
+data RankValue
+  = RankValue Belt Stripe
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''BJJRank [('BJJRank, 0)]
+makeIsDataSchemaIndexed ''RankValue [('RankValue, 0)]
 
-instance Eq BJJRank where
-  (==) :: BJJRank -> BJJRank -> Bool
+instance Eq RankValue where
+  (==) :: RankValue -> RankValue -> Bool
   (==) x y = rankToInt x == rankToInt y
 
-instance Ord BJJRank where
-  compare :: BJJRank -> BJJRank -> Ordering
+instance Ord RankValue where
+  compare :: RankValue -> RankValue -> Ordering
   compare x y = compare (rankToInt x) (rankToInt y)
 
-rankToInt :: BJJRank -> Integer
-rankToInt (BJJRank belt stripe) = baseRank belt + stripe
+rankToInt :: RankValue -> Integer
+rankToInt (RankValue belt stripe) = baseRank belt + stripe
 
 data RankData
   = RankData
   { rankId :: RankId,
-    rankValue :: BJJRank,
+    rankValue :: RankValue,
     rankAchievedByProfileId :: ProfileId,
     rankAwardedByProfileIds :: [ProfileId],
     rankAchievementDate :: POSIXTime,
@@ -125,18 +124,30 @@ data RankData
 
 makeIsDataSchemaIndexed ''RankData [('RankData, 0)]
 
+mkFirstRank :: CurrencySymbol -> CurrencySymbol -> TxOutRef -> POSIXTime -> RankData
+mkFirstRank profilesMintingPolicy ranksMintingPolicy seedTxOutRef achievementDate =
+  RankData
+    { rankId = AssetClass (ranksMintingPolicy, tokenNameFromTxOutRef seedTxOutRef),
+      rankValue = RankValue White 0,
+      rankAchievedByProfileId = AssetClass (profilesMintingPolicy, tokenNameFromTxOutRef seedTxOutRef),
+      rankAwardedByProfileIds = [],
+      rankAchievementDate = achievementDate,
+      rankPreviousRankId = Nothing
+    }
+
 -------------------------------------------------------------------------------
 
 -- * Promotion
 
 -------------------------------------------------------------------------------
+type PromotionId = AssetClass
 
 data Promotion
   = Promotion
   { promotionAwardedTo :: ProfileId,
     promotionAwardedBy :: [ProfileId],
     promotionAchievementDate :: POSIXTime,
-    promotionRank :: BJJRank
+    promotionRank :: RankValue
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)

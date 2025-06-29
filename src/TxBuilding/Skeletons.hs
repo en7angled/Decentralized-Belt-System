@@ -3,16 +3,14 @@ module TxBuilding.Skeletons where
 import GeniusYield.Examples.Limbo
 import GeniusYield.TxBuilder
 import GeniusYield.Types
-import Onchain.CIP68 (MetadataFields, deriveUserFromRefTN, generateRefAndUserTN)
-import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Types qualified as Onchain
+import Onchain.CIP68 (deriveUserFromRefTN, generateRefAndUserTN)
 import Onchain.Utils (tokenNameFromTxOutRef)
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3 qualified as V3
 import TxBuilding.Exceptions (ProfileException (..))
-import TxBuilding.Lookups (getUTxOWithProfileStateToken, getUtxoWithTokenAtAddresses)
+import TxBuilding.Lookups (getUTxOWithNFT, getUtxoWithTokenAtAddresses)
 import TxBuilding.Utils
 import TxBuilding.Validators
 
@@ -100,7 +98,7 @@ txMustSpendStateFromRefScriptWithRedeemer :: (GYTxUserQueryMonad m) => GYTxOutRe
 txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyValidator =
   do
     validatorAddr <- scriptAddress gyValidator
-    stateUTxO <- getUTxOWithProfileStateToken stateTokenId validatorAddr
+    stateUTxO <- getUTxOWithNFT stateTokenId validatorAddr
     (gyDatum, _v) <- gyGetInlineDatumAndValue' stateUTxO
     return $
       mustHaveInput
@@ -115,7 +113,7 @@ txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyVa
 txMustHaveStateAsRefInput :: (GYTxUserQueryMonad m) => GYAssetClass -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
 txMustHaveStateAsRefInput stateTokenId gyValidator = do
   validatorAddr <- scriptAddress gyValidator
-  stateUTxO <- getUTxOWithProfileStateToken stateTokenId validatorAddr
+  stateUTxO <- getUTxOWithNFT stateTokenId validatorAddr
   return $ mustHaveRefInput (utxoRef stateUTxO)
 
 txMustSpendFromAddress :: (GYTxUserQueryMonad m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)

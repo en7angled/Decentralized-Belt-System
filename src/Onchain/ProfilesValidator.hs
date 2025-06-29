@@ -20,9 +20,12 @@ import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
+import Onchain.Types
 
 -- | Parameters :
-newtype ProfilesParams = ProfilesParams ()
+newtype ProfilesParams = ProfilesParams {
+  ranksValidatorScriptHash :: ScriptHash
+}
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
@@ -37,10 +40,12 @@ data ProfilesRedeemer
   = CreateProfile TxOutRef MetadataFields Onchain.ProfileType
   | UpdateProfile MetadataFields
   | DeleteProfile
+  | Promote ProfileId RankValue
+  | AcceptPromotion PromotionId
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''ProfilesRedeemer [('CreateProfile, 0), ('UpdateProfile, 1), ('DeleteProfile, 2)]
+makeIsDataSchemaIndexed ''ProfilesRedeemer [('CreateProfile, 0), ('UpdateProfile, 1), ('DeleteProfile, 2), ('Promote, 3), ('AcceptPromotion, 4)]
 
 type ProfilesDatum = CIP68Datum Onchain.Profile
 
@@ -57,6 +62,8 @@ profilesLambda params (ScriptContext TxInfo {..} (Redeemer bredeemer) scriptInfo
         (MintingScript cs@(CurrencySymbol bshash), DeleteProfile) -> True
         (SpendingScript txOutRef mdatum, UpdateProfile metadata) -> True
         (SpendingScript txOutRef mdatum, DeleteProfile) -> True
+        (SpendingScript txOutRef mdatum, Promote profileId rankValue) -> True
+        (SpendingScript txOutRef mdatum, AcceptPromotion promotionId) -> True
         _ -> False
 
 -- | Lose the types
