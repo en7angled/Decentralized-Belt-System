@@ -18,6 +18,7 @@ data ProfileException
   | InvalidProfileData
   | InsufficientFunds
   | InvalidMetadata
+  | InvalidAssetClass
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
 
 instance Exception ProfileException where
@@ -26,5 +27,6 @@ instance Exception ProfileException where
   displayException InvalidProfileData = "Invalid profile data"
   displayException InsufficientFunds = "Insufficient funds"
   displayException InvalidMetadata = "Invalid metadata"
+  displayException InvalidAssetClass = "Invalid asset class"
 
 instance IsGYApiError ProfileException 

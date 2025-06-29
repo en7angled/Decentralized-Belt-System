@@ -12,7 +12,7 @@ module Onchain.ProfilesValidator where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68 (CIP68Datum, MetadataFields)
-import Onchain.Types (Profile)
+import Onchain.Types qualified as Onchain
 import Onchain.Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
 import PlutusLedgerApi.V3
@@ -34,7 +34,7 @@ makeIsDataSchemaIndexed ''ProfilesParams [('ProfilesParams, 0)]
 
 -- | Custom redeemer :
 data ProfilesRedeemer
-  = CreateProfile TxOutRef MetadataFields Profile
+  = CreateProfile TxOutRef MetadataFields Onchain.ProfileType
   | UpdateProfile MetadataFields
   | DeleteProfile
   deriving stock (Generic, Prelude.Show)
@@ -42,7 +42,7 @@ data ProfilesRedeemer
 
 makeIsDataSchemaIndexed ''ProfilesRedeemer [('CreateProfile, 0), ('UpdateProfile, 1), ('DeleteProfile, 2)]
 
-type ProfilesDatum = CIP68Datum Profile
+type ProfilesDatum = CIP68Datum Onchain.Profile
 
 --------------------------------------
 -- Profiles Validator

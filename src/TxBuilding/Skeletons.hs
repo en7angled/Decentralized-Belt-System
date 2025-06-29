@@ -1,19 +1,35 @@
 module TxBuilding.Skeletons where
 
-import Control.Monad.Reader.Class
 import Control.Monad.Except (MonadError, throwError)
+import Control.Monad.Reader.Class
+import Data.Text (Text)
 import GeniusYield.Examples.Limbo
 import GeniusYield.TxBuilder
 import GeniusYield.Types
+import Onchain.CIP68 (MetadataFields, deriveUserFromRefTN, generateRefAndUserTN)
+import Onchain.ProfilesValidator (ProfilesRedeemer (..))
+import Onchain.Types qualified as Onchain
+import Onchain.Utils (tokenNameFromTxOutRef)
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import Onchain.CIP68 (CIP68Datum, MetadataFields, mkCIP68Datum)
-import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Types (Profile)
-import TxBuilding.Validators
+import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Utils
-import Data.Text (Text)
-import TxBuilding.Exceptions (ProfileException(..))
+import TxBuilding.Validators
+
+------------------------------------------------------------------------------------------------
+
+-- * CIP-68 Utils
+
+------------------------------------------------------------------------------------------------
+
+gyDeriveUserFromRefAC :: (GYTxUserQueryMonad m) => GYAssetClass -> m GYAssetClass
+gyDeriveUserFromRefAC (GYToken mp gyProfileRefTN) = do
+  gyProfileUserTN <- gyDeriveUserFromRefTN gyProfileRefTN
+  return $ GYToken mp gyProfileUserTN
+gyDeriveUserFromRefAC _ = throwError (GYApplicationException InvalidAssetClass)
+
+gyDeriveUserFromRefTN :: (GYTxUserQueryMonad m) => GYTokenName -> m GYTokenName
+gyDeriveUserFromRefTN gyProfileRefTN = tokenNameFromPlutus' $ deriveUserFromRefTN (tokenNameToPlutus gyProfileRefTN)
 
 ------------------------------------------------------------------------------------------------
 
@@ -117,26 +133,33 @@ txMustLockStateWithInlineDatumAndValue validator todata pValue = do
           gyTxOutRefS = Nothing
         }
 
--- TODO: Add NFT minting actions when minting policy is implemented
--- txNFTAction :: (GYTxUserQueryMonad m) => GYTxOutRef -> ProfilesMintingRedeemer -> [AssetClass] -> m (GYTxSkeleton 'PlutusV3)
--- txNFTAction mpRefScript redeemer burnACs = do
---   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
---       profilesMP = GYMintReference @'PlutusV3 mpRefScript profilesMintingPolicyGY
---   case redeemer of
---     MintProfile _ tor -> do
---       let (profileRefTN, profileUserTN) = generateRefAndUserTN $ tokenNameFromTxOutRef tor
---       let profileRefAC = AssetClass (mintingPolicyCurrencySymbol profilesMintingPolicyGY, profileRefTN)
---       let profileUserAC = AssetClass (mintingPolicyCurrencySymbol profilesMintingPolicyGY, profileUserTN)
---       gyProfileRefTN <- tokenNameFromPlutus' (snd . unAssetClass $ profileRefAC)
---       gyProfileUserTN <- tokenNameFromPlutus' (snd . unAssetClass $ profileUserAC)
---       return $
---         mconcat
---           [ mustMint profilesMP gyRedeemer gyProfileRefTN 1,
---             mustMint profilesMP gyRedeemer gyProfileUserTN 1
---           ]
---     Burn -> do
---       gyTN <- mapM (tokenNameFromPlutus' . snd . unAssetClass) burnACs
---       return $ mconcat $ (\tn -> mustMint profilesMP gyRedeemer tn (negate 1)) <$> gyTN
+createProfileSkeleton :: (GYTxUserQueryMonad m) => GYTxOutRef -> TxOutRef -> MetadataFields -> Onchain.ProfileType -> m (GYTxSkeleton 'PlutusV3, GYAssetClass)
+createProfileSkeleton mpRefScript seedTxOutRef metadata profileType = do
+  let redeemer = CreateProfile seedTxOutRef metadata profileType
+      gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
+      profilesMP = GYMintReference @'PlutusV3 mpRefScript profilesValidatorGY
+  let (profileRefTN, profileUserTN) = generateRefAndUserTN $ tokenNameFromTxOutRef seedTxOutRef
+  let profileRefAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, profileRefTN)
+  let profileUserAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, profileUserTN)
+  gyProfileRefTN <- tokenNameFromPlutus' (snd . unAssetClass $ profileRefAC)
+  gyProfileUserTN <- tokenNameFromPlutus' (snd . unAssetClass $ profileUserAC)
+  gyProfileRefAC <- assetClassFromPlutus' profileRefAC
+  return
+    ( mconcat
+        [ mustMint profilesMP gyRedeemer gyProfileRefTN 1,
+          mustMint profilesMP gyRedeemer gyProfileUserTN 1
+        ],
+      gyProfileRefAC
+    )
+
+deleteProfileSkeleton :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
+deleteProfileSkeleton mpRefScript (GYToken _ gyProfileRefTN) = do
+  let redeemer = DeleteProfile
+      gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
+      profilesMP = GYMintReference @'PlutusV3 mpRefScript profilesValidatorGY
+  gyProfileUserTN <- tokenNameFromPlutus' $ deriveUserFromRefTN (tokenNameToPlutus gyProfileRefTN)
+  return $ mconcat $ (\tn -> mustMint profilesMP gyRedeemer tn (negate 1)) <$> [gyProfileUserTN, gyProfileUserTN]
+deleteProfileSkeleton _ _ = throwError (GYApplicationException InvalidAssetClass)
 
 addRefScriptSkeleton :: (GYTxQueryMonad m) => GYScript 'PlutusV3 -> m (GYTxSkeleton v)
 addRefScriptSkeleton sc = do
@@ -145,4 +168,12 @@ addRefScriptSkeleton sc = do
 
 addRefScriptToAddressSkeleton :: (GYTxQueryMonad m) => GYAddress -> GYScript 'PlutusV3 -> m (GYTxSkeleton v)
 addRefScriptToAddressSkeleton addr sc = do
-  return $ mustHaveOutput (mkGYTxOut addr mempty (datumFromPlutusData ())) {gyTxOutRefS = Just $ GYPlutusScript sc} 
+  return $ mustHaveOutput (mkGYTxOut addr mempty (datumFromPlutusData ())) {gyTxOutRefS = Just $ GYPlutusScript sc}
+
+payProfileUserNFTToAddressSkeleton :: (GYTxUserQueryMonad m) => GYAddress -> TxOutRef -> m (GYTxSkeleton 'PlutusV3)
+payProfileUserNFTToAddressSkeleton recipient seedTxOutRef = do
+  let (_profileRefTN, profileUserTN) = generateRefAndUserTN $ tokenNameFromTxOutRef seedTxOutRef
+  let profileUserAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, profileUserTN)
+  let profileUserNFTp = assetClassValue profileUserAC 1
+  profileUserNFT <- valueFromPlutus' profileUserNFTp
+  txIsPayingValueToAddress recipient profileUserNFT

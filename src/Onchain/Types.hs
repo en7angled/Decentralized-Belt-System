@@ -3,7 +3,9 @@
 module Onchain.Types where
 
 import GHC.Generics (Generic)
+import Onchain.Utils
 import PlutusLedgerApi.Data.V1 (POSIXTime)
+import PlutusLedgerApi.V3 (TxOutRef)
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Eq
@@ -46,6 +48,14 @@ data Profile
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''Profile [('Profile, 0)]
+
+mkProfile :: TxOutRef -> ProfileType -> Profile
+mkProfile seedTxOutRef profileType =
+  Profile
+    { profileId = ProfileId (nameFromTxOutRef seedTxOutRef),
+      profileType = profileType,
+      currentRank = Nothing
+    }
 
 -------------------------------------------------------------------------------
 
@@ -101,26 +111,19 @@ instance Ord BJJRank where
 rankToInt :: BJJRank -> Integer
 rankToInt (BJJRank belt stripe) = baseRank belt + stripe
 
-newtype RankType
-  = BJJ BJJRank
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''RankType [('BJJ, 0)]
-
-data Rank
-  = Rank
+data RankData
+  = RankData
   { rankId :: RankId,
-    rank :: RankType,
-    rankAchievedById :: ProfileId,
-    rankAwardedBy :: [ProfileId],
+    rankValue :: BJJRank,
+    rankAchievedByProfileId :: ProfileId,
+    rankAwardedByProfileIds :: [ProfileId],
     rankAchievementDate :: POSIXTime,
-    previousRankId :: Maybe RankId
+    rankPreviousRankId :: Maybe RankId
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''Rank [('Rank, 0)]
+makeIsDataSchemaIndexed ''RankData [('RankData, 0)]
 
 -------------------------------------------------------------------------------
 
@@ -133,7 +136,7 @@ data Promotion
   { promotionAwardedTo :: ProfileId,
     promotionAwardedBy :: [ProfileId],
     promotionAchievementDate :: POSIXTime,
-    promotionRank :: RankType
+    promotionRank :: BJJRank
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)

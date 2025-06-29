@@ -1,12 +1,10 @@
 module TxBuilding.Validators where
 
 import GeniusYield.Types
+import Onchain.ProfilesValidator (ProfilesParams (..), profilesCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude
-import Onchain.CIP68 (CIP68Datum, MetadataFields, mkCIP68Datum)
-import Onchain.ProfilesValidator (ProfilesParams (..), ProfilesRedeemer (..), profilesCompile)
-import Onchain.Types (Profile)
 
 ------------------------------------------------------------------------------------------------
 
@@ -49,4 +47,4 @@ exportProfilesScript :: IO ()
 exportProfilesScript = writeScript @'PlutusV3 "profiles-validator.plutus" Prelude.$ validatorToScript profilesValidatorGY
 
 -- exportProfilesMintingPolicy :: IO ()
--- exportProfilesMintingPolicy = writeScript @'PlutusV3 "profiles-minting-policy.plutus" $ mintingPolicyToScript profilesMintingPolicyGY 
+-- exportProfilesMintingPolicy = writeScript @'PlutusV3 "profiles-minting-policy.plutus" $ mintingPolicyToScript profilesMintingPolicyGY

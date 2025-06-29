@@ -1,90 +1,98 @@
 module TxBuilding.Operations where
 
 import Control.Monad.Reader.Class
-import GeniusYield.Imports hiding (fromMaybe)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
-import qualified PlutusLedgerApi.V1.Tx as V1
-import qualified PlutusLedgerApi.V3.Tx as V3
-import PlutusLedgerApi.V1.Value
-import Onchain.CIP68 (CIP68Datum, MetadataFields, mkCIP68Datum)
+import Onchain.CIP68 (MetadataFields, mkCIP68Datum)
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Types (Profile)
+import Onchain.Types qualified as Onchain
+import PlutusLedgerApi.V1.Tx qualified as V1
+import PlutusLedgerApi.V3.Tx qualified as V3
+import TxBuilding.Context (ProfileTxBuildingContext (..))
+import TxBuilding.Lookups (getProfileStateDataAndValue)
 import TxBuilding.Skeletons
 import TxBuilding.Validators
-import TxBuilding.Context (ProfileTxBuildingContext(..))
-import TxBuilding.Lookups (getProfileStateDataAndValue)
-import GeniusYield.Types (GYAssetClass)
 
 ------------------------------------------------------------------------------------------------
 
--- * Profile Actions
+-- * OnChainProfile Operations
 
 ------------------------------------------------------------------------------------------------
 
--- | Create Profile Transaction
+-- | Create OnChainProfile Transaction Skeleton
 createProfileTX ::
-  (GYTxUserQueryMonad m) =>
+  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
   GYAddress ->
   MetadataFields ->
-  Profile ->
-  m (GYTxSkeleton 'PlutusV3)
-createProfileTX recipient metadata profile = do
+  Onchain.ProfileType ->
+  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
+createProfileTX recipient metadata profileType = do
+  profilesScriptRef <- asks profilesValidatorRef
   seedTxOutRef <- someUTxOWithoutRefScript
   let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
-  let createRedeemer = CreateProfile seedTxOutRefPlutus metadata profile
-  let cip68Datum = mkCIP68Datum profile metadata
+  let profileCIP68Datum = mkCIP68Datum (Onchain.mkProfile seedTxOutRefPlutus profileType) metadata
   isLockingProfileState <-
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
-      cip68Datum
+      profileCIP68Datum
       (GeniusYield.Types.lovelaceValueOf 2000000) -- 2 ADA collateral
+  (isCreatingProfile, profileRefAC) <- createProfileSkeleton profilesScriptRef seedTxOutRefPlutus metadata profileType
+  isGettingProfileUserNFT <- payProfileUserNFTToAddressSkeleton recipient seedTxOutRefPlutus
   return
     ( mconcat
-        [ isLockingProfileState,
-          isSpendingSeedUTxO
-        ]
+        [ isSpendingSeedUTxO,
+          isCreatingProfile,
+          isLockingProfileState,
+          isGettingProfileUserNFT
+        ],
+      profileRefAC
     )
 
--- | Update Profile Transaction
+-- | Update OnChainProfile Transaction Skeleton
 updateProfileTX ::
   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
-  GYAddress ->
-  MetadataFields ->
   GYAssetClass ->
+  MetadataFields ->
+  [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3)
-updateProfileTX recipient newMetadata profileRefAC = do
+updateProfileTX profileRefAC newMetadata ownAddrs = do
   profilesScriptRef <- asks profilesValidatorRef
   (profile, pValue) <- getProfileStateDataAndValue profileRefAC
   let updateRedeemer = UpdateProfile newMetadata
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef profileRefAC updateRedeemer profilesValidatorGY
+  profileUserAC <- gyDeriveUserFromRefAC profileRefAC
+  spendsProfileUserNFT <- txMustSpendFromAddress profileUserAC ownAddrs
+
   let newCip68Datum = mkCIP68Datum profile newMetadata
   isProfileStateUpdated <- txMustLockStateWithInlineDatumAndValue profilesValidatorGY newCip68Datum pValue
   return $
     mconcat
-      [ spendsProfileRefNFT,
+      [ spendsProfileUserNFT,
+        spendsProfileRefNFT,
         isProfileStateUpdated
       ]
 
--- | Delete Profile Transaction
+-- | Delete OnChainProfile Transaction Skeleton
 deleteProfileTX ::
   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
-  GYAddress ->
   GYAssetClass ->
+  GYAddress ->
   m (GYTxSkeleton 'PlutusV3)
-deleteProfileTX recipient profileRefAC = do
+deleteProfileTX profileRefAC recipient = do
   profilesScriptRef <- asks profilesValidatorRef
-  (profile, pValue) <- getProfileStateDataAndValue profileRefAC
+  (_profile, pValue) <- getProfileStateDataAndValue profileRefAC
   let deleteRedeemer = DeleteProfile
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef profileRefAC deleteRedeemer profilesValidatorGY
-  stakeValue <- valueFromPlutus' pValue
-  isGettingStakeValue <- txIsPayingValueToAddress recipient stakeValue
+  profileValue <- valueFromPlutus' pValue
+  isGettingProfileValue <- txIsPayingValueToAddress recipient profileValue
+  isBurningProfileRefNFT <- deleteProfileSkeleton profilesScriptRef profileRefAC
   return $
     mconcat
       [ spendsProfileRefNFT,
-        isGettingStakeValue
+        isGettingProfileValue,
+        isBurningProfileRefNFT
       ]
 
 ------------------------------------------------------------------------------------------------
@@ -94,7 +102,7 @@ deleteProfileTX recipient profileRefAC = do
 ------------------------------------------------------------------------------------------------
 
 -- TODO: Implement these helper functions when we have the lookup infrastructure
--- getProfileStateDataAndValue :: (GYTxUserQueryMonad m) => AssetClass -> m (Profile, Value)
+-- getProfileStateDataAndValue :: (GYTxUserQueryMonad m) => AssetClass -> m (OnChainProfile, Value)
 -- getProfileStateDataAndValue profileRefAC = do
 --   profilesValidatorAddr <- scriptAddress profilesValidatorGY
 --   profileStateUTxO <- getUTxOWithStateToken profileRefAC profilesValidatorAddr
@@ -111,4 +119,4 @@ deleteProfileTX recipient profileRefAC = do
 -- TODO: Add reader monad instance
 -- instance MonadReader ProfileTxBuildingContext m => MonadReader ProfileTxBuildingContext (GYTxUserQueryT m) where
 --   ask = lift ask
---   local f = mapGYTxUserQueryT (local f) 
+--   local f = mapGYTxUserQueryT (local f)

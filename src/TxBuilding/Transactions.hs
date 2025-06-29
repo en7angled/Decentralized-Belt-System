@@ -5,7 +5,7 @@ import GeniusYield.Imports hiding (fromMaybe)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.CIP68 (MetadataFields)
-import Onchain.Types (Profile)
+import Onchain.Types qualified as Onchain
 import TxBuilding.Context
 import TxBuilding.Operations
 
@@ -15,37 +15,36 @@ import TxBuilding.Operations
 
 ------------------------------------------------------------------------------------------------
 
--- | Execute create profile transaction
-executeCreateProfile ::
-  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m, GYTxMonad m) =>
-  GYAddress ->
-  MetadataFields ->
-  Profile ->
-  m GYTxId
-executeCreateProfile recipient metadata profile = do
-  skeleton <- createProfileTX recipient metadata profile
-  buildTx skeleton
+-- -- | Execute create profile transaction
+-- executeCreateProfile ::
+--   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m, GYTxMonad m) =>
+--   GYAddress ->
+--   MetadataFields ->
+--   OnChainProfileData ->
+--   m GYTxId
+-- executeCreateProfile recipient metadata profile = do
+--   skeleton <- createProfileTX recipient metadata profile
+--   buildTx skeleton
 
--- | Execute update profile transaction
-executeUpdateProfile ::
-  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m, GYTxMonad m) =>
-  GYAddress ->
-  MetadataFields ->
-  GYAssetClass ->
-  m GYTxId
-executeUpdateProfile recipient newMetadata profileRefAC = do
-  skeleton <- updateProfileTX recipient newMetadata profileRefAC
-  buildTx skeleton
+-- -- | Execute update profile transaction
+-- executeUpdateProfile ::
+--   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m, GYTxMonad m) =>
+--   MetadataFields ->
+--   GYAssetClass ->
+--   m GYTxId
+-- executeUpdateProfile  newMetadata profileRefAC = do
+--   skeleton <- updateProfileTX  newMetadata profileRefAC
+--   buildTx skeleton
 
--- | Execute delete profile transaction
-executeDeleteProfile ::
-  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m, GYTxMonad m) =>
-  GYAddress ->
-  GYAssetClass ->
-  m GYTxId
-executeDeleteProfile recipient profileRefAC = do
-  skeleton <- deleteProfileTX recipient profileRefAC
-  buildTx skeleton
+-- -- | Execute delete profile transaction
+-- executeDeleteProfile ::
+--   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m, GYTxMonad m) =>
+--   GYAddress ->
+--   GYAssetClass ->
+--   m GYTxId
+-- executeDeleteProfile recipient profileRefAC = do
+--   skeleton <- deleteProfileTX recipient profileRefAC
+--   buildTx skeleton
 
 ------------------------------------------------------------------------------------------------
 
@@ -58,4 +57,4 @@ buildTx :: (GYTxUserQueryMonad m, GYTxBuilderMonad m, GYTxMonad m) => GYTxSkelet
 buildTx skeleton = do
   txBody <- buildTxBody skeleton
   tx <- signTxBody txBody
-  submitTx tx 
+  submitTx tx

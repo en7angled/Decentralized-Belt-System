@@ -63,10 +63,14 @@ userTokenPrefixBS :: BuiltinByteString
 userTokenPrefixBS = integerToBs24 (0x000de140 :: Integer) -- TODO update with new builtins
 {-# INLINEABLE userTokenPrefixBS #-}
 
-tokenNameFromTxOutRef :: TxOutRef -> TokenName
-tokenNameFromTxOutRef (TxOutRef (TxId txIdbs) txIdx) = TokenName (takeByteString 28 $ blake2b_256 (txIdbs <> (serialiseData . toBuiltinData) txIdx))
-{-# INLINEABLE tokenNameFromTxOutRef #-}
-
 generateRefAndUserTN :: TokenName -> (TokenName, TokenName)
 generateRefAndUserTN (TokenName bs) = (TokenName (refTokenPrefixBS <> bs), TokenName (userTokenPrefixBS <> bs))
 {-# INLINEABLE generateRefAndUserTN #-}
+
+deriveUserFromRefTN :: TokenName -> TokenName
+deriveUserFromRefTN (TokenName bs) = TokenName (userTokenPrefixBS <> sliceByteString 4 (lengthOfByteString bs) bs)
+{-# INLINEABLE deriveUserFromRefTN #-}
+
+deriveRefFromUserTN :: TokenName -> TokenName
+deriveRefFromUserTN (TokenName bs) = TokenName (refTokenPrefixBS <> sliceByteString 4 (lengthOfByteString bs) bs)
+{-# INLINEABLE deriveRefFromUserTN #-}

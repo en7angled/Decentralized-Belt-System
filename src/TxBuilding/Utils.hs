@@ -1,31 +1,31 @@
 module TxBuilding.Utils where
 
 import Cardano.Api (Key (getVerificationKey), castVerificationKey)
+import Control.Monad.Except (MonadError, throwError)
 import Data.Aeson (decodeFileStrict)
 import Data.Either.Extra
 import Data.List (find)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified
-import GeniusYield.Types (GYUTxO, GYUTxOs, GYAddress, GYDatum, GYValue, GYNetworkId(..), GYSlot, Ada, GYOutDatum(..), GYAssetClass, GYExtendedPaymentSigningKey, fromValue, valueToPlutus, foldMapUTxOs, utxoValue, paymentKeyHash, GYValue, valueAssets, utxosToList, utxosFromList, utxoOutDatum)
-import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
+import GeniusYield.TxBuilder.Class (enclosingSlotFromTime', scriptAddress, slotToBeginTime)
+import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
+import GeniusYield.TxBuilder.Query.Class (GYTxQueryMonad, GYTxUserQueryMonad, utxosAtAddress)
+import GeniusYield.Types (Ada, GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYSlot, GYUTxO, GYUTxOs, GYValue, assetClassToPlutus, foldMapUTxOs, fromValue, paymentKeyHash, utxoOutDatum, utxoValue, utxosFromList, utxosToList, valueAssets, valueToPlutus)
 import GeniusYield.Types.Address (addressFromPaymentKeyHash)
-import GeniusYield.Types.Time (timeToPlutus, timeFromPlutus)
 import GeniusYield.Types.Datum (datumToPlutus')
+import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
+import GeniusYield.Types.Slot (unsafeSlotFromInteger)
+import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
+import Onchain.CIP68 (CIP68Datum, MetadataFields (..), extra, metadata, mkCIP68Datum)
+import Onchain.Types qualified as Onchain
 import PlutusLedgerApi.V1.Interval qualified
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import Onchain.CIP68 (CIP68Datum, MetadataFields(..), extra, metadata, mkCIP68Datum)
-import Onchain.Types (Profile)
-import TxBuilding.Exceptions (ProfileException(..))
-import TxBuilding.Validators
-import System.Directory.Extra
 import PlutusTx.Builtins (emptyByteString)
-import Control.Monad.Except (MonadError, throwError)
-import Data.Text (Text)
-import GeniusYield.Types.Slot (unsafeSlotFromInteger)
-import GeniusYield.TxBuilder.Query.Class (GYTxUserQueryMonad, GYTxQueryMonad, utxosAtAddress)
-import GeniusYield.TxBuilder.Errors (GYTxMonadException(GYApplicationException))
-import GeniusYield.TxBuilder.Class (slotToBeginTime, enclosingSlotFromTime', scriptAddress)
+import System.Directory.Extra
+import TxBuilding.Exceptions (ProfileException (..))
+import TxBuilding.Validators
 
 ------------------------------------------------------------------------------------------------
 
@@ -41,13 +41,11 @@ getValueBalance = valueToPlutus . foldMapUTxOs utxoValue
 
 addressFromPaymentSigningKey :: GYNetworkId -> GYExtendedPaymentSigningKey -> GYAddress
 addressFromPaymentSigningKey nid extendedSkey =
-  let
-    vkey = Cardano.Api.getVerificationKey $ extendedPaymentSigningKeyToApi extendedSkey
-    pub_key = paymentVerificationKeyFromApi (castVerificationKey vkey)
-    payment_key_hash = paymentKeyHash pub_key
-    address = addressFromPaymentKeyHash nid payment_key_hash
-   in
-    address
+  let vkey = Cardano.Api.getVerificationKey $ extendedPaymentSigningKeyToApi extendedSkey
+      pub_key = paymentVerificationKeyFromApi (castVerificationKey vkey)
+      payment_key_hash = paymentKeyHash pub_key
+      address = addressFromPaymentKeyHash nid payment_key_hash
+   in address
 
 pPOSIXTimeFromSlotInteger :: (GYTxQueryMonad m) => Integer -> m POSIXTime
 pPOSIXTimeFromSlotInteger = (timeToPlutus <$>) . slotToBeginTime . unsafeSlotFromInteger
@@ -109,7 +107,7 @@ getInlineDatumAndValue utxo = case utxoOutDatum utxo of
   _ -> Nothing
 
 -- | Get profile state data and value from asset class
-getProfileStateDataAndValue :: (GYTxUserQueryMonad m, MonadError GYTxMonadException m) => GYAssetClass -> m (Profile, Value)
+getProfileStateDataAndValue :: (GYTxUserQueryMonad m, MonadError GYTxMonadException m) => GYAssetClass -> m (Onchain.Profile, Value)
 getProfileStateDataAndValue profileRefAC = do
   profilesValidatorAddr <- scriptAddress profilesValidatorGY
   profileStateUTxO <- getUTxOWithStateToken profileRefAC profilesValidatorAddr
@@ -118,7 +116,7 @@ getProfileStateDataAndValue profileRefAC = do
     Nothing -> throwError (GYApplicationException InvalidProfileData)
 
 -- | Extract profile and value from UTxO
-profileAndValueFromUTxO :: GYUTxO -> Maybe (Profile, Value)
+profileAndValueFromUTxO :: GYUTxO -> Maybe (Onchain.Profile, Value)
 profileAndValueFromUTxO profileStateUTxO = do
   (gyDatum, gyValue) <- getInlineDatumAndValue profileStateUTxO
   cip68Datum <- profileDatumFromDatum gyDatum
@@ -126,13 +124,13 @@ profileAndValueFromUTxO profileStateUTxO = do
   return (extra cip68Datum, pVal)
 
 -- | Convert GY datum to profile datum
-profileDatumFromDatum :: GYDatum -> Maybe (CIP68Datum Profile)
+profileDatumFromDatum :: GYDatum -> Maybe (CIP68Datum Onchain.Profile)
 profileDatumFromDatum gyDatum = do
   let plutusDatum = datumToPlutus' gyDatum
   fromBuiltinData plutusDatum
 
 -- | Get profile value and metadata from UTxO
-profileValueAndMetadataFromUTxO :: GYUTxO -> Maybe (Profile, Value, MetadataFields)
+profileValueAndMetadataFromUTxO :: GYUTxO -> Maybe (Onchain.Profile, Value, MetadataFields)
 profileValueAndMetadataFromUTxO profileStateUTxO = do
   (gyDatum, gyValue) <- getInlineDatumAndValue profileStateUTxO
   cip68Datum <- profileDatumFromDatum gyDatum
@@ -145,7 +143,7 @@ profileValueAndMetadataFromUTxO profileStateUTxO = do
 
 ------------------------------------------------------------------------------------------------
 
--- * Profile Token Utils
+-- * OnChainProfileData Token Utils
 
 ------------------------------------------------------------------------------------------------
 
@@ -160,4 +158,4 @@ profileValueAndMetadataFromUTxO profileStateUTxO = do
 -- hasValidProfileRefToken gyOut =
 --   let gyValue = utxoValue gyOut
 --       gyAssets = valueAssets gyValue
---    in any isProfileRefAC gyAssets 
+--    in any isProfileRefAC gyAssets

@@ -5,7 +5,7 @@ import GeniusYield.Imports hiding (fromMaybe)
 import GeniusYield.TxBuilder
 import GeniusYield.Types (GYAssetClass(GYToken), GYUTxO, GYUTxOs, GYAddress, utxosToList, utxosFromList, utxoValue, valueAssets)
 import PlutusLedgerApi.V1.Value
-import Onchain.Types (Profile)
+import Onchain.Types qualified as Onchain
 import TxBuilding.Utils
 import TxBuilding.Validators
 import Control.Monad.Except (MonadError, throwError)
@@ -14,7 +14,7 @@ import TxBuilding.Exceptions (ProfileException(..))
 
 ------------------------------------------------------------------------------------------------
 
--- * Profile Lookup Functions
+-- * OnChainProfileData Lookup Functions
 
 ------------------------------------------------------------------------------------------------
 
@@ -42,7 +42,7 @@ getUTxOWithProfileStateTokenAtAddresses profileRefAC addrs = do
     Nothing -> throwError (GYApplicationException ProfileNotFound)
 
 -- | Get profile state data and value from asset class
-getProfileStateDataAndValue :: (GYTxUserQueryMonad m) => GYAssetClass -> m (Profile, Value)
+getProfileStateDataAndValue :: (GYTxUserQueryMonad m) => GYAssetClass -> m (Onchain.Profile, Value)
 getProfileStateDataAndValue profileRefAC = do
   profilesValidatorAddr <- scriptAddress profilesValidatorGY
   profileStateUTxO <- getUTxOWithProfileStateToken profileRefAC profilesValidatorAddr
@@ -85,4 +85,4 @@ isProfileRefAC _ = False
 -- Remove or comment out the displayException method from the Exception instance for ProfileNotFound
 
 -- instance Exception ProfileException where
---   displayException ProfileNotFound = "Profile not found" 
+--   displayException ProfileNotFound = "OnChainProfileData not found" 
