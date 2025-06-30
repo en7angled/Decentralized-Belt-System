@@ -1,12 +1,14 @@
 {-# LANGUAGE NoImplicitPrelude #-}
+-- Required for `makeLift`:
+{-# LANGUAGE MultiParamTypeClasses #-}
+-- Required for `makeLift`:
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Onchain.Types where
 
 import GHC.Generics (Generic)
-import Onchain.Utils
-import PlutusLedgerApi.V1 (POSIXTime, TokenName (..))
+import PlutusLedgerApi.V1 (POSIXTime, TokenName (..), ScriptHash, Lovelace)
 import PlutusLedgerApi.V1.Value (AssetClass (..))
-import PlutusLedgerApi.V3 (CurrencySymbol, TxOutRef)
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Eq
@@ -14,6 +16,23 @@ import PlutusTx.Ord
 import PlutusTx.Prelude
 import Prelude qualified
 import PlutusTx.Builtins (serialiseData)
+
+
+-- | Parameters :
+data ProtocolParams = ProtocolParams
+  { ranksValidatorScriptHash :: ScriptHash,
+    collateral :: Lovelace
+  }
+  deriving stock (Generic, Prelude.Show)
+  deriving anyclass (HasBlueprintDefinition)
+
+-- | Generate `Lift` instance for the custom parameter type with Template Haskell.
+--  Allows argument value to be pre-compiled to UPLC, so the compiled parameterized script can be applied to it.
+makeLift ''ProtocolParams
+
+makeIsDataSchemaIndexed ''ProtocolParams [('ProtocolParams, 0)]
+
+
 
 -------------------------------------------------------------------------------
 
@@ -43,7 +62,8 @@ data Profile
   = Profile
   { profileId :: ProfileId,
     profileType :: ProfileType,
-    currentRank :: Maybe RankId -- ˆ Organisations have no rank
+    currentRank :: Maybe RankId, -- ˆ Organisations have no rank
+    protocolParams :: ProtocolParams
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
@@ -125,8 +145,8 @@ makeIsDataSchemaIndexed ''RankData [('RankData, 0)]
 
 
 
-mkPractitionerProfile :: ProfileId -> POSIXTime -> (Profile, RankData)
-mkPractitionerProfile  profileId creationDate  =
+mkPractitionerProfile :: ProfileId -> POSIXTime -> ProtocolParams -> (Profile, RankData)
+mkPractitionerProfile  profileId creationDate protocolParams =
       let 
         rankValue = RankValue White 0
         firstRank = RankData
@@ -140,17 +160,19 @@ mkPractitionerProfile  profileId creationDate  =
         profile = Profile
                     { profileId = profileId,
                       profileType = Practitioner,
-                      currentRank = Just (generateRankId profileId 0)
+                      currentRank = Just (generateRankId profileId 0),
+                      protocolParams = protocolParams
                     }
       in (profile, firstRank)
 
 
-mkOrganizationProfile :: ProfileId -> Profile
-mkOrganizationProfile profileId   =
+mkOrganizationProfile :: ProfileId -> ProtocolParams -> Profile
+mkOrganizationProfile profileId protocolParams =
   Profile
     { profileId = profileId,
       profileType = Organization,
-      currentRank = Nothing
+      currentRank = Nothing,
+      protocolParams = protocolParams
     }
 
 -------------------------------------------------------------------------------
@@ -174,7 +196,7 @@ data Promotion
 makeIsDataSchemaIndexed ''Promotion [('Promotion, 0)]
 
 mkPromotion :: ProfileId -> [ProfileId] -> POSIXTime -> RankValue -> Promotion
-mkPromotion promotionAwardedTo promotionAwardedBy promotionAchievementDate promotionRank =
+mkPromotion promotionAwardedTo promotionAwardedBy promotionAchievementDate promotionRank  =
   Promotion
     { promotionId = generateRankId promotionAwardedTo (rankToInt promotionRank),
       promotionAwardedTo = promotionAwardedTo,
@@ -182,6 +204,34 @@ mkPromotion promotionAwardedTo promotionAwardedBy promotionAchievementDate promo
       promotionAchievementDate = promotionAchievementDate,
       promotionRank = promotionRank
     }
+
+
+promotionToRank :: Promotion -> RankId -> RankData
+promotionToRank promotion previousRankId = RankData
+  { rankId = promotionId promotion,
+    rankValue = promotionRank promotion,
+    rankAchievedByProfileId = promotionAwardedTo promotion,
+    rankAwardedByProfileIds = promotionAwardedBy promotion,
+    rankAchievementDate = promotionAchievementDate promotion,
+    rankPreviousRankId = Just previousRankId 
+  }
+
+updateProfileRank :: Profile -> RankData -> Profile
+updateProfileRank Profile{..} rankData = Profile
+  { profileId = profileId,
+    profileType = profileType,
+    currentRank = Just (rankId rankData),
+    protocolParams = protocolParams
+  }
+
+promoteProfile :: Profile -> Promotion -> (Profile, RankData)
+promoteProfile profile@Profile{..} promotion = case currentRank of
+  Just currentRankId -> let 
+                          newRankData = promotionToRank promotion currentRankId
+                          updatedProfile = updateProfileRank profile newRankData
+                         in (updatedProfile, newRankData)
+  Nothing -> traceError "Profile has no rank"
+
 
 
 -------------------------------------------------------------------------------

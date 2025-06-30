@@ -2,11 +2,11 @@ module TxBuilding.Validators where
 
 import GeniusYield.Types
 import Onchain.MintingPolicy
-import Onchain.MintingPolicy (mintingPolicyCompile)
 import Onchain.ProfilesValidator ( profilesCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude
+import Onchain.Types
 
 ------------------------------------------------------------------------------------------------
 
@@ -15,7 +15,7 @@ import PlutusTx.Prelude
 ------------------------------------------------------------------------------------------------
 
 miintingPolicyPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-miintingPolicyPlutus = mintingPolicyCompile (MintingPolicyParams ranksValidatorHashPlutus promotionsValidatorHashPlutus 2_000_000)
+miintingPolicyPlutus = mintingPolicyCompile (ProtocolParams ranksValidatorHashPlutus 2_000_000)
 
 mintingPolicyGY :: GYScript 'PlutusV3
 mintingPolicyGY = validatorFromPlutus miintingPolicyPlutus
@@ -59,45 +59,14 @@ ranksValidatorHashGY = validatorHash ranksValidatorGY
 ranksValidatorHashPlutus :: ScriptHash
 ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
 
-------------------------------------------------------------------------------------------------
 
--- *  Define Profile Validator
 
 ------------------------------------------------------------------------------------------------
 
-promotionsValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-promotionsValidatorPlutus = profilesCompile 
-
-promotionsValidatorGY :: GYScript 'PlutusV3
-promotionsValidatorGY = validatorFromPlutus promotionsValidatorPlutus
-
-promotionsValidatorHashGY :: GYScriptHash
-promotionsValidatorHashGY = validatorHash promotionsValidatorGY
-
-promotionsValidatorHashPlutus :: ScriptHash
-promotionsValidatorHashPlutus = validatorHashToPlutus promotionsValidatorHashGY
+-- *  Protocol Parameters
 
 ------------------------------------------------------------------------------------------------
 
--- *  Define Minting Policy
 
-------------------------------------------------------------------------------------------------
-
--- TODO: Add minting policy for profile tokens when needed
--- profilesMintingPolicyPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
--- profilesMintingPolicyPlutus = compileProfilesMP profilesParams
-
--- profilesMintingPolicyGY :: GYScript 'PlutusV3
--- profilesMintingPolicyGY = mintingPolicyFromPlutus profilesMintingPolicyPlutus
-
-------------------------------------------------------------------------------------------------
-
--- * Export Functions
-
-------------------------------------------------------------------------------------------------
-
-exportProfilesScript :: IO ()
-exportProfilesScript = writeScript @'PlutusV3 "profiles-validator.plutus" Prelude.$ validatorToScript profilesValidatorGY
-
--- exportProfilesMintingPolicy :: IO ()
--- exportProfilesMintingPolicy = writeScript @'PlutusV3 "profiles-minting-policy.plutus" $ mintingPolicyToScript profilesMintingPolicyGY
+defaultProtocolParams :: ProtocolParams
+defaultProtocolParams = ProtocolParams ranksValidatorHashPlutus  2_000_000

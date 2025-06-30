@@ -14,13 +14,11 @@
 module Onchain.ProfilesValidator where
 
 import GHC.Generics (Generic)
-import Onchain.CIP68 (CIP68Datum (CIP68Datum), MetadataFields, deriveUserFromRefTN, generateRefAndUserTN, mkCIP68Datum, updateCIP68DatumImage, ImageURI)
+import Onchain.CIP68 (CIP68Datum (CIP68Datum), deriveUserFromRefTN, updateCIP68DatumImage, ImageURI)
 import Onchain.Types
 import Onchain.Types qualified as Onchain
 import Onchain.Utils
-import PlutusCore.Builtin.Debug (plcVersion110)
 import PlutusLedgerApi.V1 qualified as V1
-import PlutusLedgerApi.V1.Interval (before)
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Contexts
 import PlutusTx
@@ -43,6 +41,16 @@ makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('DeletePr
 
 type ProfilesDatum = CIP68Datum Onchain.Profile
 
+
+
+unsafeGetPromotionDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, Promotion)
+unsafeGetPromotionDatumAndValue ac addr txins =
+  let (v, b) = unsafeGetCurrentStateDatumAndValue ac addr txins
+   in (v, unsafeFromBuiltinData b)
+{-# INLINEABLE unsafeGetPromotionDatumAndValue #-}
+
+
+
 --------------------------------------
 -- Profiles Validator
 --------------------------------------
@@ -57,41 +65,48 @@ profilesLambda  (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInf
           Nothing -> traceError "No datum"
           Just (Datum bdatum) -> case fromBuiltinData bdatum of
             Nothing -> traceError "Invalid datum"
-            Just profileDatum@(CIP68Datum _metadata _version (_profile :: Profile)) ->
-              let !ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
-                  !ownValue = txOutValue ownInput
-                  profilesValidatorAddress = txOutAddress ownInput
+            Just profileDatum@(CIP68Datum metadata version (profile :: Profile)) ->
+              let ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+                  ownValue = txOutValue ownInput
+                  ownAddress = txOutAddress ownInput
                in case redeemer of
                     DeleteProfile profileRefAssetClass@(V1.AssetClass (profilesCurrencySymbol, profileRefTN)) ->
                       let profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
                        in and
                             [ traceIfFalse "Must burn profile Ref NFT"
                                 $ isBurningNFT profileRefAssetClass txInfoMint,
-                              traceIfFalse "Must burn profile User NFT"
-                                $ isBurningNFT profileUserAssetClass txInfoMint
+                            traceIfFalse "Must spend profile User NFT"
+                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1
                             ]
                     (UpdateProfileImage (V1.AssetClass (profilesCurrencySymbol, profileRefTN)) newImageURI) ->
                       let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum -- !!! Open unbounded-datum vulnerability on metadata
                           profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
-                    
+                      
                        in and
                             [ traceIfFalse "Must spend profile User NFT"
-                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                                == 1,
+                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1,
                               traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
-                                $ hasTxOutWithInlineDatumAndValue newCip68Datum ownValue profilesValidatorAddress txInfoOutputs
+                                $ hasTxOutWithInlineDatumAndValue newCip68Datum ownValue ownAddress txInfoOutputs
                             ]
-                    _ -> traceError "Invalid redeemer for spending"
-        -- (SpendingScript txOutRef mdatum, Promote profileId rankValue) ->
-        --   -- is minting promotion NFT
-        --   -- is locking back the profile NFT with the same value and datum (unchanged)
-        --   True
-        -- (SpendingScript txOutRef mdatum, AcceptPromotion promotionId) ->
-        --   -- is burning promotion NFT
-        --   -- is minting rank NFT based on the promotion datum
-        --   -- is locking profile Ref NFT with inline updated datum with new rank locked at profilesValidator address
-        --   True
-        _ -> traceError "Invalid redeemer"
+
+                    (AcceptPromotion promotionId) ->
+                      let     
+                          ranksValidatorAddress =  V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
+                          (promotionValue, promotionDatum) = unsafeGetPromotionDatumAndValue promotionId ranksValidatorAddress txInfoInputs
+                          
+                          (updatedProfile, newRankDatum) =  promoteProfile profile promotionDatum
+                          updatedCip68Datum = CIP68Datum metadata version updatedProfile 
+                          profileUserAssetClass = promotionAwardedTo promotionDatum
+                       in and
+                            [ traceIfFalse "Must spend profile User NFT"
+                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1,
+                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
+                                $ hasTxOutWithInlineDatumAndValue updatedCip68Datum ownValue ownAddress txInfoOutputs,
+                              traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
+                              $ hasTxOutWithInlineDatumAndValue newRankDatum promotionValue ranksValidatorAddress txInfoOutputs  
+                            ]
+
+        _ -> traceError "Invalid purpose"
 
 -- | Lose the types
 profilesUntyped :: BuiltinData -> BuiltinUnit

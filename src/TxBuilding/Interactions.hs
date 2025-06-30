@@ -7,9 +7,8 @@ import Control.Monad.Reader.Class (MonadReader)
 import Data.Aeson
 import Data.Maybe (fromMaybe)
 import Data.Swagger.Internal.Schema (ToSchema)
-import DomainTypes.Profile.Types (BJJProfile (..), ProfileActionType (..))
+import DomainTypes.Profile.Types (ProfileActionType (..))
 import GHC.Generics (Generic)
-import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import TxBuilding.Context (ProfileTxBuildingContext)

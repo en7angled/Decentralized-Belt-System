@@ -57,7 +57,6 @@ library
     Onchain.CIP68
     Onchain.MintingPolicy
     Onchain.ProfilesValidator
-    Onchain.PromotionsValidator
     Onchain.RanksValidator
     Onchain.Types
     Onchain.Utils

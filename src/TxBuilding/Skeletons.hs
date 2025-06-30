@@ -4,7 +4,7 @@ import GeniusYield.Examples.Limbo
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.CIP68 (deriveUserFromRefTN, generateRefAndUserTN)
-import Onchain.Utils (nameFromTxOutRef, tokenNameFromTxOutRef)
+import Onchain.Utils (nameFromTxOutRef)
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
@@ -140,6 +140,15 @@ txMustLockStateWithInlineDatumAndValue validator todata value = do
           gyTxOutValue = value,
           gyTxOutRefS = Nothing
         }
+
+txMustMintWithMintRef :: (GYTxUserQueryMonad m) => Bool -> GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
+txMustMintWithMintRef mintOrBurn mpRefScript mpScript gyRedeemer gyAC = do
+  let mp = GYMintReference @'PlutusV3 mpRefScript mpScript
+  gyTN <- tnFromGYAssetClass gyAC
+  return $
+    mconcat
+      [ mustMint mp gyRedeemer gyTN (if mintOrBurn then 1 else negate 1)
+      ]
 
 txCIP68UserAndRef :: (GYTxUserQueryMonad m) => Bool -> GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txCIP68UserAndRef mintOrBurn mpRefScript mpScript gyRedeemer gyProfileRefAC = do

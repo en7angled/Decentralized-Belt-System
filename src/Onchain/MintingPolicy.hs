@@ -29,20 +29,7 @@ import Prelude qualified
 import PlutusLedgerApi.V1 (isZero)
 import PlutusLedgerApi.V3.Contexts
 
--- | Parameters :
-data MintingPolicyParams = MintingPolicyParams
-  { ranksValidatorScriptHash :: ScriptHash,
-    promotionsValidatorScriptHash :: ScriptHash,
-    profilesCollateral :: Lovelace
-  }
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
 
--- | Generate `Lift` instance for the custom parameter type with Template Haskell.
---  Allows argument value to be pre-compiled to UPLC, so the compiled parameterized script can be applied to it.
-makeLift ''MintingPolicyParams
-
-makeIsDataSchemaIndexed ''MintingPolicyParams [('MintingPolicyParams, 0)]
 
 
 
@@ -72,10 +59,10 @@ unsafeGetProfileDatumAndValue ac addr txins =
 --------------------------------------
 
 {-# INLINEABLE mintingPolicyLambda #-}
-mintingPolicyLambda :: MintingPolicyParams -> ScriptContext -> Bool
-mintingPolicyLambda MintingPolicyParams {..} context@(ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
+mintingPolicyLambda :: ProtocolParams -> ScriptContext -> Bool
+mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
   let redeemer = unsafeFromBuiltinData @MintingRedeemer bredeemer
-      minValue = V1.lovelaceValue profilesCollateral
+      minValue = V1.lovelaceValue collateral
 
    in case scriptInfo of
         (MintingScript mintingPolicyCurrencySymbol@(CurrencySymbol bshash)) ->
@@ -96,14 +83,13 @@ mintingPolicyLambda MintingPolicyParams {..} context@(ScriptContext txInfo@TxInf
                         $ before creationDate txInfoValidRange,
                       traceIfFalse "Must spend seed TxOutRef"
                         $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs,
-                      traceIfFalse "Tx must mint JUST Ref and User NFTs" $ -- protection against other-token-name attack vector -- protection against other-token-name attack vector
-                          -- protection against other-token-name attack vector
+                      traceIfFalse "Tx must mint JUST Ref and User NFTs" $ -- protection against other-token-name attack vector 
                          mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT)
                         ]
                && case profileType of
                     Practitioner ->
                       let
-                        (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate
+                        (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate protocolParams
                         profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
                         rankAssetClass = rankId rankDatum
                         rankNFTValue = V1.assetClassValue rankAssetClass 1 + minValue
@@ -119,23 +105,23 @@ mintingPolicyLambda MintingPolicyParams {..} context@(ScriptContext txInfo@TxInf
                           ]
                     Organization ->
                       let
-                        profile = mkOrganizationProfile profileRefAssetClass
+                        profile = mkOrganizationProfile profileRefAssetClass protocolParams
                         profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
                       in
                        traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
                               $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs
             
             (Promote profileId promotionAwardedBy promotionAchievementDate promotionRank) -> 
-              let promotionsValidatorAddress = V1.scriptHashAddress promotionsValidatorScriptHash
+              let ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
                   promotionAssetClass = generateRankId profileId (rankToInt promotionRank)
                   promotionNFT = V1.assetClassValue promotionAssetClass 1
-                  promotionDatum = mkPromotion profileId promotionAwardedBy promotionAchievementDate promotionRank
+                  promotionDatum = mkPromotion profileId promotionAwardedBy promotionAchievementDate promotionRank 
               in
                 and [
                   traceIfFalse "Must spend users NFTs of the awarded by profiles" $ 
                     all (\userProfileId -> V1.assetClassValueOf (valueSpent txInfo) userProfileId == 1) promotionAwardedBy,
-                  traceIfFalse "Must lock promotion NFT with inline datum at promotionsValidator address"
-                      $ hasTxOutWithInlineDatumAndValue promotionDatum (promotionNFT + minValue) promotionsValidatorAddress txInfoOutputs
+                  traceIfFalse "Must lock promotion NFT with inline datum at ranksValidator address"
+                      $ hasTxOutWithInlineDatumAndValue promotionDatum (promotionNFT + minValue) ranksValidatorAddress txInfoOutputs 
                 ]
                             
 
@@ -153,16 +139,15 @@ mintingPolicyLambda MintingPolicyParams {..} context@(ScriptContext txInfo@TxInf
                     traceIfFalse "Tx must not mint any other tokens" $ -- protection against other mints
                         isZero $ mintValueMinted txInfoMint 
                   ]
-            _ -> traceError "Invalid redeemer"
         _ -> traceError "Invalid purpose"
 
 -- | Lose the types
-mintingPolicyUntyped :: MintingPolicyParams -> BuiltinData -> BuiltinUnit
+mintingPolicyUntyped :: ProtocolParams -> BuiltinData -> BuiltinUnit
 mintingPolicyUntyped params =
   mkUntypedLambda (mintingPolicyLambda params)
 
 -- | Compile the untyped lambda to a UPLC script and splice back to Haskell.
-mintingPolicyCompile :: MintingPolicyParams -> CompiledCode (BuiltinData -> BuiltinUnit)
+mintingPolicyCompile :: ProtocolParams -> CompiledCode (BuiltinData -> BuiltinUnit)
 mintingPolicyCompile params =
   $$(compile [||mintingPolicyUntyped||])
     `unsafeApplyCode` liftCode plcVersion110 params

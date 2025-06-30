@@ -4,7 +4,6 @@ import Data.Text qualified as T
 import DomainTypes.Profile.Types
 import Onchain.CIP68 (MetadataFields (..))
 import Onchain.Types qualified as Onchain
-import PlutusLedgerApi.V3 (POSIXTime (..))
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteString)
 import PlutusLedgerApi.V1
 
