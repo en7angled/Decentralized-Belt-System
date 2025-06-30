@@ -6,14 +6,18 @@ import Onchain.CIP68 (MetadataFields (..))
 import Onchain.Types qualified as Onchain
 import PlutusLedgerApi.V3 (POSIXTime (..))
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteString)
+import PlutusLedgerApi.V1
 
 profileDataToMetadataFields :: ProfileData -> MetadataFields
 profileDataToMetadataFields ProfileData {profileName, profileDescription, profileImageURI} =
   Metadata222
-    { metadataName = stringToBuiltinByteString $ T.unpack profileName,
-      metadataDescription = stringToBuiltinByteString $ T.unpack profileDescription,
-      metadataImageURI = stringToBuiltinByteString $ T.unpack profileImageURI
+    { metadataName = textToBuiltinByteString profileName,
+      metadataDescription = textToBuiltinByteString profileDescription,
+      metadataImageURI = textToBuiltinByteString profileImageURI
     }
+
+textToBuiltinByteString :: T.Text -> BuiltinByteString
+textToBuiltinByteString = stringToBuiltinByteString . T.unpack
 
 profileTypeToOnChainProfileType :: ProfileType -> Onchain.ProfileType
 profileTypeToOnChainProfileType Practitioner = Onchain.Practitioner
@@ -21,3 +25,5 @@ profileTypeToOnChainProfileType Organization = Onchain.Organization
 
 toPlutusPOSIXTime :: POSIXTimeInteger -> POSIXTime
 toPlutusPOSIXTime = POSIXTime 
+
+

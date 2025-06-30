@@ -56,12 +56,14 @@ getInlineDatumAndValue utxo = case utxoOutDatum utxo of
   _ -> Nothing
 
 -- | Extract profile and value from UTxO
-profileAndValueFromUTxO :: GYUTxO -> Maybe (Onchain.Profile, Value)
+profileAndValueFromUTxO :: GYUTxO -> Maybe (CIP68Datum Onchain.Profile, Value)
 profileAndValueFromUTxO profileStateUTxO = do
   (gyDatum, gyValue) <- getInlineDatumAndValue profileStateUTxO
   cip68Datum <- profileDatumFromDatum gyDatum
   let pVal = valueToPlutus gyValue
-  return (extra cip68Datum, pVal)
+  return (cip68Datum, pVal)
+
+
 
 -- | Convert GY datum to profile datum
 profileDatumFromDatum :: GYDatum -> Maybe (CIP68Datum Onchain.Profile)

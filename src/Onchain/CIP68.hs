@@ -45,7 +45,7 @@ mkCIP68Datum :: a -> MetadataFields -> CIP68Datum a
 mkCIP68Datum extraData Metadata222 {..} =
   CIP68Datum
     { metadata =
-        PlutusTx.AssocMap.safeFromList
+        PlutusTx.AssocMap.unsafeFromList -- Safe becase keys are unique
           [ (encodeUtf8 "name", metadataName),
             (encodeUtf8 "description", metadataDescription),
             (encodeUtf8 "image", metadataImageURI)
@@ -53,6 +53,15 @@ mkCIP68Datum extraData Metadata222 {..} =
       version = metadataVersion,
       extra = extraData
     }
+
+updateCIP68DatumImage :: forall a. BuiltinByteString -> CIP68Datum a -> CIP68Datum a
+updateCIP68DatumImage newImageURI oldDatum =
+  let newMetadata = PlutusTx.AssocMap.insert (encodeUtf8 "image") newImageURI (metadata oldDatum)
+   in CIP68Datum
+        { metadata = newMetadata,
+          version = version oldDatum,
+          extra = extra oldDatum
+        }
 
 refTokenPrefixBS :: BuiltinByteString
 refTokenPrefixBS = integerToBs24 (0x000643b0 :: Integer) -- TODO update with new builtins

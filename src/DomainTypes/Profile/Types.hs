@@ -48,6 +48,6 @@ type POSIXTimeInteger = Integer -- POSIXTime in milliseconds
 
 data ProfileActionType
   = CreateProfileAction ProfileData ProfileType POSIXTimeInteger
-  | UpdateProfileAction ProfileRefAC ProfileData
+  | UpdateProfileImageAction ProfileRefAC Text
   | DeleteProfileAction ProfileRefAC
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

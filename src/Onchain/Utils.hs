@@ -8,6 +8,7 @@ module Onchain.Utils where
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3
 import PlutusTx.Builtins (serialiseData)
+import PlutusTx.List qualified
 import PlutusTx.Prelude
 
 --------------------------------------
@@ -76,3 +77,11 @@ isGivenInlineDatum :: (ToData a) => a -> OutputDatum -> Bool
 isGivenInlineDatum datum outdat = case outdat of
   OutputDatum da -> toBuiltinData datum == getDatum da
   _ -> False
+
+unsafeFindOwnInputByTxOutRef :: TxOutRef -> [TxInInfo] -> TxOut
+unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs =
+  let i = PlutusTx.List.find (\TxInInfo {txInInfoOutRef} -> txInInfoOutRef == spendingTxOutRef) txInfoInputs
+   in case i of
+        Just (TxInInfo _inOutRef inOut) -> inOut
+        Nothing -> traceError "Own input not found"
+{-# INLINEABLE unsafeFindOwnInputByTxOutRef #-}

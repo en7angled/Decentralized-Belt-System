@@ -63,11 +63,11 @@ interactionToTxSkeleton Interaction {..} = do
             (profileDataToMetadataFields profileData)
             (profileTypeToOnChainProfileType profileType)
             (toPlutusPOSIXTime creationDate)
-        UpdateProfileAction profileRefAC profileData -> do
+        UpdateProfileImageAction profileRefAC imgURI -> do
           (,profileRefAC)
             <$> updateProfileTX
               profileRefAC
-              (profileDataToMetadataFields profileData)
+              (textToBuiltinByteString imgURI)
               usedAddrs
         DeleteProfileAction profileRefAC -> do
           (,profileRefAC)

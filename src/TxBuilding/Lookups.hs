@@ -8,6 +8,7 @@ import PlutusLedgerApi.V1.Value
 import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Utils
 import TxBuilding.Validators
+import Onchain.CIP68 (CIP68Datum)
 
 ------------------------------------------------------------------------------------------------
 
@@ -25,7 +26,7 @@ getUTxOWithNFT nftAC addr = do
     _ -> throwError (GYApplicationException InvalidAssetClass)
 
 -- | Get profile state data and value from asset class
-getProfileStateDataAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (Onchain.Profile, Value)
+getProfileStateDataAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (CIP68Datum Onchain.Profile, Value)
 getProfileStateDataAndValue profileRefAC = do
   profilesValidatorAddr <- scriptAddress profilesValidatorGY
   profileStateUTxO <- getUTxOWithNFT profileRefAC profilesValidatorAddr

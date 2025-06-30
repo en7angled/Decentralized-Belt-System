@@ -3,8 +3,8 @@ module TxBuilding.Operations where
 import Control.Monad.Reader.Class
 import GeniusYield.TxBuilder
 import GeniusYield.Types
-import Onchain.CIP68 (MetadataFields, mkCIP68Datum)
-import Onchain.ProfilesValidator (ProfilesRedeemer (..))
+import Onchain.CIP68 (MetadataFields, mkCIP68Datum, updateCIP68DatumImage)
+import Onchain.ProfilesValidator (ImageURI, ProfilesRedeemer (..))
 import Onchain.Types qualified as Onchain
 import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
@@ -68,19 +68,18 @@ createProfileTX recipient metadata profileType creationDate = do
 updateProfileTX ::
   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
   GYAssetClass ->
-  MetadataFields ->
+  ImageURI ->
   [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3)
-updateProfileTX profileRefAC newMetadata ownAddrs = do
+updateProfileTX profileRefAC newImageURI ownAddrs = do
   profilesScriptRef <- asks profilesValidatorRef
-  (plutusProfile, plutusValue) <- getProfileStateDataAndValue profileRefAC
-  let updateRedeemer = UpdateProfile newMetadata
+  (plutusProfileDatum, plutusValue) <- getProfileStateDataAndValue profileRefAC
+  let updateRedeemer = UpdateProfileImage (assetClassToPlutus profileRefAC) newImageURI
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ updateRedeemer
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef profileRefAC gyRedeemer profilesValidatorGY
   profileUserAC <- gyDeriveUserFromRefAC profileRefAC
   spendsProfileUserNFT <- txMustSpendFromAddress profileUserAC ownAddrs
-
-  let newCip68Datum = mkCIP68Datum plutusProfile newMetadata
+  let newCip68Datum = updateCIP68DatumImage newImageURI plutusProfileDatum
   gyProfileValue <- valueFromPlutus' plutusValue
   isProfileStateUpdated <- txMustLockStateWithInlineDatumAndValue profilesValidatorGY newCip68Datum gyProfileValue
   return $
@@ -98,18 +97,18 @@ deleteProfileTX ::
   m (GYTxSkeleton 'PlutusV3)
 deleteProfileTX profileRefAC recipient = do
   profilesScriptRef <- asks profilesValidatorRef
-  (_plutusProfile, plutusValue) <- getProfileStateDataAndValue profileRefAC
-  let redeemer = DeleteProfile
+  (_plutusProfileDatum, plutusValue) <- getProfileStateDataAndValue profileRefAC
+  let redeemer = DeleteProfile (assetClassToPlutus profileRefAC)
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef profileRefAC gyRedeemer profilesValidatorGY
   gyProfileValue <- valueFromPlutus' plutusValue
   isGettingProfileValue <- txIsPayingValueToAddress recipient gyProfileValue
-  isBurningProfileRefandUserNFTs <- txMustBurnCIP68UserAndRef profilesScriptRef profilesValidatorGY gyRedeemer profileRefAC
+  isBurningProfileRefAndUserNFTs <- txMustBurnCIP68UserAndRef profilesScriptRef profilesValidatorGY gyRedeemer profileRefAC
   return $
     mconcat
       [ spendsProfileRefNFT,
         isGettingProfileValue,
-        isBurningProfileRefandUserNFTs
+        isBurningProfileRefAndUserNFTs
       ]
 
 ------------------------------------------------------------------------------------------------
