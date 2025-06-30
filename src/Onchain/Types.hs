@@ -4,7 +4,7 @@ module Onchain.Types where
 
 import GHC.Generics (Generic)
 import Onchain.Utils
-import PlutusLedgerApi.V1 (POSIXTime)
+import PlutusLedgerApi.V1 (POSIXTime, TokenName (..))
 import PlutusLedgerApi.V1.Value (AssetClass (..))
 import PlutusLedgerApi.V3 (CurrencySymbol, TxOutRef)
 import PlutusTx
@@ -13,6 +13,7 @@ import PlutusTx.Eq
 import PlutusTx.Ord
 import PlutusTx.Prelude
 import Prelude qualified
+import PlutusTx.Builtins (serialiseData)
 
 -------------------------------------------------------------------------------
 
@@ -31,6 +32,13 @@ type ProfileId = AssetClass
 
 type RankId = AssetClass
 
+
+generateRankId:: ProfileId -> Integer -> RankId
+generateRankId (AssetClass (cs,TokenName bs)) i = AssetClass (cs,  TokenName (takeByteString 28 $ blake2b_256 (bs <> (serialiseData . toBuiltinData) i)))
+--  TODO : Replace with builtins 
+{-# INLINEABLE generateRankId #-}
+
+
 data Profile
   = Profile
   { profileId :: ProfileId,
@@ -42,19 +50,7 @@ data Profile
 
 makeIsDataSchemaIndexed ''Profile [('Profile, 0)]
 
-mkProfile :: CurrencySymbol -> CurrencySymbol -> TxOutRef -> ProfileType -> Profile
-mkProfile profilesMintingPolicy ranksMintingPolicy seedTxOutRef Practitioner =
-  Profile
-    { profileId = AssetClass (profilesMintingPolicy, tokenNameFromTxOutRef seedTxOutRef),
-      profileType = Practitioner,
-      currentRank = Just (AssetClass (ranksMintingPolicy, tokenNameFromTxOutRef seedTxOutRef))
-    }
-mkProfile profilesMintingPolicy _ranksMintingPolicy seedTxOutRef Organization =
-  Profile
-    { profileId = AssetClass (profilesMintingPolicy, tokenNameFromTxOutRef seedTxOutRef),
-      profileType = Organization,
-      currentRank = Nothing
-    }
+
 
 -------------------------------------------------------------------------------
 
@@ -124,15 +120,37 @@ data RankData
 
 makeIsDataSchemaIndexed ''RankData [('RankData, 0)]
 
-mkFirstRank :: CurrencySymbol -> CurrencySymbol -> TxOutRef -> POSIXTime -> RankData
-mkFirstRank profilesMintingPolicy ranksMintingPolicy seedTxOutRef achievementDate =
-  RankData
-    { rankId = AssetClass (ranksMintingPolicy, tokenNameFromTxOutRef seedTxOutRef),
-      rankValue = RankValue White 0,
-      rankAchievedByProfileId = AssetClass (profilesMintingPolicy, tokenNameFromTxOutRef seedTxOutRef),
-      rankAwardedByProfileIds = [],
-      rankAchievementDate = achievementDate,
-      rankPreviousRankId = Nothing
+
+
+
+
+
+mkPractitionerProfile :: ProfileId -> POSIXTime -> (Profile, RankData)
+mkPractitionerProfile  profileId creationDate  =
+      let 
+        rankValue = RankValue White 0
+        firstRank = RankData
+                      { rankId = generateRankId profileId (rankToInt rankValue),
+                        rankValue = rankValue,
+                        rankAchievedByProfileId = profileId,
+                        rankAwardedByProfileIds = [],
+                        rankAchievementDate = creationDate,
+                        rankPreviousRankId = Nothing
+                      }
+        profile = Profile
+                    { profileId = profileId,
+                      profileType = Practitioner,
+                      currentRank = Just (generateRankId profileId 0)
+                    }
+      in (profile, firstRank)
+
+
+mkOrganizationProfile :: ProfileId -> Profile
+mkOrganizationProfile profileId   =
+  Profile
+    { profileId = profileId,
+      profileType = Organization,
+      currentRank = Nothing
     }
 
 -------------------------------------------------------------------------------

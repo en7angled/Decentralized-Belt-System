@@ -1,7 +1,9 @@
 module TxBuilding.Validators where
 
 import GeniusYield.Types
-import Onchain.ProfilesValidator (ProfilesParams (..), profilesCompile)
+import Onchain.MintingPolicy
+import Onchain.MintingPolicy (mintingPolicyCompile)
+import Onchain.ProfilesValidator ( profilesCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude
@@ -12,8 +14,23 @@ import PlutusTx.Prelude
 
 ------------------------------------------------------------------------------------------------
 
+miintingPolicyPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
+miintingPolicyPlutus = mintingPolicyCompile (MintingPolicyParams ranksValidatorHashPlutus 2_000_000)
+
+mintingPolicyGY :: GYScript 'PlutusV3
+mintingPolicyGY = validatorFromPlutus miintingPolicyPlutus
+
+mintingPolicyHashGY :: GYScriptHash
+mintingPolicyHashGY = validatorHash mintingPolicyGY
+
+------------------------------------------------------------------------------------------------
+
+-- *  Define Profile Validator
+
+------------------------------------------------------------------------------------------------
+
 profilesValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-profilesValidatorPlutus = profilesCompile (ProfilesParams ranksValidatorHashPlutus 2_000_000)
+profilesValidatorPlutus = profilesCompile 
 
 profilesValidatorGY :: GYScript 'PlutusV3
 profilesValidatorGY = validatorFromPlutus profilesValidatorPlutus
@@ -31,7 +48,7 @@ profilesValidatorHashPlutus = validatorHashToPlutus profilesValidatorHashGY
 ------------------------------------------------------------------------------------------------
 
 ranksValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-ranksValidatorPlutus = profilesCompile (ProfilesParams undefined 2_000_000)
+ranksValidatorPlutus = profilesCompile 
 
 ranksValidatorGY :: GYScript 'PlutusV3
 ranksValidatorGY = validatorFromPlutus ranksValidatorPlutus

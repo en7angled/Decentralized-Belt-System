@@ -10,6 +10,7 @@ import PlutusLedgerApi.V3
 import PlutusTx.Builtins (serialiseData)
 import PlutusTx.List qualified
 import PlutusTx.Prelude
+import PlutusLedgerApi.V1.Value
 
 --------------------------------------
 --  Helper Functions
@@ -85,3 +86,25 @@ unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs =
         Just (TxInInfo _inOutRef inOut) -> inOut
         Nothing -> traceError "Own input not found"
 {-# INLINEABLE unsafeFindOwnInputByTxOutRef #-}
+
+
+------------------------
+
+-- ** Unsafe Datum Helper Functions
+
+------------------------
+
+
+unsafeGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, BuiltinData)
+unsafeGetCurrentStateDatumAndValue stateToken addr outs = 
+  case filter (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress}) )-> ( txOutValue `geq` V1.assetClassValue stateToken 1) && (addr == txOutAddress) ) outs of
+    [TxInInfo _inOutRef out] -> (txOutValue out, unsafeGetInlineDatum out)
+    _ -> traceError "state nft not found"
+{-# INLINEABLE unsafeGetCurrentStateDatumAndValue #-}
+
+
+unsafeGetInlineDatum :: TxOut -> BuiltinData
+unsafeGetInlineDatum out = case txOutDatum out of
+  OutputDatum da -> getDatum da
+  _ -> traceError "No inline datum"
+{-# INLINEABLE unsafeGetInlineDatum #-}

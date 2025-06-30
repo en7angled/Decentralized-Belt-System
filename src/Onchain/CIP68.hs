@@ -12,6 +12,9 @@ import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
 
+type ImageURI = BuiltinByteString
+
+
 type Metadata = PlutusTx.AssocMap.Map BuiltinByteString BuiltinByteString
 
 metadataVersion :: Integer

@@ -3,8 +3,8 @@ module TxBuilding.Operations where
 import Control.Monad.Reader.Class
 import GeniusYield.TxBuilder
 import GeniusYield.Types
-import Onchain.CIP68 (MetadataFields, mkCIP68Datum, updateCIP68DatumImage)
-import Onchain.ProfilesValidator (ImageURI, ProfilesRedeemer (..))
+import Onchain.CIP68 (MetadataFields, mkCIP68Datum, updateCIP68DatumImage, ImageURI)
+import Onchain.ProfilesValidator ( ProfilesRedeemer (..))
 import Onchain.Types qualified as Onchain
 import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
@@ -14,6 +14,9 @@ import TxBuilding.Lookups (getProfileStateDataAndValue)
 import TxBuilding.Skeletons
 import TxBuilding.Utils
 import TxBuilding.Validators
+import Onchain.MintingPolicy
+import qualified PlutusLedgerApi.V1 as V1
+import Onchain.Types
 
 ------------------------------------------------------------------------------------------------
 
@@ -38,17 +41,20 @@ createProfileTX recipient metadata profileType creationDate = do
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
 
+  (profileRefAC, profileUserAC) <- gyGenerateRefAndUserAC seedTxOutRef
+  let profileId = assetClassToPlutus profileRefAC
+  
+  let (plutusProfile, plutusRankDatum) = mkPractitionerProfile profileId creationDate
+  let plutusProfileCIP68Datum = mkCIP68Datum plutusProfile metadata
+
   let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
-  let profilesMintingPolicy = mintingPolicyIdToCurrencySymbol $ mintingPolicyId profilesValidatorGY
-  let ranksMintingPolicy = mintingPolicyIdToCurrencySymbol $ mintingPolicyId ranksValidatorGY
-  let profileCIP68Datum = mkCIP68Datum (Onchain.mkProfile profilesMintingPolicy ranksMintingPolicy seedTxOutRefPlutus profileType) metadata
-  (profileRefAC, profileUserAC) <- gyGenerateRefAndUserAC seedTxOutRef
+
   isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef profilesScriptRef profilesValidatorGY gyRedeemer profileRefAC
   isLockingProfileState <-
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
-      profileCIP68Datum
+      plutusProfileCIP68Datum
       (valueSingleton profileUserAC 1)
   isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton profileUserAC 1)
   return

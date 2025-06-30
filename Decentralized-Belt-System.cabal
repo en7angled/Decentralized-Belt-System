@@ -55,6 +55,7 @@ library
   exposed-modules:
     DomainTypes.Profile.Types
     Onchain.CIP68
+    Onchain.MintingPolicy
     Onchain.ProfilesValidator
     Onchain.PromotionsValidator
     Onchain.RanksValidator

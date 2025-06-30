@@ -12,7 +12,8 @@ import Prelude qualified
 
 -- | Context for profile transaction building operations
 data ProfileTxBuildingContext = ProfileTxBuildingContext
-  { profilesValidatorRef :: GYTxOutRef,
+  { mintingPolicyRef :: GYTxOutRef,
+    profilesValidatorRef :: GYTxOutRef,
     prmotionsValidatorRef :: GYTxOutRef,
     ranksValidatorRef :: GYTxOutRef
   }
@@ -28,7 +29,8 @@ data ProfileTxBuildingContext = ProfileTxBuildingContext
 defaultProfileTxBuildingContext :: ProfileTxBuildingContext
 defaultProfileTxBuildingContext =
   ProfileTxBuildingContext
-    { profilesValidatorRef = Prelude.undefined, -- TODO: Set proper default value when needed
+    { mintingPolicyRef = Prelude.undefined, -- TODO: Set proper default value when needed
+      profilesValidatorRef = Prelude.undefined, -- TODO: Set proper default value when needed
       prmotionsValidatorRef = Prelude.undefined, -- TODO: Set proper default value when needed
       ranksValidatorRef = Prelude.undefined -- TODO: Set proper default value when needed
     }

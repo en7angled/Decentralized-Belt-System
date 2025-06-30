@@ -14,7 +14,7 @@
 module Onchain.ProfilesValidator where
 
 import GHC.Generics (Generic)
-import Onchain.CIP68 (CIP68Datum (CIP68Datum), MetadataFields, deriveUserFromRefTN, generateRefAndUserTN, mkCIP68Datum, updateCIP68DatumImage)
+import Onchain.CIP68 (CIP68Datum (CIP68Datum), MetadataFields, deriveUserFromRefTN, generateRefAndUserTN, mkCIP68Datum, updateCIP68DatumImage, ImageURI)
 import Onchain.Types
 import Onchain.Types qualified as Onchain
 import Onchain.Utils
@@ -28,33 +28,18 @@ import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
 
--- | Parameters :
-data ProfilesParams = ProfilesParams
-  { ranksValidatorScriptHash :: ScriptHash,
-    profilesCollateral :: Lovelace
-  }
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
 
--- | Generate `Lift` instance for the custom parameter type with Template Haskell.
---  Allows argument value to be pre-compiled to UPLC, so the compiled parameterized script can be applied to it.
-makeLift ''ProfilesParams
 
-makeIsDataSchemaIndexed ''ProfilesParams [('ProfilesParams, 0)]
-
-type ImageURI = BuiltinByteString
 
 -- | Custom redeemer :
 data ProfilesRedeemer
-  = CreateProfile TxOutRef MetadataFields Onchain.ProfileType POSIXTime
-  | UpdateProfileImage V1.AssetClass ImageURI
+  = UpdateProfileImage V1.AssetClass ImageURI
   | DeleteProfile V1.AssetClass
-  | Promote ProfileId RankValue
   | AcceptPromotion PromotionId
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''ProfilesRedeemer [('CreateProfile, 0), ('UpdateProfileImage, 1), ('DeleteProfile, 2), ('Promote, 3), ('AcceptPromotion, 4)]
+makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('DeleteProfile, 1), ('AcceptPromotion, 2)]
 
 type ProfilesDatum = CIP68Datum Onchain.Profile
 
@@ -63,56 +48,20 @@ type ProfilesDatum = CIP68Datum Onchain.Profile
 --------------------------------------
 
 {-# INLINEABLE profilesLambda #-}
-profilesLambda :: ProfilesParams -> ScriptContext -> Bool
-profilesLambda ProfilesParams {..} context@(ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
+profilesLambda :: ScriptContext -> Bool
+profilesLambda  (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
   let redeemer = unsafeFromBuiltinData @ProfilesRedeemer bredeemer
-      minValue = V1.lovelaceValue profilesCollateral
-   in case (scriptInfo, redeemer) of
-        (MintingScript profilesCurrencySymbol@(CurrencySymbol bshash), mintingRedeemer) -> case mintingRedeemer of
-          CreateProfile seedTxOutRef metadata profileType creationDate ->
-            let baseId = nameFromTxOutRef seedTxOutRef
-                (profileUserTN, profileRefTN) = generateRefAndUserTN baseId
-                ranksCurrencySymbol = CurrencySymbol (getScriptHash ranksValidatorScriptHash)
-                rankDatum = mkFirstRank profilesCurrencySymbol ranksCurrencySymbol seedTxOutRef creationDate
-                profile = mkProfile profilesCurrencySymbol ranksCurrencySymbol seedTxOutRef profileType
-                profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
-                profileRefAssetClass = V1.AssetClass (profilesCurrencySymbol, profileRefTN)
-                profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, profileUserTN)
-                rankAssetClass = V1.AssetClass (ranksCurrencySymbol, TokenName baseId)
-                profileRefNFTValue = V1.assetClassValue profileRefAssetClass 1 + minValue
-                rankNFTValue = V1.assetClassValue rankAssetClass 1 + minValue
-                profilesValidatorAddress = V1.scriptHashAddress $ ScriptHash bshash
-                ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
-             in and
-                  [ traceIfFalse "Creation date must be before the tx validity range"
-                      $ before creationDate txInfoValidRange,
-                    traceIfFalse "Must spend seed TxOutRef"
-                      $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs,
-                    traceIfFalse "Must mint profile Ref NFT"
-                      $ isMintingNFT profileRefAssetClass txInfoMint,
-                    traceIfFalse "Must mint profile User NFT"
-                      $ isMintingNFT profileUserAssetClass txInfoMint,
-                    traceIfFalse "Must mint 1st Rank NFT"
-                      $ isMintingNFT rankAssetClass txInfoMint,
-                    traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
-                      $ hasTxOutWithInlineDatumAndValue profileDatum profileRefNFTValue profilesValidatorAddress txInfoOutputs,
-                    traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
-                      $ hasTxOutWithInlineDatumAndValue rankDatum rankNFTValue ranksValidatorAddress txInfoOutputs
-                  ]
-          (DeleteProfile _ac) ->
-            let mintedValue = mintValueMinted txInfoMint
-                mintedProfileNFTs = V1.currencySymbolValueOf mintedValue profilesCurrencySymbol
-             in -- protection against other-token-name attack vector
-                traceIfFalse "Tx must not mint other tokens of the same currency symbol" $ mintedProfileNFTs == 0
-          _ -> traceError "Invalid redeemer for minting"
-        (SpendingScript spendingTxOutRef mdatum, spendingRedeemer) -> case mdatum of
+
+   in case scriptInfo of
+        (SpendingScript spendingTxOutRef mdatum) -> case mdatum of
           Nothing -> traceError "No datum"
           Just (Datum bdatum) -> case fromBuiltinData bdatum of
             Nothing -> traceError "Invalid datum"
-            Just profileDatum@(CIP68Datum _metadata _version profile@Profile {..}) ->
+            Just profileDatum@(CIP68Datum _metadata _version (_profile :: Profile)) ->
               let !ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+                  !ownValue = txOutValue ownInput
                   profilesValidatorAddress = txOutAddress ownInput
-               in case spendingRedeemer of
+               in case redeemer of
                     DeleteProfile profileRefAssetClass@(V1.AssetClass (profilesCurrencySymbol, profileRefTN)) ->
                       let profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
                        in and
@@ -121,16 +70,16 @@ profilesLambda ProfilesParams {..} context@(ScriptContext txInfo@TxInfo {..} (Re
                               traceIfFalse "Must burn profile User NFT"
                                 $ isBurningNFT profileUserAssetClass txInfoMint
                             ]
-                    (UpdateProfileImage profileRefAssetClass@(V1.AssetClass (profilesCurrencySymbol, profileRefTN)) newImageURI) ->
+                    (UpdateProfileImage (V1.AssetClass (profilesCurrencySymbol, profileRefTN)) newImageURI) ->
                       let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum -- !!! Open unbounded-datum vulnerability on metadata
                           profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
-                          profileRefNFTValue = V1.assetClassValue profileRefAssetClass 1 + minValue
+                    
                        in and
                             [ traceIfFalse "Must spend profile User NFT"
                                 $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
                                 == 1,
                               traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
-                                $ hasTxOutWithInlineDatumAndValue newCip68Datum profileRefNFTValue profilesValidatorAddress txInfoOutputs
+                                $ hasTxOutWithInlineDatumAndValue newCip68Datum ownValue profilesValidatorAddress txInfoOutputs
                             ]
                     _ -> traceError "Invalid redeemer for spending"
         -- (SpendingScript txOutRef mdatum, Promote profileId rankValue) ->
@@ -145,12 +94,10 @@ profilesLambda ProfilesParams {..} context@(ScriptContext txInfo@TxInfo {..} (Re
         _ -> traceError "Invalid redeemer"
 
 -- | Lose the types
-profilesUntyped :: ProfilesParams -> BuiltinData -> BuiltinUnit
-profilesUntyped params =
-  mkUntypedLambda (profilesLambda params)
+profilesUntyped :: BuiltinData -> BuiltinUnit
+profilesUntyped  = mkUntypedLambda profilesLambda
 
 -- | Compile the untyped lambda to a UPLC script and splice back to Haskell.
-profilesCompile :: ProfilesParams -> CompiledCode (BuiltinData -> BuiltinUnit)
-profilesCompile params =
-  $$(compile [||profilesUntyped||])
-    `unsafeApplyCode` liftCode plcVersion110 params
+profilesCompile ::  CompiledCode (BuiltinData -> BuiltinUnit)
+profilesCompile  = $$(compile [||profilesUntyped||])
+
