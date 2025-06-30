@@ -4,7 +4,7 @@ module Onchain.Types where
 
 import GHC.Generics (Generic)
 import Onchain.Utils
-import PlutusLedgerApi.Data.V1 (POSIXTime)
+import PlutusLedgerApi.V1 (POSIXTime)
 import PlutusLedgerApi.V1.Value (AssetClass (..))
 import PlutusLedgerApi.V3 (CurrencySymbol, TxOutRef)
 import PlutusTx

@@ -4,7 +4,7 @@ import GeniusYield.Examples.Limbo
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.CIP68 (deriveUserFromRefTN, generateRefAndUserTN)
-import Onchain.Utils (tokenNameFromTxOutRef)
+import Onchain.Utils (nameFromTxOutRef, tokenNameFromTxOutRef)
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
@@ -24,7 +24,7 @@ gyGenerateRefAndUserAC :: (GYTxUserQueryMonad m) => GYTxOutRef -> m (GYAssetClas
 gyGenerateRefAndUserAC seedTxOutRef = do
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
-  let (pRefTN, pUserTN) = generateRefAndUserTN $ tokenNameFromTxOutRef seedTxOutRefPlutus
+  let (pRefTN, pUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRefPlutus
   let refAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, pRefTN)
   let userAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, pUserTN)
   gyRefAC <- assetClassFromPlutus' refAC

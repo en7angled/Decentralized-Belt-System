@@ -62,8 +62,8 @@ userTokenPrefixBS :: BuiltinByteString
 userTokenPrefixBS = integerToBs24 (0x000de140 :: Integer) -- TODO update with new builtins
 {-# INLINEABLE userTokenPrefixBS #-}
 
-generateRefAndUserTN :: TokenName -> (TokenName, TokenName)
-generateRefAndUserTN (TokenName bs) = (TokenName (refTokenPrefixBS <> bs), TokenName (userTokenPrefixBS <> bs))
+generateRefAndUserTN :: BuiltinByteString -> (TokenName, TokenName)
+generateRefAndUserTN bs = (TokenName (refTokenPrefixBS <> bs), TokenName (userTokenPrefixBS <> bs))
 {-# INLINEABLE generateRefAndUserTN #-}
 
 deriveUserFromRefTN :: TokenName -> TokenName
