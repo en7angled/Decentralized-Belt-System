@@ -11,7 +11,7 @@ import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
 import GeniusYield.Types.Slot (unsafeSlotFromInteger)
 import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
-import Onchain.CIP68 (CIP68Datum, extra)
+import Onchain.CIP68 (CIP68Datum)
 import Onchain.Types qualified as Onchain
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3

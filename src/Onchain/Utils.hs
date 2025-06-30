@@ -95,8 +95,9 @@ unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs =
 ------------------------
 
 
+
 unsafeGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, BuiltinData)
-unsafeGetCurrentStateDatumAndValue stateToken addr outs = 
+unsafeGetCurrentStateDatumAndValue stateToken addr outs =
   case filter (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress}) )-> ( txOutValue `geq` V1.assetClassValue stateToken 1) && (addr == txOutAddress) ) outs of
     [TxInInfo _inOutRef out] -> (txOutValue out, unsafeGetInlineDatum out)
     _ -> traceError "state nft not found"

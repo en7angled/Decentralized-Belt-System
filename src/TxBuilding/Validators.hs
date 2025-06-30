@@ -15,7 +15,7 @@ import PlutusTx.Prelude
 ------------------------------------------------------------------------------------------------
 
 miintingPolicyPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-miintingPolicyPlutus = mintingPolicyCompile (MintingPolicyParams ranksValidatorHashPlutus 2_000_000)
+miintingPolicyPlutus = mintingPolicyCompile (MintingPolicyParams ranksValidatorHashPlutus promotionsValidatorHashPlutus 2_000_000)
 
 mintingPolicyGY :: GYScript 'PlutusV3
 mintingPolicyGY = validatorFromPlutus miintingPolicyPlutus
@@ -58,6 +58,24 @@ ranksValidatorHashGY = validatorHash ranksValidatorGY
 
 ranksValidatorHashPlutus :: ScriptHash
 ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
+
+------------------------------------------------------------------------------------------------
+
+-- *  Define Profile Validator
+
+------------------------------------------------------------------------------------------------
+
+promotionsValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
+promotionsValidatorPlutus = profilesCompile 
+
+promotionsValidatorGY :: GYScript 'PlutusV3
+promotionsValidatorGY = validatorFromPlutus promotionsValidatorPlutus
+
+promotionsValidatorHashGY :: GYScriptHash
+promotionsValidatorHashGY = validatorHash promotionsValidatorGY
+
+promotionsValidatorHashPlutus :: ScriptHash
+promotionsValidatorHashPlutus = validatorHashToPlutus promotionsValidatorHashGY
 
 ------------------------------------------------------------------------------------------------
 

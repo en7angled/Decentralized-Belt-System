@@ -162,7 +162,8 @@ type PromotionId = AssetClass
 
 data Promotion
   = Promotion
-  { promotionAwardedTo :: ProfileId,
+  { promotionId :: RankId,
+    promotionAwardedTo :: ProfileId,
     promotionAwardedBy :: [ProfileId],
     promotionAchievementDate :: POSIXTime,
     promotionRank :: RankValue
@@ -171,6 +172,17 @@ data Promotion
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''Promotion [('Promotion, 0)]
+
+mkPromotion :: ProfileId -> [ProfileId] -> POSIXTime -> RankValue -> Promotion
+mkPromotion promotionAwardedTo promotionAwardedBy promotionAchievementDate promotionRank =
+  Promotion
+    { promotionId = generateRankId promotionAwardedTo (rankToInt promotionRank),
+      promotionAwardedTo = promotionAwardedTo,
+      promotionAwardedBy = promotionAwardedBy,
+      promotionAchievementDate = promotionAchievementDate,
+      promotionRank = promotionRank
+    }
+
 
 -------------------------------------------------------------------------------
 

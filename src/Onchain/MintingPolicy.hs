@@ -27,10 +27,12 @@ import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
 import PlutusLedgerApi.V1 (isZero)
+import PlutusLedgerApi.V3.Contexts
 
 -- | Parameters :
 data MintingPolicyParams = MintingPolicyParams
   { ranksValidatorScriptHash :: ScriptHash,
+    promotionsValidatorScriptHash :: ScriptHash,
     profilesCollateral :: Lovelace
   }
   deriving stock (Generic, Prelude.Show)
@@ -47,13 +49,12 @@ makeIsDataSchemaIndexed ''MintingPolicyParams [('MintingPolicyParams, 0)]
 -- | Custom redeemer :
 data MintingRedeemer
   = CreateProfile TxOutRef MetadataFields Onchain.ProfileType POSIXTime
-  | Promote ProfileId RankValue
-  | AcceptPromotion PromotionId
-  | Burn V1.AssetClass
+  | Promote ProfileId [ProfileId] POSIXTime RankValue
+  | BurnProfileId V1.AssetClass
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''MintingRedeemer [('CreateProfile, 0), ('Promote, 1), ('AcceptPromotion, 2), ('Burn, 3)]
+makeIsDataSchemaIndexed ''MintingRedeemer [('CreateProfile, 0), ('Promote, 1), ('BurnProfileId, 2)]
 
 type ProfilesDatum = CIP68Datum Onchain.Profile
 
@@ -123,13 +124,30 @@ mintingPolicyLambda MintingPolicyParams {..} context@(ScriptContext txInfo@TxInf
                       in
                        traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
                               $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs
-            (Burn profileRefAssetClass) -> --- MUST ALLOW JUST FOR DELETE PROFILE (NOTHING ELSE SHOULD BE BURNED)
-              let -- Fails if the tx does not spend the corresponding profile at the profiles validator address, on another input.
-                  !(_value, _profileDatum) = unsafeGetProfileDatumAndValue profileRefAssetClass profilesValidatorAddress txInfoInputs
+            
+            (Promote profileId promotionAwardedBy promotionAchievementDate promotionRank) -> 
+              let promotionsValidatorAddress = V1.scriptHashAddress promotionsValidatorScriptHash
+                  promotionAssetClass = generateRankId profileId (rankToInt promotionRank)
+                  promotionNFT = V1.assetClassValue promotionAssetClass 1
+                  promotionDatum = mkPromotion profileId promotionAwardedBy promotionAchievementDate promotionRank
+              in
+                and [
+                  traceIfFalse "Must spend users NFTs of the awarded by profiles" $ 
+                    all (\userProfileId -> V1.assetClassValueOf (valueSpent txInfo) userProfileId == 1) promotionAwardedBy,
+                  traceIfFalse "Must lock promotion NFT with inline datum at promotionsValidator address"
+                      $ hasTxOutWithInlineDatumAndValue promotionDatum (promotionNFT + minValue) promotionsValidatorAddress txInfoOutputs
+                ]
+                            
+
+            
+            (BurnProfileId profileRefAssetClass) -> --- MUST ALLOW JUST FOR DELETE PROFILE (NOTHING ELSE SHOULD BE BURNED)
+              let 
                   profileRefNFT = V1.assetClassValue profileRefAssetClass 1
-               in -- protection against other-token-name attack vector
+               in 
                   and
                   [
+                    traceIfFalse "Tx must spend profile Ref NFT" $ 
+                         V1.assetClassValueOf (valueSpent txInfo) profileRefAssetClass == 1,
                     traceIfFalse "Tx must burn Ref NFT" $ -- protection against other burns
                          mintValueBurned txInfoMint == profileRefNFT,
                     traceIfFalse "Tx must not mint any other tokens" $ -- protection against other mints

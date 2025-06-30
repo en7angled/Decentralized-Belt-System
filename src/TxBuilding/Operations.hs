@@ -114,7 +114,7 @@ deleteProfileTX profileRefAC recipient = do
     mconcat
       [ spendsProfileRefNFT,
         isGettingProfileValue,
-        isBurningProfileRefAndUserNFTs
+        isBurningProfileRefAndUserNFTs --- TODO: check redeemer
       ]
 
 ------------------------------------------------------------------------------------------------
