@@ -44,8 +44,10 @@ data BJJProfile = BJJProfile
   }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
+type POSIXTimeInteger = Integer -- POSIXTime in milliseconds
+
 data ProfileActionType
-  = CreateProfileAction ProfileData ProfileType
+  = CreateProfileAction ProfileData ProfileType POSIXTimeInteger
   | UpdateProfileAction ProfileRefAC ProfileData
   | DeleteProfileAction ProfileRefAC
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

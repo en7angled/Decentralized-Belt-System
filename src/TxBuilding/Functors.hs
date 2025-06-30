@@ -4,6 +4,7 @@ import Data.Text qualified as T
 import DomainTypes.Profile.Types
 import Onchain.CIP68 (MetadataFields (..))
 import Onchain.Types qualified as Onchain
+import PlutusLedgerApi.V3 (POSIXTime (..))
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteString)
 
 profileDataToMetadataFields :: ProfileData -> MetadataFields
@@ -17,3 +18,6 @@ profileDataToMetadataFields ProfileData {profileName, profileDescription, profil
 profileTypeToOnChainProfileType :: ProfileType -> Onchain.ProfileType
 profileTypeToOnChainProfileType Practitioner = Onchain.Practitioner
 profileTypeToOnChainProfileType Organization = Onchain.Organization
+
+toPlutusPOSIXTime :: POSIXTimeInteger -> POSIXTime
+toPlutusPOSIXTime = POSIXTime 

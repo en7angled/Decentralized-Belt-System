@@ -47,7 +47,7 @@ data Interaction
   deriving (Show, Generic, FromJSON, ToJSON)
 
 interactionToTxSkeleton ::
-  (HasCallStack, GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
+  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
   Interaction ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 interactionToTxSkeleton Interaction {..} = do
@@ -57,11 +57,12 @@ interactionToTxSkeleton Interaction {..} = do
   case action of
     ProfileAction actionType -> do
       case actionType of
-        CreateProfileAction profileData profileType -> do
+        CreateProfileAction profileData profileType creationDate -> do
           createProfileTX
             receiveAddr
             (profileDataToMetadataFields profileData)
             (profileTypeToOnChainProfileType profileType)
+            (toPlutusPOSIXTime creationDate)
         UpdateProfileAction profileRefAC profileData -> do
           (,profileRefAC)
             <$> updateProfileTX

@@ -12,6 +12,7 @@ import PlutusLedgerApi.V3.Tx qualified as V3
 import TxBuilding.Context (ProfileTxBuildingContext (..))
 import TxBuilding.Lookups (getProfileStateDataAndValue)
 import TxBuilding.Skeletons
+import TxBuilding.Utils
 import TxBuilding.Validators
 
 ------------------------------------------------------------------------------------------------
@@ -26,14 +27,18 @@ createProfileTX ::
   GYAddress ->
   MetadataFields ->
   Onchain.ProfileType ->
+  POSIXTime ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
-createProfileTX recipient metadata profileType = do
+createProfileTX recipient metadata profileType creationDate = do
+  creationDateSlot <- gySlotFromPOSIXTime creationDate
+  let isAfterCreationDate = isInvalidBefore creationDateSlot
   profilesScriptRef <- asks profilesValidatorRef
   seedTxOutRef <- someUTxOWithoutRefScript
   let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
-  let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType
+
+  let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
   let profilesMintingPolicy = mintingPolicyIdToCurrencySymbol $ mintingPolicyId profilesValidatorGY
   let ranksMintingPolicy = mintingPolicyIdToCurrencySymbol $ mintingPolicyId ranksValidatorGY
@@ -51,7 +56,8 @@ createProfileTX recipient metadata profileType = do
         [ isSpendingSeedUTxO,
           isMintingProfileCIP68UserAndRef,
           isLockingProfileState,
-          isPayingProfileUserNFT
+          isPayingProfileUserNFT,
+          isAfterCreationDate
           ---- TODO: Mint rank NFT
           ---- TODO: Lock rank state at rank validator
         ],
@@ -98,12 +104,12 @@ deleteProfileTX profileRefAC recipient = do
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef profileRefAC gyRedeemer profilesValidatorGY
   gyProfileValue <- valueFromPlutus' plutusValue
   isGettingProfileValue <- txIsPayingValueToAddress recipient gyProfileValue
-  isBurningProfileRefNFT <- txMustBurnCIP68UserAndRef profilesScriptRef profilesValidatorGY gyRedeemer profileRefAC
+  isBurningProfileRefandUserNFTs <- txMustBurnCIP68UserAndRef profilesScriptRef profilesValidatorGY gyRedeemer profileRefAC
   return $
     mconcat
       [ spendsProfileRefNFT,
         isGettingProfileValue,
-        isBurningProfileRefNFT
+        isBurningProfileRefandUserNFTs
       ]
 
 ------------------------------------------------------------------------------------------------

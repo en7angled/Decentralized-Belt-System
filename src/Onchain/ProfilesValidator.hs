@@ -12,6 +12,7 @@ module Onchain.ProfilesValidator where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68 (CIP68Datum, MetadataFields)
+import Onchain.Types
 import Onchain.Types qualified as Onchain
 import Onchain.Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
@@ -20,12 +21,11 @@ import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
-import Onchain.Types
 
 -- | Parameters :
-newtype ProfilesParams = ProfilesParams {
-  ranksValidatorScriptHash :: ScriptHash
-}
+newtype ProfilesParams = ProfilesParams
+  { ranksValidatorScriptHash :: ScriptHash
+  }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
@@ -37,7 +37,7 @@ makeIsDataSchemaIndexed ''ProfilesParams [('ProfilesParams, 0)]
 
 -- | Custom redeemer :
 data ProfilesRedeemer
-  = CreateProfile TxOutRef MetadataFields Onchain.ProfileType
+  = CreateProfile TxOutRef MetadataFields Onchain.ProfileType POSIXTime
   | UpdateProfile MetadataFields
   | DeleteProfile
   | Promote ProfileId RankValue
@@ -58,13 +58,33 @@ profilesLambda :: ProfilesParams -> ScriptContext -> Bool
 profilesLambda params (ScriptContext TxInfo {..} (Redeemer bredeemer) scriptInfo) =
   let redeemer = unsafeFromBuiltinData @ProfilesRedeemer bredeemer
    in case (scriptInfo, redeemer) of
-        (MintingScript cs@(CurrencySymbol bshash), CreateProfile seedTxOutRef metadata profile) -> True
-        (MintingScript cs@(CurrencySymbol bshash), DeleteProfile) -> True
-        (SpendingScript txOutRef mdatum, UpdateProfile metadata) -> True
-        (SpendingScript txOutRef mdatum, DeleteProfile) -> True
-        (SpendingScript txOutRef mdatum, Promote profileId rankValue) -> True
-        (SpendingScript txOutRef mdatum, AcceptPromotion promotionId) -> True
-        _ -> False
+        (MintingScript cs@(CurrencySymbol bshash), CreateProfile seedTxOutRef metadata profile creationDate) -> do
+          -- is after creation date
+          -- is spending seedTxOutRef
+          -- is minting profile Ref NFT with inline datum locked at profilesValidator address
+          -- is minting profile User NFT
+          -- is minting rank NFT with inline datum locked at ranksValidator address
+          True
+        (MintingScript cs@(CurrencySymbol bshash), DeleteProfile) ->
+          -- Burns both Profile Ref and User NFTs
+          True
+        (SpendingScript txOutRef mdatum, DeleteProfile) ->
+          -- Burns both Profile Ref and User NFTs
+          True
+        (SpendingScript txOutRef mdatum, UpdateProfile metadata) -> 
+          -- is spending the corresponding profile user NFT
+          -- is locking profile Ref NFT with inline updated datum with new metadata locked at profilesValidator address
+          True
+        (SpendingScript txOutRef mdatum, Promote profileId rankValue) -> 
+          -- is minting promotion NFT
+          -- is locking back the profile NFT with the same value and datum (unchanged)
+          True
+        (SpendingScript txOutRef mdatum, AcceptPromotion promotionId) -> 
+          -- is burning promotion NFT
+          -- is minting rank NFT based on the promotion datum
+          -- is locking profile Ref NFT with inline updated datum with new rank locked at profilesValidator address
+          True
+        _ -> traceError "Invalid redeemer"
 
 -- | Lose the types
 profilesUntyped :: ProfilesParams -> BuiltinData -> BuiltinUnit
