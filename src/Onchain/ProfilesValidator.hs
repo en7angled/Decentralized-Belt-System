@@ -16,8 +16,8 @@ module Onchain.ProfilesValidator where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68 (CIP68Datum (CIP68Datum), deriveUserFromRefTN, updateCIP68DatumImage, ImageURI)
-import Onchain.Types
-import Onchain.Types qualified as Onchain
+import Onchain.Protocol
+import Onchain.Protocol qualified as Onchain
 import Onchain.Utils
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3

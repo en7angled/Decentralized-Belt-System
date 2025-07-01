@@ -3,8 +3,9 @@
 -- Required for `makeLift`:
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# OPTIONS_GHC -Wno-partial-fields #-}
 
-module Onchain.Types where
+module Onchain.Protocol where
 
 import GHC.Generics (Generic)
 import PlutusLedgerApi.V1 (Lovelace, POSIXTime, ScriptHash, TokenName (..))
@@ -12,8 +13,6 @@ import PlutusLedgerApi.V1.Value (AssetClass (..))
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Builtins (serialiseData)
-import PlutusTx.Eq
-import PlutusTx.Ord
 import PlutusTx.Prelude
 import Prelude qualified
 
@@ -82,10 +81,10 @@ data Rank
     rankPreviousRankId :: Maybe RankId
   } | PendingRank
   { pendingRankId :: RankId,
+    pendingRankNumber :: Integer,
     pendingRankAwardedTo :: ProfileId,
     pendingRankAwardedBy :: [ProfileId],
-    pendingRankAchievementDate :: POSIXTime,
-    pendingRankNumber :: Integer
+    pendingRankAchievementDate :: POSIXTime
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
@@ -101,25 +100,25 @@ makeIsDataSchemaIndexed ''Rank [('Rank, 0), ('PendingRank, 1)]
 -------------------------------------------------------------------------------
 
 
-
 mkPendingRank :: ProfileId -> [ProfileId] -> POSIXTime -> Integer -> Rank
-mkPendingRank pendingRankAwardedTo pendingRankAwardedBy pendingRankAchievementDate pendingRankNumber =
+mkPendingRank awardedTo awardedBy achievementDate rankNumber =
   PendingRank
-    { pendingRankId = generateRankId pendingRankAwardedTo pendingRankNumber,
-      pendingRankAwardedTo = pendingRankAwardedTo,
-      pendingRankAwardedBy = pendingRankAwardedBy,
-      pendingRankAchievementDate = pendingRankAchievementDate,
-      pendingRankNumber = pendingRankNumber
+    { pendingRankId = generateRankId awardedTo rankNumber,
+      pendingRankAwardedTo = awardedTo,
+      pendingRankAwardedBy = awardedBy,
+      pendingRankAchievementDate = achievementDate,
+      pendingRankNumber = rankNumber
     }
 
 acceptRank :: Rank -> RankId -> Rank
-acceptRank pendingRank previousRankId =
+acceptRank (Rank {}) _ = traceError "Cannot accept a rank that is not pending"
+acceptRank PendingRank {..} previousRankId =
   Rank
-    { rankId = pendingRankId pendingRank,
-      rankNumber = pendingRankNumber pendingRank,
-      rankAchievedByProfileId = pendingRankAwardedTo pendingRank,
-      rankAwardedByProfileIds = pendingRankAwardedBy pendingRank,
-      rankAchievementDate = pendingRankAchievementDate pendingRank,
+    { rankId = pendingRankId,
+      rankNumber = pendingRankNumber,
+      rankAchievedByProfileId = pendingRankAwardedTo,
+      rankAwardedByProfileIds = pendingRankAwardedBy,
+      rankAchievementDate = pendingRankAchievementDate,
       rankPreviousRankId = Just previousRankId
     }
 

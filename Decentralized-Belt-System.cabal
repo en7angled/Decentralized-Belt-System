@@ -58,7 +58,7 @@ library
     Onchain.MintingPolicy
     Onchain.ProfilesValidator
     Onchain.RanksValidator
-    Onchain.Types
+    Onchain.Protocol
     Onchain.Utils
     TxBuilding.Context
     TxBuilding.Exceptions

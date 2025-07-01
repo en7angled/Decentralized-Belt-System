@@ -3,7 +3,7 @@ module TxBuilding.Functors where
 import Data.Text qualified as T
 import DomainTypes.Profile.Types
 import Onchain.CIP68 (MetadataFields (..))
-import Onchain.Types qualified as Onchain
+import Onchain.Protocol qualified as Onchain
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteString)
 import PlutusLedgerApi.V1
 

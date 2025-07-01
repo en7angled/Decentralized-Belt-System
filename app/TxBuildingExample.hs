@@ -3,7 +3,7 @@ module TxBuildingExample where
 import GeniusYield.Imports
 import GeniusYield.Types
 import Onchain.CIP68 (MetadataFields (..))
-import Onchain.Types (Profile (..), ProfileId (..), ProfileType (..), RankId (..))
+import Onchain.Protocol (Profile (..), ProfileId (..), ProfileType (..), RankId (..))
 import TxBuilding.Context
 import TxBuilding.Interactions
 

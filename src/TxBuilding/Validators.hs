@@ -6,7 +6,7 @@ import Onchain.ProfilesValidator ( profilesCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude
-import Onchain.Types
+import Onchain.Protocol
 
 ------------------------------------------------------------------------------------------------
 

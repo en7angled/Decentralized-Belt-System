@@ -3,7 +3,7 @@ module TxBuilding.Lookups where
 import GeniusYield.TxBuilder
 import GeniusYield.Types (GYAddress, GYUTxO, filterUTxOs, utxoValue, utxosToList)
 import GeniusYield.Types.Value
-import Onchain.Types qualified as Onchain
+import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Value
 import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Utils

@@ -5,7 +5,7 @@ import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.CIP68 (MetadataFields, mkCIP68Datum, updateCIP68DatumImage, ImageURI)
 import Onchain.ProfilesValidator ( ProfilesRedeemer (..))
-import Onchain.Types qualified as Onchain
+import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Tx qualified as V3
@@ -15,7 +15,7 @@ import TxBuilding.Skeletons
 import TxBuilding.Utils
 import TxBuilding.Validators
 import Onchain.MintingPolicy
-import Onchain.Types
+import Onchain.Protocol
 
 ------------------------------------------------------------------------------------------------
 

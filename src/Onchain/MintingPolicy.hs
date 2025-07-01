@@ -15,8 +15,8 @@ module Onchain.MintingPolicy where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68 (MetadataFields, generateRefAndUserTN, mkCIP68Datum, CIP68Datum)
-import Onchain.Types
-import Onchain.Types qualified as Onchain
+import Onchain.Protocol
+import Onchain.Protocol qualified as Onchain
 import Onchain.Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
 import PlutusLedgerApi.V1 qualified as V1
@@ -111,17 +111,17 @@ mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxI
                        traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
                               $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs
             
-            (Promote profileId promotionAwardedBy promotionAchievementDate rankNumber) -> 
+            (Promote profileId awardedBy achievementDate rankNumber) -> 
               let ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
-                  promotionAssetClass = generateRankId profileId rankNumber
-                  promotionNFT = V1.assetClassValue promotionAssetClass 1
-                  promotionDatum = mkPendingRank profileId promotionAwardedBy promotionAchievementDate rankNumber 
+                  pendingRankAssetClass = generateRankId profileId rankNumber
+                  pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
+                  pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber 
               in
                 and [
                   traceIfFalse "Must spend users NFTs of the awarded by profiles" $ 
-                    all (\userProfileId -> V1.assetClassValueOf (valueSpent txInfo) userProfileId == 1) promotionAwardedBy,
-                  traceIfFalse "Must lock promotion NFT with inline datum at ranksValidator address"
-                      $ hasTxOutWithInlineDatumAndValue promotionDatum (promotionNFT + minValue) ranksValidatorAddress txInfoOutputs 
+                    all (\userProfileId -> V1.assetClassValueOf (valueSpent txInfo) userProfileId == 1) awardedBy,
+                  traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address"
+                      $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs 
                 ]
                             
 

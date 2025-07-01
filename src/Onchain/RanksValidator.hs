@@ -3,7 +3,7 @@
 module Onchain.RanksValidator where
 
 import GHC.Generics (Generic)
-import Onchain.Types
+import Onchain.Protocol
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
