@@ -76,14 +76,14 @@ data Rank
   { rankId :: RankId,
     rankNumber :: Integer,
     rankAchievedByProfileId :: ProfileId,
-    rankAwardedByProfileIds :: [ProfileId],
+    rankAwardedByProfileId :: ProfileId,
     rankAchievementDate :: POSIXTime,
     rankPreviousRankId :: Maybe RankId
   } | PendingRank
   { pendingRankId :: RankId,
     pendingRankNumber :: Integer,
     pendingRankAwardedTo :: ProfileId,
-    pendingRankAwardedBy :: [ProfileId],
+    pendingRankAwardedBy :: ProfileId,
     pendingRankAchievementDate :: POSIXTime
   }
   deriving stock (Generic, Prelude.Show)
@@ -100,7 +100,7 @@ makeIsDataSchemaIndexed ''Rank [('Rank, 0), ('PendingRank, 1)]
 -------------------------------------------------------------------------------
 
 
-mkPendingRank :: ProfileId -> [ProfileId] -> POSIXTime -> Integer -> Rank
+mkPendingRank :: ProfileId -> ProfileId -> POSIXTime -> Integer -> Rank
 mkPendingRank awardedTo awardedBy achievementDate rankNumber =
   PendingRank
     { pendingRankId = generateRankId awardedTo rankNumber,
@@ -117,7 +117,7 @@ acceptRank PendingRank {..} previousRankId =
     { rankId = pendingRankId,
       rankNumber = pendingRankNumber,
       rankAchievedByProfileId = pendingRankAwardedTo,
-      rankAwardedByProfileIds = pendingRankAwardedBy,
+      rankAwardedByProfileId = pendingRankAwardedBy,
       rankAchievementDate = pendingRankAchievementDate,
       rankPreviousRankId = Just previousRankId
     }
@@ -148,7 +148,7 @@ mkPractitionerProfile profileId creationDate protocolParams =
           { rankId = generateRankId profileId rankNumber,
             rankNumber = rankNumber,
             rankAchievedByProfileId = profileId,
-            rankAwardedByProfileIds = [],
+            rankAwardedByProfileId = profileId,
             rankAchievementDate = creationDate,
             rankPreviousRankId = Nothing
           }

@@ -12,6 +12,13 @@ newtype RanksRedeemer
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
+
+--- Has ref input of : Get Promotion Profile 
+--- Has ref input of : Get Current Rank of the profile
+--- Has ref input of : Get AwardedBy Profile
+----Has ref input of : Get CurrentRank of AwardedBY
+
+
 -------------------------------------------------------------------------------
 -- Ranks Validator
 -------------------------------------------------------------------------------

@@ -36,7 +36,7 @@ import PlutusLedgerApi.V3.Contexts
 -- | Custom redeemer :
 data MintingRedeemer
   = CreateProfile TxOutRef MetadataFields Onchain.ProfileType POSIXTime
-  | Promote ProfileId [ProfileId] POSIXTime Integer
+  | Promote ProfileId ProfileId POSIXTime Integer
   | BurnProfileId V1.AssetClass
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
@@ -118,8 +118,8 @@ mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxI
                   pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber 
               in
                 and [
-                  traceIfFalse "Must spend users NFTs of the awarded by profiles" $ 
-                    all (\userProfileId -> V1.assetClassValueOf (valueSpent txInfo) userProfileId == 1) awardedBy,
+                  traceIfFalse "Must spend user NFT of the profile who awards the promotion" $ 
+                      V1.assetClassValueOf (valueSpent txInfo) awardedBy == 1 ,
                   traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address"
                       $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs 
                 ]
