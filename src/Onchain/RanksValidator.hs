@@ -5,20 +5,16 @@ module Onchain.RanksValidator where
 import GHC.Generics (Generic)
 import Onchain.Protocol
 import PlutusTx.Blueprint
-import PlutusTx.Prelude
 import Prelude qualified
-import PlutusLedgerApi.V3
-import PlutusTx
 
 newtype RanksRedeemer
-  = AcceptPromotion RankId
+  = RankPromotion RankId
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-
--- --------------------------------------
--- -- Ranks Validator
--- --------------------------------------
+-------------------------------------------------------------------------------
+-- Ranks Validator
+-------------------------------------------------------------------------------
 
 -- {-# INLINEABLE ranksLambda #-}
 -- ranksLambda :: ScriptContext -> Bool
@@ -45,4 +41,3 @@ newtype RanksRedeemer
 -- -- | Compile the untyped lambda to a UPLC script and splice back to Haskell.
 -- ranksCompile ::  CompiledCode (BuiltinData -> BuiltinUnit)
 -- ranksCompile  = $$(compile [||ranksUntyped||])
-

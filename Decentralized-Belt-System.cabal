@@ -56,6 +56,7 @@ library
     DomainTypes.Profile.Types
     Onchain.CIP68
     Onchain.MintingPolicy
+    Onchain.BJJ
     Onchain.ProfilesValidator
     Onchain.RanksValidator
     Onchain.Protocol
