@@ -4,12 +4,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 ---
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-optimize #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-remove-trace #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
-
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use &&" #-}
+
+
 
 module Onchain.ProfilesValidator where
 
@@ -31,9 +32,9 @@ import Prelude qualified
 
 -- | Custom redeemer :
 data ProfilesRedeemer
-  = UpdateProfileImage V1.AssetClass ImageURI
-  | DeleteProfile V1.AssetClass
-  | AcceptPromotion PromotionId
+  = UpdateProfileImage ProfileId ImageURI
+  | DeleteProfile ProfileId
+  | AcceptPromotion RankId
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
@@ -43,7 +44,7 @@ type ProfilesDatum = CIP68Datum Onchain.Profile
 
 
 
-unsafeGetPromotionDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, Promotion)
+unsafeGetPromotionDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, Rank)
 unsafeGetPromotionDatumAndValue ac addr txins =
   let (v, b) = unsafeGetCurrentStateDatumAndValue ac addr txins
    in (v, unsafeFromBuiltinData b)
@@ -92,11 +93,11 @@ profilesLambda  (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInf
                     (AcceptPromotion promotionId) ->
                       let     
                           ranksValidatorAddress =  V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
-                          (promotionValue, promotionDatum) = unsafeGetPromotionDatumAndValue promotionId ranksValidatorAddress txInfoInputs
+                          (promotionValue, pendingRankDatum) = unsafeGetPromotionDatumAndValue promotionId ranksValidatorAddress txInfoInputs
                           
-                          (updatedProfile, newRankDatum) =  promoteProfile profile promotionDatum
+                          (updatedProfile, newRankDatum) =  promoteProfile profile pendingRankDatum
                           updatedCip68Datum = CIP68Datum metadata version updatedProfile 
-                          profileUserAssetClass = promotionAwardedTo promotionDatum
+                          profileUserAssetClass = pendingRankAwardedTo pendingRankDatum
                        in and
                             [ traceIfFalse "Must spend profile User NFT"
                                 $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1,
