@@ -3,7 +3,7 @@
 module Onchain.BJJ where
 
 import GHC.Generics (Generic)
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V3 (POSIXTime (POSIXTime))
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
@@ -14,81 +14,132 @@ import Prelude qualified
 -- * BJJ Rank Types
 
 -------------------------------------------------------------------------------
-type Stripe = Integer
 
-data Belt
+data BJJBelt
   = White
   | Blue
   | Purple
   | Brown
   | Black
-  | RedAndBlack
-  | RedAndWhite
-  | Red
+  | Black1 -- 1st Degree
+  | Black2 -- 2nd Degree
+  | Black3 -- 3rd Degree
+  | Black4 -- 4th Degree
+  | Black5 -- 5th Degree
+  | Black6 -- 6th Degree
+  | RedAndBlack -- 7th Degree
+  | RedAndWhite -- 8th Degree
+  | Red -- 9th Degree
+  | Red10 -- 10th Degree
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''Belt [('White, 0), ('Blue, 1), ('Purple, 2), ('Brown, 3), ('Black, 4), ('RedAndBlack, 5), ('RedAndWhite, 6), ('Red, 7)]
+makeIsDataSchemaIndexed ''BJJBelt [('White, 0), ('Blue, 1), ('Purple, 2), ('Brown, 3), ('Black, 4), ('Black1, 5), ('Black2, 6), ('Black3, 7), ('Black4, 8), ('Black5, 9), ('Black6, 10), ('RedAndBlack, 11), ('RedAndWhite, 12), ('Red, 13), ('Red10, 14)]
 
-instance Eq Belt where
-  (==) :: Belt -> Belt -> Bool
-  (==) x y = baseRank x == baseRank y
-
-baseRank :: Belt -> Integer
-baseRank belt = case belt of
+beltToInt :: BJJBelt -> Integer
+beltToInt belt = case belt of
   White -> 0
-  Blue -> 5
-  Purple -> 10
-  Brown -> 15
-  Black -> 20
-  RedAndBlack -> 27
-  RedAndWhite -> 28
-  Red -> 29
+  Blue -> 1
+  Purple -> 2
+  Brown -> 3
+  Black -> 4
+  Black1 -> 5
+  Black2 -> 6
+  Black3 -> 7
+  Black4 -> 8
+  Black5 -> 9
+  Black6 -> 10
+  RedAndBlack -> 11
+  RedAndWhite -> 12
+  Red -> 13
+  Red10 -> 14
 
-data RankValue
-  = RankValue Belt Stripe
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
+intToBelt :: Integer -> BJJBelt
+intToBelt n = case n of
+  0 -> White
+  1 -> Blue
+  2 -> Purple
+  3 -> Brown
+  4 -> Black
+  5 -> Black1
+  6 -> Black2
+  7 -> Black3
+  8 -> Black4
+  9 -> Black5
+  10 -> Black6
+  11 -> RedAndBlack
+  12 -> RedAndWhite
+  13 -> Red
+  14 -> Red10
+  _ -> traceError "Invalid belt"
 
-makeIsDataSchemaIndexed ''RankValue [('RankValue, 0)]
+instance Eq BJJBelt where
+  (==) :: BJJBelt -> BJJBelt -> Bool
+  (==) x y = beltToInt x == beltToInt y
 
-instance Eq RankValue where
-  (==) :: RankValue -> RankValue -> Bool
-  (==) x y = rankToInt x == rankToInt y
+instance Ord BJJBelt where
+  compare :: BJJBelt -> BJJBelt -> Ordering
+  compare x y = compare (beltToInt x) (beltToInt y)
 
-instance Ord RankValue where
-  compare :: RankValue -> RankValue -> Ordering
-  compare x y = compare (rankToInt x) (rankToInt y)
-
-rankToInt :: RankValue -> Integer
-rankToInt (RankValue belt stripe) = baseRank belt + stripe
-
--- | Convert an Integer to a RankValue (Belt, Stripe), if possible.
-intToRank :: Integer -> RankValue
-intToRank n
-  | n == 0 = RankValue White 0
-  | n < 5 = RankValue White n
-  | n < 10 = RankValue Blue (n - 5)
-  | n < 15 = RankValue Purple (n - 10)
-  | n < 20 = RankValue Brown (n - 15)
-  | n < 27 = RankValue Black (n - 20)
-  | n == 27 = RankValue RedAndBlack 0
-  | n == 28 = RankValue RedAndWhite 0
-  | n == 29 = RankValue Red 0
-  | otherwise = traceError "Invalid rank"
-
-instance Enum RankValue where
-  toEnum :: Integer -> RankValue
-  toEnum = intToRank
-  fromEnum :: RankValue -> Integer
-  fromEnum (RankValue belt stripe) = baseRank belt + stripe
-  succ :: RankValue -> RankValue
-  succ (RankValue Red 0) = traceError "Cannot succ a red belt"
-  succ r = intToRank . (+ 1) . rankToInt $ r
-  pred :: RankValue -> RankValue
-  pred (RankValue White 0) = traceError "Cannot pred a white belt"
-  pred r = intToRank . (+ (-1)) . rankToInt $ r
-  enumFromTo :: RankValue -> RankValue -> [RankValue]
+instance Enum BJJBelt where
+  succ :: BJJBelt -> BJJBelt
+  succ Red10 = traceError "Cannot succ a red 10 belt"
+  succ belt = intToBelt . (+ 1) . beltToInt $ belt
+  pred :: BJJBelt -> BJJBelt
+  pred White = traceError "Cannot pred a white belt"
+  pred belt = intToBelt . (+ (-1)) . beltToInt $ belt
+  toEnum :: Integer -> BJJBelt
+  toEnum = intToBelt
+  fromEnum :: BJJBelt -> Integer
+  fromEnum = beltToInt
+  enumFromTo :: BJJBelt -> BJJBelt -> [BJJBelt]
   enumFromTo start end = map toEnum [fromEnum start .. fromEnum end]
-  enumFromThenTo :: RankValue -> RankValue -> RankValue -> [RankValue]
+  enumFromThenTo :: BJJBelt -> BJJBelt -> BJJBelt -> [BJJBelt]
   enumFromThenTo start next end = map toEnum [fromEnum start, fromEnum next .. fromEnum end]
+
+minMonthsForBelt :: BJJBelt -> Integer
+minMonthsForBelt belt = case belt of
+  White -> 0
+  Blue -> 12
+  Purple -> 18
+  Brown -> 12
+  Black -> 12
+  Black1 -> 36
+  Black2 -> 36
+  Black3 -> 36
+  Black4 -> 60
+  Black5 -> 60
+  Black6 -> 60
+  RedAndBlack -> 84
+  RedAndWhite -> 84
+  Red -> 120
+  Red10 -> 0
+
+monthsToPosixTime :: Integer -> POSIXTime
+monthsToPosixTime months = POSIXTime $ months * 2629800000
+
+-- -------------------------------------------------------------------------------
+
+-- -- * BJJ Promotion Rules
+
+-- -------------------------------------------------------------------------------
+
+validatePromotion :: BJJBelt -> POSIXTime -> POSIXTime -> BJJBelt -> POSIXTime -> BJJBelt -> Bool
+validatePromotion masterRankValue masterRankDate promotionDate studentCurrentRankValue studentCurrentRankDate nextRankValue =
+  let generalRules =
+        and
+          [ -- 1. Master Rank must be greater than the student's current rank
+            masterRankValue > studentCurrentRankValue,
+            -- 2. Promotion date must be greater than the student's current rank date
+            promotionDate > studentCurrentRankDate,
+            -- 3. Master Rank date must be greater than the promotion date
+            masterRankDate > promotionDate,
+            -- 4. Next rank must be greater than the student's current rank
+            nextRankValue > studentCurrentRankValue,
+            -- 5. Time in the current rank must be greater than the minimum time for the next rank
+            promotionDate - studentCurrentRankDate > monthsToPosixTime (minMonthsForBelt studentCurrentRankValue)
+          ]
+   in generalRules && case masterRankValue of
+        r | r < Black -> traceIfFalse "Belts lower than black are not allowed to promote" False
+        r | r == Black1 -> traceIfFalse "Only 2 degree black belts can promote to black" $ nextRankValue == Black
+        _ -> True
