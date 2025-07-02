@@ -148,6 +148,24 @@ test-suite Decentralized-Belt-System-test
   type:             exitcode-stdio-1.0
   hs-source-dirs:   test
   main-is:          Main.hs
+  other-modules:
+    TestRuns
+    UnitTests
+
+
   build-depends:
     , base
     , Decentralized-Belt-System
+
+  build-depends:
+    , extra
+    , mtl
+    , tasty
+    , tasty-quickcheck
+
+  --- Cardano specific dependencies
+  build-depends:
+    , atlas-cardano
+    , clb
+    , plutus-ledger-api
+    , plutus-tx

@@ -14,7 +14,6 @@ import Prelude qualified
 data ProfileTxBuildingContext = ProfileTxBuildingContext
   { mintingPolicyRef :: GYTxOutRef,
     profilesValidatorRef :: GYTxOutRef,
-    prmotionsValidatorRef :: GYTxOutRef,
     ranksValidatorRef :: GYTxOutRef
   }
   deriving stock (Generic, Prelude.Show)
@@ -31,6 +30,5 @@ defaultProfileTxBuildingContext =
   ProfileTxBuildingContext
     { mintingPolicyRef = Prelude.undefined, -- TODO: Set proper default value when needed
       profilesValidatorRef = Prelude.undefined, -- TODO: Set proper default value when needed
-      prmotionsValidatorRef = Prelude.undefined, -- TODO: Set proper default value when needed
       ranksValidatorRef = Prelude.undefined -- TODO: Set proper default value when needed
     }

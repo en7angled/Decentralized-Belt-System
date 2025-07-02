@@ -1,4 +1,11 @@
-module Main (main) where
+
+import Test.Tasty (defaultMain, testGroup)
+import UnitTests (unitTests)
+
+runTest :: IO ()
+runTest =
+  defaultMain (testGroup "Tests" [unitTests])
 
 main :: IO ()
-main = putStrLn "Test suite not yet implemented."
+main = do
+  runTest

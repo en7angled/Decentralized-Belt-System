@@ -1,4 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use guards" #-}
 
 module Onchain.BJJ where
 
@@ -36,6 +38,7 @@ data BJJBelt
 
 makeIsDataSchemaIndexed ''BJJBelt [('White, 0), ('Blue, 1), ('Purple, 2), ('Brown, 3), ('Black, 4), ('Black1, 5), ('Black2, 6), ('Black3, 7), ('Black4, 8), ('Black5, 9), ('Black6, 10), ('RedAndBlack, 11), ('RedAndWhite, 12), ('Red, 13), ('Red10, 14)]
 
+{-# INLINEABLE beltToInt #-}
 beltToInt :: BJJBelt -> Integer
 beltToInt belt = case belt of
   White -> 0
@@ -54,24 +57,27 @@ beltToInt belt = case belt of
   Red -> 13
   Red10 -> 14
 
+
+
+{-# INLINEABLE intToBelt #-}
 intToBelt :: Integer -> BJJBelt
-intToBelt n = case n of
-  0 -> White
-  1 -> Blue
-  2 -> Purple
-  3 -> Brown
-  4 -> Black
-  5 -> Black1
-  6 -> Black2
-  7 -> Black3
-  8 -> Black4
-  9 -> Black5
-  10 -> Black6
-  11 -> RedAndBlack
-  12 -> RedAndWhite
-  13 -> Red
-  14 -> Red10
-  _ -> traceError "Invalid belt"
+intToBelt n =
+  if n == 0 then White
+  else if n == 1 then Blue
+  else if n == 2 then Purple
+  else if n == 3 then Brown
+  else if n == 4 then Black
+  else if n == 5 then Black1
+  else if n == 6 then Black2
+  else if n == 7 then Black3
+  else if n == 8 then Black4
+  else if n == 9 then Black5
+  else if n == 10 then Black6
+  else if n == 11 then RedAndBlack
+  else if n == 12 then RedAndWhite
+  else if n == 13 then Red
+  else if n == 14 then Red10
+  else traceError "Invalid belt"
 
 instance Eq BJJBelt where
   (==) :: BJJBelt -> BJJBelt -> Bool
@@ -97,6 +103,7 @@ instance Enum BJJBelt where
   enumFromThenTo :: BJJBelt -> BJJBelt -> BJJBelt -> [BJJBelt]
   enumFromThenTo start next end = map toEnum [fromEnum start, fromEnum next .. fromEnum end]
 
+{-# INLINEABLE minMonthsForBelt #-}
 minMonthsForBelt :: BJJBelt -> Integer
 minMonthsForBelt belt = case belt of
   White -> 0
@@ -115,6 +122,7 @@ minMonthsForBelt belt = case belt of
   Red -> 120
   Red10 -> 0
 
+{-# INLINEABLE monthsToPosixTime #-}
 monthsToPosixTime :: Integer -> POSIXTime
 monthsToPosixTime months = POSIXTime $ months * 2629800000
 
@@ -123,7 +131,7 @@ monthsToPosixTime months = POSIXTime $ months * 2629800000
 -- -- * BJJ Promotion Rules
 
 -- -------------------------------------------------------------------------------
-
+{-# INLINEABLE validatePromotion #-}
 validatePromotion :: BJJBelt -> POSIXTime -> BJJBelt -> POSIXTime -> BJJBelt -> POSIXTime -> Bool
 validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBeltDate studentNextBelt studentNextBeltDate =
   case masterBelt of
