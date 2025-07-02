@@ -15,6 +15,10 @@ import PlutusTx.Blueprint
 import PlutusTx.Builtins (serialiseData)
 import PlutusTx.Prelude
 import Prelude qualified
+import PlutusLedgerApi.V3
+import Onchain.Utils
+import Onchain.CIP68 (CIP68Datum(CIP68Datum, extra))
+
 
 -------------------------------------------------------------------------------
 
@@ -33,8 +37,6 @@ data ProtocolParams = ProtocolParams
 makeLift ''ProtocolParams
 
 makeIsDataSchemaIndexed ''ProtocolParams [('ProtocolParams, 0)]
-
-
 
 -------------------------------------------------------------------------------
 
@@ -177,4 +179,26 @@ generateRankId :: ProfileId -> Integer -> RankId
 generateRankId (AssetClass (cs, TokenName bs)) i = AssetClass (cs, TokenName (takeByteString 28 $ blake2b_256 (bs <> (serialiseData . toBuiltinData) i)))
 
 --  TODO : Replace with builtins
+
+
+
+
+-------------------------------------------------------------------------------
+
+-- * Protocol Onchain Helpers
+
+-------------------------------------------------------------------------------
+
+
+unsafeGetRankDatumAndValue :: RankId -> Address -> [TxInInfo] -> (Value, Rank)
+unsafeGetRankDatumAndValue ac addr txins =
+  let (v, b) = unsafeGetCurrentStateDatumAndValue ac addr txins
+   in (v, unsafeFromBuiltinData b)
+{-# INLINEABLE unsafeGetRankDatumAndValue #-}
+
+unsafeGetProfileDatumAndValue :: RankId -> Address -> [TxInInfo] -> (Value, Profile)
+unsafeGetProfileDatumAndValue ac addr txins =
+  let (v, b) = unsafeGetCurrentStateDatumAndValue ac addr txins
+   in (v, extra (unsafeFromBuiltinData b :: CIP68Datum Profile))
+{-# INLINEABLE unsafeGetProfileDatumAndValue #-}
 

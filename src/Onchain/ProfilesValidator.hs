@@ -4,18 +4,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 ---
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-optimize #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-remove-trace #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 {-# HLINT ignore "Use &&" #-}
-
-
 
 module Onchain.ProfilesValidator where
 
 import GHC.Generics (Generic)
-import Onchain.CIP68 (CIP68Datum (CIP68Datum), deriveUserFromRefTN, updateCIP68DatumImage, ImageURI)
+import Onchain.CIP68 (CIP68Datum (CIP68Datum), ImageURI, deriveUserFromRefTN, updateCIP68DatumImage)
 import Onchain.Protocol
 import Onchain.Protocol qualified as Onchain
 import Onchain.Utils
@@ -26,9 +25,6 @@ import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
-
-
-
 
 -- | Custom redeemer :
 data ProfilesRedeemer
@@ -42,25 +38,14 @@ makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('DeletePr
 
 type ProfilesDatum = CIP68Datum Onchain.Profile
 
-
-
-unsafeGetPromotionDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, Rank)
-unsafeGetPromotionDatumAndValue ac addr txins =
-  let (v, b) = unsafeGetCurrentStateDatumAndValue ac addr txins
-   in (v, unsafeFromBuiltinData b)
-{-# INLINEABLE unsafeGetPromotionDatumAndValue #-}
-
-
-
 --------------------------------------
 -- Profiles Validator
 --------------------------------------
 
 {-# INLINEABLE profilesLambda #-}
 profilesLambda :: ScriptContext -> Bool
-profilesLambda  (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
+profilesLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo) =
   let redeemer = unsafeFromBuiltinData @ProfilesRedeemer bredeemer
-
    in case scriptInfo of
         (SpendingScript spendingTxOutRef mdatum) -> case mdatum of
           Nothing -> traceError "No datum"
@@ -75,45 +60,45 @@ profilesLambda  (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInf
                       let profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
                        in and
                             [ traceIfFalse "Must burn profile Ref NFT"
-                                $ isBurningNFT profileRefAssetClass txInfoMint,
-                            traceIfFalse "Must spend profile User NFT"
-                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1
+                                $ isBurningNFT profileRefAssetClass txInfoMint
+                            , traceIfFalse "Must spend profile User NFT"
+                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
+                                == 1
                             ]
                     (UpdateProfileImage (V1.AssetClass (profilesCurrencySymbol, profileRefTN)) newImageURI) ->
                       let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum -- !!! Open unbounded-datum vulnerability on metadata
                           profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
-                      
                        in and
                             [ traceIfFalse "Must spend profile User NFT"
-                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1,
-                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
+                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
+                                == 1
+                            , traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
                                 $ hasTxOutWithInlineDatumAndValue newCip68Datum ownValue ownAddress txInfoOutputs
                             ]
-
                     (AcceptPromotion promotionId) ->
-                      let     
-                          ranksValidatorAddress =  V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
-                          (promotionValue, pendingRankDatum) = unsafeGetPromotionDatumAndValue promotionId ranksValidatorAddress txInfoInputs
-                          
-                          (updatedProfile, newRankDatum) =  promoteProfile profile pendingRankDatum
-                          updatedCip68Datum = CIP68Datum metadata version updatedProfile 
-                          profileUserAssetClass = pendingRankAwardedTo pendingRankDatum
-                       in and
-                            [ traceIfFalse "Must spend profile User NFT"
-                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1,
-                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
-                                $ hasTxOutWithInlineDatumAndValue updatedCip68Datum ownValue ownAddress txInfoOutputs,
-                              traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
-                              $ hasTxOutWithInlineDatumAndValue newRankDatum promotionValue ranksValidatorAddress txInfoOutputs  
-                            ]
+                      let
+                        ranksValidatorAddress = V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
+                        (promotionValue, pendingRankDatum) = unsafeGetRankDatumAndValue promotionId ranksValidatorAddress txInfoInputs
 
+                        (updatedProfile, newRankDatum) = promoteProfile profile pendingRankDatum
+                        updatedCip68Datum = CIP68Datum metadata version updatedProfile
+                        profileUserAssetClass = pendingRankAwardedTo pendingRankDatum
+                       in
+                        and
+                          [ traceIfFalse "Must spend profile User NFT"
+                              $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
+                              == 1
+                          , traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
+                              $ hasTxOutWithInlineDatumAndValue updatedCip68Datum ownValue ownAddress txInfoOutputs
+                          , traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
+                              $ hasTxOutWithInlineDatumAndValue newRankDatum promotionValue ranksValidatorAddress txInfoOutputs
+                          ]
         _ -> traceError "Invalid purpose"
 
 -- | Lose the types
 profilesUntyped :: BuiltinData -> BuiltinUnit
-profilesUntyped  = mkUntypedLambda profilesLambda
+profilesUntyped = mkUntypedLambda profilesLambda
 
 -- | Compile the untyped lambda to a UPLC script and splice back to Haskell.
-profilesCompile ::  CompiledCode (BuiltinData -> BuiltinUnit)
-profilesCompile  = $$(compile [||profilesUntyped||])
-
+profilesCompile :: CompiledCode (BuiltinData -> BuiltinUnit)
+profilesCompile = $$(compile [||profilesUntyped||])

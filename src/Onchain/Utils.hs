@@ -109,3 +109,4 @@ unsafeGetInlineDatum out = case txOutDatum out of
   OutputDatum da -> getDatum da
   _ -> traceError "No inline datum"
 {-# INLINEABLE unsafeGetInlineDatum #-}
+
