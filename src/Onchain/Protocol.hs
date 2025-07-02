@@ -8,7 +8,6 @@
 module Onchain.Protocol where
 
 import GHC.Generics (Generic)
-import PlutusLedgerApi.V1 (Lovelace, POSIXTime, ScriptHash, TokenName (..))
 import PlutusLedgerApi.V1.Value (AssetClass (..))
 import PlutusTx
 import PlutusTx.Blueprint
@@ -17,7 +16,8 @@ import PlutusTx.Prelude
 import Prelude qualified
 import PlutusLedgerApi.V3
 import Onchain.Utils
-import Onchain.CIP68 (CIP68Datum(CIP68Datum, extra))
+import Onchain.CIP68 (CIP68Datum (extra))
+
 
 
 -------------------------------------------------------------------------------
@@ -27,6 +27,7 @@ import Onchain.CIP68 (CIP68Datum(CIP68Datum, extra))
 -------------------------------------------------------------------------------
 data ProtocolParams = ProtocolParams
   { ranksValidatorScriptHash :: ScriptHash,
+    profilesValidatorScriptHash :: ScriptHash,
     collateral :: Lovelace
   }
   deriving stock (Generic, Prelude.Show)
@@ -80,13 +81,15 @@ data Rank
     rankAchievedByProfileId :: ProfileId,
     rankAwardedByProfileId :: ProfileId,
     rankAchievementDate :: POSIXTime,
-    rankPreviousRankId :: Maybe RankId
+    rankPreviousRankId :: Maybe RankId,
+    rankProtocolParams :: ProtocolParams
   } | PendingRank
   { pendingRankId :: RankId,
     pendingRankNumber :: Integer,
     pendingRankAwardedTo :: ProfileId,
     pendingRankAwardedBy :: ProfileId,
-    pendingRankAchievementDate :: POSIXTime
+    pendingRankAchievementDate :: POSIXTime,
+    pendingRankProtocolParams :: ProtocolParams
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
@@ -102,14 +105,15 @@ makeIsDataSchemaIndexed ''Rank [('Rank, 0), ('PendingRank, 1)]
 -------------------------------------------------------------------------------
 
 
-mkPendingRank :: ProfileId -> ProfileId -> POSIXTime -> Integer -> Rank
-mkPendingRank awardedTo awardedBy achievementDate rankNumber =
+mkPendingRank :: ProfileId -> ProfileId -> POSIXTime -> Integer -> ProtocolParams -> Rank
+mkPendingRank awardedTo awardedBy achievementDate rankNumber protocolParams =
   PendingRank
     { pendingRankId = generateRankId awardedTo rankNumber,
       pendingRankAwardedTo = awardedTo,
       pendingRankAwardedBy = awardedBy,
       pendingRankAchievementDate = achievementDate,
-      pendingRankNumber = rankNumber
+      pendingRankNumber = rankNumber,
+      pendingRankProtocolParams = protocolParams
     }
 
 acceptRank :: Rank -> RankId -> Rank
@@ -121,7 +125,8 @@ acceptRank PendingRank {..} previousRankId =
       rankAchievedByProfileId = pendingRankAwardedTo,
       rankAwardedByProfileId = pendingRankAwardedBy,
       rankAchievementDate = pendingRankAchievementDate,
-      rankPreviousRankId = Just previousRankId
+      rankPreviousRankId = Just previousRankId,
+      rankProtocolParams = pendingRankProtocolParams
     }
 
 updateProfileRank :: Profile -> Rank -> Profile
@@ -152,7 +157,8 @@ mkPractitionerProfile profileId creationDate protocolParams =
             rankAchievedByProfileId = profileId,
             rankAwardedByProfileId = profileId,
             rankAchievementDate = creationDate,
-            rankPreviousRankId = Nothing
+            rankPreviousRankId = Nothing,
+            rankProtocolParams = protocolParams
           }
       profile =
         Profile

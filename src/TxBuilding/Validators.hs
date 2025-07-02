@@ -15,7 +15,7 @@ import Onchain.Protocol
 ------------------------------------------------------------------------------------------------
 
 miintingPolicyPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-miintingPolicyPlutus = mintingPolicyCompile (ProtocolParams ranksValidatorHashPlutus 2_000_000)
+miintingPolicyPlutus = mintingPolicyCompile (ProtocolParams ranksValidatorHashPlutus profilesValidatorHashPlutus 2_000_000)
 
 mintingPolicyGY :: GYScript 'PlutusV3
 mintingPolicyGY = validatorFromPlutus miintingPolicyPlutus
@@ -69,4 +69,4 @@ ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
 
 
 defaultProtocolParams :: ProtocolParams
-defaultProtocolParams = ProtocolParams ranksValidatorHashPlutus  2_000_000
+defaultProtocolParams = ProtocolParams ranksValidatorHashPlutus profilesValidatorHashPlutus 2_000_000

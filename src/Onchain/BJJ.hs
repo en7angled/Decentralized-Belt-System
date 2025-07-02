@@ -124,23 +124,23 @@ monthsToPosixTime months = POSIXTime $ months * 2629800000
 
 -- -------------------------------------------------------------------------------
 
-validatePromotion :: BJJBelt -> POSIXTime -> POSIXTime -> BJJBelt -> POSIXTime -> BJJBelt -> Bool
-validatePromotion masterRankValue masterRankDate nextRankDate studentCurrentRankValue studentCurrentRankDate nextRankValue =
-  case masterRankValue of
+validatePromotion :: BJJBelt -> POSIXTime -> BJJBelt -> POSIXTime -> BJJBelt -> POSIXTime -> Bool
+validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBeltDate studentNextBelt studentNextBeltDate =
+  case masterBelt of
     r | r < Black -> traceIfFalse "Belts lower than black are not allowed to promote" False
-    r | r == Black1 -> traceIfFalse "Only 2 degree black belts can promote to black" $ nextRankValue /= Black && generalRules
+    r | r == Black1 -> traceIfFalse "Only 2 degree black belts can promote to black" $ studentNextBelt < Black && generalRules
     _ -> generalRules
  where
   generalRules =
     and
-      [ -- 1. Master Rank must be greater than the student's next rank
-        masterRankValue > nextRankValue
-      , -- 2. Master Rank date must be before the student's next rank date
-        masterRankDate < nextRankDate
-      , -- 3. Next rank must be greater than the student's current rank
-        nextRankValue > studentCurrentRankValue
-      , -- 4. Next rank date must be after the student's current rank date
-        nextRankDate > studentCurrentRankDate
-      , -- 5. Time in the current rank must be greater than the minimum time for the next rank
-        nextRankDate - studentCurrentRankDate > monthsToPosixTime (minMonthsForBelt studentCurrentRankValue)
+      [ -- 1. Master belt must be greater than the student's next belt
+        masterBelt > studentNextBelt
+      , -- 2. Master belt date must be before the student's next belt date
+        masterBeltDate < studentNextBeltDate
+      , -- 3. Student's next belt must be greater than the student's current belt
+        studentNextBelt > studentCurrentBelt
+      , -- 4. Student Next belt date must be after the student's current belt date
+        studentNextBeltDate > studentCurrentBeltDate
+      , -- 5. Time in the current belt must be greater than the minimum time for the next belt
+        studentNextBeltDate - studentCurrentBeltDate > monthsToPosixTime (minMonthsForBelt studentCurrentBelt)
       ]

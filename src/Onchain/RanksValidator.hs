@@ -1,4 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use &&" #-}
 
 module Onchain.RanksValidator where
 
@@ -10,6 +13,9 @@ import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
 import PlutusTx
+import qualified PlutusLedgerApi.V1 as V1
+import Onchain.BJJ (validatePromotion, intToBelt)
+import PlutusLedgerApi.V3.Contexts
 
 newtype RanksRedeemer
   = RankPromotion RankId
@@ -18,10 +24,6 @@ newtype RanksRedeemer
 
 makeIsDataSchemaIndexed ''RanksRedeemer [('RankPromotion, 0)]
 
---- Has ref input of : Get Promotion Profile : from Datum
---- Has ref input of : Get Current Rank of the profile 
---- Has ref input of : Get AwardedBy Profile : From Datum
-----Has ref input of : Get CurrentRank of AwardedBY
 
 -----------------------------------------------------------------------------
 -- Ranks Validator
@@ -36,11 +38,42 @@ ranksLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo) =
           Nothing -> traceError "No datum"
           Just (Datum bdatum) -> case fromBuiltinData bdatum of
             Nothing -> traceError "Invalid datum"
-            Just (rankDatum :: Rank) ->
+            Just (studentNextRank :: Rank) ->
               let ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
                   ownValue = txOutValue ownInput
                   ownAddress = txOutAddress ownInput
-               in True -- case redeemer of
+
+                  profilesValidatorAddr = V1.scriptHashAddress ( profilesValidatorScriptHash $ pendingRankProtocolParams studentNextRank)
+                  
+                  -- Getting profiles based on the ids in the rank promotion datum
+                  (_, studentProfile) = unsafeGetProfileDatumAndValue (rankAchievedByProfileId studentNextRank) profilesValidatorAddr txInfoReferenceInputs
+                  (_, masterProfile) = unsafeGetProfileDatumAndValue (rankAwardedByProfileId studentNextRank) profilesValidatorAddr txInfoReferenceInputs
+
+                   -- Getting ranks data based on the rank ids in the profiles datums  
+                  Just studentCurrentRankId = currentRank studentProfile -- Fails if if profile is an organization
+                  Just masterCurrentRankId = currentRank masterProfile -- Fails if if profile is an organization
+                  (_, studentCurrentRank) = unsafeGetRankDatumAndValue studentCurrentRankId ownAddress txInfoReferenceInputs
+                  (_, masterRank) = unsafeGetRankDatumAndValue masterCurrentRankId ownAddress txInfoReferenceInputs
+
+                  -- Getting belts and dates from ranks
+
+                  masterBelt =  intToBelt $ rankNumber masterRank
+                  masterBeltDate = rankAchievementDate masterRank
+                  studentCurrentBelt = intToBelt $ rankNumber studentCurrentRank
+                  studentCurrentBeltDate = rankAchievementDate studentCurrentRank
+                  studentNextBelt = intToBelt $ rankNumber studentNextRank
+                  studentNextBeltDate = rankAchievementDate studentNextRank
+                  
+                  isPromotionValid = validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBeltDate studentNextBelt studentNextBeltDate 
+                  
+                  profileUserAssetClass =  profileId studentProfile
+                in and 
+                    [
+                      traceIfFalse "Must spend profile User NFT"
+                                  $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
+                                  == 1
+                    , isPromotionValid
+                    ]
         _ -> traceError "Invalid purpose"
 
 -- | Lose the types

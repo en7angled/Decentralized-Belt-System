@@ -115,7 +115,7 @@ mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxI
               let ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
                   pendingRankAssetClass = generateRankId profileId rankNumber
                   pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
-                  pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber 
+                  pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber protocolParams
               in
                 and [
                   traceIfFalse "Must spend user NFT of the profile who awards the promotion" $ 
