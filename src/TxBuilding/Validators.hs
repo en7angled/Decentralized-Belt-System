@@ -1,8 +1,9 @@
 module TxBuilding.Validators where
 
 import GeniusYield.Types
-import Onchain.MintingPolicy
-import Onchain.ProfilesValidator ( profilesCompile)
+import qualified Onchain.MintingPolicy as MintingPolicy (mintingPolicyCompile)
+import qualified Onchain.ProfilesValidator as ProfilesValidator ( profilesCompile)
+import qualified Onchain.RanksValidator as RanksValidator (ranksCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude
@@ -15,7 +16,7 @@ import Onchain.Protocol
 ------------------------------------------------------------------------------------------------
 
 miintingPolicyPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-miintingPolicyPlutus = mintingPolicyCompile (ProtocolParams ranksValidatorHashPlutus profilesValidatorHashPlutus 2_000_000)
+miintingPolicyPlutus = MintingPolicy.mintingPolicyCompile (ProtocolParams ranksValidatorHashPlutus profilesValidatorHashPlutus 2_000_000)
 
 mintingPolicyGY :: GYScript 'PlutusV3
 mintingPolicyGY = validatorFromPlutus miintingPolicyPlutus
@@ -30,7 +31,7 @@ mintingPolicyHashGY = validatorHash mintingPolicyGY
 ------------------------------------------------------------------------------------------------
 
 profilesValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-profilesValidatorPlutus = profilesCompile 
+profilesValidatorPlutus = ProfilesValidator.profilesCompile 
 
 profilesValidatorGY :: GYScript 'PlutusV3
 profilesValidatorGY = validatorFromPlutus profilesValidatorPlutus
@@ -48,7 +49,7 @@ profilesValidatorHashPlutus = validatorHashToPlutus profilesValidatorHashGY
 ------------------------------------------------------------------------------------------------
 
 ranksValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-ranksValidatorPlutus = profilesCompile 
+ranksValidatorPlutus = RanksValidator.ranksCompile 
 
 ranksValidatorGY :: GYScript 'PlutusV3
 ranksValidatorGY = validatorFromPlutus ranksValidatorPlutus
@@ -69,4 +70,8 @@ ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
 
 
 defaultProtocolParams :: ProtocolParams
-defaultProtocolParams = ProtocolParams ranksValidatorHashPlutus profilesValidatorHashPlutus 2_000_000
+defaultProtocolParams = ProtocolParams {
+    ranksValidatorScriptHash = ranksValidatorHashPlutus,
+    profilesValidatorScriptHash = profilesValidatorHashPlutus,
+    collateral = 2_000_000
+}
