@@ -37,7 +37,7 @@ import PlutusLedgerApi.V3.Contexts
 data MintingRedeemer
   = CreateProfile TxOutRef MetadataFields Onchain.ProfileType POSIXTime
   | Promote ProfileId ProfileId POSIXTime Integer
-  | BurnProfileId V1.AssetClass
+  | BurnProfileId
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
@@ -82,63 +82,56 @@ mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxI
                     [ traceIfFalse "Creation date must be before the tx validity range"
                         $ before creationDate txInfoValidRange,
                       traceIfFalse "Must spend seed TxOutRef"
-                        $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs,
-                      traceIfFalse "Tx must mint JUST Ref and User NFTs" $ -- protection against other-token-name attack vector 
-                         mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT)
-                        ]
+                        $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs
+                    ]
                && case profileType of
                     Practitioner ->
                       let
                         (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate protocolParams
                         profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
                         rankAssetClass = rankId rankDatum
-                        rankNFTValue = V1.assetClassValue rankAssetClass 1 + minValue
+                        rankNFT = V1.assetClassValue rankAssetClass 1
                         ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
                       in and
                           [
                             traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
                               $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
-                            traceIfFalse "Must mint 1st Rank NFT"
-                              $ isMintingNFT rankAssetClass txInfoMint,
+                          traceIfFalse "Tx must mint JUST  Profile Ref and User NFTs and Rank NFT" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
+                             -- protection against other-token-name attack vector 
+                            mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT + rankNFT),
                             traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
-                              $ hasTxOutWithInlineDatumAndValue rankDatum rankNFTValue ranksValidatorAddress txInfoOutputs
+                              $ hasTxOutWithInlineDatumAndValue rankDatum (rankNFT + minValue) ranksValidatorAddress txInfoOutputs
                           ]
                     Organization ->
                       let
                         profile = mkOrganizationProfile profileRefAssetClass protocolParams
                         profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
                       in
-                       traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
-                              $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs
-            
-            (Promote profileId awardedBy achievementDate rankNumber) -> 
+                        and [
+                              traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
+                                      $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
+                              traceIfFalse "Tx must mint JUST Ref and User NFTs" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
+                                 -- protection against other-token-name attack vector 
+                                mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT)
+                            ]
+
+            (Promote profileId awardedBy achievementDate rankNumber) ->
               let ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
                   pendingRankAssetClass = generateRankId profileId rankNumber
                   pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
                   pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber protocolParams
               in
                 and [
-                  traceIfFalse "Must spend user NFT of the profile who awards the promotion" $ 
+                  traceIfFalse "Must spend user NFT of the profile who awards the promotion" $
                       V1.assetClassValueOf (valueSpent txInfo) awardedBy == 1 ,
                   traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address"
-                      $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs 
+                      $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs
                 ]
-                            
 
-            
-            (BurnProfileId profileRefAssetClass) -> --- MUST ALLOW JUST FOR DELETE PROFILE (NOTHING ELSE SHOULD BE BURNED)
-              let 
-                  profileRefNFT = V1.assetClassValue profileRefAssetClass 1
-               in 
-                  and
-                  [
-                    traceIfFalse "Tx must spend profile Ref NFT" $ 
-                         V1.assetClassValueOf (valueSpent txInfo) profileRefAssetClass == 1,
-                    traceIfFalse "Tx must burn Ref NFT" $ -- protection against other burns
-                         mintValueBurned txInfoMint == profileRefNFT,
-                    traceIfFalse "Tx must not mint any other tokens" $ -- protection against other mints
-                        isZero $ mintValueMinted txInfoMint 
-                  ]
+            BurnProfileId ->  -- Anyone is free to burn 
+                traceIfFalse "Tx must not mint any other tokens" $ -- protection against other mints -- protection against other mints
+                        isZero $ mintValueMinted txInfoMint
+                  
         _ -> traceError "Invalid purpose"
 
 -- | Lose the types

@@ -1,28 +1,22 @@
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use &&" #-}
 
+
+
 module Onchain.RanksValidator where
 
-import GHC.Generics (Generic)
 import Onchain.Protocol
 import Onchain.Utils
 import PlutusLedgerApi.V3
-import PlutusTx.Blueprint
+
 import PlutusTx.Prelude
-import Prelude qualified
+
 import PlutusTx
 import qualified PlutusLedgerApi.V1 as V1
 import Onchain.BJJ (validatePromotion, intToBelt)
 import PlutusLedgerApi.V3.Contexts
 
-newtype RanksRedeemer
-  = RankPromotion RankId
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''RanksRedeemer [('RankPromotion, 0)]
 
 
 -----------------------------------------------------------------------------
@@ -31,16 +25,15 @@ makeIsDataSchemaIndexed ''RanksRedeemer [('RankPromotion, 0)]
 
 {-# INLINEABLE ranksLambda #-}
 ranksLambda :: ScriptContext -> Bool
-ranksLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo) =
-  let redeemer = unsafeFromBuiltinData @RanksRedeemer bredeemer
-   in case scriptInfo of
+ranksLambda (ScriptContext txInfo@TxInfo{..} (Redeemer _) scriptInfo) =
+  case scriptInfo of
         (SpendingScript spendingTxOutRef mdatum) -> case mdatum of
           Nothing -> traceError "No datum"
           Just (Datum bdatum) -> case fromBuiltinData bdatum of
             Nothing -> traceError "Invalid datum"
             Just (studentNextRank :: Rank) ->
               let ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
-                  ownValue = txOutValue ownInput
+                  -- ownValue = txOutValue ownInput
                   ownAddress = txOutAddress ownInput
 
                   profilesValidatorAddr = V1.scriptHashAddress ( profilesValidatorScriptHash $ pendingRankProtocolParams studentNextRank)
@@ -50,8 +43,8 @@ ranksLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo) =
                   (_, masterProfile) = unsafeGetProfileDatumAndValue (rankAwardedByProfileId studentNextRank) profilesValidatorAddr txInfoReferenceInputs
 
                    -- Getting ranks data based on the rank ids in the profiles datums  
-                  Just studentCurrentRankId = currentRank studentProfile -- Fails if if profile is an organization
-                  Just masterCurrentRankId = currentRank masterProfile -- Fails if if profile is an organization
+                  studentCurrentRankId = getCurrentRank studentProfile -- Fails if if profile is an organization
+                  masterCurrentRankId = getCurrentRank masterProfile -- Fails if if profile is an organization
                   (_, studentCurrentRank) = unsafeGetRankDatumAndValue studentCurrentRankId ownAddress txInfoReferenceInputs
                   (_, masterRank) = unsafeGetRankDatumAndValue masterCurrentRankId ownAddress txInfoReferenceInputs
 

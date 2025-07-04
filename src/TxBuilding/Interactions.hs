@@ -1,13 +1,10 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-{-# HLINT ignore "Use newtype instead of data" #-}
 module TxBuilding.Interactions where
 
 import Control.Monad.Reader.Class (MonadReader)
 import Data.Aeson
 import Data.Maybe (fromMaybe)
 import Data.Swagger.Internal.Schema (ToSchema)
-import DomainTypes.Profile.Types  
+import DomainTypes.Profile.Types
 import GHC.Generics (Generic)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
@@ -31,8 +28,9 @@ data UserAddresses = UserAddresses
   }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
-data ActionType = ProfileAction ProfileActionType
-  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+newtype ActionType = ProfileAction ProfileActionType
+  deriving (Show, Generic)
+  deriving newtype (FromJSON, ToJSON, ToSchema)
 
 data Interaction
   = Interaction
@@ -70,4 +68,10 @@ interactionToTxSkeleton Interaction {..} = do
               usedAddrs
         DeleteProfileAction profileRefAC -> do
           (,profileRefAC)
-            <$> deleteProfileTX profileRefAC receiveAddr
+            <$> deleteProfileTX profileRefAC receiveAddr usedAddrs
+        PromoteProfileAction promotedProfileId promotedByProfileId achievementDate rankNumber -> do
+          (,promotedProfileId)
+            <$> promoteProfileTX promotedProfileId promotedByProfileId (toPlutusPOSIXTime achievementDate) rankNumber usedAddrs
+        AcceptPromotionAction promotedProfileId -> do
+          (,promotedProfileId)
+            <$> undefined

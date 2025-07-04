@@ -179,6 +179,9 @@ mkOrganizationProfile profileId protocolParams =
       protocolParams = protocolParams
     }
 
+getCurrentRank :: Profile ->  RankId
+getCurrentRank (Profile _ Practitioner (Just rankId) _ ) = rankId
+getCurrentRank _ = traceError "Profile has no rank"
 
 {-# INLINEABLE generateRankId #-}
 generateRankId :: ProfileId -> Integer -> RankId

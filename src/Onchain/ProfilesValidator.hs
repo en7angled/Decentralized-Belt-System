@@ -58,12 +58,14 @@ profilesLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo)
                in case redeemer of
                     DeleteProfile profileRefAssetClass@(V1.AssetClass (profilesCurrencySymbol, profileRefTN)) ->
                       let profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
+                          profileRefNFT = V1.assetClassValue profileRefAssetClass 1
+                          profileUserNFT = V1.assetClassValue profileUserAssetClass 1
                        in and
-                            [ traceIfFalse "Must burn profile Ref NFT"
-                                $ isBurningNFT profileRefAssetClass txInfoMint
-                            , traceIfFalse "Must spend profile User NFT"
+                            [ traceIfFalse "Must spend profile User NFT"
                                 $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                                == 1
+                                == 1,
+                              traceIfFalse "Tx must burn JUST Ref and User NFTs" $ -- protection against other-token-name attack vector 
+                                mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT)
                             ]
                     (UpdateProfileImage (V1.AssetClass (profilesCurrencySymbol, profileRefTN)) newImageURI) ->
                       let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum -- !!! Open unbounded-datum vulnerability on metadata

@@ -1,5 +1,5 @@
 module TxBuilding.Operations where
-
+  
 import Control.Monad.Reader.Class
 import GeniusYield.TxBuilder
 import GeniusYield.Types
@@ -34,48 +34,45 @@ createProfileTX ::
 createProfileTX recipient metadata profileType creationDate = do
   creationDateSlot <- gySlotFromPOSIXTime creationDate
   let isAfterCreationDate = isInvalidBefore creationDateSlot
+ 
   mintingPolicyRef <- asks profilesValidatorRef
-
   seedTxOutRef <- someUTxOWithoutRefScript
   let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
 
-  (profileRefAC, profileUserAC) <- gyGenerateRefAndUserAC seedTxOutRef
-  let profileId = assetClassToPlutus profileRefAC
+  (gyProfileRefAC, gyProfileUserAC) <- gyGenerateRefAndUserAC seedTxOutRef
+  let profileRefAC = assetClassToPlutus gyProfileRefAC
   
   let plutusProfile = case profileType of
-        Onchain.Practitioner -> fst $ mkPractitionerProfile profileId creationDate defaultProtocolParams
-        Onchain.Organization ->  mkOrganizationProfile profileId defaultProtocolParams
-
-
-
+        Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams
+        Onchain.Organization ->  mkOrganizationProfile profileRefAC defaultProtocolParams
   let plutusProfileCIP68Datum = mkCIP68Datum plutusProfile metadata
 
   let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate
-  let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
+  let gyCreateProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
 
-  isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mintingPolicyRef mintingPolicyGY gyRedeemer profileRefAC
+  isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mintingPolicyRef mintingPolicyGY gyCreateProfileRedeemer gyProfileRefAC
   isLockingProfileState <-
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
       plutusProfileCIP68Datum
-      (valueSingleton profileUserAC 1)
-  isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton profileUserAC 1)
+      (valueSingleton gyProfileUserAC 1)
+  isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton gyProfileUserAC 1)
 
 
 
-  ifPractitionerMintAndLockRankState <- case profileType of
+  ifPractitionerMintAndLockFirstRankState <- case profileType of
         Onchain.Organization -> return mempty
         Onchain.Practitioner -> do 
-          let rankData = snd $ mkPractitionerProfile profileId creationDate defaultProtocolParams
-          rankAC <-  assetClassFromPlutus' $ rankId rankData
-          isMintingRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyRedeemer rankAC
+          let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams
+          gyRankAC <-  assetClassFromPlutus' $ rankId rankData
+          isMintingRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyCreateProfileRedeemer gyRankAC
           isLockingRankState <-
             txMustLockStateWithInlineDatumAndValue
               ranksValidatorGY
               rankData
-              (valueSingleton rankAC 1)
+              (valueSingleton gyRankAC 1)
           return $ 
             mconcat [
                  isMintingRank,
@@ -85,13 +82,13 @@ createProfileTX recipient metadata profileType creationDate = do
   return
     ( mconcat
         [ isSpendingSeedUTxO,
+          isAfterCreationDate,
           isMintingProfileCIP68UserAndRef,
           isLockingProfileState,
           isPayingProfileUserNFT,
-          isAfterCreationDate,
-          ifPractitionerMintAndLockRankState
+          ifPractitionerMintAndLockFirstRankState
         ],
-      profileRefAC
+      gyProfileRefAC
     )
 
 -- | Update OnChainProfile Transaction Skeleton
@@ -101,22 +98,22 @@ updateProfileTX ::
   ImageURI ->
   [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3)
-updateProfileTX profileRefAC newImageURI ownAddrs = do
+updateProfileTX gyProfileRefAC newImageURI ownAddrs = do
   profilesScriptRef <- asks profilesValidatorRef
-  (plutusProfileDatum, plutusValue) <- getProfileStateDataAndValue profileRefAC
-  let updateRedeemer = UpdateProfileImage (assetClassToPlutus profileRefAC) newImageURI
+  (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyProfileRefAC
+  let updateRedeemer = UpdateProfileImage (assetClassToPlutus gyProfileRefAC) newImageURI
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ updateRedeemer
-  spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef profileRefAC gyRedeemer profilesValidatorGY
-  profileUserAC <- gyDeriveUserFromRefAC profileRefAC
-  spendsProfileUserNFT <- txMustSpendFromAddress profileUserAC ownAddrs
+  spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef gyProfileRefAC gyRedeemer profilesValidatorGY
+  gyProfileUserAC <- gyDeriveUserFromRefAC gyProfileRefAC
+  spendsProfileUserNFT <- txMustSpendFromAddress gyProfileUserAC ownAddrs
   let newCip68Datum = updateCIP68DatumImage newImageURI plutusProfileDatum
-  gyProfileValue <- valueFromPlutus' plutusValue
-  isProfileStateUpdated <- txMustLockStateWithInlineDatumAndValue profilesValidatorGY newCip68Datum gyProfileValue
+  gyProfileValue <- valueFromPlutus' plutusProfileValue
+  isLockingUpdatedProfileState <- txMustLockStateWithInlineDatumAndValue profilesValidatorGY newCip68Datum gyProfileValue
   return $
     mconcat
       [ spendsProfileUserNFT,
         spendsProfileRefNFT,
-        isProfileStateUpdated
+        isLockingUpdatedProfileState
       ]
 
 -- | Delete OnChainProfile Transaction Skeleton
@@ -124,23 +121,61 @@ deleteProfileTX ::
   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
   GYAssetClass ->
   GYAddress ->
+  [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3)
-deleteProfileTX profileRefAC recipient = do
+deleteProfileTX gyProfileRefAC recipient ownAddrs = do
   profilesScriptRef <- asks profilesValidatorRef
   mintingPolicyRef <- asks profilesValidatorRef
-  (_plutusProfileDatum, plutusValue) <- getProfileStateDataAndValue profileRefAC
-  let spendRedeemer = DeleteProfile (assetClassToPlutus profileRefAC)
-  let gySpendRedeemer = redeemerFromPlutus' . toBuiltinData $ spendRedeemer
-  let burnRedeemer = BurnProfileId (assetClassToPlutus profileRefAC)
-  let gyBurnRedeemer = redeemerFromPlutus' . toBuiltinData $ burnRedeemer
-  spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef profileRefAC gySpendRedeemer profilesValidatorGY
-  gyProfileValue <- valueFromPlutus' plutusValue
+  (_plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyProfileRefAC
+  let gySpendProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ DeleteProfile (assetClassToPlutus gyProfileRefAC)
+  let gyBurnProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ BurnProfileId
+  spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef gyProfileRefAC gySpendProfileRedeemer profilesValidatorGY
+  gyProfileValue <- valueFromPlutus' plutusProfileValue
   isGettingProfileValue <- txIsPayingValueToAddress recipient gyProfileValue
-  isBurningProfileRefAndUserNFTs <- txMustBurnCIP68UserAndRef mintingPolicyRef mintingPolicyGY gyBurnRedeemer profileRefAC
+
+  gyProfileUserAC <- gyDeriveUserFromRefAC gyProfileRefAC
+  spendsProfileUserNFT <- txMustSpendFromAddress gyProfileUserAC ownAddrs
+
+  isBurningProfileRefAndUserNFTs <- txMustBurnCIP68UserAndRef mintingPolicyRef mintingPolicyGY gyBurnProfileRedeemer gyProfileRefAC
   return $
     mconcat
       [ spendsProfileRefNFT,
         isGettingProfileValue,
-        isBurningProfileRefAndUserNFTs --- TODO: check redeemer
+        spendsProfileUserNFT,
+        isBurningProfileRefAndUserNFTs 
       ]
 
+-- Promote ProfileId ProfileId POSIXTime Integer
+
+promoteProfileTX ::
+  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
+  GYAssetClass ->
+  GYAssetClass ->
+  POSIXTime ->
+  Integer ->
+  [GYAddress] ->
+  m (GYTxSkeleton 'PlutusV3)
+promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate rankNumber ownAddrs = do
+  mintingPolicyRef <- asks profilesValidatorRef
+
+  gyMasterUserAC <- gyDeriveUserFromRefAC gyPromotedByProfileId
+  spendsMasterProfileUserNFT <- txMustSpendFromAddress gyMasterUserAC ownAddrs
+
+  let redeemer = Promote (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate rankNumber
+  let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
+  gyPromotionRankAC <- assetClassFromPlutus' $ generateRankId (assetClassToPlutus gyPromotedProfileId) rankNumber
+  isMintingPromotionRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyRedeemer gyPromotionRankAC
+  
+  let pendingRankDatum = mkPendingRank (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate rankNumber defaultProtocolParams
+  isLockingPendingRankState <-
+    txMustLockStateWithInlineDatumAndValue
+      ranksValidatorGY
+      pendingRankDatum
+      (valueSingleton gyPromotionRankAC 1)
+  
+  return $
+    mconcat
+      [ spendsMasterProfileUserNFT,
+        isMintingPromotionRank,
+        isLockingPendingRankState
+      ]

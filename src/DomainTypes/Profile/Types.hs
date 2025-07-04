@@ -13,13 +13,16 @@ import GeniusYield.Types (GYAssetClass)
 -- * Profile
 
 -------------------------------------------------------------------------------
+
+type RankNumber = Integer
+
 type POSIXTimeInteger = Integer -- POSIXTime in milliseconds
 
 data ProfileData
   = ProfileData
-  { profileName :: Text
-  , profileDescription :: Text
-  , profileImageURI :: Text
+  { profileName :: Text,
+    profileDescription :: Text,
+    profileImageURI :: Text
   }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
@@ -29,7 +32,25 @@ data ProfileType = Practitioner | Organization
 type ProfileRefAC = GYAssetClass
 
 data ProfileActionType
-  = CreateProfileAction ProfileData ProfileType POSIXTimeInteger
-  | UpdateProfileImageAction ProfileRefAC Text
-  | DeleteProfileAction ProfileRefAC
+  = CreateProfileAction
+      { profileData :: ProfileData,
+        profileType :: ProfileType,
+        creationDate :: POSIXTimeInteger
+      }
+  | UpdateProfileImageAction
+      { profileId :: ProfileRefAC,
+        imageURI :: Text
+      }
+  | DeleteProfileAction
+      { profileId :: ProfileRefAC
+      }
+  | PromoteProfileAction
+      { promotedProfileId :: ProfileRefAC,
+        promotedByProfileId :: ProfileRefAC,
+        achievementDate :: POSIXTimeInteger,
+        rankNumber :: RankNumber
+      }
+  | AcceptPromotionAction
+      { promotedProfileId :: ProfileRefAC
+      }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
