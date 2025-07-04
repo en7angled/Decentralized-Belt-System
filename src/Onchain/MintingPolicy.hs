@@ -69,7 +69,7 @@ mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxI
           let profilesValidatorAddress = V1.scriptHashAddress $ ScriptHash bshash
           in
           case redeemer of
-            CreateProfile seedTxOutRef metadata profileType creationDate rankNumber -> --- TODO: add restriction on rankNumber > 0
+            CreateProfile seedTxOutRef metadata profileType creationDate rankNumber -> --- TODO: add restriction on rankNumber > 0c
               let
                   (profileUserTN, profileRefTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRef
                   profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)

@@ -72,6 +72,6 @@ interactionToTxSkeleton Interaction {..} = do
         PromoteProfileAction promotedProfileId promotedByProfileId achievementDate rankNumber -> do
           (,promotedProfileId)
             <$> promoteProfileTX promotedProfileId promotedByProfileId (toPlutusPOSIXTime achievementDate) rankNumber usedAddrs
-        AcceptPromotionAction promotedProfileId -> do
-          (,promotedProfileId)
-            <$> undefined
+        AcceptPromotionAction promotionId -> do
+          (,promotionId)
+            <$> acceptPromotionTX promotionId usedAddrs
