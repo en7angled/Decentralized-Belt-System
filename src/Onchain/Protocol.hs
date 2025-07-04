@@ -147,11 +147,10 @@ promoteProfile (CIP68Datum metadata version profile@Profile {..}) rank = case cu
   Nothing -> traceError "Profile has no rank"
 
 
-mkPractitionerProfile :: ProfileId -> POSIXTime -> ProtocolParams -> (Profile, Rank)
-mkPractitionerProfile profileId creationDate protocolParams =
-  let rankNumber = 0
-      firstRank =
-        Rank
+mkPractitionerProfile :: ProfileId -> POSIXTime -> ProtocolParams -> Integer -> (Profile, Rank)
+mkPractitionerProfile profileId creationDate protocolParams rankNumber =
+    let firstRank =
+         Rank
           { rankId = generateRankId profileId rankNumber,
             rankNumber = rankNumber,
             rankAchievedByProfileId = profileId,
@@ -160,13 +159,13 @@ mkPractitionerProfile profileId creationDate protocolParams =
             rankPreviousRankId = Nothing,
             rankProtocolParams = protocolParams
           }
-      profile =
-        Profile
-          { profileId = profileId,
-            profileType = Practitioner,
-            currentRank = Just (generateRankId profileId 0),
-            protocolParams = protocolParams
-          }
+        profile =
+          Profile
+            { profileId = profileId,
+              profileType = Practitioner,
+              currentRank = Just (generateRankId profileId rankNumber),
+              protocolParams = protocolParams
+            }
    in (profile, firstRank)
 
 

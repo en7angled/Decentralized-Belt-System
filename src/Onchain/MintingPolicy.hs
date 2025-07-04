@@ -35,7 +35,7 @@ import PlutusLedgerApi.V3.Contexts
 
 -- | Custom redeemer :
 data MintingRedeemer
-  = CreateProfile TxOutRef MetadataFields Onchain.ProfileType POSIXTime
+  = CreateProfile TxOutRef MetadataFields Onchain.ProfileType POSIXTime Integer
   | Promote ProfileId ProfileId POSIXTime Integer
   | BurnProfileId
   deriving stock (Generic, Prelude.Show)
@@ -69,7 +69,7 @@ mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxI
           let profilesValidatorAddress = V1.scriptHashAddress $ ScriptHash bshash
           in
           case redeemer of
-            CreateProfile seedTxOutRef metadata profileType creationDate ->
+            CreateProfile seedTxOutRef metadata profileType creationDate rankNumber -> --- TODO: add restriction on rankNumber > 0
               let
                   (profileUserTN, profileRefTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRef
                   profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)
@@ -87,7 +87,7 @@ mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxI
                && case profileType of
                     Practitioner ->
                       let
-                        (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate protocolParams
+                        (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate protocolParams rankNumber
                         profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
                         rankAssetClass = rankId rankDatum
                         rankNFT = V1.assetClassValue rankAssetClass 1

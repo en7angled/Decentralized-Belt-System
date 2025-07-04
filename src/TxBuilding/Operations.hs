@@ -31,7 +31,18 @@ createProfileTX ::
   Onchain.ProfileType ->
   POSIXTime ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
-createProfileTX recipient metadata profileType creationDate = do
+createProfileTX recipient metadata profileType creationDate = createProfileWithRankTX recipient metadata profileType creationDate 0
+
+-- | Create OnChainProfile Transaction Skeleton
+createProfileWithRankTX ::
+  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
+  GYAddress ->
+  MetadataFields ->
+  Onchain.ProfileType ->
+  POSIXTime ->
+  Integer ->
+  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
+createProfileWithRankTX recipient metadata profileType creationDate rankNumber = do
   creationDateSlot <- gySlotFromPOSIXTime creationDate
   let isAfterCreationDate = isInvalidBefore creationDateSlot
 
@@ -45,11 +56,11 @@ createProfileTX recipient metadata profileType creationDate = do
   let profileRefAC = assetClassToPlutus gyProfileRefAC
 
   let plutusProfile = case profileType of
-        Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams
+        Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams rankNumber
         Onchain.Organization -> mkOrganizationProfile profileRefAC defaultProtocolParams
   let plutusProfileCIP68Datum = mkCIP68Datum plutusProfile metadata
 
-  let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate
+  let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate rankNumber
   let gyCreateProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
 
   isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mintingPolicyRef mintingPolicyGY gyCreateProfileRedeemer gyProfileRefAC
@@ -63,7 +74,7 @@ createProfileTX recipient metadata profileType creationDate = do
   ifPractitionerMintAndLockFirstRankState <- case profileType of
     Onchain.Organization -> return mempty
     Onchain.Practitioner -> do
-      let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams
+      let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams rankNumber
       gyRankAC <- assetClassFromPlutus' $ rankId rankData
       isMintingRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyCreateProfileRedeemer gyRankAC
       isLockingRankState <-
