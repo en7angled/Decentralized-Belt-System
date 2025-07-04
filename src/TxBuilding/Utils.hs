@@ -55,6 +55,18 @@ getInlineDatumAndValue utxo = case utxoOutDatum utxo of
   GYOutDatumInline datum -> Just (datum, utxoValue utxo)
   _ -> Nothing
 
+
+tnFromGYAssetClass :: (MonadError GYTxMonadException m) => GYAssetClass -> m GYTokenName
+tnFromGYAssetClass (GYToken _ gyProfileRefTN) = return gyProfileRefTN
+tnFromGYAssetClass _ = throwError (GYApplicationException InvalidAssetClass)
+
+
+------------------------------------------------------------------------------------------------
+
+-- * Specific Utils
+
+------------------------------------------------------------------------------------------------
+
 -- | Extract profile and value from UTxO
 profileAndValueFromUTxO :: GYUTxO -> Maybe (CIP68Datum Onchain.Profile, Value)
 profileAndValueFromUTxO profileStateUTxO = do
@@ -71,6 +83,17 @@ profileDatumFromDatum gyDatum = do
   let plutusDatum = datumToPlutus' gyDatum
   fromBuiltinData plutusDatum
 
-tnFromGYAssetClass :: (MonadError GYTxMonadException m) => GYAssetClass -> m GYTokenName
-tnFromGYAssetClass (GYToken _ gyProfileRefTN) = return gyProfileRefTN
-tnFromGYAssetClass _ = throwError (GYApplicationException InvalidAssetClass)
+
+rankAndValueFromUTxO :: GYUTxO -> Maybe (Onchain.Rank, Value)
+rankAndValueFromUTxO rankStateUTxO = do
+  (gyDatum, gyValue) <- getInlineDatumAndValue rankStateUTxO
+  rankDatum <- rankDatumFromDatum gyDatum
+  let pVal = valueToPlutus gyValue
+  return (rankDatum, pVal)
+
+
+
+rankDatumFromDatum :: GYDatum -> Maybe Onchain.Rank 
+rankDatumFromDatum gyDatum = 
+  fromBuiltinData (datumToPlutus' gyDatum)
+

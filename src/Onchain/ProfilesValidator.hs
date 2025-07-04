@@ -51,7 +51,7 @@ profilesLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo)
           Nothing -> traceError "No datum"
           Just (Datum bdatum) -> case fromBuiltinData bdatum of
             Nothing -> traceError "Invalid datum"
-            Just profileDatum@(CIP68Datum metadata version (profile :: Profile)) ->
+            Just profileDatum@(CIP68Datum _metadata _version (profile :: Profile)) ->
               let ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
                   ownValue = txOutValue ownInput
                   ownAddress = txOutAddress ownInput
@@ -82,8 +82,7 @@ profilesLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo)
                         ranksValidatorAddress = V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
                         (promotionValue, pendingRankDatum) = unsafeGetRankDatumAndValue promotionId ranksValidatorAddress txInfoInputs
 
-                        (updatedProfile, newRankDatum) = promoteProfile profile pendingRankDatum
-                        updatedCip68Datum = CIP68Datum metadata version updatedProfile
+                        (updatedProfileCIP68Datum, newRankDatum) = promoteProfile profileDatum pendingRankDatum
                         profileUserAssetClass = pendingRankAwardedTo pendingRankDatum
                        in
                         and
@@ -91,7 +90,7 @@ profilesLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo)
                               $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
                               == 1
                           , traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
-                              $ hasTxOutWithInlineDatumAndValue updatedCip68Datum ownValue ownAddress txInfoOutputs
+                              $ hasTxOutWithInlineDatumAndValue updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs
                           , traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
                               $ hasTxOutWithInlineDatumAndValue newRankDatum promotionValue ranksValidatorAddress txInfoOutputs
                           ]

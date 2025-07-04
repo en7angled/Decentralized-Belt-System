@@ -18,16 +18,19 @@ data ProfileException
   | InvalidProfileData
   | InsufficientFunds
   | InvalidMetadata
-  | InvalidAssetClass
+  | InvalidAssetClass 
+  | RankNotFound
   
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
 
 instance Exception ProfileException where
+  displayException :: ProfileException -> Prelude.String
   displayException ProfileNotFound = "Profile not found"
   displayException ProfileAlreadyExists = "Profile already exists"
   displayException InvalidProfileData = "Invalid profile data"
   displayException InsufficientFunds = "Insufficient funds"
   displayException InvalidMetadata = "Invalid metadata"
   displayException InvalidAssetClass = "Invalid asset class"
+  displayException RankNotFound = "Rank not found"
 
 instance IsGYApiError ProfileException 

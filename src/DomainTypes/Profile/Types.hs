@@ -30,6 +30,7 @@ data ProfileType = Practitioner | Organization
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 type ProfileRefAC = GYAssetClass
+type RankAC = GYAssetClass
 
 data ProfileActionType
   = CreateProfileAction
@@ -51,6 +52,6 @@ data ProfileActionType
         rankNumber :: RankNumber
       }
   | AcceptPromotionAction
-      { promotedProfileId :: ProfileRefAC
+      { promotionId :: RankAC
       }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

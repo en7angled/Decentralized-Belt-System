@@ -1,21 +1,21 @@
 module TxBuilding.Operations where
-  
+
 import Control.Monad.Reader.Class
 import GeniusYield.TxBuilder
 import GeniusYield.Types
-import Onchain.CIP68 (MetadataFields, mkCIP68Datum, updateCIP68DatumImage, ImageURI)
-import Onchain.ProfilesValidator ( ProfilesRedeemer (..))
-import Onchain.Protocol qualified as Onchain
-import PlutusLedgerApi.V1.Tx qualified as V1
+import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
+import Onchain.MintingPolicy
+import Onchain.ProfilesValidator (ProfilesRedeemer (..))
+import Onchain.Protocol
+import qualified Onchain.Protocol as Onchain
+import qualified PlutusLedgerApi.V1.Tx as V1
 import PlutusLedgerApi.V3
-import PlutusLedgerApi.V3.Tx qualified as V3
+import qualified PlutusLedgerApi.V3.Tx as V3
 import TxBuilding.Context (ProfileTxBuildingContext (..))
-import TxBuilding.Lookups (getProfileStateDataAndValue)
+import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue)
 import TxBuilding.Skeletons
 import TxBuilding.Utils
 import TxBuilding.Validators
-import Onchain.MintingPolicy
-import Onchain.Protocol
 
 ------------------------------------------------------------------------------------------------
 
@@ -34,7 +34,7 @@ createProfileTX ::
 createProfileTX recipient metadata profileType creationDate = do
   creationDateSlot <- gySlotFromPOSIXTime creationDate
   let isAfterCreationDate = isInvalidBefore creationDateSlot
- 
+
   mintingPolicyRef <- asks profilesValidatorRef
   seedTxOutRef <- someUTxOWithoutRefScript
   let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
@@ -43,10 +43,10 @@ createProfileTX recipient metadata profileType creationDate = do
 
   (gyProfileRefAC, gyProfileUserAC) <- gyGenerateRefAndUserAC seedTxOutRef
   let profileRefAC = assetClassToPlutus gyProfileRefAC
-  
+
   let plutusProfile = case profileType of
         Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams
-        Onchain.Organization ->  mkOrganizationProfile profileRefAC defaultProtocolParams
+        Onchain.Organization -> mkOrganizationProfile profileRefAC defaultProtocolParams
   let plutusProfileCIP68Datum = mkCIP68Datum plutusProfile metadata
 
   let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate
@@ -60,24 +60,22 @@ createProfileTX recipient metadata profileType creationDate = do
       (valueSingleton gyProfileUserAC 1)
   isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton gyProfileUserAC 1)
 
-
-
   ifPractitionerMintAndLockFirstRankState <- case profileType of
-        Onchain.Organization -> return mempty
-        Onchain.Practitioner -> do 
-          let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams
-          gyRankAC <-  assetClassFromPlutus' $ rankId rankData
-          isMintingRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyCreateProfileRedeemer gyRankAC
-          isLockingRankState <-
-            txMustLockStateWithInlineDatumAndValue
-              ranksValidatorGY
-              rankData
-              (valueSingleton gyRankAC 1)
-          return $ 
-            mconcat [
-                 isMintingRank,
-                 isLockingRankState
-                 ]
+    Onchain.Organization -> return mempty
+    Onchain.Practitioner -> do
+      let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams
+      gyRankAC <- assetClassFromPlutus' $ rankId rankData
+      isMintingRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyCreateProfileRedeemer gyRankAC
+      isLockingRankState <-
+        txMustLockStateWithInlineDatumAndValue
+          ranksValidatorGY
+          rankData
+          (valueSingleton gyRankAC 1)
+      return $
+        mconcat
+          [ isMintingRank,
+            isLockingRankState
+          ]
 
   return
     ( mconcat
@@ -142,7 +140,7 @@ deleteProfileTX gyProfileRefAC recipient ownAddrs = do
       [ spendsProfileRefNFT,
         isGettingProfileValue,
         spendsProfileUserNFT,
-        isBurningProfileRefAndUserNFTs 
+        isBurningProfileRefAndUserNFTs
       ]
 
 -- Promote ProfileId ProfileId POSIXTime Integer
@@ -165,17 +163,72 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate rankN
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
   gyPromotionRankAC <- assetClassFromPlutus' $ generateRankId (assetClassToPlutus gyPromotedProfileId) rankNumber
   isMintingPromotionRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyRedeemer gyPromotionRankAC
-  
+
   let pendingRankDatum = mkPendingRank (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate rankNumber defaultProtocolParams
   isLockingPendingRankState <-
     txMustLockStateWithInlineDatumAndValue
       ranksValidatorGY
       pendingRankDatum
       (valueSingleton gyPromotionRankAC 1)
-  
+
   return $
     mconcat
       [ spendsMasterProfileUserNFT,
         isMintingPromotionRank,
         isLockingPendingRankState
+      ]
+
+acceptPromotionTX ::
+  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
+  GYAssetClass ->
+  [GYAddress] ->
+  m (GYTxSkeleton 'PlutusV3)
+acceptPromotionTX gyPromotionId ownAddrs = do
+  -- mintingPolicyRef <- asks profilesValidatorRef
+  ranksValidatorRef <- asks ranksValidatorRef
+  profilesScriptRef <- asks profilesValidatorRef
+  -- let gyMPRedeemer = redeemerFromPlutus' . toBuiltinData $ AcceptPromotion (assetClassToPlutus gyPromotedProfileId)
+
+  (plutusPromotionRankDatum, plutusPromotionRankValue) <- getRankStateDataAndValue gyPromotionId
+
+  let studentProfileRefAC = rankAchievedByProfileId plutusPromotionRankDatum
+  gyStudentProfileRefAC <- assetClassFromPlutus' studentProfileRefAC
+  let masterProfileRefAC = rankAwardedByProfileId plutusPromotionRankDatum
+  gyMasterProfileRefAC <- assetClassFromPlutus' masterProfileRefAC
+
+  gyStudentProfileUserAC <- gyDeriveUserFromRefAC gyStudentProfileRefAC
+  spendsStudentProfileUserNFT <- txMustSpendFromAddress gyStudentProfileUserAC ownAddrs
+  let gySpendProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ AcceptPromotion (assetClassToPlutus gyPromotionId)
+  spendsStudentProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer profilesScriptRef gyStudentProfileRefAC gySpendProfileRedeemer profilesValidatorGY
+
+  (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyStudentProfileRefAC
+  let plutusStudentProfile = extra plutusProfileDatum
+  let studentCurrentRankId = Onchain.getCurrentRankId plutusStudentProfile
+  gyStudentCurrentRankAC <- assetClassFromPlutus' studentCurrentRankId
+
+  (plutusMasterProfileDatum, _plutusMasterProfileValue) <- getProfileStateDataAndValue gyMasterProfileRefAC
+  let plutusMasterProfile = extra plutusMasterProfileDatum
+  let masterCurrentRankId = Onchain.getCurrentRankId plutusMasterProfile
+  gyMasterCurrentRankAC <- assetClassFromPlutus' masterCurrentRankId
+
+  let (plutusStudentUpdatedProfileDatum, plutuStudentUpdatedRankDatum) = promoteProfile plutusProfileDatum plutusPromotionRankDatum
+
+  gyProfileValue <- valueFromPlutus' plutusProfileValue
+  isLockingUpdatedStudentProfile <- txMustLockStateWithInlineDatumAndValue profilesValidatorGY plutusStudentUpdatedProfileDatum gyProfileValue
+
+  gyRankValue <- valueFromPlutus' plutusPromotionRankValue
+  isLockingUpdatedPromotionRank <- txMustLockStateWithInlineDatumAndValue ranksValidatorGY plutuStudentUpdatedRankDatum gyRankValue
+
+  spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer ranksValidatorRef gyPromotionId unitRedeemer ranksValidatorGY
+
+  referencesMasterAndStudentProfilesAndRanks <- txMustHaveUTxOsAsRefInputs [gyMasterProfileRefAC, gyStudentProfileRefAC, gyStudentCurrentRankAC, gyMasterCurrentRankAC]
+
+  return $
+    mconcat
+      [ spendsStudentProfileUserNFT,
+        spendsStudentProfileRefNFT,
+        isLockingUpdatedStudentProfile,
+        isLockingUpdatedPromotionRank,
+        spendsPromotionRank,
+        referencesMasterAndStudentProfilesAndRanks
       ]

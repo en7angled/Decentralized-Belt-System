@@ -16,7 +16,7 @@ import PlutusTx.Prelude
 import Prelude qualified
 import PlutusLedgerApi.V3
 import Onchain.Utils
-import Onchain.CIP68 (CIP68Datum (extra))
+import Onchain.CIP68 (CIP68Datum (extra, CIP68Datum))
 
 
 
@@ -138,12 +138,12 @@ updateProfileRank Profile {..} rank =
       protocolParams = protocolParams
     }
 
-promoteProfile :: Profile -> Rank -> (Profile, Rank)
-promoteProfile profile@Profile {..} rank = case currentRank of
+promoteProfile :: CIP68Datum Profile -> Rank -> (CIP68Datum Profile, Rank)
+promoteProfile (CIP68Datum metadata version profile@Profile {..}) rank = case currentRank of
   Just currentRankId ->
     let newRank = acceptRank rank currentRankId
         updatedProfile = updateProfileRank profile newRank
-     in (updatedProfile, newRank)
+     in (CIP68Datum  metadata version updatedProfile, newRank)
   Nothing -> traceError "Profile has no rank"
 
 
@@ -179,9 +179,9 @@ mkOrganizationProfile profileId protocolParams =
       protocolParams = protocolParams
     }
 
-getCurrentRank :: Profile ->  RankId
-getCurrentRank (Profile _ Practitioner (Just rankId) _ ) = rankId
-getCurrentRank _ = traceError "Profile has no rank"
+getCurrentRankId :: Profile ->  RankId
+getCurrentRankId (Profile _ Practitioner (Just rankId) _ ) = rankId
+getCurrentRankId _ = traceError "Profile has no rank"
 
 {-# INLINEABLE generateRankId #-}
 generateRankId :: ProfileId -> Integer -> RankId

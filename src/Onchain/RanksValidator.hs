@@ -38,13 +38,15 @@ ranksLambda (ScriptContext txInfo@TxInfo{..} (Redeemer _) scriptInfo) =
 
                   profilesValidatorAddr = V1.scriptHashAddress ( profilesValidatorScriptHash $ pendingRankProtocolParams studentNextRank)
                   
+                  -- Must have student and master profiles NFTs as reference inputs
                   -- Getting profiles based on the ids in the rank promotion datum
                   (_, studentProfile) = unsafeGetProfileDatumAndValue (rankAchievedByProfileId studentNextRank) profilesValidatorAddr txInfoReferenceInputs
                   (_, masterProfile) = unsafeGetProfileDatumAndValue (rankAwardedByProfileId studentNextRank) profilesValidatorAddr txInfoReferenceInputs
 
+                   -- Must have student and master ranks NFTs as reference inputs
                    -- Getting ranks data based on the rank ids in the profiles datums  
-                  studentCurrentRankId = getCurrentRank studentProfile -- Fails if if profile is an organization
-                  masterCurrentRankId = getCurrentRank masterProfile -- Fails if if profile is an organization
+                  studentCurrentRankId = getCurrentRankId studentProfile -- Fails if if profile is an organization
+                  masterCurrentRankId = getCurrentRankId masterProfile -- Fails if if profile is an organization
                   (_, studentCurrentRank) = unsafeGetRankDatumAndValue studentCurrentRankId ownAddress txInfoReferenceInputs
                   (_, masterRank) = unsafeGetRankDatumAndValue masterCurrentRankId ownAddress txInfoReferenceInputs
 
