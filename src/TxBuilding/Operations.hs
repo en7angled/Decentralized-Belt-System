@@ -184,10 +184,8 @@ acceptPromotionTX ::
   [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3)
 acceptPromotionTX gyPromotionId ownAddrs = do
-  -- mintingPolicyRef <- asks profilesValidatorRef
   ranksValidatorRef <- asks ranksValidatorRef
   profilesScriptRef <- asks profilesValidatorRef
-  -- let gyMPRedeemer = redeemerFromPlutus' . toBuiltinData $ AcceptPromotion (assetClassToPlutus gyPromotedProfileId)
 
   (plutusPromotionRankDatum, plutusPromotionRankValue) <- getRankStateDataAndValue gyPromotionId
 
@@ -217,7 +215,7 @@ acceptPromotionTX gyPromotionId ownAddrs = do
   isLockingUpdatedStudentProfile <- txMustLockStateWithInlineDatumAndValue profilesValidatorGY plutusStudentUpdatedProfileDatum gyProfileValue
 
   gyRankValue <- valueFromPlutus' plutusPromotionRankValue
-  isLockingUpdatedPromotionRank <- txMustLockStateWithInlineDatumAndValue ranksValidatorGY plutuStudentUpdatedRankDatum gyRankValue
+  isLockingUpdatedRank <- txMustLockStateWithInlineDatumAndValue ranksValidatorGY plutuStudentUpdatedRankDatum gyRankValue
 
   spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer ranksValidatorRef gyPromotionId unitRedeemer ranksValidatorGY
 
@@ -228,7 +226,7 @@ acceptPromotionTX gyPromotionId ownAddrs = do
       [ spendsStudentProfileUserNFT,
         spendsStudentProfileRefNFT,
         isLockingUpdatedStudentProfile,
-        isLockingUpdatedPromotionRank,
         spendsPromotionRank,
+        isLockingUpdatedRank,
         referencesMasterAndStudentProfilesAndRanks
       ]
