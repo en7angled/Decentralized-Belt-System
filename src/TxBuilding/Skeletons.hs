@@ -134,7 +134,7 @@ txMustLockStateWithInlineDatumAndValue validator todata value = do
 
   let gyDatum = datumFromPlutusData todata
   return $
-    mustHaveOutput -- pays profile ref token to validator address with valid datum
+    mustHaveOutput
       GYTxOut
         { gyTxOutAddress = validatorAddressGY,
           gyTxOutDatum = Just (gyDatum, GYTxOutUseInlineDatum),

@@ -29,27 +29,6 @@ import Onchain.CIP68 (CIP68Datum (extra, CIP68Datum))
 
 
 
--------------------------------------------------------------------------------
-
--- * Protocol Parameters
-
--------------------------------------------------------------------------------
-data ProtocolParams2 = ProtocolParams2
-  { ranksValidatorScriptHash2 :: ScriptHash,
-    profilesValidatorScriptHash2 :: ScriptHash
-  }
-  deriving stock (Generic)
-
-unstableMakeIsData ''ProtocolParams2
-makeLift ''ProtocolParams2
-
--- makeIsDataIndexed ''ProtocolParams2 [('ProtocolParams2, 0)]
-
--- makeIsDataSchemaIndexed ''ProtocolParams2 [('ProtocolParams2, 0)]
-
-
--- | Generate `Lift` instance for the custom parameter type with Template Haskell.
---  Allows argument value to be pre-compiled to UPLC, so the compiled parameterized script can be applied to it.
 
 
 -------------------------------------------------------------------------------
@@ -57,19 +36,19 @@ makeLift ''ProtocolParams2
 -- * Protocol Parameters
 
 -------------------------------------------------------------------------------
-data ProtocolParams = ProtocolParams
-  { ranksValidatorScriptHash :: ScriptHash,
-    profilesValidatorScriptHash :: ScriptHash,
-    collateral :: Lovelace
-  }
+newtype ProtocolParams = ProtocolParams (ScriptHash, ScriptHash)
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
--- | Generate `Lift` instance for the custom parameter type with Template Haskell.
---  Allows argument value to be pre-compiled to UPLC, so the compiled parameterized script can be applied to it.
+makeIsDataSchemaIndexed ''ProtocolParams [('ProtocolParams, 0)]
 makeLift ''ProtocolParams
 
-makeIsDataSchemaIndexed ''ProtocolParams [('ProtocolParams, 0)]
+profilesValidatorScriptHash :: ProtocolParams -> ScriptHash
+profilesValidatorScriptHash (ProtocolParams (_, p)) = p
+
+ranksValidatorScriptHash :: ProtocolParams -> ScriptHash
+ranksValidatorScriptHash (ProtocolParams (r, _)) = r
+
 
 -------------------------------------------------------------------------------
 

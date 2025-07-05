@@ -43,7 +43,7 @@ createProfileWithRankTX ::
   Integer ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 createProfileWithRankTX recipient metadata profileType creationDate rankNumber = do
-  creationDateSlot <- gySlotFromPOSIXTime creationDate
+  creationDateSlot <- gySlotFromPOSIXTime (creationDate + 1000)
   let isAfterCreationDate = isInvalidBefore creationDateSlot
 
   mintingPolicyRef <- asks mintingPolicyRef
@@ -70,7 +70,7 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
       plutusProfileCIP68Datum
-      (valueSingleton gyProfileRefAC 1)
+      ((valueSingleton gyProfileRefAC 1)  <> valueFromLovelace 3500000)
   isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton gyProfileUserAC 1)
 
   ifPractitionerMintAndLockFirstRankState <- case profileType of
@@ -83,7 +83,7 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
         txMustLockStateWithInlineDatumAndValue
           ranksValidatorGY
           rankData
-          (valueSingleton gyRankAC 1)
+          ((valueSingleton gyRankAC 1) <> valueFromLovelace 3500000)
       return $
         mconcat
           [ isMintingRank,

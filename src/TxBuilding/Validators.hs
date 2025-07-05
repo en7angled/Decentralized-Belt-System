@@ -51,20 +51,8 @@ ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
 
 ------------------------------------------------------------------------------------------------
 
-defaultProtocolParams2 :: ProtocolParams2
-defaultProtocolParams2 =
-  ProtocolParams2
-    { ranksValidatorScriptHash2 = ranksValidatorHashPlutus,
-      profilesValidatorScriptHash2 = profilesValidatorHashPlutus
-    }
-
 defaultProtocolParams :: ProtocolParams
-defaultProtocolParams =
-  ProtocolParams
-    { ranksValidatorScriptHash = ranksValidatorHashPlutus,
-      profilesValidatorScriptHash = profilesValidatorHashPlutus,
-      collateral = 2_000_000
-    }
+defaultProtocolParams = ProtocolParams (ranksValidatorHashPlutus, profilesValidatorHashPlutus)
 
 ------------------------------------------------------------------------------------------------
 
@@ -73,7 +61,7 @@ defaultProtocolParams =
 ------------------------------------------------------------------------------------------------
 
 mintingPolicyPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-mintingPolicyPlutus = MintingPolicy.mintingPolicyCompile defaultProtocolParams2
+mintingPolicyPlutus = MintingPolicy.mintingPolicyCompile defaultProtocolParams
 
 mintingPolicyGY :: GYScript 'PlutusV3
 mintingPolicyGY = validatorFromPlutus mintingPolicyPlutus

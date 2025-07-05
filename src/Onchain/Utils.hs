@@ -11,6 +11,8 @@ import PlutusTx.Builtins (serialiseData)
 import PlutusTx.List qualified
 import PlutusTx.Prelude
 import PlutusLedgerApi.V1.Value
+import qualified PlutusTx.Show.TH as Plutus
+import qualified PlutusTx.Show as PlutusTx
 
 --------------------------------------
 --  Helper Functions
@@ -63,7 +65,7 @@ isBurningNFT ac txInfoMint = V1.assetClassValueOf (mintValueBurned txInfoMint) a
 
 {-# INLINEABLE hasTxOutWithInlineDatumAndValue #-}
 hasTxOutWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> [TxOut] -> Bool
-hasTxOutWithInlineDatumAndValue datum value address = any (isTxOutWithInlineDatumAndValue datum value address)
+hasTxOutWithInlineDatumAndValue datum value address = traceIfFalse "output with datum and value not found" . any (isTxOutWithInlineDatumAndValue datum value address)
 
 {-# INLINEABLE isTxOutWithInlineDatumAndValue #-}
 isTxOutWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
