@@ -17,15 +17,16 @@ import PlutusLedgerApi.V1.Value
 --------------------------------------
 
 -- | Converts a typed lambda to untyped
-{-# INLINEABLE mkUntypedLambda #-}
 mkUntypedLambda ::
   (ScriptContext -> Bool) ->
   (BuiltinData -> BuiltinUnit)
 mkUntypedLambda f c = check $ f (parseData c "Invalid context")
-  where
-    parseData mdata message = case fromBuiltinData mdata of
-      Just d -> d
-      _ -> traceError message
+ where
+  parseData mdata message = case fromBuiltinData mdata of
+    Just d -> d
+    _ -> traceError message
+{-# INLINEABLE mkUntypedLambda #-}
+
 
 -- TODO update with new builtins
 {-# INLINEABLE integerToBs24 #-}

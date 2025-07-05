@@ -1,9 +1,11 @@
+{-# LANGUAGE DerivingVia #-}
 -- Required for `makeLift`:
 {-# LANGUAGE MultiParamTypeClasses #-}
 -- Required for `makeLift`:
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-partial-fields #-}
+
 
 module Onchain.Protocol where
 
@@ -15,9 +17,39 @@ import PlutusTx.Builtins (serialiseData)
 import PlutusTx.Prelude
 import Prelude qualified
 import PlutusLedgerApi.V3
+    ( TokenName(TokenName),
+      Address,
+      Value,
+      ScriptHash,
+      POSIXTime,
+      Lovelace,
+      TxInInfo )
 import Onchain.Utils
 import Onchain.CIP68 (CIP68Datum (extra, CIP68Datum))
 
+
+
+-------------------------------------------------------------------------------
+
+-- * Protocol Parameters
+
+-------------------------------------------------------------------------------
+data ProtocolParams2 = ProtocolParams2
+  { ranksValidatorScriptHash2 :: ScriptHash,
+    profilesValidatorScriptHash2 :: ScriptHash
+  }
+  deriving stock (Generic)
+
+unstableMakeIsData ''ProtocolParams2
+makeLift ''ProtocolParams2
+
+-- makeIsDataIndexed ''ProtocolParams2 [('ProtocolParams2, 0)]
+
+-- makeIsDataSchemaIndexed ''ProtocolParams2 [('ProtocolParams2, 0)]
+
+
+-- | Generate `Lift` instance for the custom parameter type with Template Haskell.
+--  Allows argument value to be pre-compiled to UPLC, so the compiled parameterized script can be applied to it.
 
 
 -------------------------------------------------------------------------------

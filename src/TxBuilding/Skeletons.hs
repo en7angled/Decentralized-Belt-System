@@ -25,8 +25,8 @@ gyGenerateRefAndUserAC seedTxOutRef = do
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
   let (pRefTN, pUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRefPlutus
-  let refAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, pRefTN)
-  let userAC = AssetClass (mintingPolicyCurrencySymbol profilesValidatorGY, pUserTN)
+  let refAC = AssetClass (mintingPolicyCurrencySymbol mintingPolicyGY, pRefTN)
+  let userAC = AssetClass (mintingPolicyCurrencySymbol mintingPolicyGY, pUserTN)
   gyRefAC <- assetClassFromPlutus' refAC
   gyUserAC <- assetClassFromPlutus' userAC
   return (gyRefAC, gyUserAC)

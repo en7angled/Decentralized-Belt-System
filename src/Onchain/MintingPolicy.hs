@@ -1,13 +1,9 @@
 -- Required for `makeLift`:
-{-# LANGUAGE MultiParamTypeClasses #-}
--- Required for `makeLift`:
-{-# LANGUAGE ScopedTypeVariables #-}
+
 ---
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-optimize #-}
-{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-remove-trace #-}
-{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
+
 
 {-# HLINT ignore "Use &&" #-}
 
@@ -47,100 +43,94 @@ type ProfilesDatum = CIP68Datum Onchain.Profile
 
 
 
-unsafeGetProfileDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, ProfilesDatum)
-unsafeGetProfileDatumAndValue ac addr txins =
-  let (v, b) = unsafeGetCurrentStateDatumAndValue ac addr txins
-   in (v, unsafeFromBuiltinData b)
-{-# INLINEABLE unsafeGetProfileDatumAndValue #-}
-
-
 --------------------------------------
 -- Minting Policy
 --------------------------------------
 
 {-# INLINEABLE mintingPolicyLambda #-}
-mintingPolicyLambda :: ProtocolParams -> ScriptContext -> Bool
-mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
-  let redeemer = unsafeFromBuiltinData @MintingRedeemer bredeemer
-      minValue = V1.lovelaceValue collateral
+mintingPolicyLambda :: ProtocolParams2 -> ScriptContext -> Bool
+mintingPolicyLambda  _ _ = True
+-- mintingPolicyLambda protocolParams@ProtocolParams {..} (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
+--   let redeemer = unsafeFromBuiltinData @MintingRedeemer bredeemer
+--       minValue = V1.lovelaceValue collateral
 
-   in case scriptInfo of
-        (MintingScript mintingPolicyCurrencySymbol@(CurrencySymbol bshash)) ->
-          let profilesValidatorAddress = V1.scriptHashAddress $ ScriptHash bshash
-          in
-          case redeemer of
-            CreateProfile seedTxOutRef metadata profileType creationDate rankNumber -> --- TODO: add restriction on rankNumber > 0c
-              let
-                  (profileUserTN, profileRefTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRef
-                  profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)
-                  profileUserAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileUserTN)
-                  profileRefNFT = V1.assetClassValue profileRefAssetClass 1
-                  profileUserNFT = V1.assetClassValue profileUserAssetClass 1
+--    in case scriptInfo of
+--         (MintingScript mintingPolicyCurrencySymbol@(CurrencySymbol bshash)) -> 
+--           let profilesValidatorAddress = V1.scriptHashAddress $ ScriptHash bshash
+--           in
+--           case redeemer of
+--             CreateProfile seedTxOutRef metadata profileType creationDate rankNumber -> --- TODO: add restriction on rankNumber > 0c
+--               let
+--                   (profileUserTN, profileRefTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRef
+--                   profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)
+--                   profileUserAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileUserTN)
+--                   profileRefNFT = V1.assetClassValue profileRefAssetClass 1
+--                   profileUserNFT = V1.assetClassValue profileUserAssetClass 1
 
 
-               in and
-                    [ traceIfFalse "Creation date must be before the tx validity range"
-                        $ before creationDate txInfoValidRange,
-                      traceIfFalse "Must spend seed TxOutRef"
-                        $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs
-                    ]
-               && case profileType of
-                    Practitioner ->
-                      let
-                        (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate protocolParams rankNumber
-                        profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
-                        rankAssetClass = rankId rankDatum
-                        rankNFT = V1.assetClassValue rankAssetClass 1
-                        ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
-                      in and
-                          [
-                            traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
-                              $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
-                          traceIfFalse "Tx must mint JUST  Profile Ref and User NFTs and Rank NFT" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
-                             -- protection against other-token-name attack vector 
-                            mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT + rankNFT),
-                            traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
-                              $ hasTxOutWithInlineDatumAndValue rankDatum (rankNFT + minValue) ranksValidatorAddress txInfoOutputs
-                          ]
-                    Organization ->
-                      let
-                        profile = mkOrganizationProfile profileRefAssetClass protocolParams
-                        profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
-                      in
-                        and [
-                              traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
-                                      $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
-                              traceIfFalse "Tx must mint JUST Ref and User NFTs" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
-                                 -- protection against other-token-name attack vector 
-                                mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT)
-                            ]
+--                in and
+--                     [ traceIfFalse "Creation date must be before the tx validity range"
+--                         $ before creationDate txInfoValidRange,
+--                       traceIfFalse "Must spend seed TxOutRef"
+--                         $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs
+--                     ]
+--                && case profileType of
+--                     Practitioner ->
+--                       let
+--                         (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate protocolParams rankNumber
+--                         profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
+--                         rankAssetClass = rankId rankDatum
+--                         rankNFT = V1.assetClassValue rankAssetClass 1
+--                         ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
+--                       in and
+--                           [
+--                             traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
+--                               $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
+--                           traceIfFalse "Tx must mint JUST  Profile Ref and User NFTs and Rank NFT" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
+--                              -- protection against other-token-name attack vector 
+--                             mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT + rankNFT),
+--                             traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
+--                               $ hasTxOutWithInlineDatumAndValue rankDatum (rankNFT + minValue) ranksValidatorAddress txInfoOutputs
+--                           ]
+--                     Organization ->
+--                       let
+--                         profile = mkOrganizationProfile profileRefAssetClass protocolParams
+--                         profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
+--                       in
+--                         and [
+--                               traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
+--                                       $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
+--                               traceIfFalse "Tx must mint JUST Ref and User NFTs" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
+--                                  -- protection against other-token-name attack vector 
+--                                 mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT)
+--                             ]
 
-            (Promote profileId awardedBy achievementDate rankNumber) ->
-              let ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
-                  pendingRankAssetClass = generateRankId profileId rankNumber
-                  pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
-                  pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber protocolParams
-              in
-                and [
-                  traceIfFalse "Must spend user NFT of the profile who awards the promotion" $
-                      V1.assetClassValueOf (valueSpent txInfo) awardedBy == 1 ,
-                  traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address"
-                      $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs
-                ]
+--             (Promote profileId awardedBy achievementDate rankNumber) ->
+--               let ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
+--                   pendingRankAssetClass = generateRankId profileId rankNumber
+--                   pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
+--                   pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber protocolParams
+--               in
+--                 and [
+--                   traceIfFalse "Must spend user NFT of the profile who awards the promotion" $
+--                       V1.assetClassValueOf (valueSpent txInfo) awardedBy == 1 ,
+--                   traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address"
+--                       $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs
+--                 ]
 
-            BurnProfileId ->  -- Anyone is free to burn 
-                traceIfFalse "Tx must not mint any other tokens" $ -- protection against other mints -- protection against other mints
-                        isZero $ mintValueMinted txInfoMint
+--             BurnProfileId ->  -- Anyone is free to burn 
+--                 traceIfFalse "Tx must not mint any other tokens" $ -- protection against other mints -- protection against other mints
+--                         isZero $ mintValueMinted txInfoMint
                   
-        _ -> traceError "Invalid purpose"
+--         _ -> traceError "Invalid purpose"
 
 -- | Lose the types
-mintingPolicyUntyped :: ProtocolParams -> BuiltinData -> BuiltinUnit
+
+{-# INLINEABLE mintingPolicyUntyped #-}
+mintingPolicyUntyped :: ProtocolParams2 -> BuiltinData -> BuiltinUnit
 mintingPolicyUntyped params =
   mkUntypedLambda (mintingPolicyLambda params)
 
 -- | Compile the untyped lambda to a UPLC script and splice back to Haskell.
-mintingPolicyCompile :: ProtocolParams -> CompiledCode (BuiltinData -> BuiltinUnit)
-mintingPolicyCompile params =
-  $$(compile [||mintingPolicyUntyped||])
-    `unsafeApplyCode` liftCode plcVersion110 params
+mintingPolicyCompile :: ProtocolParams2 -> CompiledCode (BuiltinData -> BuiltinUnit)
+mintingPolicyCompile params =  $$(compile [||mintingPolicyUntyped||]) `unsafeApplyCode` liftCode plcVersion110 params

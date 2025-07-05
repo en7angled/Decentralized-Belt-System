@@ -46,13 +46,15 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
   creationDateSlot <- gySlotFromPOSIXTime creationDate
   let isAfterCreationDate = isInvalidBefore creationDateSlot
 
-  mintingPolicyRef <- asks profilesValidatorRef
+  mintingPolicyRef <- asks mintingPolicyRef
   seedTxOutRef <- someUTxOWithoutRefScript
   let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
 
   (gyProfileRefAC, gyProfileUserAC) <- gyGenerateRefAndUserAC seedTxOutRef
+  gyLogDebug' "gyProfileRefAC: " $ show gyProfileRefAC
+
   let profileRefAC = assetClassToPlutus gyProfileRefAC
 
   let plutusProfile = case profileType of
@@ -68,7 +70,7 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
       plutusProfileCIP68Datum
-      (valueSingleton gyProfileUserAC 1)
+      (valueSingleton gyProfileRefAC 1)
   isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton gyProfileUserAC 1)
 
   ifPractitionerMintAndLockFirstRankState <- case profileType of
@@ -93,8 +95,8 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
         [ isSpendingSeedUTxO,
           isAfterCreationDate,
           isMintingProfileCIP68UserAndRef,
-          isLockingProfileState,
           isPayingProfileUserNFT,
+          isLockingProfileState,
           ifPractitionerMintAndLockFirstRankState
         ],
       gyProfileRefAC
