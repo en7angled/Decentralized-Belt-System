@@ -60,7 +60,7 @@ mintingPolicyLambda protocolParams@(ProtocolParams (ranksValidatorScriptHash, pr
           case redeemer of
             CreateProfile seedTxOutRef metadata profileType creationDate rankNumber -> --- TODO: add restriction on rankNumber > 0c
               let
-                  (profileUserTN, profileRefTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRef
+                  (profileRefTN,profileUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRef
                   profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)
                   profileUserAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileUserTN)
                   profileRefNFT = V1.assetClassValue profileRefAssetClass 1
@@ -84,12 +84,12 @@ mintingPolicyLambda protocolParams@(ProtocolParams (ranksValidatorScriptHash, pr
                       in and
                           [
                             traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
-                              $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs
-                          -- traceIfFalse "Tx must mint JUST  Profile Ref and User NFTs and Rank NFT" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
-                          --    -- protection against other-token-name attack vector 
-                          --   mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT + rankNFT),
-                          --   traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
-                          --     $ hasTxOutWithInlineDatumAndValue rankDatum (rankNFT + minValue) ranksValidatorAddress txInfoOutputs
+                              $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
+                          traceIfFalse "Tx must mint JUST  Profile Ref and User NFTs and Rank NFT" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
+                             -- protection against other-token-name attack vector 
+                            mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT + rankNFT),
+                            traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
+                              $ hasTxOutWithInlineDatumAndValue rankDatum (rankNFT + minValue) ranksValidatorAddress txInfoOutputs
                           ]
                     Organization ->
                       let

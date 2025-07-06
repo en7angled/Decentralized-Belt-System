@@ -160,9 +160,10 @@ promoteProfile (CIP68Datum metadata version profile@Profile {..}) rank = case cu
 
 mkPractitionerProfile :: ProfileId -> POSIXTime -> ProtocolParams -> Integer -> (Profile, Rank)
 mkPractitionerProfile profileId creationDate protocolParams rankNumber =
-    let firstRank =
+    let newRankId = generateRankId profileId rankNumber
+        firstRank =
          Rank
-          { rankId = generateRankId profileId rankNumber,
+          { rankId = newRankId,
             rankNumber = rankNumber,
             rankAchievedByProfileId = profileId,
             rankAwardedByProfileId = profileId,
@@ -174,7 +175,7 @@ mkPractitionerProfile profileId creationDate protocolParams rankNumber =
           Profile
             { profileId = profileId,
               profileType = Practitioner,
-              currentRank = Just (generateRankId profileId rankNumber),
+              currentRank = Just newRankId,
               protocolParams = protocolParams
             }
    in (profile, firstRank)
