@@ -30,7 +30,35 @@ data ProfileType = Practitioner | Organization
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 type ProfileRefAC = GYAssetClass
+
 type RankAC = GYAssetClass
+
+data ProfileInformation
+  = PractitionerProfileInformation
+      { practitionerId :: ProfileRefAC,
+        practitionerName :: Text,
+        practitionerDescription :: Text,
+        practitionerImageURI :: Text,
+        practitionerCurrentRank :: RankInformation,
+        practitionerPreviousRanks :: [RankInformation]
+      }
+  | OrganizationProfileInformation
+      { organizationId :: ProfileRefAC,
+        organizationName :: Text,
+        organizationDescription :: Text,
+        organizationImageURI :: Text
+      }
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+
+data RankInformation
+  = RankInformation
+  { rankInfoId :: RankAC,
+    rankInfoNumber :: Integer,
+    rankInfoAchievedByProfileId :: ProfileRefAC,
+    rankInfoAwardedByProfileId :: ProfileRefAC,
+    rankInfoAchievementDate :: POSIXTimeInteger
+  }
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 data ProfileActionType
   = CreateProfileAction

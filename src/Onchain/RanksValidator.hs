@@ -6,7 +6,7 @@
 
 module Onchain.RanksValidator where
 
-import Onchain.Protocol
+import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), getCurrentRankId, unsafeGetRankDatumAndValue, unsafeGetProfileDatumAndValue, profilesValidatorScriptHash)
 import Onchain.Utils
 import PlutusLedgerApi.V3
 
@@ -31,7 +31,7 @@ ranksLambda (ScriptContext txInfo@TxInfo{..} (Redeemer _) scriptInfo) =
           Nothing -> traceError "No datum"
           Just (Datum bdatum) -> case fromBuiltinData bdatum of
             Nothing -> traceError "Invalid datum"
-            Just (studentNextRank :: Rank) ->
+            Just (studentNextRank :: OnchainRank) ->
               let ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
                   -- ownValue = txOutValue ownInput
                   ownAddress = txOutAddress ownInput

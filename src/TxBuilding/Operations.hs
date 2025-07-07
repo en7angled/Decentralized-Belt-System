@@ -6,7 +6,7 @@ import GeniusYield.Types
 import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.MintingPolicy
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Protocol
+import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), OnChainProfileType(..), getCurrentRankId, generateRankId, mkPendingRank, mkPractitionerProfile, mkOrganizationProfile, promoteProfile)
 import qualified Onchain.Protocol as Onchain
 import qualified PlutusLedgerApi.V1.Tx as V1
 import PlutusLedgerApi.V3
@@ -28,7 +28,7 @@ createProfileTX ::
   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
   GYAddress ->
   MetadataFields ->
-  Onchain.ProfileType ->
+  Onchain.OnChainProfileType ->
   POSIXTime ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 createProfileTX recipient metadata profileType creationDate = createProfileWithRankTX recipient metadata profileType creationDate 0
@@ -38,7 +38,7 @@ createProfileWithRankTX ::
   (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
   GYAddress ->
   MetadataFields ->
-  Onchain.ProfileType ->
+  Onchain.OnChainProfileType ->
   POSIXTime ->
   Integer ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
@@ -70,7 +70,7 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
       plutusProfileCIP68Datum
-      ((valueSingleton gyProfileRefAC 1)  <> valueFromLovelace 3500000)
+      (valueSingleton gyProfileRefAC 1 <> valueFromLovelace 3500000)
   isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton gyProfileUserAC 1)
 
   ifPractitionerMintAndLockFirstRankState <- case profileType of
@@ -83,7 +83,7 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
         txMustLockStateWithInlineDatumAndValue
           ranksValidatorGY
           rankData
-          ((valueSingleton gyRankAC 1) <> valueFromLovelace 3500000)
+          (valueSingleton gyRankAC 1 <> valueFromLovelace 3500000)
       return $
         mconcat
           [ isMintingRank,

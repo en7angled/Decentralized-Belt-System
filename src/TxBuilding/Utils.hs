@@ -68,7 +68,7 @@ tnFromGYAssetClass _ = throwError (GYApplicationException InvalidAssetClass)
 ------------------------------------------------------------------------------------------------
 
 -- | Extract profile and value from UTxO
-profileAndValueFromUTxO :: GYUTxO -> Maybe (CIP68Datum Onchain.Profile, Value)
+profileAndValueFromUTxO :: GYUTxO -> Maybe (CIP68Datum Onchain.OnchainProfile, Value)
 profileAndValueFromUTxO profileStateUTxO = do
   (gyDatum, gyValue) <- getInlineDatumAndValue profileStateUTxO
   cip68Datum <- profileDatumFromDatum gyDatum
@@ -78,13 +78,13 @@ profileAndValueFromUTxO profileStateUTxO = do
 
 
 -- | Convert GY datum to profile datum
-profileDatumFromDatum :: GYDatum -> Maybe (CIP68Datum Onchain.Profile)
+profileDatumFromDatum :: GYDatum -> Maybe (CIP68Datum Onchain.OnchainProfile)
 profileDatumFromDatum gyDatum = do
   let plutusDatum = datumToPlutus' gyDatum
   fromBuiltinData plutusDatum
 
 
-rankAndValueFromUTxO :: GYUTxO -> Maybe (Onchain.Rank, Value)
+rankAndValueFromUTxO :: GYUTxO -> Maybe (Onchain.OnchainRank, Value)
 rankAndValueFromUTxO rankStateUTxO = do
   (gyDatum, gyValue) <- getInlineDatumAndValue rankStateUTxO
   rankDatum <- rankDatumFromDatum gyDatum
@@ -93,7 +93,7 @@ rankAndValueFromUTxO rankStateUTxO = do
 
 
 
-rankDatumFromDatum :: GYDatum -> Maybe Onchain.Rank 
+rankDatumFromDatum :: GYDatum -> Maybe Onchain.OnchainRank 
 rankDatumFromDatum gyDatum = 
   fromBuiltinData (datumToPlutus' gyDatum)
 

@@ -54,12 +54,12 @@ library
   default-language:   Haskell2010
   exposed-modules:
     DomainTypes.Profile.Types
+    Onchain.BJJ
     Onchain.CIP68
     Onchain.MintingPolicy
-    Onchain.BJJ
     Onchain.ProfilesValidator
-    Onchain.RanksValidator
     Onchain.Protocol
+    Onchain.RanksValidator
     Onchain.Utils
     TxBuilding.Context
     TxBuilding.Exceptions
@@ -71,6 +71,7 @@ library
     TxBuilding.Transactions
     TxBuilding.Utils
     TxBuilding.Validators
+    Utils
 
   if !(impl(ghcjs) || os(ghcjs))
     build-depends: plutus-tx-plugin
@@ -151,7 +152,6 @@ test-suite Decentralized-Belt-System-test
   other-modules:
     TestRuns
     UnitTests
-
 
   build-depends:
     , base

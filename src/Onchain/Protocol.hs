@@ -22,11 +22,9 @@ import PlutusLedgerApi.V3
       Value,
       ScriptHash,
       POSIXTime,
-      Lovelace,
       TxInInfo )
 import Onchain.Utils
 import Onchain.CIP68 (CIP68Datum (extra, CIP68Datum))
-
 
 
 
@@ -52,40 +50,44 @@ ranksValidatorScriptHash (ProtocolParams (r, _)) = r
 
 -------------------------------------------------------------------------------
 
--- * Profile
+-- * OnchainProfile
 
 -------------------------------------------------------------------------------
 type RankId = AssetClass
 
+
 type ProfileId = AssetClass
 
-data ProfileType
+data OnChainProfileType
   = Practitioner
   | Organization
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''ProfileType [('Practitioner, 0), ('Organization, 1)]
+makeIsDataSchemaIndexed ''OnChainProfileType [('Practitioner, 0), ('Organization, 1)]
 
-data Profile
-  = Profile
+data OnchainProfile
+  = OnchainProfile
   { profileId :: ProfileId,
-    profileType :: ProfileType,
+    profileType :: OnChainProfileType,
     currentRank :: Maybe RankId, -- ˆ Organisations have no rank
     protocolParams :: ProtocolParams
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''Profile [('Profile, 0)]
+makeIsDataSchemaIndexed ''OnchainProfile [('OnchainProfile, 0)]
+
+
+
 
 -------------------------------------------------------------------------------
 
--- * Rank
+-- * OnchainRank
 
 -------------------------------------------------------------------------------
 
-data Rank
+data OnchainRank
   = Rank
   { rankId :: RankId,
     rankNumber :: Integer,
@@ -105,7 +107,7 @@ data Rank
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''Rank [('Rank, 0), ('PendingRank, 1)]
+makeIsDataSchemaIndexed ''OnchainRank [('Rank, 0), ('PendingRank, 1)]
 
 
 
@@ -116,7 +118,7 @@ makeIsDataSchemaIndexed ''Rank [('Rank, 0), ('PendingRank, 1)]
 -------------------------------------------------------------------------------
 
 
-mkPendingRank :: ProfileId -> ProfileId -> POSIXTime -> Integer -> ProtocolParams -> Rank
+mkPendingRank :: ProfileId -> ProfileId -> POSIXTime -> Integer -> ProtocolParams -> OnchainRank
 mkPendingRank awardedTo awardedBy achievementDate rankNumber protocolParams =
   PendingRank
     { pendingRankId = generateRankId awardedTo rankNumber,
@@ -127,7 +129,7 @@ mkPendingRank awardedTo awardedBy achievementDate rankNumber protocolParams =
       pendingRankProtocolParams = protocolParams
     }
 
-acceptRank :: Rank -> RankId -> Rank
+acceptRank :: OnchainRank -> RankId -> OnchainRank
 acceptRank (Rank {}) _ = traceError "Cannot accept a rank that is not pending"
 acceptRank PendingRank {..} previousRankId =
   Rank
@@ -140,25 +142,25 @@ acceptRank PendingRank {..} previousRankId =
       rankProtocolParams = pendingRankProtocolParams
     }
 
-updateProfileRank :: Profile -> Rank -> Profile
-updateProfileRank Profile {..} rank =
-  Profile
+updateProfileRank :: OnchainProfile -> OnchainRank -> OnchainProfile
+updateProfileRank OnchainProfile {..} rank =
+  OnchainProfile
     { profileId = profileId,
       profileType = profileType,
       currentRank = Just (rankId rank),
       protocolParams = protocolParams
     }
 
-promoteProfile :: CIP68Datum Profile -> Rank -> (CIP68Datum Profile, Rank)
-promoteProfile (CIP68Datum metadata version profile@Profile {..}) rank = case currentRank of
+promoteProfile :: CIP68Datum OnchainProfile -> OnchainRank -> (CIP68Datum OnchainProfile, OnchainRank)
+promoteProfile (CIP68Datum metadata version profile@OnchainProfile {..}) rank = case currentRank of
   Just currentRankId ->
     let newRank = acceptRank rank currentRankId
         updatedProfile = updateProfileRank profile newRank
      in (CIP68Datum  metadata version updatedProfile, newRank)
-  Nothing -> traceError "Profile has no rank"
+  Nothing -> traceError "OnchainProfile has no rank"
 
 
-mkPractitionerProfile :: ProfileId -> POSIXTime -> ProtocolParams -> Integer -> (Profile, Rank)
+mkPractitionerProfile :: ProfileId -> POSIXTime -> ProtocolParams -> Integer -> (OnchainProfile, OnchainRank)
 mkPractitionerProfile profileId creationDate protocolParams rankNumber =
     let newRankId = generateRankId profileId rankNumber
         firstRank =
@@ -172,7 +174,7 @@ mkPractitionerProfile profileId creationDate protocolParams rankNumber =
             rankProtocolParams = protocolParams
           }
         profile =
-          Profile
+          OnchainProfile
             { profileId = profileId,
               profileType = Practitioner,
               currentRank = Just newRankId,
@@ -181,18 +183,18 @@ mkPractitionerProfile profileId creationDate protocolParams rankNumber =
    in (profile, firstRank)
 
 
-mkOrganizationProfile :: ProfileId -> ProtocolParams -> Profile
+mkOrganizationProfile :: ProfileId -> ProtocolParams -> OnchainProfile
 mkOrganizationProfile profileId protocolParams =
-  Profile
+  OnchainProfile
     { profileId = profileId,
       profileType = Organization,
       currentRank = Nothing,
       protocolParams = protocolParams
     }
 
-getCurrentRankId :: Profile ->  RankId
-getCurrentRankId (Profile _ Practitioner (Just rankId) _ ) = rankId
-getCurrentRankId _ = traceError "Profile has no rank"
+getCurrentRankId :: OnchainProfile ->  RankId
+getCurrentRankId (OnchainProfile _ Practitioner (Just rankId) _ ) = rankId
+getCurrentRankId _ = traceError "OnchainProfile has no rank"
 
 {-# INLINEABLE generateRankId #-}
 generateRankId :: ProfileId -> Integer -> RankId
@@ -210,15 +212,15 @@ generateRankId (AssetClass (cs, TokenName bs)) i = AssetClass (cs, TokenName (ta
 -------------------------------------------------------------------------------
 
 
-unsafeGetRankDatumAndValue :: RankId -> Address -> [TxInInfo] -> (Value, Rank)
+unsafeGetRankDatumAndValue :: RankId -> Address -> [TxInInfo] -> (Value, OnchainRank)
 unsafeGetRankDatumAndValue ac addr txins =
   let (v, b) = unsafeGetCurrentStateDatumAndValue ac addr txins
    in (v, unsafeFromBuiltinData b)
 {-# INLINEABLE unsafeGetRankDatumAndValue #-}
 
-unsafeGetProfileDatumAndValue :: RankId -> Address -> [TxInInfo] -> (Value, Profile)
+unsafeGetProfileDatumAndValue :: RankId -> Address -> [TxInInfo] -> (Value, OnchainProfile)
 unsafeGetProfileDatumAndValue ac addr txins =
   let (v, b) = unsafeGetCurrentStateDatumAndValue ac addr txins
-   in (v, extra (unsafeFromBuiltinData b :: CIP68Datum Profile))
+   in (v, extra (unsafeFromBuiltinData b :: CIP68Datum OnchainProfile))
 {-# INLINEABLE unsafeGetProfileDatumAndValue #-}
 

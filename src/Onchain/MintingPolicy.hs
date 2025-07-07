@@ -11,8 +11,7 @@ module Onchain.MintingPolicy where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68 (MetadataFields, generateRefAndUserTN, mkCIP68Datum, CIP68Datum)
-import Onchain.Protocol
-import Onchain.Protocol qualified as Onchain
+import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), OnChainProfileType(..), ProfileId, ProtocolParams, generateRankId, mkPendingRank, mkPractitionerProfile, mkOrganizationProfile, ranksValidatorScriptHash, profilesValidatorScriptHash)
 import Onchain.Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
 import PlutusLedgerApi.V1 qualified as V1
@@ -31,7 +30,7 @@ import PlutusLedgerApi.V3.Contexts
 
 -- | Custom redeemer :
 data MintingRedeemer
-  = CreateProfile TxOutRef MetadataFields Onchain.ProfileType POSIXTime Integer
+  = CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer
   | Promote ProfileId ProfileId POSIXTime Integer
   | BurnProfileId
   deriving stock (Generic, Prelude.Show)
@@ -39,7 +38,7 @@ data MintingRedeemer
 
 makeIsDataSchemaIndexed ''MintingRedeemer [('CreateProfile, 0), ('Promote, 1), ('BurnProfileId, 2)]
 
-type ProfilesDatum = CIP68Datum Onchain.Profile
+type ProfilesDatum = CIP68Datum OnchainProfile
 
 
 
@@ -49,13 +48,13 @@ type ProfilesDatum = CIP68Datum Onchain.Profile
 
 {-# INLINEABLE mintingPolicyLambda #-}  
 mintingPolicyLambda :: ProtocolParams -> ScriptContext -> Bool
-mintingPolicyLambda protocolParams@(ProtocolParams (ranksValidatorScriptHash, profilesValidatorScriptHash)) (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
+mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
   let redeemer = unsafeFromBuiltinData @MintingRedeemer bredeemer
       minValue = V1.lovelaceValue 3_500_000
 
    in case scriptInfo of
         (MintingScript mintingPolicyCurrencySymbol) -> 
-          let profilesValidatorAddress = V1.scriptHashAddress profilesValidatorScriptHash
+          let profilesValidatorAddress = V1.scriptHashAddress (profilesValidatorScriptHash protocolParams)
           in
           case redeemer of
             CreateProfile seedTxOutRef metadata profileType creationDate rankNumber -> --- TODO: add restriction on rankNumber > 0c
@@ -80,12 +79,12 @@ mintingPolicyLambda protocolParams@(ProtocolParams (ranksValidatorScriptHash, pr
                         profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
                         rankAssetClass = rankId rankDatum
                         rankNFT = V1.assetClassValue rankAssetClass 1
-                        ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
+                        ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
                       in and
                           [
                             traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
                               $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
-                          traceIfFalse "Tx must mint JUST  Profile Ref and User NFTs and Rank NFT" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
+                          traceIfFalse "Tx must mint JUST  OnchainProfile Ref and User NFTs and Rank NFT" $ -- protection against other-token-name attack vector  -- protection against other-token-name attack vector 
                              -- protection against other-token-name attack vector 
                             mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT + rankNFT),
                             traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
@@ -105,7 +104,7 @@ mintingPolicyLambda protocolParams@(ProtocolParams (ranksValidatorScriptHash, pr
                             ]
 
             (Promote profileId awardedBy achievementDate rankNumber) ->
-              let ranksValidatorAddress = V1.scriptHashAddress ranksValidatorScriptHash
+              let ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
                   pendingRankAssetClass = generateRankId profileId rankNumber
                   pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
                   pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber protocolParams

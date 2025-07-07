@@ -15,7 +15,7 @@ module Onchain.ProfilesValidator where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68 (CIP68Datum (CIP68Datum), ImageURI, deriveUserFromRefTN, updateCIP68DatumImage)
-import Onchain.Protocol
+import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), ProfileId, RankId, protocolParams, promoteProfile, ranksValidatorScriptHash, unsafeGetRankDatumAndValue)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Utils
 import PlutusLedgerApi.V1 qualified as V1
@@ -36,7 +36,7 @@ data ProfilesRedeemer
 
 makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('DeleteProfile, 1), ('AcceptPromotion, 2)]
 
-type ProfilesDatum = CIP68Datum Onchain.Profile
+type ProfilesDatum = CIP68Datum Onchain.OnchainProfile
 
 --------------------------------------
 -- Profiles Validator
@@ -51,7 +51,7 @@ profilesLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo)
           Nothing -> traceError "No datum"
           Just (Datum bdatum) -> case fromBuiltinData bdatum of
             Nothing -> traceError "Invalid datum"
-            Just profileDatum@(CIP68Datum _metadata _version (profile :: Profile)) ->
+            Just profileDatum@(CIP68Datum _metadata _version (profile :: OnchainProfile)) ->
               let ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
                   ownValue = txOutValue ownInput
                   ownAddress = txOutAddress ownInput

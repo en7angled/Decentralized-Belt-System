@@ -8,15 +8,18 @@ import DomainTypes.Profile.Types
 import GHC.Stack
 import GeniusYield.Test.Clb
 import GeniusYield.Test.Utils
+import GeniusYield.TxBuilder
+import GeniusYield.Types
+import Onchain.CIP68
 import Test.Tasty
-import TestRuns (bjjInteraction, deployBJJValidators)
+import TestRuns (bjjInteraction, deployBJJValidators, logProfileAndRank)
 import TxBuilding.Interactions
 
 unitTests :: (HasCallStack) => TestTree
 unitTests =
   testGroup
     "BJJ Unit Tests"
-    [createProfileTests]
+    [promotionTests]
 
 studentProfileData =
   ProfileData
@@ -37,20 +40,32 @@ masterProfileData =
 -- -- * Create new raffle scenarios
 
 -- ------------------------------------------------------------------------------------------------
-createProfileTests :: (HasCallStack) => TestTree
-createProfileTests =
+promotionTests :: (HasCallStack) => TestTree
+promotionTests =
   testGroup
-    "CREATE NEW PROFILE TEST CASES"
-    [ mkTestFor "Test Case 1.1: Verify that a practitioner can create a profile" createNewProfile
+    "Promotion Tests"
+    [ mkTestFor "Test Case 1.1: Verify that a black belt can promote a white belt to blue belt and the white belt can accept the promotion" blackPromotesWhiteToBlue
     ]
   where
-    createNewProfile :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
-    createNewProfile TestInfo {..} = do
+    blackPromotesWhiteToBlue :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    blackPromotesWhiteToBlue TestInfo {..} = do
       txBuildingContext <- deployBJJValidators (w1 testWallets)
-      (gyTxId, gyAC) <-
+      (gyTxId, blackBeltAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          (CreateProfileAction masterProfileData Practitioner 4)
+          Nothing
+
+      ((blackBeltProfile, blackBeltValue), (blackBeltRank, blackBeltRankValue)) <- logProfileAndRank (w1 testWallets) blackBeltAC
+
+      (gyTxId, whiteBeltAC) <-
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
           (CreateProfileAction studentProfileData Practitioner 0)
           Nothing
+
+      ((whiteBeltProfile, whiteBeltValue), (whiteBeltRank, whiteBeltRankValue)) <- logProfileAndRank (w1 testWallets) whiteBeltAC
+
       return ()

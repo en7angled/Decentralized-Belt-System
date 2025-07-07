@@ -18,7 +18,7 @@ profileDataToMetadataFields ProfileData {profileName, profileDescription, profil
 textToBuiltinByteString :: T.Text -> BuiltinByteString
 textToBuiltinByteString = stringToBuiltinByteString . T.unpack
 
-profileTypeToOnChainProfileType :: ProfileType -> Onchain.ProfileType
+profileTypeToOnChainProfileType :: ProfileType -> Onchain.OnChainProfileType
 profileTypeToOnChainProfileType Practitioner = Onchain.Practitioner
 profileTypeToOnChainProfileType Organization = Onchain.Organization
 
