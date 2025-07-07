@@ -10,7 +10,7 @@
 module Onchain.MintingPolicy where
 
 import GHC.Generics (Generic)
-import Onchain.CIP68 (MetadataFields, generateRefAndUserTN, mkCIP68Datum, CIP68Datum)
+import Onchain.CIP68 (MetadataFields, generateRefAndUserTN, mkCIP68Datum, CIP68Datum, deriveUserFromRefAC)
 import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), OnChainProfileType(..), ProfileId, ProtocolParams, generateRankId, mkPendingRank, mkPractitionerProfile, mkOrganizationProfile, ranksValidatorScriptHash, profilesValidatorScriptHash)
 import Onchain.Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
@@ -103,15 +103,16 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                                 mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT)
                             ]
 
-            (Promote profileId awardedBy achievementDate rankNumber) ->
+            (Promote profileId awardedByRef achievementDate rankNumber) ->
               let ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
                   pendingRankAssetClass = generateRankId profileId rankNumber
                   pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
-                  pendingRankDatum = mkPendingRank profileId awardedBy achievementDate rankNumber protocolParams
+                  pendingRankDatum = mkPendingRank profileId awardedByRef achievementDate rankNumber protocolParams
+                  awardedByUser = deriveUserFromRefAC awardedByRef
               in
                 and [
                   traceIfFalse "Must spend user NFT of the profile who awards the promotion" $
-                      V1.assetClassValueOf (valueSpent txInfo) awardedBy == 1 ,
+                      V1.assetClassValueOf (valueSpent txInfo) awardedByUser == 1 ,
                   traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address"
                       $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs
                 ]

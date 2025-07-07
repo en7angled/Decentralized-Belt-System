@@ -6,6 +6,7 @@ import Data.Maybe (fromMaybe)
 import Data.Swagger.Internal.Schema (ToSchema)
 import DomainTypes.Profile.Types
 import GHC.Generics (Generic)
+import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import TxBuilding.Context (ProfileTxBuildingContext)
@@ -44,7 +45,7 @@ data Interaction
   deriving (Show, Generic, FromJSON, ToJSON)
 
 interactionToTxSkeleton ::
-  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
+  (HasCallStack, GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
   Interaction ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 interactionToTxSkeleton Interaction {..} = do
@@ -76,9 +77,7 @@ interactionToTxSkeleton Interaction {..} = do
         DeleteProfileAction profileRefAC -> do
           (,profileRefAC)
             <$> deleteProfileTX profileRefAC receiveAddr usedAddrs
-        PromoteProfileAction promotedProfileId promotedByProfileId achievementDate belt -> do
-          (,promotedProfileId)
-            <$> promoteProfileTX promotedProfileId promotedByProfileId (timeToPlutus achievementDate) belt usedAddrs
-        AcceptPromotionAction promotionId -> do
-          (,promotionId)
-            <$> acceptPromotionTX promotionId usedAddrs
+        PromoteProfileAction promotedProfileId promotedByProfileId achievementDate belt ->
+          promoteProfileTX promotedProfileId promotedByProfileId (timeToPlutus achievementDate) belt usedAddrs
+        AcceptPromotionAction promotionId ->
+          acceptPromotionTX promotionId usedAddrs

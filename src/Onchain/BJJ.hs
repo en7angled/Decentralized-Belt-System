@@ -143,14 +143,14 @@ validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBel
  where
   generalRules =
     and
-      [ -- 1. Master belt must be greater than the student's next belt
-        masterBelt > studentNextBelt
-      , -- 2. Master belt date must be before the student's next belt date
-        masterBeltDate < studentNextBeltDate
-      , -- 3. Student's next belt must be greater than the student's current belt
-        studentNextBelt > studentCurrentBelt
-      , -- 4. Student Next belt date must be after the student's current belt date
-        studentNextBeltDate > studentCurrentBeltDate
-      , -- 5. Time in the current belt must be greater than the minimum time for the next belt
-        studentNextBeltDate - studentCurrentBeltDate > monthsToPosixTime (minMonthsForBelt studentCurrentBelt)
+      [ traceIfFalse "Master belt must be greater than the student's next belt" 
+        $ masterBelt > studentNextBelt
+      , traceIfFalse "Master belt date must be before the student's next belt date" 
+        $ masterBeltDate < studentNextBeltDate
+      , traceIfFalse "Student's next belt must be greater than the student's current belt" 
+        $ studentNextBelt > studentCurrentBelt
+      , traceIfFalse "Student Next belt date must be after the student's current belt date" 
+        $ studentNextBeltDate > studentCurrentBeltDate
+      , traceIfFalse "Time in the current belt must be greater than the minimum time for the next belt" $
+         studentNextBeltDate - studentCurrentBeltDate > monthsToPosixTime (minMonthsForBelt studentCurrentBelt)
       ]

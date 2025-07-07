@@ -97,12 +97,12 @@ data OnchainRank
     rankPreviousRankId :: Maybe RankId,
     rankProtocolParams :: ProtocolParams
   } | PendingRank
-  { pendingRankId :: RankId,
-    pendingRankNumber :: Integer,
-    pendingRankAwardedTo :: ProfileId,
-    pendingRankAwardedBy :: ProfileId,
-    pendingRankAchievementDate :: POSIXTime,
-    pendingRankProtocolParams :: ProtocolParams
+  { promotionId :: RankId,
+    promotionRankNumber :: Integer,
+    promotionAwardedTo :: ProfileId,
+    promotionAwardedBy :: ProfileId,
+    promotionAchievementDate :: POSIXTime,
+    promotionProtocolParams :: ProtocolParams
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
@@ -121,25 +121,25 @@ makeIsDataSchemaIndexed ''OnchainRank [('Rank, 0), ('PendingRank, 1)]
 mkPendingRank :: ProfileId -> ProfileId -> POSIXTime -> Integer -> ProtocolParams -> OnchainRank
 mkPendingRank awardedTo awardedBy achievementDate rankNumber protocolParams =
   PendingRank
-    { pendingRankId = generateRankId awardedTo rankNumber,
-      pendingRankAwardedTo = awardedTo,
-      pendingRankAwardedBy = awardedBy,
-      pendingRankAchievementDate = achievementDate,
-      pendingRankNumber = rankNumber,
-      pendingRankProtocolParams = protocolParams
+    { promotionId = generateRankId awardedTo rankNumber,
+      promotionAwardedTo = awardedTo,
+      promotionAwardedBy = awardedBy,
+      promotionAchievementDate = achievementDate,
+      promotionRankNumber = rankNumber,
+      promotionProtocolParams = protocolParams
     }
 
 acceptRank :: OnchainRank -> RankId -> OnchainRank
 acceptRank (Rank {}) _ = traceError "Cannot accept a rank that is not pending"
 acceptRank PendingRank {..} previousRankId =
   Rank
-    { rankId = pendingRankId,
-      rankNumber = pendingRankNumber,
-      rankAchievedByProfileId = pendingRankAwardedTo,
-      rankAwardedByProfileId = pendingRankAwardedBy,
-      rankAchievementDate = pendingRankAchievementDate,
+    { rankId = promotionId,
+      rankNumber = promotionRankNumber,
+      rankAchievedByProfileId = promotionAwardedTo,
+      rankAwardedByProfileId = promotionAwardedBy,
+      rankAchievementDate = promotionAchievementDate,
       rankPreviousRankId = Just previousRankId,
-      rankProtocolParams = pendingRankProtocolParams
+      rankProtocolParams = promotionProtocolParams
     }
 
 updateProfileRank :: OnchainProfile -> OnchainRank -> OnchainProfile
@@ -152,9 +152,9 @@ updateProfileRank OnchainProfile {..} rank =
     }
 
 promoteProfile :: CIP68Datum OnchainProfile -> OnchainRank -> (CIP68Datum OnchainProfile, OnchainRank)
-promoteProfile (CIP68Datum metadata version profile@OnchainProfile {..}) rank = case currentRank of
+promoteProfile (CIP68Datum metadata version profile@OnchainProfile {..}) promotion = case currentRank of
   Just currentRankId ->
-    let newRank = acceptRank rank currentRankId
+    let newRank = acceptRank promotion currentRankId
         updatedProfile = updateProfileRank profile newRank
      in (CIP68Datum  metadata version updatedProfile, newRank)
   Nothing -> traceError "OnchainProfile has no rank"

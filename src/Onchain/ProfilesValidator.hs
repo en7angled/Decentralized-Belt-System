@@ -83,7 +83,7 @@ profilesLambda (ScriptContext txInfo@TxInfo{..} (Redeemer bredeemer) scriptInfo)
                         (promotionValue, pendingRankDatum) = unsafeGetRankDatumAndValue promotionId ranksValidatorAddress txInfoInputs
 
                         (updatedProfileCIP68Datum, newRankDatum) = promoteProfile profileDatum pendingRankDatum
-                        profileUserAssetClass = pendingRankAwardedTo pendingRankDatum
+                        profileUserAssetClass = promotionAwardedTo pendingRankDatum
                        in
                         and
                           [ traceIfFalse "Must spend profile User NFT"

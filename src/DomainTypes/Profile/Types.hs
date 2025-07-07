@@ -7,11 +7,11 @@ import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Swagger.Internal.Schema (ToSchema)
 import Data.Text hiding (init, tail)
+import qualified Data.Text as T
 import GHC.Generics
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
 import Onchain.BJJ (BJJBelt)
-import qualified Data.Text as T
 
 -------------------------------------------------------------------------------
 
@@ -95,7 +95,7 @@ data ProfileActionType
 instance Show ProfileInformation where
   show (PractitionerProfileInformation {..}) =
     Prelude.unlines
-      [ "🏆 Practitioner Profile",
+      [ "🥋 Practitioner Profile",
         "┌─────────────────────────────────────────────────────────────",
         "│ Name: " <> T.unpack practitionerName,
         "│ Description: " <> T.unpack practitionerDescription,
@@ -103,7 +103,7 @@ instance Show ProfileInformation where
         "│ ID: " <> getRawString practitionerId,
         "│",
         "│ Current Rank:",
-        "│   " <> show practitionerCurrentRank,
+        show practitionerCurrentRank,
         "│",
         "│ Previous Ranks:",
         showRankChain practitionerPreviousRanks,
@@ -124,22 +124,23 @@ instance Show ProfileInformation where
 showRankChain :: [RankInformation] -> String
 showRankChain [] = "│   No previous ranks"
 showRankChain ranks =
-  Prelude.unlines $ Prelude.zipWith (curry showRankWithIndex) [(Prelude.length ranks) ..] ranks
+  Prelude.unlines $ Prelude.zipWith (curry showRankWithIndex) (Prelude.reverse [0 .. (Prelude.length ranks)]) ranks
   where
     showRankWithIndex (i, rank) =
-      "│   " <> show i <> ". " <> show rank
+      "│   " <> show i <> ". \n" <> show rank
 
 instance Show RankInformation where
   show (RankInformation {..}) =
-    Prelude.unlines
-      [ "┌─────────────────────────────────────────────────────────────",
-        "│ Belt: " <> getRawString rankInfoBelt,
-        "│ ID: " <> getRawString rankInfoId,
-        "│ Achieved by: " <> getRawString rankInfoAchievedByProfileId,
-        "│ Awarded by: " <> getRawString rankInfoAwardedByProfileId,
-        "│ Achievement Date: " <> getRawString rankInfoAchievementDate,
-        "└─────────────────────────────────────────────────────────────"
-      ]
+    Prelude.init $
+      Prelude.unlines
+        [ "┌─────────────────────────────────────────────────────────────",
+          "│ Belt: " <> getRawString rankInfoBelt,
+          "│ ID: " <> getRawString rankInfoId,
+          "│ Achieved by: " <> getRawString rankInfoAchievedByProfileId,
+          "│ Awarded by: " <> getRawString rankInfoAwardedByProfileId,
+          "│ Achievement Date: " <> getRawString rankInfoAchievementDate,
+          "└─────────────────────────────────────────────────────────────"
+        ]
 
 getRawString :: (ToJSON a) => a -> String
 getRawString = init . tail . BL.unpack . Aeson.encode

@@ -2,11 +2,13 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use &&" #-}
 
-
+{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-optimize #-}
+{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-remove-trace #-}
+{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
 
 module Onchain.RanksValidator where
 
-import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), getCurrentRankId, unsafeGetRankDatumAndValue, unsafeGetProfileDatumAndValue, profilesValidatorScriptHash)
+import Onchain.Protocol (OnchainRank(..), getCurrentRankId, unsafeGetRankDatumAndValue, unsafeGetProfileDatumAndValue, profilesValidatorScriptHash, ranksValidatorScriptHash)
 import Onchain.Utils
 import PlutusLedgerApi.V3
 
@@ -16,6 +18,7 @@ import PlutusTx
 import qualified PlutusLedgerApi.V1 as V1
 import Onchain.BJJ (validatePromotion, intToBelt)
 import PlutusLedgerApi.V3.Contexts
+import Onchain.CIP68 (deriveUserFromRefAC)
 
 
 
@@ -27,28 +30,34 @@ import PlutusLedgerApi.V3.Contexts
 ranksLambda :: ScriptContext -> Bool
 ranksLambda (ScriptContext txInfo@TxInfo{..} (Redeemer _) scriptInfo) =
   case scriptInfo of
-        (SpendingScript spendingTxOutRef mdatum) -> case mdatum of
+        (SpendingScript _spendingTxOutRef mdatum) -> case mdatum of
           Nothing -> traceError "No datum"
           Just (Datum bdatum) -> case fromBuiltinData bdatum of
             Nothing -> traceError "Invalid datum"
-            Just (studentNextRank :: OnchainRank) ->
-              let ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+            Just (promotionRank :: OnchainRank) ->
+              let  
+                  -- ownInput = unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
                   -- ownValue = txOutValue ownInput
-                  ownAddress = txOutAddress ownInput
+                  -- ownAddress = txOutAddress ownInput
 
-                  profilesValidatorAddr = V1.scriptHashAddress ( profilesValidatorScriptHash $ pendingRankProtocolParams studentNextRank)
+                  profilesValidatorAddr = V1.scriptHashAddress ( profilesValidatorScriptHash $ promotionProtocolParams promotionRank)
+                  ranksValidatorAddr = V1.scriptHashAddress ( ranksValidatorScriptHash $ promotionProtocolParams promotionRank)
                   
+                  studentProfileId = promotionAwardedTo promotionRank
+                  masterProfileId = promotionAwardedBy promotionRank
+
+
                   -- Must have student and master profiles NFTs as reference inputs
                   -- Getting profiles based on the ids in the rank promotion datum
-                  (_, studentProfile) = unsafeGetProfileDatumAndValue (rankAchievedByProfileId studentNextRank) profilesValidatorAddr txInfoReferenceInputs
-                  (_, masterProfile) = unsafeGetProfileDatumAndValue (rankAwardedByProfileId studentNextRank) profilesValidatorAddr txInfoReferenceInputs
+                  (_, studentProfile) = unsafeGetProfileDatumAndValue studentProfileId profilesValidatorAddr txInfoInputs
+                  (_, masterProfile) = unsafeGetProfileDatumAndValue masterProfileId profilesValidatorAddr txInfoReferenceInputs
 
                    -- Must have student and master ranks NFTs as reference inputs
                    -- Getting ranks data based on the rank ids in the profiles datums  
                   studentCurrentRankId = getCurrentRankId studentProfile -- Fails if if profile is an organization
                   masterCurrentRankId = getCurrentRankId masterProfile -- Fails if if profile is an organization
-                  (_, studentCurrentRank) = unsafeGetRankDatumAndValue studentCurrentRankId ownAddress txInfoReferenceInputs
-                  (_, masterRank) = unsafeGetRankDatumAndValue masterCurrentRankId ownAddress txInfoReferenceInputs
+                  (_, studentCurrentRank) = unsafeGetRankDatumAndValue studentCurrentRankId ranksValidatorAddr txInfoReferenceInputs
+                  (_, masterRank) = unsafeGetRankDatumAndValue masterCurrentRankId ranksValidatorAddr txInfoReferenceInputs
 
                   -- Getting belts and dates from ranks
 
@@ -56,12 +65,12 @@ ranksLambda (ScriptContext txInfo@TxInfo{..} (Redeemer _) scriptInfo) =
                   masterBeltDate = rankAchievementDate masterRank
                   studentCurrentBelt = intToBelt $ rankNumber studentCurrentRank
                   studentCurrentBeltDate = rankAchievementDate studentCurrentRank
-                  studentNextBelt = intToBelt $ rankNumber studentNextRank
-                  studentNextBeltDate = rankAchievementDate studentNextRank
+                  studentNextBelt = intToBelt $ promotionRankNumber promotionRank
+                  studentNextBeltDate = promotionAchievementDate promotionRank
                   
                   isPromotionValid = validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBeltDate studentNextBelt studentNextBeltDate 
                   
-                  profileUserAssetClass =  profileId studentProfile
+                  profileUserAssetClass =  deriveUserFromRefAC studentProfileId
                 in and 
                     [
                       traceIfFalse "Must spend profile User NFT"

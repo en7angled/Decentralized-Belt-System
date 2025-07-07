@@ -95,3 +95,12 @@ deriveUserFromRefTN (TokenName bs) = TokenName (userTokenPrefixBS <> sliceByteSt
 deriveRefFromUserTN :: TokenName -> TokenName
 deriveRefFromUserTN (TokenName bs) = TokenName (refTokenPrefixBS <> sliceByteString 4 (lengthOfByteString bs) bs)
 {-# INLINEABLE deriveRefFromUserTN #-}
+
+
+deriveUserFromRefAC :: AssetClass -> AssetClass
+deriveUserFromRefAC (AssetClass (cs, tn)) = AssetClass (cs, deriveUserFromRefTN tn)
+{-# INLINEABLE deriveUserFromRefAC #-}
+
+deriveRefFromUserAC :: AssetClass -> AssetClass
+deriveRefFromUserAC (AssetClass (cs, tn)) = AssetClass (cs, deriveRefFromUserTN tn)
+{-# INLINEABLE deriveRefFromUserAC #-}

@@ -87,9 +87,9 @@ logRankState user rankRefAC = asUser user $ do
   gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ blueColorString $ "RANK VALUE: \n" <> show value
   return (rank, value)
 
-logProfileAndRank :: (GYTxGameMonad m, HasCallStack) => User -> GYAssetClass -> m ((CIP68Datum OnchainProfile, Value), (OnchainRank, Value))
-logProfileAndRank user profileRefAC = do
-  (profile, profileValue) <- logProfileState user profileRefAC
+getProfileAndRank :: (GYTxGameMonad m, HasCallStack) => User -> GYAssetClass -> m ((CIP68Datum OnchainProfile, Value), (OnchainRank, Value))
+getProfileAndRank user profileRefAC = do
+  (profile, profileValue) <- getProfileStateDataAndValue profileRefAC
   rankRefAC <- assetClassFromPlutus' $ getCurrentRankId $ extra profile
-  (rank, rankValue) <- logRankState user rankRefAC
+  (rank, rankValue) <- getRankStateDataAndValue rankRefAC
   return ((profile, profileValue), (rank, rankValue))

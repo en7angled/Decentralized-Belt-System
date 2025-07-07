@@ -13,7 +13,7 @@ import GeniusYield.Types
 import Onchain.BJJ
 import Onchain.CIP68
 import Test.Tasty
-import TestRuns (bjjInteraction, deployBJJValidators, logProfileAndRank, logProfileInformation)
+import TestRuns (bjjInteraction, deployBJJValidators, getProfileAndRank, logProfileInformation)
 import TxBuilding.Interactions
 
 unitTests :: (HasCallStack) => TestTree
@@ -54,22 +54,76 @@ promotionTests =
       t <- slotToBeginTime s
       let creationDate = timeFromPOSIX $ timeToPOSIX t - 1
       txBuildingContext <- deployBJJValidators (w1 testWallets)
-      (gyTxId, blackBeltAC) <-
+      (gyTxId, masterAC) <-
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
           (CreateProfileWithRankAction masterProfileData Practitioner creationDate Black)
           Nothing
 
-      ((blackBeltProfile, blackBeltValue), (blackBeltRank, blackBeltRankValue)) <- logProfileAndRank (w1 testWallets) blackBeltAC
+      logProfileInformation (w1 testWallets) masterAC
 
-      (gyTxId, whiteBeltAC) <-
+      (gyTxId, studentAC) <-
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
           (InitProfileAction studentProfileData Practitioner creationDate)
           Nothing
 
-      logProfileInformation (w1 testWallets) whiteBeltAC
+      logProfileInformation (w1 testWallets) studentAC
+
+      ((blackBeltProfile, blackBeltValue), (blackBeltRank, blackBeltRankValue)) <- getProfileAndRank (w1 testWallets) masterAC
+      ((whiteBeltProfile, whiteBeltValue), (whiteBeltRank, whiteBeltRankValue)) <- getProfileAndRank (w1 testWallets) studentAC
+
+      waitNSlots_ 2
+
+      s <- slotOfCurrentBlock
+      blueBeltDate <- slotToBeginTime s
+
+      (gyTxId, blueBeltPromotionAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          ( PromoteProfileAction
+              { promotedProfileId = studentAC,
+                promotedByProfileId = masterAC,
+                achievementDate = blueBeltDate,
+                promotedBelt = Blue
+              }
+          )
+          Nothing
+
+      (gyTxId, blueBeltRankAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          (AcceptPromotionAction blueBeltPromotionAC)
+          Nothing
+
+      logProfileInformation (w1 testWallets) studentAC
+
+      let purpleBeltDate = timeFromPlutus $ timeToPlutus blueBeltDate + monthsToPosixTime (minMonthsForBelt Purple)
+
+      (gyTxId, purpleBeltPromotionAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          ( PromoteProfileAction
+              { promotedProfileId = studentAC,
+                promotedByProfileId = masterAC,
+                achievementDate = purpleBeltDate,
+                promotedBelt = Purple
+              }
+          )
+          Nothing
+
+      (gyTxId, purpleBeltRank) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          (AcceptPromotionAction purpleBeltPromotionAC)
+          Nothing
+
+      logProfileInformation (w1 testWallets) studentAC
 
       return ()

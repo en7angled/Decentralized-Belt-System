@@ -1,6 +1,7 @@
 module TxBuilding.Operations where
 
 import Control.Monad.Reader.Class
+import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (BJJBelt (White), beltToInt)
@@ -166,9 +167,9 @@ promoteProfileTX ::
   POSIXTime ->
   BJJBelt ->
   [GYAddress] ->
-  m (GYTxSkeleton 'PlutusV3)
+  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt ownAddrs = do
-  mintingPolicyRef <- asks profilesValidatorRef
+  mintingPolicyRef <- asks mintingPolicyRef
 
   gyMasterUserAC <- gyDeriveUserFromRefAC gyPromotedByProfileId
   spendsMasterProfileUserNFT <- txMustSpendFromAddress gyMasterUserAC ownAddrs
@@ -183,29 +184,31 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
     txMustLockStateWithInlineDatumAndValue
       ranksValidatorGY
       pendingRankDatum
-      (valueSingleton gyPromotionRankAC 1)
+      (valueSingleton gyPromotionRankAC 1 <> valueFromLovelace 3500000)
 
-  return $
-    mconcat
-      [ spendsMasterProfileUserNFT,
-        isMintingPromotionRank,
-        isLockingPendingRankState
-      ]
+  return
+    ( mconcat
+        [ spendsMasterProfileUserNFT,
+          isMintingPromotionRank,
+          isLockingPendingRankState
+        ],
+      gyPromotionRankAC
+    )
 
 acceptPromotionTX ::
-  (GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
+  (HasCallStack, GYTxUserQueryMonad m, MonadReader ProfileTxBuildingContext m) =>
   GYAssetClass ->
   [GYAddress] ->
-  m (GYTxSkeleton 'PlutusV3)
+  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 acceptPromotionTX gyPromotionId ownAddrs = do
   ranksValidatorRef <- asks ranksValidatorRef
   profilesScriptRef <- asks profilesValidatorRef
 
   (plutusPromotionRankDatum, plutusPromotionRankValue) <- getRankStateDataAndValue gyPromotionId
 
-  let studentProfileRefAC = rankAchievedByProfileId plutusPromotionRankDatum
+  let studentProfileRefAC = promotionAwardedTo plutusPromotionRankDatum
   gyStudentProfileRefAC <- assetClassFromPlutus' studentProfileRefAC
-  let masterProfileRefAC = rankAwardedByProfileId plutusPromotionRankDatum
+  let masterProfileRefAC = promotionAwardedBy plutusPromotionRankDatum
   gyMasterProfileRefAC <- assetClassFromPlutus' masterProfileRefAC
 
   gyStudentProfileUserAC <- gyDeriveUserFromRefAC gyStudentProfileRefAC
@@ -235,12 +238,18 @@ acceptPromotionTX gyPromotionId ownAddrs = do
 
   referencesMasterAndStudentProfilesAndRanks <- txMustHaveUTxOsAsRefInputs [gyMasterProfileRefAC, gyStudentProfileRefAC, gyStudentCurrentRankAC, gyMasterCurrentRankAC]
 
-  return $
-    mconcat
-      [ spendsStudentProfileUserNFT,
-        spendsStudentProfileRefNFT,
-        isLockingUpdatedStudentProfile,
-        spendsPromotionRank,
-        isLockingUpdatedRank,
-        referencesMasterAndStudentProfilesAndRanks
-      ]
+  gyRankAC <- assetClassFromPlutus' $ rankId plutuStudentUpdatedRankDatum
+
+  gyLogInfo' "plutusPromotionRankDatum" $ "plutusPromotionRankDatum" <> show plutusPromotionRankDatum
+  gyLogInfo' "plutuStudentUpdatedRankDatum" $ "plutuStudentUpdatedRankDatum" <> show plutuStudentUpdatedRankDatum
+  return
+    ( mconcat
+        [ spendsStudentProfileUserNFT,
+          spendsStudentProfileRefNFT,
+          isLockingUpdatedStudentProfile,
+          spendsPromotionRank,
+          isLockingUpdatedRank,
+          referencesMasterAndStudentProfilesAndRanks
+        ],
+      gyRankAC
+    )
