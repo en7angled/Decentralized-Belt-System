@@ -10,6 +10,8 @@ import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
+import Data.Aeson.Types
+import Data.Swagger
 
 -------------------------------------------------------------------------------
 
@@ -34,7 +36,7 @@ data BJJBelt
   | Red -- 9th Degree
   | Red10 -- 10th Degree
   deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
+  deriving anyclass (HasBlueprintDefinition,FromJSON, ToJSON, ToSchema)
 
 makeIsDataSchemaIndexed ''BJJBelt [('White, 0), ('Blue, 1), ('Purple, 2), ('Brown, 3), ('Black, 4), ('Black1, 5), ('Black2, 6), ('Black3, 7), ('Black4, 8), ('Black5, 9), ('Black6, 10), ('RedAndBlack, 11), ('RedAndWhite, 12), ('Red, 13), ('Red10, 14)]
 

@@ -10,9 +10,10 @@ import GeniusYield.Test.Clb
 import GeniusYield.Test.Utils
 import GeniusYield.TxBuilder
 import GeniusYield.Types
+import Onchain.BJJ
 import Onchain.CIP68
 import Test.Tasty
-import TestRuns (bjjInteraction, deployBJJValidators, logProfileAndRank)
+import TestRuns (bjjInteraction, deployBJJValidators, logProfileAndRank, logProfileInformation)
 import TxBuilding.Interactions
 
 unitTests :: (HasCallStack) => TestTree
@@ -49,12 +50,15 @@ promotionTests =
   where
     blackPromotesWhiteToBlue :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
     blackPromotesWhiteToBlue TestInfo {..} = do
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 1
       txBuildingContext <- deployBJJValidators (w1 testWallets)
       (gyTxId, blackBeltAC) <-
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
-          (CreateProfileAction masterProfileData Practitioner 4)
+          (CreateProfileWithRankAction masterProfileData Practitioner creationDate Black)
           Nothing
 
       ((blackBeltProfile, blackBeltValue), (blackBeltRank, blackBeltRankValue)) <- logProfileAndRank (w1 testWallets) blackBeltAC
@@ -63,9 +67,9 @@ promotionTests =
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
-          (CreateProfileAction studentProfileData Practitioner 0)
+          (InitProfileAction studentProfileData Practitioner creationDate)
           Nothing
 
-      ((whiteBeltProfile, whiteBeltValue), (whiteBeltRank, whiteBeltRankValue)) <- logProfileAndRank (w1 testWallets) whiteBeltAC
+      logProfileInformation (w1 testWallets) whiteBeltAC
 
       return ()

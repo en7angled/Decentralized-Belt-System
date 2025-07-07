@@ -5,7 +5,7 @@ module TestRuns where
 
 import Control.Monad.Reader
 import Data.Foldable.Extra
-import DomainTypes.Profile.Types (ProfileActionType)
+import DomainTypes.Profile.Types (ProfileActionType, ProfileInformation)
 import GHC.Stack
 import GeniusYield.Test.Clb (sendSkeleton')
 import GeniusYield.Test.Utils
@@ -13,7 +13,7 @@ import GeniusYield.TxBuilder hiding (userAddresses)
 import qualified GeniusYield.TxBuilder.User as User
 import GeniusYield.Types
 import Onchain.CIP68
-import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), getCurrentRankId)
+import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
 import PlutusLedgerApi.V3
 import TxBuilding.Context
 import TxBuilding.Interactions
@@ -67,6 +67,12 @@ bjjInteraction txBuildingContext user actionType mrecipient = asUser user $ do
 
 ------------------------------------------------------------------------------------------------
 
+logProfileInformation :: (GYTxGameMonad m, HasCallStack) => User -> GYAssetClass -> m ProfileInformation
+logProfileInformation user profileRefAC = asUser user $ do
+  profileInformation <- getProfileInformation profileRefAC
+  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ greenColorString $ "PROFILE INFORMATION: \n" <> show profileInformation
+  return profileInformation
+
 logProfileState :: (GYTxGameMonad m, HasCallStack) => User -> GYAssetClass -> m (CIP68Datum OnchainProfile, Value)
 logProfileState user profileRefAC = asUser user $ do
   (profile, value) <- getProfileStateDataAndValue profileRefAC
@@ -87,4 +93,3 @@ logProfileAndRank user profileRefAC = do
   rankRefAC <- assetClassFromPlutus' $ getCurrentRankId $ extra profile
   (rank, rankValue) <- logRankState user rankRefAC
   return ((profile, profileValue), (rank, rankValue))
-

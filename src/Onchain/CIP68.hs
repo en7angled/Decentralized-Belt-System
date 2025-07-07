@@ -57,6 +57,16 @@ mkCIP68Datum extraData Metadata222 {..} =
       extra = extraData
     }
 
+getMetadataFields :: CIP68Datum a -> MetadataFields
+getMetadataFields (CIP68Datum metadata _ _) =
+  Metadata222
+    { metadataName = lookupMetdata "name",
+      metadataDescription = lookupMetdata "description",
+      metadataImageURI = lookupMetdata "image"
+    }
+  where
+    lookupMetdata label = fromMaybe @BuiltinByteString "" $ PlutusTx.AssocMap.lookup (encodeUtf8 label) metadata
+
 updateCIP68DatumImage :: forall a. BuiltinByteString -> CIP68Datum a -> CIP68Datum a
 updateCIP68DatumImage newImageURI oldDatum =
   let newMetadata = PlutusTx.AssocMap.insert (encodeUtf8 "image") newImageURI (metadata oldDatum)

@@ -1,12 +1,17 @@
 module TxBuilding.Lookups where
 
+import DomainTypes.Profile.Types
 import GeniusYield.TxBuilder
 import GeniusYield.Types (GYAddress, GYUTxO, filterUTxOs, utxoValue, utxosToList)
+import GeniusYield.Types.Time
 import GeniusYield.Types.Value
-import Onchain.CIP68 (CIP68Datum (..))
-import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), OnChainProfileType(..), getCurrentRankId)
+import Onchain.BJJ (intToBelt)
+import Onchain.CIP68 (CIP68Datum (..), getMetadataFields)
+import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
+import qualified Onchain.Protocol as Onchain
 import PlutusLedgerApi.V1.Value
 import TxBuilding.Exceptions (ProfileException (..))
+import TxBuilding.Functors
 import TxBuilding.Utils
 
 ------------------------------------------------------------------------------------------------
@@ -53,9 +58,9 @@ getRankStateDataAndValue rankRefAC = do
 getProfileRanks :: (GYTxQueryMonad m) => GYAssetClass -> m [OnchainRank]
 getProfileRanks profileRef = do
   (CIP68Datum _metadata _version profile, _profileValue) <- getProfileStateDataAndValue profileRef
-  case profileType profile of
-    Organization -> throwError (GYApplicationException WrongProfileType)
-    Practitioner -> do
+  case Onchain.profileType profile of
+    Onchain.Organization -> throwError (GYApplicationException WrongProfileType)
+    Onchain.Practitioner -> do
       currentRank <- assetClassFromPlutus' $ getCurrentRankId profile
       getRankList currentRank
   where
@@ -70,3 +75,53 @@ getProfileRanks profileRef = do
             gyPreviousRankId <- assetClassFromPlutus' previousRankId
             previousRanks <- getRankList gyPreviousRankId
             return (rankData : previousRanks)
+
+------------------------------------------------------------------------------------------------
+
+-- * Domain Lookup Functions
+
+------------------------------------------------------------------------------------------------
+
+onchainRankToRankInformation :: (GYTxQueryMonad m) => OnchainRank -> m RankInformation
+onchainRankToRankInformation (Onchain.Rank {..}) = do
+  gyRankId <- assetClassFromPlutus' rankId
+  gyRankAchievedByProfileId <- assetClassFromPlutus' rankAchievedByProfileId
+  gyRankAwardedByProfileId <- assetClassFromPlutus' rankAwardedByProfileId
+
+  return
+    RankInformation
+      { rankInfoId = gyRankId,
+        rankInfoBelt = intToBelt rankNumber,
+        rankInfoAchievedByProfileId = gyRankAchievedByProfileId,
+        rankInfoAwardedByProfileId = gyRankAwardedByProfileId,
+        rankInfoAchievementDate = timeFromPlutus rankAchievementDate
+      }
+onchainRankToRankInformation (Onchain.PendingRank {}) = throwError (GYApplicationException WrongRankDataType)
+
+getProfileInformation :: (GYTxQueryMonad m) => GYAssetClass -> m ProfileInformation
+getProfileInformation profileRefAC = do
+  (profileDatum, _profileValue) <- getProfileStateDataAndValue profileRefAC
+  let ProfileData {profileName, profileDescription, profileImageURI} = metadataFieldsToProfileData (getMetadataFields profileDatum)
+  case Onchain.profileType (extra profileDatum) of
+    Onchain.Organization -> do
+      return $
+        OrganizationProfileInformation
+          { organizationId = profileRefAC,
+            organizationName = profileName,
+            organizationDescription = profileDescription,
+            organizationImageURI = profileImageURI
+          }
+    Onchain.Practitioner -> do
+      ranks <- getProfileRanks profileRefAC
+      ranksInfos <- mapM onchainRankToRankInformation ranks
+      let currentRank = head ranksInfos
+      let previousRanks = tail ranksInfos
+      return $
+        PractitionerProfileInformation
+          { practitionerId = profileRefAC,
+            practitionerName = profileName,
+            practitionerDescription = profileDescription,
+            practitionerImageURI = profileImageURI,
+            practitionerCurrentRank = currentRank,
+            practitionerPreviousRanks = previousRanks
+          }

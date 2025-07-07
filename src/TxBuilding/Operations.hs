@@ -3,10 +3,11 @@ module TxBuilding.Operations where
 import Control.Monad.Reader.Class
 import GeniusYield.TxBuilder
 import GeniusYield.Types
+import Onchain.BJJ (BJJBelt (White), beltToInt)
 import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.MintingPolicy
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Protocol (OnchainRank(..), OnchainProfile(..), OnChainProfileType(..), getCurrentRankId, generateRankId, mkPendingRank, mkPractitionerProfile, mkOrganizationProfile, promoteProfile)
+import Onchain.Protocol (OnchainRank (..), generateRankId, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, promoteProfile)
 import qualified Onchain.Protocol as Onchain
 import qualified PlutusLedgerApi.V1.Tx as V1
 import PlutusLedgerApi.V3
@@ -31,7 +32,7 @@ createProfileTX ::
   Onchain.OnChainProfileType ->
   POSIXTime ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
-createProfileTX recipient metadata profileType creationDate = createProfileWithRankTX recipient metadata profileType creationDate 0
+createProfileTX recipient metadata profileType creationDate = createProfileWithRankTX recipient metadata profileType creationDate White
 
 -- | Create OnChainProfile Transaction Skeleton
 createProfileWithRankTX ::
@@ -40,9 +41,9 @@ createProfileWithRankTX ::
   MetadataFields ->
   Onchain.OnChainProfileType ->
   POSIXTime ->
-  Integer ->
+  BJJBelt ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
-createProfileWithRankTX recipient metadata profileType creationDate rankNumber = do
+createProfileWithRankTX recipient metadata profileType creationDate belt = do
   creationDateSlot <- gySlotFromPOSIXTime (creationDate + 1000)
   let isAfterCreationDate = isInvalidBefore creationDateSlot
 
@@ -58,11 +59,11 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
   let profileRefAC = assetClassToPlutus gyProfileRefAC
 
   let plutusProfile = case profileType of
-        Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams rankNumber
+        Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams (beltToInt belt)
         Onchain.Organization -> mkOrganizationProfile profileRefAC defaultProtocolParams
   let plutusProfileCIP68Datum = mkCIP68Datum plutusProfile metadata
 
-  let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate rankNumber
+  let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate (beltToInt belt)
   let gyCreateProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
 
   isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mintingPolicyRef mintingPolicyGY gyCreateProfileRedeemer gyProfileRefAC
@@ -76,7 +77,7 @@ createProfileWithRankTX recipient metadata profileType creationDate rankNumber =
   ifPractitionerMintAndLockFirstRankState <- case profileType of
     Onchain.Organization -> return mempty
     Onchain.Practitioner -> do
-      let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams rankNumber
+      let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams (beltToInt belt)
       gyRankAC <- assetClassFromPlutus' $ rankId rankData
       isMintingRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyCreateProfileRedeemer gyRankAC
       isLockingRankState <-
@@ -163,21 +164,21 @@ promoteProfileTX ::
   GYAssetClass ->
   GYAssetClass ->
   POSIXTime ->
-  Integer ->
+  BJJBelt ->
   [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3)
-promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate rankNumber ownAddrs = do
+promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt ownAddrs = do
   mintingPolicyRef <- asks profilesValidatorRef
 
   gyMasterUserAC <- gyDeriveUserFromRefAC gyPromotedByProfileId
   spendsMasterProfileUserNFT <- txMustSpendFromAddress gyMasterUserAC ownAddrs
 
-  let redeemer = Promote (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate rankNumber
+  let redeemer = Promote (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt)
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
-  gyPromotionRankAC <- assetClassFromPlutus' $ generateRankId (assetClassToPlutus gyPromotedProfileId) rankNumber
+  gyPromotionRankAC <- assetClassFromPlutus' $ generateRankId (assetClassToPlutus gyPromotedProfileId) (beltToInt belt)
   isMintingPromotionRank <- txMustMintWithMintRef True mintingPolicyRef mintingPolicyGY gyRedeemer gyPromotionRankAC
 
-  let pendingRankDatum = mkPendingRank (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate rankNumber defaultProtocolParams
+  let pendingRankDatum = mkPendingRank (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt) defaultProtocolParams
   isLockingPendingRankState <-
     txMustLockStateWithInlineDatumAndValue
       ranksValidatorGY

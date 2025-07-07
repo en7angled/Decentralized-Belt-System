@@ -54,12 +54,19 @@ interactionToTxSkeleton Interaction {..} = do
   case action of
     ProfileAction actionType -> do
       case actionType of
-        CreateProfileAction profileData profileType creationDate -> do
+        CreateProfileWithRankAction profileData profileType creationDate belt -> do
+          createProfileWithRankTX
+            receiveAddr
+            (profileDataToMetadataFields profileData)
+            (profileTypeToOnChainProfileType profileType)
+            (timeToPlutus creationDate)
+            belt
+        InitProfileAction profileData profileType creationDate -> do
           createProfileTX
             receiveAddr
             (profileDataToMetadataFields profileData)
             (profileTypeToOnChainProfileType profileType)
-            (toPlutusPOSIXTime creationDate)
+            (timeToPlutus creationDate)
         UpdateProfileImageAction profileRefAC imgURI -> do
           (,profileRefAC)
             <$> updateProfileTX
@@ -69,9 +76,9 @@ interactionToTxSkeleton Interaction {..} = do
         DeleteProfileAction profileRefAC -> do
           (,profileRefAC)
             <$> deleteProfileTX profileRefAC receiveAddr usedAddrs
-        PromoteProfileAction promotedProfileId promotedByProfileId achievementDate rankNumber -> do
+        PromoteProfileAction promotedProfileId promotedByProfileId achievementDate belt -> do
           (,promotedProfileId)
-            <$> promoteProfileTX promotedProfileId promotedByProfileId (toPlutusPOSIXTime achievementDate) rankNumber usedAddrs
+            <$> promoteProfileTX promotedProfileId promotedByProfileId (timeToPlutus achievementDate) belt usedAddrs
         AcceptPromotionAction promotionId -> do
           (,promotionId)
             <$> acceptPromotionTX promotionId usedAddrs
