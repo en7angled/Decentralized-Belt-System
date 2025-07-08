@@ -152,6 +152,7 @@ test-suite Decentralized-Belt-System-test
   other-modules:
     TestRuns
     UnitTests
+    BJJPropertyTests
 
   build-depends:
     , base
@@ -162,6 +163,9 @@ test-suite Decentralized-Belt-System-test
     , mtl
     , tasty
     , tasty-quickcheck
+    , tasty-hedgehog
+    , hedgehog
+    , QuickCheck
 
   --- Cardano specific dependencies
   build-depends:

@@ -81,13 +81,24 @@ intToBelt n =
   else if n == 14 then Red10
   else traceError "Invalid belt"
 
+
+
 instance Eq BJJBelt where
   (==) :: BJJBelt -> BJJBelt -> Bool
   (==) x y = beltToInt x == beltToInt y
 
+instance Prelude.Eq BJJBelt where
+  (==) :: BJJBelt -> BJJBelt -> Bool
+  (==) = (==)
+
 instance Ord BJJBelt where
   compare :: BJJBelt -> BJJBelt -> Ordering
   compare x y = compare (beltToInt x) (beltToInt y)
+
+instance Prelude.Ord BJJBelt where
+  compare :: BJJBelt -> BJJBelt -> Ordering
+  compare = compare
+
 
 instance Enum BJJBelt where
   succ :: BJJBelt -> BJJBelt
@@ -104,6 +115,21 @@ instance Enum BJJBelt where
   enumFromTo start end = map toEnum [fromEnum start .. fromEnum end]
   enumFromThenTo :: BJJBelt -> BJJBelt -> BJJBelt -> [BJJBelt]
   enumFromThenTo start next end = map toEnum [fromEnum start, fromEnum next .. fromEnum end]
+
+instance Prelude.Enum BJJBelt where
+  succ :: BJJBelt -> BJJBelt
+  succ = succ
+  pred :: BJJBelt -> BJJBelt
+  pred = pred
+  toEnum :: Prelude.Int -> BJJBelt
+  toEnum = toEnum . Prelude.fromIntegral
+  fromEnum :: BJJBelt -> Prelude.Int
+  fromEnum = Prelude.fromIntegral . beltToInt
+
+
+
+
+
 
 {-# INLINEABLE minMonthsForBelt #-}
 minMonthsForBelt :: BJJBelt -> Integer
