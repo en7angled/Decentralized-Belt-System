@@ -1,12 +1,17 @@
 # Onchain Architecture Documentation
 
+
+- [Onchain Architecture Documentation](#onchain-architecture-documentation)
+  - [Overview](#overview)
+  - [Minting Policy](#minting-policy)
+  - [Profiles Validator](#profiles-validator)
+  - [Ranks Validator](#ranks-validator)
+
+
 ## Overview
 
 The Decentralized BJJ Belt System implements a comprehensive smart contract architecture for managing Brazilian Jiu-Jitsu (BJJ) practitioner profiles and rank promotions on the Cardano blockchain. 
 
-## Architecture Overview
-
-### Core Validators
 
 The system consists of three main validators that work together to manage the complete BJJ belt system:
 
@@ -14,16 +19,14 @@ The system consists of three main validators that work together to manage the co
 2. **Profiles Validator** - Manages profile lifecycle and updates
 3. **Ranks Validator** - Enforces BJJ promotion rules and rank state transitions
 
-### Token Architecture
-
-The system uses a sophisticated token architecture based on CIP-68 standards:
+Specific tokens: 
 
 - **Profile Ref Token**: NFT locked at Profiles Validator containing profile datum
 - **Profile User Token**: NFT held by profile owner for authorization
 - **Rank State Token**: NFT locked at Ranks Validator containing rank datum (a rank can be accepted rank or promotion) 
 
 
-#### Minting Policy
+## Minting Policy
 
 **Purpose**: 
 Governs the rules for issuing new profiles, ranks, and promotions. It is parameterized by the Profiles and Ranks validator script hashes, ensuring secure cross-validator communication. It handles:
@@ -51,7 +54,7 @@ Governs the rules for issuing new profiles, ranks, and promotions. It is paramet
 4. Locks RankState Token with first rank datum at Ranks Validator (for practitioners)
 5. User receives the User token
 
-#### Profiles Validator 
+## Profiles Validator 
 
 **Purpose**:  
 Governs the rules for profile lifecycle and promotion acceptance. It handles:
@@ -70,7 +73,7 @@ Governs the rules for profile lifecycle and promotion acceptance. It handles:
 - Deletion burns both Ref and User tokens
 
 
-#### Ranks Validator
+## Ranks Validator
 
 **Purpose**:
 Enforces BJJ promotion rules and validates rank progression. It handles:
