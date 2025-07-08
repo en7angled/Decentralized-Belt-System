@@ -1,6 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module BJJPropertyTests where
@@ -101,7 +99,7 @@ prop_beltComparisonAntisymmetric = property $ do
   belt1 <- forAll genBelt
   belt2 <- forAll genBelt
   when (belt1 < belt2) $ do
-    Hedgehog.assert $ not (belt2 < belt1)
+    Hedgehog.assert (belt2 >= belt1)
 
 prop_beltComparisonReflexive :: Property
 prop_beltComparisonReflexive = property $ do
@@ -181,7 +179,7 @@ prop_monthsToPosixTimeNonNegative = property $ do
 -- Promotion Validation Properties
 -- =============================================================================
 
-    
+
 prop_timeRequirementsEnforced :: Property
 prop_timeRequirementsEnforced = property $ do
   (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, studentNextDate) <- forAll genInvalidTimePromotion
@@ -222,9 +220,9 @@ genInvalidTimePromotion = do
   studentCurrentBelt <- Gen.element [White, Blue, Purple, Brown]
   studentCurrentDate <- genPOSIXTime
   studentNextBelt <- Gen.element [Blue, Purple, Brown, Black]
-  
+
   -- Set next date before current date
   studentNextDate <- genPOSIXTime
   let invalidNextDate = POSIXTime (unPOSIXTime studentCurrentDate - 2629800000) -- Before current date
-  
-  pure (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, invalidNextDate) 
+
+  pure (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, invalidNextDate)
