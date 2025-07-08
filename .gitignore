@@ -22,6 +22,8 @@ cabal.sandbox.config
 .stack-work/
 cabal.project.local
 cabal.project.local~
+cabal.project.freeze
+
 .HTF/
 .ghc.environment.*
 
@@ -42,9 +44,10 @@ output
 # Other
 *.DS_STORE
 *.link
-
+.pre-commit-config.yaml
 
 result
+result-*
 
 # Cardano
 

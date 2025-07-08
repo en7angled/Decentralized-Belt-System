@@ -89,7 +89,7 @@ Use the following channels for support or feedback:
 
 ## 10. Acknowledgments
 Thanks to the Cardano community for support.
-This project is funded by [F13 - Project Catalyst ID: #1300081](https://projectcatalyst.io/funds/10/f13-cardano-use-cases-concept/decentralized-belt-system-for-brazilian-jiu-jitsu-bjj-a438b)
+This project is funded by [F13 - Project Catalyst ID: #1300081](https://projectcatalyst.io/funds/10/f13-cardano-use-cases-concept/decentralized-belt-system-for-brazilian-jiu-jitsu-bjj)
 
 ---
 

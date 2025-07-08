@@ -1,0 +1,5 @@
+Create Profile
+  - spends utxo
+  - mints ref and user token
+  - locks profile datum to validator
+  
