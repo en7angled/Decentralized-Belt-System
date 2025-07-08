@@ -55,6 +55,7 @@ library
   exposed-modules:
     DomainTypes.Profile.Types
     Onchain.BJJ
+    Onchain.Blueprint
     Onchain.CIP68
     Onchain.MintingPolicy
     Onchain.ProfilesValidator
@@ -136,6 +137,9 @@ executable Decentralized-Belt-System
   build-depends:
     , base
     , Decentralized-Belt-System
+    , bytestring
+    , plutus-ledger-api
+    , plutus-tx
 
   hs-source-dirs:   app
   default-language: GHC2021

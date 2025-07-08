@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+
 module TxBuilding.Validators where
 
 import GeniusYield.Types
@@ -8,6 +10,8 @@ import qualified Onchain.RanksValidator as RanksValidator (ranksCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude
+
+import Onchain.Blueprint (contractBlueprint)
 
 ------------------------------------------------------------------------------------------------
 
