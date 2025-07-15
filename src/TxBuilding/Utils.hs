@@ -16,6 +16,12 @@ import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
 import TxBuilding.Exceptions (ProfileException (..))
+import Data.Text
+import Data.Aeson (FromJSON, decodeFileStrict)
+import System.Directory.Extra
+import Utils
+import qualified Data.Text.IO
+import GeniusYield.Types.Wallet
 
 ------------------------------------------------------------------------------------------------
 
@@ -46,6 +52,50 @@ pPOSIXTimeFromGYSlot = (timeToPlutus <$>) . slotToBeginTime
 gySlotFromPOSIXTime :: (GYTxQueryMonad m) => POSIXTime -> m GYSlot
 gySlotFromPOSIXTime ptime = do
   enclosingSlotFromTime' (timeFromPlutus ptime)
+
+
+------------------------------------------------------------------------------------------------
+
+-- * Mnemonic Utils
+
+------------------------------------------------------------------------------------------------
+
+readMnemonicFile :: FilePath -> IO GYExtendedPaymentSigningKey
+readMnemonicFile path = do
+  putStrLn $ yellowColorString $ "Mnemonic phrase at " <> show path
+  fileExist <- doesFileExist path
+  if fileExist
+    then do
+      content <- Data.Text.IO.readFile path
+      readMnemonic content
+    else do
+      error $ "File not found: " <> show path
+
+
+readMnemonic :: Text -> IO GYExtendedPaymentSigningKey
+readMnemonic content = do
+  case walletKeysToExtendedPaymentSigningKey <$> walletKeysFromMnemonic (Data.Text.words content) of
+    Left err -> do
+      putStrLn $ yellowColorString $ "Error reading mnemonic: " <> err
+      error err
+    Right key -> return key
+
+decodeConfigFile :: (FromJSON a) => FilePath -> IO a
+decodeConfigFile path = do
+  fileExist <- doesFileExist path
+  if fileExist
+    then do
+      decoded <- decodeFileStrict path 
+      case decoded of
+        Nothing -> do
+          error $ "Error parsing config file: " <> show path
+        Just config -> return config
+    else do
+      error $ "File not found: " <> show path
+
+
+
+
 
 -- | Get
 
@@ -93,7 +143,7 @@ rankAndValueFromUTxO rankStateUTxO = do
 
 
 
-rankDatumFromDatum :: GYDatum -> Maybe Onchain.OnchainRank 
-rankDatumFromDatum gyDatum = 
+rankDatumFromDatum :: GYDatum -> Maybe Onchain.OnchainRank
+rankDatumFromDatum gyDatum =
   fromBuiltinData (datumToPlutus' gyDatum)
 

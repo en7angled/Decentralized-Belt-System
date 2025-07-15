@@ -3,11 +3,11 @@
 module DomainTypes.Profile.Types where
 
 import Data.Aeson
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy.Char8 as BL
+import Data.Aeson qualified as Aeson
+import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.Swagger.Internal.Schema (ToSchema)
 import Data.Text hiding (init, tail)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import GHC.Generics
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
@@ -93,6 +93,7 @@ data ProfileActionType
 
 -- Custom Show instances for better formatting
 instance Show ProfileInformation where
+  show :: ProfileInformation -> String
   show (PractitionerProfileInformation {..}) =
     Prelude.unlines
       [ "🥋 Practitioner Profile",

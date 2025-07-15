@@ -66,7 +66,97 @@ For more details, see :
 
 ## 5. Installation & Setup
 
+## Prerequisites
+- Unix-like operating system (Linux, macOS, or WSL2)
+- Git installed
+- Nix package manager
+- Direnv 
+***
+
+## 5.1. Clone and Setup
+
+This project uses the [The Developer Experience Shell](https://github.com/input-output-hk/devx/#the-developer-experience-shell) to build a fully-functioning and reproducible Cardano development shell for Haskell quickly and across multiple operating systems (and architectures).
+
+
+```bash
+git clone https://github.com/en7angled/Decentralized-Belt-System.git
+cd Decentralized-Belt-System
+```
+
+ * After installing and configuring `nix` and `direnv`, clone the repo and type:
+```bash
+ direnv allow
+``` 
+
+ * The test suite for operations (transactions) can be run with the following command:
+
+```bash
+cabal test 
+```
+***
+
+### 5.2. Configure Atlas
+* Building transaction bodies requires gathering suitable information from the blockchain.  For this purpose, we'll require a provider. So at the project root directory a file named **"config_atlas.json"**, which should have the following format
+
+```json
+{
+  "coreProvider": {
+    "maestroToken": "YOUR_TOKEN_HERE",
+    "turboSubmit": true
+  },
+  "networkId": "preview"
+}
+```
+ * More info about the provider config can be found [here](https://atlas-app.io/getting-started/endpoints#defining-provider-configuration)
+
+
+***
+
+### 5.3. Configure Operation Key 
+Create `operation.prv` with your private key mnemonic (24 words). Make sure you have enough funds available for covering the validators deployment. For testnet, you can get funds from the [Cardano Testnet Faucet](https://docs.cardano.org/cardano-testnets/tools/faucet).
+
+***
+### 5.4. Deploy validators
+
+* This service requires validators to be deployed and to be used as reference UTxOs in the transactions.  The validators can be deployed from the TUI.
+
+```bash
+cabal run admin -- deploy-reference-scripts
+```
+
+* After deployment a file named **config_bjj_validators.json** which contains the validators reference UTxO.
+
+
 ## 6. Usage
+
+```bash
+cabal run admin --  --help
+```
+
+```
+BJJ Belt System - Decentralized Belt Management
+
+Usage: admin COMMAND
+
+  A command-line tool for managing Brazilian Jiu Jitsu profiles, belt
+  promotions, and achievements on the Cardano blockchain. Supports deploying
+  reference scripts, initializing and updating profiles, handling promotions,
+  and more.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  deploy-reference-scripts Deploy reference scripts for the BJJ belt system
+  init-profile             Initialize a new profile
+  update-profile-image     Update profile image
+  delete-profile           Delete a profile
+  promote-profile          Promote a profile to a new belt
+  accept-promotion         Accept a promotion
+  create-profile-with-rank Create a profile with initial rank
+```
+
+
 
 ## 7. License
 This project is licensed under the GNU GENERAL PUBLIC LICENSE v3.   

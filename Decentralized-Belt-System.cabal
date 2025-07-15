@@ -128,18 +128,22 @@ library
     UndecidableInstances
     ViewPatterns
 
-executable Decentralized-Belt-System
+executable admin
   -- import:           
   main-is:          Main.hs
 
   -- other-modules:
   -- other-extensions:
   build-depends:
+    , aeson
+    , atlas-cardano
     , base
-    , Decentralized-Belt-System
     , bytestring
+    , Decentralized-Belt-System
+    , optparse-applicative
     , plutus-ledger-api
     , plutus-tx
+    , text
 
   hs-source-dirs:   app
   default-language: GHC2021
@@ -154,9 +158,9 @@ test-suite Decentralized-Belt-System-test
   hs-source-dirs:   test
   main-is:          Main.hs
   other-modules:
+    BJJPropertyTests
     TestRuns
     UnitTests
-    BJJPropertyTests
 
   build-depends:
     , base
@@ -164,12 +168,12 @@ test-suite Decentralized-Belt-System-test
 
   build-depends:
     , extra
-    , mtl
-    , tasty
-    , tasty-quickcheck
-    , tasty-hedgehog
     , hedgehog
+    , mtl
     , QuickCheck
+    , tasty
+    , tasty-hedgehog
+    , tasty-quickcheck
 
   --- Cardano specific dependencies
   build-depends:
