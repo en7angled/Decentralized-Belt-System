@@ -100,6 +100,6 @@ runTx ctx addrs addr collateral skeleton = do
     (skeleton >>= \(txSklt, mac) -> (,mac) <$> buildTxBody txSklt)
 
 data TxBuildingContext = TxBuildingContext
-  { ledgerCtx :: ProfileTxBuildingContext,
+  { validatorsCtx :: ProfileTxBuildingContext,
     providerCtx :: ProviderCtx
   }

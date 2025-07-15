@@ -4,7 +4,6 @@
 module TxBuilding.Transactions where
 
 import Control.Monad (when)
-
 import Control.Monad.Reader
 import Data.Text
 import Data.Tuple.Extra (first)
@@ -40,7 +39,7 @@ interactionToTxBody ::
   m (GYTxBody, GYAssetClass)
 interactionToTxBody i@Interaction {..} = do
   TxBuildingContext {..} <- ask
-  let builderMonadSkeleton = runReaderT (interactionToTxSkeleton i) ledgerCtx
+  let builderMonadSkeleton = runReaderT (interactionToTxSkeleton i) validatorsCtx
   liftIO $ runTx providerCtx (usedAddresses userAddresses) (changeAddress userAddresses) Nothing builderMonadSkeleton
 
 interactionToUnsignedTx :: (MonadReader TxBuildingContext m, MonadIO m) => Interaction -> m (GYTx, GYAssetClass)

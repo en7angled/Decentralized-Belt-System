@@ -22,7 +22,7 @@ import TxBuilding.Validators (defaultProtocolParams)
 import Utils
 import Data.ByteString.Lazy qualified as B
 import GeniusYield.Imports
-import Data.Aeson (encode)
+import Data.Aeson (encode, decodeFileStrict)
 
 atlasCoreConfig :: FilePath
 atlasCoreConfig = "config_atlas.json"
@@ -323,6 +323,13 @@ main :: IO ()
 main = do
   printGreen "BJJ Belt System - Decentralized Belt Management"
 
+  mTxBuildingContext <- decodeFileStrict @ProfileTxBuildingContext txBuldingContextFile 
+  case mTxBuildingContext of
+    Nothing -> do
+      printYellow "No transaction building context found, please run deploy-reference-scripts first"
+      printYellow "Please run deploy-reference-scripts first to set up the system"
+    Just txBuildingContext -> do
+      printYellow "Transaction building context found, executing command"
 
   -- Parse command line arguments
   cmd <- execParser $ info (commandParser <**> helper)
@@ -341,7 +348,11 @@ main = do
   printYellow "Loading Providers ..."
   withCfgProviders atlasConfig (Text.read @GYLogNamespace "bjj-belt-system") $ \providers -> do
     let pCtx = ProviderCtx atlasConfig providers
-
-
-    -- Execute the command
-    executeCommand (Left pCtx) signKey cmd
+    
+    case mTxBuildingContext of
+      Nothing -> do
+        
+        executeCommand (Left pCtx) signKey cmd
+      Just validatorsCtx -> do
+        let txBuildingContext = TxBuildingContext {validatorsCtx = validatorsCtx, providerCtx = pCtx}
+        executeCommand (Right txBuildingContext) signKey cmd
