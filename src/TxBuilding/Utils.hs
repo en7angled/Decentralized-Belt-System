@@ -16,6 +16,13 @@ import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
 import TxBuilding.Exceptions (ProfileException (..))
+import Data.Text
+import Data.Aeson (FromJSON, decodeFileStrict)
+import System.Directory.Extra
+import Utils
+import qualified Data.Text.IO
+import GeniusYield.Types.Wallet
+
 
 ------------------------------------------------------------------------------------------------
 
@@ -47,6 +54,41 @@ gySlotFromPOSIXTime :: (GYTxQueryMonad m) => POSIXTime -> m GYSlot
 gySlotFromPOSIXTime ptime = do
   enclosingSlotFromTime' (timeFromPlutus ptime)
 
+
+
+------------------------------------------------------------------------------------------------
+
+-- * Mnemonic Utils
+
+------------------------------------------------------------------------------------------------
+
+readMnemonicFile :: FilePath -> IO GYExtendedPaymentSigningKey
+readMnemonicFile path = do
+  putStrLn $ yellowColorString $ "Mnemonic phrase at " <> show path
+  fileExist <- doesFileExist path
+  if fileExist
+    then do
+      content <- Data.Text.IO.readFile path
+      readMnemonic content
+    else do
+      error $ "File not found: " <> show path
+
+
+readMnemonic :: Text -> IO GYExtendedPaymentSigningKey
+readMnemonic content = do
+  case walletKeysToExtendedPaymentSigningKey <$> walletKeysFromMnemonic (Data.Text.words content) of
+    Left err -> do
+      putStrLn $ yellowColorString $ "Error reading mnemonic: " <> err
+      error err
+    Right key -> return key
+
+decodeConfigFile :: (FromJSON a) => FilePath -> IO (Maybe a)
+decodeConfigFile path = do
+  fileExist <- doesFileExist path
+  if fileExist
+    then decodeFileStrict path 
+    else return Nothing
+    
 -- | Get
 
 -- | Get inline datum and value from UTxO
@@ -92,8 +134,7 @@ rankAndValueFromUTxO rankStateUTxO = do
   return (rankDatum, pVal)
 
 
-
-rankDatumFromDatum :: GYDatum -> Maybe Onchain.OnchainRank 
-rankDatumFromDatum gyDatum = 
+rankDatumFromDatum :: GYDatum -> Maybe Onchain.OnchainRank
+rankDatumFromDatum gyDatum =
   fromBuiltinData (datumToPlutus' gyDatum)
 
