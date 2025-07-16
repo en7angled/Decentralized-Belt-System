@@ -88,6 +88,11 @@ cd Decentralized-Belt-System
  direnv allow
 ``` 
 
+ * Install:
+```bash
+ cabal install
+``` 
+
  * The test suite for operations (transactions) can be run with the following command:
 
 ```bash
@@ -121,7 +126,7 @@ Create `operation.prv` with your private key mnemonic (24 words). Make sure you 
 * This service requires validators to be deployed and to be used as reference UTxOs in the transactions.  The validators can be deployed from the TUI.
 
 ```bash
-cabal run admin -- deploy-reference-scripts
+admin deploy-reference-scripts
 ```
 
 * After deployment a file named **config_bjj_validators.json** which contains the validators reference UTxO.
@@ -130,7 +135,7 @@ cabal run admin -- deploy-reference-scripts
 ## 6. Usage
 
 ```bash
-cabal run admin --  --help
+admin --help
 ```
 
 ```

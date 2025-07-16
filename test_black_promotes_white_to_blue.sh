@@ -3,7 +3,7 @@
 # BJJ Belt System - Simple Black Promotes White to Blue Test Script
 # This script reproduces the core part of blackPromotesWhiteToBlue test from UnitTests.hs
 
-set -e  # Exit on any error
+set -e # Exit on any error
 
 # Colors for output
 RED='\033[0;31m'
@@ -29,10 +29,8 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-
-
 # Check if the BJJ CLI is available
-if ! command -v admin &> /dev/null; then
+if ! command -v admin &>/dev/null; then
     print_error "BJJ CLI (admin) not found. Please make sure it's built and available in PATH."
     exit 1
 fi
@@ -57,17 +55,16 @@ BLUE_PROMOTION_TIME=1752623616000
 print_info "Student profile creation time: $STUDENT_PROFILE_CREATION_TIME"
 print_info "Master profile creation time: $MASTER_PROFILE_CREATION_TIME"
 
-
 # Step 2: Create master profile with Black belt
 print_info "Step 2: Creating master profile with Black belt..."
 MASTER_PROFILE_ID=$(admin create-profile-with-rank \
     --name "Master" \
     --description "Master is a master" \
-    --image-uri "ipfs://Qmb3JXJHQxuReSUaH6rXAoP5oX9NRs6JmnRFGTj2RVhGwe" \
+    --image-uri "https://github.com/en7angled/Decentralized-Belt-System/blob/main/out/puml/CARDANO-BJJ-BANNER.jpeg?raw=true" \
     --practitioner \
     --posix "$MASTER_PROFILE_CREATION_TIME" \
     --belt black \
-    --output-id | tail -n 1)
+    --output-id | tee /dev/tty | tail -n 1)
 
 print_success "Master profile created with ID: $MASTER_PROFILE_ID"
 
@@ -79,13 +76,9 @@ STUDENT_PROFILE_ID=$(admin init-profile \
     --image-uri "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk" \
     --practitioner \
     --posix "$STUDENT_PROFILE_CREATION_TIME" \
-    --output-id | tail -n 1)
+    --output-id | tee /dev/tty | tail -n 1)
 
 print_success "Student profile created with ID: $STUDENT_PROFILE_ID"
-
-# Wait a bit for blockchain confirmation
-print_info "Waiting for blockchain confirmation..."
-sleep 5
 
 # Step 4: Promote student from White to Blue belt
 print_info "Step 4: Promoting student from White to Blue belt..."
@@ -94,7 +87,7 @@ BLUE_PROMOTION_ID=$(admin promote-profile \
     --promoted-by-profile-id "$MASTER_PROFILE_ID" \
     --posix "$BLUE_PROMOTION_TIME" \
     --belt blue \
-    --output-id | tail -n 1)
+    --output-id | tee /dev/tty | tail -n 1)
 
 print_success "Blue belt promotion created with ID: $BLUE_PROMOTION_ID"
 
@@ -110,5 +103,4 @@ print_info "  - Student profile: $STUDENT_PROFILE_ID"
 print_info "  - Blue belt promotion: $BLUE_PROMOTION_ID"
 print_info "  - Student progressed from White → Blue belt"
 
-echo ""
-print_success "🎉 Simple Black Promotes White to Blue test completed successfully!" 
+print_success "🎉  Black Promotes White to Blue test completed successfully!  🎉 "
