@@ -368,7 +368,7 @@ main :: IO ()
 main = do
   printGreen "BJJ Belt System - Decentralized Belt Management"
 
-  mTxBuildingContext <- decodeFileStrict @ProfileTxBuildingContext txBuldingContextFile
+  mTxBuildingContext <- decodeConfigFile @ProfileTxBuildingContext txBuldingContextFile
   case mTxBuildingContext of
     Nothing -> do
       printYellow "No transaction building context found, please run deploy-reference-scripts first"
@@ -388,7 +388,7 @@ main = do
   signKey <- readMnemonicFile mnemonicFilePath
 
   printYellow "Reading atlas configuration file ..."
-  atlasConfig <- decodeConfigFile @GYCoreConfig atlasCoreConfig
+  atlasConfig <- maybe (error "Atlas configuration file not found") return =<< decodeConfigFile @GYCoreConfig atlasCoreConfig
 
   printYellow "Loading Providers ..."
   withCfgProviders atlasConfig (Text.read @GYLogNamespace "bjj-belt-system") $ \providers -> do

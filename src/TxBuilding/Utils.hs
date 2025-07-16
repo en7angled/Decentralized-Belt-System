@@ -80,18 +80,12 @@ readMnemonic content = do
       error err
     Right key -> return key
 
-decodeConfigFile :: (FromJSON a) => FilePath -> IO a
+decodeConfigFile :: (FromJSON a) => FilePath -> IO (Maybe a)
 decodeConfigFile path = do
   fileExist <- doesFileExist path
   if fileExist
-    then do
-      decoded <- decodeFileStrict path 
-      case decoded of
-        Nothing -> do
-          error $ "Error parsing config file: " <> show path
-        Just config -> return config
-    else do
-      error $ "File not found: " <> show path
+    then decodeFileStrict path 
+    else return Nothing
 
 
 
