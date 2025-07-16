@@ -56,17 +56,18 @@ addressFromSkey pCtx skey =
   let nid = (cfgNetworkId . ctxCoreCfg) pCtx
    in addressFromPaymentSigningKey nid skey
 
-runBJJActionWithPK :: TxBuildingContext -> GYExtendedPaymentSigningKey -> ActionType -> Maybe GYAddress -> IO GYTxId
+runBJJActionWithPK :: TxBuildingContext -> GYExtendedPaymentSigningKey -> ActionType -> Maybe GYAddress -> IO (GYTxId, GYAssetClass)
 runBJJActionWithPK txBuildingCtx@TxBuildingContext {..} skey action optionalRecipient = do
   let my_addr = addressFromSkey providerCtx skey
   let userAddrs = UserAddresses [my_addr] my_addr Nothing
   let interaction = Interaction action userAddrs optionalRecipient
   print interaction
   putStrLn (yellowColorString "Building transaction...")
-  (txBody, _) <- runReaderT (interactionToTxBody interaction) txBuildingCtx
+  (txBody, assetClass) <- runReaderT (interactionToTxBody interaction) txBuildingCtx
   let txSigned = signGYTxBody txBody [skey]
   putStrLn $ yellowColorString ("Built and signed by: \n\t" <> Data.Text.unpack (addressToText my_addr))
-  submitTxAndWaitForConfirmation True (ctxProviders providerCtx) txSigned
+  txId <- submitTxAndWaitForConfirmation True (ctxProviders providerCtx) txSigned
+  return (txId, assetClass)
 
 deployReferenceScript :: ProviderCtx -> GYScript 'PlutusV3 -> GYExtendedPaymentSigningKey -> IO GYTxOutRef
 deployReferenceScript providerCtx script skey = do

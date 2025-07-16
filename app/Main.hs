@@ -23,6 +23,10 @@ import Utils
 import Data.ByteString.Lazy qualified as B
 import GeniusYield.Imports
 import Data.Aeson (encode, decodeFileStrict)
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Char8 as LSB8
+
+
 
 atlasCoreConfig :: FilePath
 atlasCoreConfig = "config_atlas.json"
@@ -54,11 +58,13 @@ data InitProfileArgs = InitProfileArgs
   { ipaProfileData :: ProfileData
   , ipaProfileType :: ProfileType
   , ipaCreationDate :: GYTime
+  , ipaOutputId :: Bool
   } deriving (Show)
 
 data UpdateProfileImageArgs = UpdateProfileImageArgs
   { upiaProfileId :: GYAssetClass
   , upiaImageURI :: T.Text
+  , upiaOutputId :: Bool
   } deriving (Show)
 
 newtype DeleteProfileArgs = DeleteProfileArgs
@@ -70,6 +76,7 @@ data PromoteProfileArgs = PromoteProfileArgs
   , ppaPromotedByProfileId :: GYAssetClass
   , ppaAchievementDate :: GYTime
   , ppaPromotedBelt :: BJJBelt
+  , ppaOutputId :: Bool
   } deriving (Show)
 
 newtype AcceptPromotionArgs = AcceptPromotionArgs
@@ -81,6 +88,7 @@ data CreateProfileWithRankArgs = CreateProfileWithRankArgs
   , cpwraProfileType :: ProfileType
   , cpwraCreationDate :: GYTime
   , cpwraBelt :: BJJBelt
+  , cpwraOutputId :: Bool
   } deriving (Show)
 
 -- Profile data parser
@@ -180,6 +188,14 @@ bjjBeltParser =
       "red10" -> Just Red10
       _ -> Nothing
 
+-- Output ID flag parser
+outputIdParser :: Parser Bool
+outputIdParser = flag False True
+  ( long "output-id"
+      <> short 'o'
+      <> help "Output the asset ID in a parseable format"
+  )
+
 -- Main command parser
 commandParser :: Parser Command
 commandParser =
@@ -195,6 +211,7 @@ commandParser =
                           <$> profileDataParser
                           <*> profileTypeParser
                           <*> posixTimeParser
+                          <*> outputIdParser
                       )
               )
               ( progDesc "Initialize a new profile"
@@ -205,6 +222,7 @@ commandParser =
                   <$> ( UpdateProfileImageArgs
                           <$> assetClassParser
                           <*> fmap T.pack (strOption (long "image-uri" <> metavar "IMAGE_URI" <> help "New image URI"))
+                          <*> outputIdParser
                       )
               )
               ( progDesc "Update profile image"
@@ -223,6 +241,7 @@ commandParser =
                           <*> strOption (long "promoted-by-profile-id" <> short 'b' <> metavar "PROMOTED_BY_PROFILE_ID" <> help "ID of the profile doing the promotion")
                           <*> posixTimeParser
                           <*> bjjBeltParser
+                          <*> outputIdParser
                       )
               )
               ( progDesc "Promote a profile to a new belt"
@@ -241,6 +260,7 @@ commandParser =
                           <*> profileTypeParser
                           <*> posixTimeParser
                           <*> bjjBeltParser
+                          <*> outputIdParser
                       )
               )
               ( progDesc "Create a profile with initial rank"
@@ -286,44 +306,58 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
   InitProfile args -> do
     printYellow "Initializing profile..."
     let actionType = initProfileToActionType args
-    runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile initialized successfully!"
+    if ipaOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
+      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
 
   UpdateProfileImage args -> do
     printYellow "Updating profile image..."
     let actionType = updateProfileImageToActionType args
-    runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile image updated successfully!"
+    if upiaOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
+      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
 
   DeleteProfile args -> do
     printYellow "Deleting profile..."
     let actionType = deleteProfileToActionType args
-    runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile deleted successfully!"
+    printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
 
   PromoteProfile args -> do
     printYellow "Promoting profile..."
     let actionType = promoteProfileToActionType args
-    runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile promoted successfully!"
+    if ppaOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
+      else printGreen $ "Promotion ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
 
   AcceptPromotion args -> do
     printYellow "Accepting promotion..."
     let actionType = acceptPromotionToActionType args
-    runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Promotion accepted successfully!"
+    printGreen $ "Rank ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
 
   CreateProfileWithRank args -> do
     printYellow "Creating profile with rank..."
     let actionType = createProfileWithRankToActionType args
-    runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile with rank created successfully!"
+    if cpwraOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
+      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
 
 main :: IO ()
 main = do
   printGreen "BJJ Belt System - Decentralized Belt Management"
 
-  mTxBuildingContext <- decodeFileStrict @ProfileTxBuildingContext txBuldingContextFile 
+  mTxBuildingContext <- decodeFileStrict @ProfileTxBuildingContext txBuldingContextFile
   case mTxBuildingContext of
     Nothing -> do
       printYellow "No transaction building context found, please run deploy-reference-scripts first"
@@ -348,10 +382,10 @@ main = do
   printYellow "Loading Providers ..."
   withCfgProviders atlasConfig (Text.read @GYLogNamespace "bjj-belt-system") $ \providers -> do
     let pCtx = ProviderCtx atlasConfig providers
-    
+
     case mTxBuildingContext of
       Nothing -> do
-        
+
         executeCommand (Left pCtx) signKey cmd
       Just validatorsCtx -> do
         let txBuildingContext = TxBuildingContext {validatorsCtx = validatorsCtx, providerCtx = pCtx}

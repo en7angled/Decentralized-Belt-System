@@ -65,6 +65,15 @@ This script focuses on the core promotion scenario:
 
 7. **Accept Purple Promotion** (Complete test only): The student accepts the Purple belt promotion.
 
+### Asset ID Capture
+
+The scripts use the `--output-id` flag to capture asset IDs from CLI commands:
+- **Profile IDs**: Captured when creating profiles
+- **Promotion IDs**: Captured when creating promotions
+- **Rank IDs**: Captured when accepting promotions
+
+This allows the scripts to use the returned asset IDs in subsequent commands, just like the UnitTests do.
+
 ### Time Handling
 
 The scripts use POSIX timestamps in **milliseconds** (not seconds) to match the Cardano blockchain requirements:
