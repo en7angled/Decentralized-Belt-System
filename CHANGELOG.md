@@ -1,5 +1,24 @@
 # Revision history for Decentralized-Belt-System
 
+## 0.2.1.0 -- 2024-12-20
+
+### Milestone 2 Enhancements & Feedback Response
+
+**Additional Evidence and Improvements**
+
+#### Testnet Deployment Evidence
+- **Testnet Transactions**: `test_evidence_preview.txt` - Successful testnet transaction execution
+- **Automated Test Script**: `test_black_promotes_white_to_blue.sh` - Self-service test script for reviewers
+
+#### Documentation Updates
+- **Enhanced README**: Complete installation, setup, and usage instructions
+
+
+#### Admin Command Line Tools
+- **Deployment Commands**: admin cli
+
+
+
 ## 0.2.0.0 -- 2024-12-19
 
 ### Milestone 2 - Smart Contract Architecture ✅ COMPLETED
