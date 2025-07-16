@@ -1,5 +1,6 @@
 # Revision history for Decentralized-Belt-System
 
+
 ## 0.2.1.0 -- 2024-12-20
 
 ### Milestone 2 Enhancements & Feedback Response
@@ -16,7 +17,6 @@
 
 #### Admin Command Line Tools
 - **Deployment Commands**: admin cli
-
 
 
 ## 0.2.0.0 -- 2024-12-19

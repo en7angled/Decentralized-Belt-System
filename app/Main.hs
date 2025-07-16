@@ -401,3 +401,4 @@ main = do
       Just validatorsCtx -> do
         let txBuildingContext = TxBuildingContext {validatorsCtx = validatorsCtx, providerCtx = pCtx}
         executeCommand (Right txBuildingContext) signKey cmd
+

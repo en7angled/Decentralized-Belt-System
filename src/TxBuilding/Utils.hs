@@ -23,6 +23,7 @@ import Utils
 import qualified Data.Text.IO
 import GeniusYield.Types.Wallet
 
+
 ------------------------------------------------------------------------------------------------
 
 -- * Utilities
@@ -52,6 +53,7 @@ pPOSIXTimeFromGYSlot = (timeToPlutus <$>) . slotToBeginTime
 gySlotFromPOSIXTime :: (GYTxQueryMonad m) => POSIXTime -> m GYSlot
 gySlotFromPOSIXTime ptime = do
   enclosingSlotFromTime' (timeFromPlutus ptime)
+
 
 
 ------------------------------------------------------------------------------------------------
@@ -86,11 +88,7 @@ decodeConfigFile path = do
   if fileExist
     then decodeFileStrict path 
     else return Nothing
-
-
-
-
-
+    
 -- | Get
 
 -- | Get inline datum and value from UTxO
@@ -134,7 +132,6 @@ rankAndValueFromUTxO rankStateUTxO = do
   rankDatum <- rankDatumFromDatum gyDatum
   let pVal = valueToPlutus gyValue
   return (rankDatum, pVal)
-
 
 
 rankDatumFromDatum :: GYDatum -> Maybe Onchain.OnchainRank
