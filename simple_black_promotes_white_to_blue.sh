@@ -67,7 +67,7 @@ MASTER_PROFILE_ID=$(admin create-profile-with-rank \
     --practitioner \
     --posix "$MASTER_PROFILE_CREATION_TIME" \
     --belt black \
-    --output-id)
+    --output-id | tail -n 1)
 
 print_success "Master profile created with ID: $MASTER_PROFILE_ID"
 
@@ -79,7 +79,7 @@ STUDENT_PROFILE_ID=$(admin init-profile \
     --image-uri "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk" \
     --practitioner \
     --posix "$STUDENT_PROFILE_CREATION_TIME" \
-    --output-id)
+    --output-id | tail -n 1)
 
 print_success "Student profile created with ID: $STUDENT_PROFILE_ID"
 
@@ -94,7 +94,7 @@ BLUE_PROMOTION_ID=$(admin promote-profile \
     --promoted-by-profile-id "$MASTER_PROFILE_ID" \
     --posix "$BLUE_PROMOTION_TIME" \
     --belt blue \
-    --output-id)
+    --output-id | tail -n 1)
 
 print_success "Blue belt promotion created with ID: $BLUE_PROMOTION_ID"
 

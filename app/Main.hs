@@ -120,6 +120,8 @@ profileDataParser =
           )
       )
 
+
+
 -- Profile type parser
 profileTypeParser :: Parser ProfileType
 profileTypeParser =
@@ -148,10 +150,19 @@ posixTimeParser =
           <> help "POSIX timestamp"
       )
 
+-- Asset class parser helper function
+parseAssetClass :: String -> Maybe GYAssetClass
+parseAssetClass s = do
+  -- Try to decode as JSON directly
+  case Aeson.decode (B.fromStrict (LSB8.pack s)) of
+    Just assetClass -> Just assetClass
+    Nothing -> Nothing
+
 -- Asset class parser
 assetClassParser :: Parser GYAssetClass
 assetClassParser =
-  strOption
+  option
+    (maybeReader parseAssetClass)
     ( long "asset-class"
         <> short 'a'
         <> metavar "ASSET_CLASS"
@@ -237,8 +248,8 @@ commandParser =
         <> command "promote-profile"
         ( info ( PromoteProfile
                   <$> ( PromoteProfileArgs
-                          <$> strOption (long "promoted-profile-id" <> short 'p' <> metavar "PROMOTED_PROFILE_ID" <> help "ID of the profile being promoted")
-                          <*> strOption (long "promoted-by-profile-id" <> short 'b' <> metavar "PROMOTED_BY_PROFILE_ID" <> help "ID of the profile doing the promotion")
+                          <$> option (maybeReader parseAssetClass) (long "promoted-profile-id" <> short 'p' <> metavar "PROMOTED_PROFILE_ID" <> help "ID of the profile being promoted")
+                          <*> option (maybeReader parseAssetClass) (long "promoted-by-profile-id" <> short 'b' <> metavar "PROMOTED_BY_PROFILE_ID" <> help "ID of the profile doing the promotion")
                           <*> posixTimeParser
                           <*> bjjBeltParser
                           <*> outputIdParser
