@@ -1,0 +1,12 @@
+@startuml AchievementLifecycle
+title Achievement Lifecycle
+!theme toy
+
+left to right direction
+
+state Accepted #gray
+
+[*] --> Awarded : Issuer awards
+Awarded --> Accepted  : Awarded accepts
+
+@enduml

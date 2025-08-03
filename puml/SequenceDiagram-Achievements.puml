@@ -1,0 +1,45 @@
+@startuml Achievements
+
+title: Sequence Diagram : Achievements
+caption: Decentalized Belt System Protocol
+
+!theme toy
+
+skinparam control<< Spending Validator >>  {
+    BackgroundColor LightBlue
+}
+skinparam control<< Minting Policy >>    {
+    BackgroundColor MediumPurple
+}
+
+
+actor IssuerProfile #orange
+actor AwardedProfile #yellow
+entity Cardano as "Cardano\nTransaction" #blue
+
+control ProfilesV as "Profiles" << Spending Validator >>
+
+
+group Granting
+create Cardano
+    IssuerProfile -> Cardano --++ : Award Achievement
+    Cardano -> IssuerProfile: Spend Issuer's Profile User Token
+    Cardano -> ProfilesV ++ : Award Achievement
+    ProfilesV -> ProfilesV : Validates\n Profile Rules
+    ProfilesV --> Cardano --: ok
+    Cardano -> IssuerProfile -- : Profile User Token 
+end group
+
+group Accepting
+create Cardano
+    AwardedProfile -> Cardano --++ : Accepts Achievement
+    Cardano -> AwardedProfile: Spend AwardedProfile User Token
+    Cardano -> ProfilesV ++ : Accept Achievement
+    ProfilesV -> ProfilesV : Validates\n Profile Rules
+    ProfilesV --> Cardano --: ok
+    Cardano -> AwardedProfile -- : Profile User Token
+end group
+
+
+@enduml
+

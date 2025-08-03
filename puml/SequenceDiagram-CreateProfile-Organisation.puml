@@ -1,0 +1,34 @@
+@startuml CreateProfile-Organisation
+
+title: Sequence Diagram : Create Organisation Profile
+caption: Decentalized Belt System Protocol
+
+!theme toy
+
+skinparam control<< Spending Validator >>  {
+    BackgroundColor LightBlue
+}
+skinparam control<< Minting Policy >>    {
+    BackgroundColor MediumPurple
+}
+
+
+actor OrganisationOwner as "Owner" #white
+entity Cardano as "Cardano\nTransaction" #blue
+
+control ProfilesMP as "Profiles" << Minting Policy >>
+control ProfilesV as "Profiles" << Spending Validator >>
+
+create Cardano
+OrganisationOwner -> Cardano --++ : Create Profile
+
+
+Cardano -> ProfilesMP ++ : Mints New Profile
+ProfilesMP -> ProfilesMP : Validates\n Profile Rules
+ProfilesMP --> Cardano --: New Profile
+
+Cardano -> ProfilesV : Locks Profile Ref Token
+Cardano -> OrganisationOwner -- : Sents Profile User Token
+
+@enduml
+

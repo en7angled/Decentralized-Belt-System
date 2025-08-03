@@ -1,0 +1,55 @@
+#HASKELL
+dist
+dist-*
+cabal-dev
+.cabal
+.cabal-fmt*
+*.o
+*.hi
+*.hie
+*.chi
+*.chs.h
+*.dyn_o
+*.dyn_hi
+.hpc
+.hsenv
+.cabal-sandbox/
+cabal.sandbox.config
+*.prof
+*.aux
+*.hp
+*.eventlog
+.stack-work/
+cabal.project.local
+cabal.project.local~
+cabal.project.freeze
+
+.HTF/
+.ghc.environment.*
+
+#PURESCRIPT
+
+# Dependencies
+.psci_modules
+.spago
+bower_components
+node_modules
+
+# Generated files
+.psci
+output
+
+.direnv
+
+# Other
+*.DS_STORE
+*.link
+.pre-commit-config.yaml
+
+result
+result-*
+
+# Cardano
+
+*.skey
+*.prv

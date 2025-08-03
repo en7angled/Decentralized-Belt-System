@@ -1,0 +1,56 @@
+@startuml RankPromotion
+
+title: Sequence Diagram : Rank Promotion
+caption: Decentalized Belt System Protocol 
+
+!theme toy
+
+
+skinparam control<< Spending Validator >>  {
+    BackgroundColor LightBlue
+}
+skinparam control<< Minting Policy >>    {
+    BackgroundColor MediumPurple
+}
+
+actor Practitioner #white 
+actor Master #black
+entity Cardano as "Cardano\nTransaction" #blue
+control RankMP as "Ranks" << Minting Policy >> 
+control PendingRanksV as "Pending Ranks" << Spending Validator >>
+control RanksV as "Ranks" << Spending Validator >>
+control ProfilesV as "Profiles" << Spending Validator >>
+
+
+group GRANTING
+    create Cardano
+    Master -> Cardano ++: Grants Promotion
+    Cardano -> RanksV : References current rank
+    Cardano -> ProfilesV : References practitioner profile
+    Cardano -> RankMP ++ : Mints PromotionAuthToken
+    RankMP -> RankMP : Validates\n Promoting Rules
+    RankMP --> Cardano --:  PromotionAuthToken
+    Cardano -> PendingRanksV   : Locks PromotionAuthToken
+    note over RankMP, ProfilesV
+        PromotionAuthToken can be used only by the
+        specified profile to upgrade to specified rank. 
+    end note
+    Cardano --> Master --++ : Success
+end group
+
+Master -> Practitioner --++ : Informs
+
+group ACCEPTING
+    create Cardano
+    Practitioner -> Cardano --++ : Accepts Promotion
+    Cardano -> ProfilesV : References practitioner profile
+    Cardano -> RankMP ++ : Burns PromotionAuthToken and Mints Rank
+    RankMP -> RankMP : Validates\n Promoting Rules
+    RankMP --> Cardano --: New Current Rank
+    Cardano -> RanksV ++ : Update the existing current to past rank \n and add the new current rank
+    RanksV -> RanksV  : Validates
+    RanksV -> Cardano --  : ok
+    Cardano -> Practitioner --  : Success
+end group
+
+@enduml
