@@ -1,0 +1,28 @@
+@startgantt
+!theme mono
+' Optional: set the scale (weekly, daily, monthly)
+printScale monthly
+
+
+' Genesis Phase (shorter, ends before Legacy completes)
+[Genesis Phase]  as [G1] starts at D+20 and lasts 16 weeks
+note bottom
+  - Distribute redeemable Master vouchers
+  - Vouchers expire at the end of this phase
+end note
+
+' Legacy Phase starts at the same time as Genesis but continues longer
+[Legacy Phase] as [G2] starts at [G1]'s start and lasts 32 weeks
+note bottom
+  - Core features active
+  - Genesis Authority retains admin control
+end note
+
+
+' DAO Phase begins right after Legacy Phase concludes
+[DAO Phase] as [G3] starts after [G2]'s end and lasts 48 weeks
+note bottom
+  - Governance & treasury managed by DAO
+  - Protocol changes decided via rank-weighted voting
+end note
+@endgantt

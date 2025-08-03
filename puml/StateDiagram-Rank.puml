@@ -1,0 +1,17 @@
+@startuml RankLifecycle
+title Rank Lifecycle
+!theme toy
+
+state Current #orange
+
+left to right direction
+
+[*] --> Pending : MASTER:\n Promotion granted
+[*] --> Current : PRACTITIONER:\n New Profile
+[*] --> Current : MASTER:\n Accept Redeemable\n Master Rank
+Pending --> Current : PRACTITIONER:\n Promotion accepted
+Current --> Past : PRACTITIONER:\n Promotion accepted\n(for another rank)
+Current --> [*] : DAO:\n Retire
+Past --> [*] :  DAO:\n Retire
+
+@enduml

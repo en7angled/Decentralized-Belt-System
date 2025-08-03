@@ -1,0 +1,225 @@
+cabal-version: 3.0
+name:          Decentralized-Belt-System
+version:       0.1.0.0
+synopsis:
+  A DApp to standardize BJJ belt rankings and lineages, ensuring global consistency and transparency, thus solving the issue of varying standards and unclear lineages in the BJJ community.
+
+-- description:
+homepage:      www.cardano.vip
+license:       MIT
+author:        Marius Georgescu
+maintainer:    georgescumarius@live.com
+
+-- copyright:
+category:      Web3
+build-type:    Simple
+
+-- extra-source-files:
+
+
+common common-options
+  ghc-options:      -Wall
+  default-language: GHC2021 
+  build-depends:    base
+
+common plinth-ghc-options
+  ghc-options:
+    -Wall -Wcompat -Widentities -Wincomplete-record-updates
+    -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
+
+  default-language:   GHC2021
+  default-extensions: TemplateHaskell
+
+  -- all Plinth modules should use the following GHC flags
+  ghc-options:
+    -fno-ignore-interface-pragmas -fno-omit-interface-pragmas
+    -fno-full-laziness -fno-spec-constr -fno-specialise -fno-strictness
+    -fno-unbox-strict-fields -fno-unbox-small-strict-fields
+    -fconstraint-solver-iterations=0
+
+  -- 
+  ghc-options:        -fobject-code -fplugin-opt PlutusTx.Plugin:defer-errors
+
+  -- set target plutus-core version
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:target-version=1.1.0
+
+  -- Compiler flags (defaults)
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:no-remove-trace
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:no-optimize
+
+library
+  import:             common-options, plinth-ghc-options
+  default-language:   Haskell2010
+  exposed-modules:
+    DomainTypes.Profile.Types
+    Onchain.BJJ
+    Onchain.Blueprint
+    Onchain.CIP68
+    Onchain.MintingPolicy
+    Onchain.ProfilesValidator
+    Onchain.Protocol
+    Onchain.RanksValidator
+    Onchain.Utils
+    TxBuilding.Context
+    TxBuilding.Exceptions
+    TxBuilding.Functors
+    TxBuilding.Interactions
+    TxBuilding.Lookups
+    TxBuilding.Operations
+    TxBuilding.Skeletons
+    TxBuilding.Transactions
+    TxBuilding.Utils
+    TxBuilding.Validators
+    Utils
+
+  if !(impl(ghcjs) || os(ghcjs))
+    build-depends: plutus-tx-plugin
+
+  -- other-modules:    
+
+  -- other-extensions:
+  build-depends:
+    , aeson
+    , bytestring
+    , containers
+    , deriving-aeson
+    , extra
+    , mtl
+    , swagger2
+    , text
+
+  --- Cardano specific dependencies
+  build-depends:
+    , atlas-cardano
+    , cardano-api
+    , plutus-core
+    , plutus-ledger-api
+    , plutus-tx
+    , plutus-tx-plugin
+
+  hs-source-dirs:     src/lib
+  default-extensions:
+    BangPatterns
+    BlockArguments
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingStrategies
+    DerivingVia
+    FlexibleContexts
+    FlexibleInstances
+    GeneralizedNewtypeDeriving
+    ImportQualifiedPost
+    InstanceSigs
+    LambdaCase
+    MultiParamTypeClasses
+    NamedFieldPuns
+    NumericUnderscores
+    OverloadedStrings
+    PatternSynonyms
+    RecordWildCards
+    ScopedTypeVariables
+    StandaloneDeriving
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+    UndecidableInstances
+    ViewPatterns
+
+executable admin
+  -- import:           
+  main-is:          Main.hs
+  hs-source-dirs:   src/exe/admin
+  default-language: GHC2021
+  build-depends:
+    , base
+    , Decentralized-Belt-System
+
+  build-depends:
+    , aeson
+    , bytestring
+    , optparse-applicative
+    , text
+
+  --- Cardano specific dependencies
+  build-depends:
+    , atlas-cardano
+    , plutus-ledger-api
+    , plutus-tx
+
+executable server
+  main-is:          Main.hs
+  hs-source-dirs:   src/exe/server
+  default-language: GHC2021
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
+  extra-lib-dirs:   /usr/lib /usr/local/lib
+  other-modules:
+    AppMonad
+    RestAPI
+
+  build-depends:
+    , base
+    , Decentralized-Belt-System
+
+  build-depends:
+    , aeson-pretty
+    , bytestring            ^>=0.11.5
+    , conduit
+    , http-types            ^>=0.12.4
+    , lens                  ^>=5.2.3
+    , mtl
+    , multiset
+    , servant-conduit
+    , servant-event-stream
+    , servant-options
+    , servant-server
+    , servant-swagger
+    , servant-swagger-ui
+    , swagger2
+    , text
+    , transformers          ^>=0.6.1
+    , utf8-string
+    , wai
+    , wai-cors
+    , wai-websockets
+    , warp
+    , websockets
+
+  --- Cardano specific dependencies
+  build-depends:    atlas-cardano
+
+test-suite Decentralized-Belt-System-test
+  -- import:           
+  default-language: GHC2021
+
+  -- other-modules:
+  -- other-extensions:
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   src/test
+  main-is:          Main.hs
+  other-modules:
+    BJJPropertyTests
+    TestRuns
+    UnitTests
+
+  build-depends:
+    , base
+    , Decentralized-Belt-System
+
+  build-depends:
+    , extra
+    , hedgehog
+    , mtl
+    , QuickCheck
+    , tasty
+    , tasty-hedgehog
+    , tasty-quickcheck
+
+  --- Cardano specific dependencies
+  build-depends:
+    , atlas-cardano
+    , clb
+    , plutus-ledger-api
+    , plutus-tx

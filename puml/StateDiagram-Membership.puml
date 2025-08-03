@@ -1,0 +1,20 @@
+@startuml MembershipLifecycle
+title Membership Lifecycle
+!theme toy
+
+left to right direction
+
+state Closed #gray
+state PendingOwner as "Pending\nOwner\nAcceptance"
+state PendingMember as "Pending\nMember\nAcceptance"
+state Active #orange
+
+
+[*] --> PendingOwner : OWNER: \n requests membership
+[*] --> PendingMember : MEMBER: \n grants membership
+PendingOwner --> Active  : OWNER: \n accepts membership \n request
+PendingMember --> Active  : MEMBER:\n accepts membership 
+Active --> Closed : OWNER: \n ends membership
+Active --> Closed :  MEMBER: \n ends membership
+
+@enduml
