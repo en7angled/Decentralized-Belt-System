@@ -33,6 +33,15 @@ instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
   parseQueryParam = maybe (Left "Invalid belt") Right . parseBelt . Data.Text.unpack
 
+instance FromHttpApiData ProfileType where
+  parseQueryParam :: Text -> Either Text ProfileType
+  parseQueryParam = maybe (Left "Invalid profile type") Right . parseProfileType . Data.Text.unpack
+    where
+      parseProfileType s
+        | s == "Practitioner" = Just Practitioner
+        | s == "Organization" = Just Organization
+        | otherwise = Nothing
+
 ------------------------------------------------------------------------------------------------
 
 --  Transactions API
@@ -90,6 +99,15 @@ type Profiles =
         :> Capture "organization-id" ProfileRefAC
         :> Get '[JSON] OrganizationProfileInformation
     )
+    :<|>
+    -- Get profiles count endpoint
+    ( Summary "Get Profiles Count"
+        :> Description "Get count of profiles by type"
+        :> "profiles"
+        :> "count"
+        :> QueryParam "profile-type" ProfileType
+        :> Get '[JSON] Int
+    )
 
 handleGetPractitionerProfile :: ProfileRefAC -> AppMonad PractitionerProfileInformation
 handleGetPractitionerProfile = getPractitionerProfile
@@ -97,8 +115,12 @@ handleGetPractitionerProfile = getPractitionerProfile
 handleGetOrganizationProfile :: ProfileRefAC -> AppMonad OrganizationProfileInformation
 handleGetOrganizationProfile = getOrganizationProfile
 
+handleGetProfilesCount :: Maybe ProfileType -> AppMonad Int
+handleGetProfilesCount maybeProfileType = do
+  getProfilesCount maybeProfileType
+
 profilesServer :: ServerT Profiles AppMonad
-profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile
+profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile :<|> handleGetProfilesCount
 
 ------------------------------------------------------------------------------------------------
 

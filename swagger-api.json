@@ -710,6 +710,40 @@
                 "summary": "Get Practitioner Profile Information"
             }
         },
+        "/profiles/count": {
+            "get": {
+                "description": "Get count of profiles by type",
+                "parameters": [
+                    {
+                        "enum": [
+                            "Practitioner",
+                            "Organization"
+                        ],
+                        "in": "query",
+                        "name": "profile-type",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `profile-type`"
+                    }
+                },
+                "summary": "Get Profiles Count"
+            }
+        },
         "/promotions": {
             "get": {
                 "description": "Get Pending Promotions",

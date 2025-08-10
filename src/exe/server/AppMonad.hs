@@ -27,6 +27,7 @@ import Data.MultiSet
 class ProfilesQueryMonad m where
   getPractitionerProfile :: ProfileRefAC -> m PractitionerProfileInformation
   getOrganizationProfile :: ProfileRefAC -> m OrganizationProfileInformation
+  getProfilesCount :: Maybe ProfileType -> m Int
 
 type Limit = Int
 
@@ -102,6 +103,11 @@ instance ProfilesQueryMonad AppMonad where
   getOrganizationProfile profileRefAC = do
     TxBuildingContext {..} <- ask
     liftIO $ runQuery providerCtx $ getOrganizationInformation profileRefAC
+
+  getProfilesCount :: Maybe ProfileType -> AppMonad Int
+  getProfilesCount maybeProfileType = do
+    TxBuildingContext {..} <- ask
+    liftIO $ runQuery providerCtx $ getAllProfilesCount (cfgNetworkId . ctxCoreCfg $ providerCtx) maybeProfileType
 
 instance PromotionsStatsQueryMonad AppMonad where
   getPromotions :: Maybe (Limit, Offset) -> Maybe PromotionFilter -> AppMonad [PromotionInformation]

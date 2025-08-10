@@ -7,7 +7,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.Swagger.Internal.Schema (ToSchema)
-import Data.Swagger.SchemaOptions (SchemaOptions(..), fromAesonOptions)
+import Data.Swagger.SchemaOptions ( fromAesonOptions)
 import Data.Swagger (genericDeclareNamedSchema, ToSchema (..))
 import Data.Text hiding (init, tail)
 import Data.Text qualified as T
@@ -17,6 +17,7 @@ import GeniusYield.Types.Time
 import Onchain.BJJ (BJJBelt)
 import Deriving.Aeson
 import Data.List.Extra
+import Data.Swagger.ParamSchema
 
 -------------------------------------------------------------------------------
 
@@ -44,7 +45,9 @@ instance ToSchema ProfileData where
       { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profile"}
 
 data ProfileType = Practitioner | Organization
-  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema)
+
+
 
 type ProfileRefAC = GYAssetClass
 

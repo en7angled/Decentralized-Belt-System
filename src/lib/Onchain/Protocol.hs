@@ -61,7 +61,7 @@ type ProfileId = AssetClass
 data OnChainProfileType
   = Practitioner
   | Organization
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''OnChainProfileType [('Practitioner, 0), ('Organization, 1)]
