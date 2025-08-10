@@ -22,13 +22,12 @@ cabal.sandbox.config
 .stack-work/
 cabal.project.local
 cabal.project.local~
-<<<<<<< HEAD
-=======
 cabal.project.freeze
 
->>>>>>> a0e539b (Clean commit without large files)
 .HTF/
 .ghc.environment.*
+
+compiled
 
 #PURESCRIPT
 
@@ -42,27 +41,15 @@ node_modules
 .psci
 output
 
-<<<<<<< HEAD
-# Plantuml
-out
-
-=======
->>>>>>> a0e539b (Clean commit without large files)
 .direnv
 
 # Other
 *.DS_STORE
 *.link
-<<<<<<< HEAD
-
-
-result
-=======
 .pre-commit-config.yaml
 
 result
 result-*
->>>>>>> a0e539b (Clean commit without large files)
 
 # Cardano
 
