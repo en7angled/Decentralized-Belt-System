@@ -33,8 +33,6 @@ textToBuiltinByteString = stringToBuiltinByteStringUtf8 . T.unpack
 fromBuiltinByteStringUtf8 :: BuiltinByteString -> T.Text
 fromBuiltinByteStringUtf8 = T.pack . init . tail . show . decodeUtf8
 
--- >>>  stringToBuiltinByteString a
--- "\"marius\""
 
 profileTypeToOnChainProfileType :: ProfileType -> Onchain.OnChainProfileType
 profileTypeToOnChainProfileType Practitioner = Onchain.Practitioner
