@@ -6,7 +6,7 @@ echo "Building Decentralized Belt System..."
 
 # Build the executables locally first
 echo "Step 1: Building executables with cabal..."
-cabal install server --enable-executable-static --overwrite-policy=always --installdir=compiled  --install-method=copy --ghc-options="-optl=-static -optl=-pthread -optc=-static"
+cabal install server --enable-executable-static --overwrite-policy=always --installdir=compiled  --install-method=copy 
 
 # Check if build was successful
 if [ $? -eq 0 ]; then

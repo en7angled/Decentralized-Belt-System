@@ -19,7 +19,7 @@ WORKDIR /app
 
 # Copy the already compiled executables from local build
 # Assuming you have a dist-newstyle directory with built executables
-
+COPY dist-newstyle /app/dist-newstyle
 COPY compiled/server /app/server
 
 # Copy config files
