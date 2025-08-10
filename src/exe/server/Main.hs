@@ -34,7 +34,7 @@ defaultTxBuldingContextFile :: FilePath
 defaultTxBuldingContextFile = "config/config_bjj_validators.json"
 
 getDeployedValidatorsConfigFromEnv :: IO FilePath
-getDeployedValidatorsConfigFromEnv = fromMaybe defaultAtlasCoreConfig <$> lookupEnv "DEPLOYED_VALIDATORS_CONFIG"
+getDeployedValidatorsConfigFromEnv = fromMaybe defaultTxBuldingContextFile <$> lookupEnv "DEPLOYED_VALIDATORS_CONFIG"
 
 getAtlasCoreConfigFromEnv :: IO FilePath
 getAtlasCoreConfigFromEnv = fromMaybe defaultAtlasCoreConfig <$> lookupEnv "ATLAS_CORE_CONFIG"
