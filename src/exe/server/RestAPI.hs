@@ -33,6 +33,24 @@ instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
   parseQueryParam = maybe (Left "Invalid belt") Right . parseBelt . Data.Text.unpack
 
+instance FromHttpApiData GYTime where
+  parseQueryParam :: Text -> Either Text GYTime
+  parseQueryParam = maybe (Left "Invalid time") Right . parseTime . Data.Text.unpack
+    where
+      parseTime :: String -> Maybe GYTime
+      parseTime s = case reads s of
+        [(posixTime, "")] -> Just $ GYTime posixTime
+        _ -> Nothing
+
+instance FromHttpApiData ProfileType where
+  parseQueryParam :: Text -> Either Text ProfileType
+  parseQueryParam = maybe (Left "Invalid profile type") Right . parseProfileType . Data.Text.unpack
+    where
+      parseProfileType :: String -> Maybe ProfileType
+      parseProfileType "Practitioner" = Just Practitioner
+      parseProfileType "Organization" = Just Organization
+      parseProfileType _ = Nothing
+
 ------------------------------------------------------------------------------------------------
 
 --  Transactions API
@@ -90,6 +108,19 @@ type Profiles =
         :> Capture "organization-id" ProfileRefAC
         :> Get '[JSON] OrganizationProfileInformation
     )
+    :<|>
+    -- Get profiles count endpoint
+    ( Summary "Get Total Profiles Count"
+        :> Description "Get Total Profiles Count"
+        :> "profiles"
+        :> "count"
+        :> QueryParam' '[Optional] "limit" Int
+        :> QueryParam' '[Optional] "offset" Int
+        :> QueryParams "profile_type" ProfileType
+        :> QueryParam' '[Optional] "from" GYTime
+        :> QueryParam' '[Optional] "to" GYTime
+        :> Get '[JSON] Int
+    )
 
 handleGetPractitionerProfile :: ProfileRefAC -> AppMonad PractitionerProfileInformation
 handleGetPractitionerProfile = getPractitionerProfile
@@ -97,8 +128,18 @@ handleGetPractitionerProfile = getPractitionerProfile
 handleGetOrganizationProfile :: ProfileRefAC -> AppMonad OrganizationProfileInformation
 handleGetOrganizationProfile = getOrganizationProfile
 
+handleGetProfilesCount :: Maybe Int -> Maybe Int -> [ProfileType] -> Maybe GYTime -> Maybe GYTime -> AppMonad Int
+handleGetProfilesCount limit offset profileTypes from to = do
+  let profileFilter = if Prelude.null profileTypes && isNothing from && isNothing to
+        then Nothing
+        else Just $ ProfileFilter
+          { profileFilterType = if Prelude.null profileTypes then Nothing else Just profileTypes,
+            profileFilterDateInterval = (from, to)
+          }
+  getProfilesCount profileFilter
+
 profilesServer :: ServerT Profiles AppMonad
-profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile
+profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile :<|> handleGetProfilesCount
 
 ------------------------------------------------------------------------------------------------
 

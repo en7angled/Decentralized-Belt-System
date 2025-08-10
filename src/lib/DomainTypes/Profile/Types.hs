@@ -177,15 +177,27 @@ instance Show PractitionerProfileInformation where
 instance Show OrganizationProfileInformation where
   show :: OrganizationProfileInformation -> String
   show (OrganizationProfileInformation {..}) =
-    Prelude.unlines
-      [ "🏢 Organization Profile",
-        "┌─────────────────────────────────────────────────────────────",
-        "│ Name: " <> getRawString organizationName,
-        "│ Description: " <> getRawString organizationDescription,
-        "│ Image URI: " <> getRawString organizationImageURI,
-        "│ ID: " <> getRawString organizationId,
-        "└─────────────────────────────────────────────────────────────"
-      ]
+    "OrganizationProfileInformation {"
+      ++ "organizationId = "
+      ++ show organizationId
+      ++ ", organizationName = "
+      ++ show organizationName
+      ++ ", organizationDescription = "
+      ++ show organizationDescription
+      ++ ", organizationImageURI = "
+      ++ show organizationImageURI
+      ++ "}"
+
+-- | Unified profile information type for counting
+data ProfileInformation = ProfileInformation
+  { profileType :: ProfileType,
+    profileCreationDate :: GYTime
+  }
+  deriving (Eq, Show, Generic)
+
+instance FromJSON ProfileInformation
+instance ToJSON ProfileInformation
+instance ToSchema ProfileInformation
 
 -- Helper function to display rank chain
 showRankChain :: [RankInformation] -> String

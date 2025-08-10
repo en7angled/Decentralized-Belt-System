@@ -28,9 +28,17 @@ class ProfilesQueryMonad m where
   getPractitionerProfile :: ProfileRefAC -> m PractitionerProfileInformation
   getOrganizationProfile :: ProfileRefAC -> m OrganizationProfileInformation
 
+class ProfilesStatsQueryMonad m where
+  getProfilesCount :: Maybe ProfileFilter -> m Int
+
 type Limit = Int
 
 type Offset = Int
+
+data ProfileFilter = ProfileFilter
+  { profileFilterType :: Maybe [ProfileType],
+    profileFilterDateInterval :: (Maybe GYTime, Maybe GYTime)
+  }
 
 data PromotionFilter = PromotionFilter
   { promotionFilterId :: Maybe [ProfileRefAC],
@@ -103,6 +111,26 @@ instance ProfilesQueryMonad AppMonad where
     TxBuildingContext {..} <- ask
     liftIO $ runQuery providerCtx $ getOrganizationInformation profileRefAC
 
+instance ProfilesStatsQueryMonad AppMonad where
+  getProfilesCount :: Maybe ProfileFilter -> AppMonad Int
+  getProfilesCount maybeProfileFilter = do
+    TxBuildingContext {..} <- ask
+    allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (cfgNetworkId . ctxCoreCfg $ providerCtx))
+    return $ Prelude.length $ applyProfileFilter maybeProfileFilter allProfiles
+    where
+      applyProfileFilter :: Maybe ProfileFilter -> [ProfileInformation] -> [ProfileInformation]
+      applyProfileFilter Nothing profiles = profiles
+      applyProfileFilter (Just ProfileFilter {..}) profiles =
+        let typeFilter = case profileFilterType of
+              Just types -> Prelude.filter (\profile -> profileType profile `elem` types)
+              Nothing -> id
+            dateFilter = case profileFilterDateInterval of
+              (Just from, Just to) -> Prelude.filter (\profile -> profileCreationDate profile >= from && profileCreationDate profile <= to)
+              (Nothing, Just to) -> Prelude.filter (\profile -> profileCreationDate profile <= to)
+              (Just from, Nothing) -> Prelude.filter (\profile -> profileCreationDate profile >= from)
+              (Nothing, Nothing) -> id
+         in typeFilter . dateFilter $ profiles
+
 instance PromotionsStatsQueryMonad AppMonad where
   getPromotions :: Maybe (Limit, Offset) -> Maybe PromotionFilter -> AppMonad [PromotionInformation]
   getPromotions maybeLimitOffset maybePromotionFilter = do
@@ -122,64 +150,4 @@ instance PromotionsStatsQueryMonad AppMonad where
               Just ids -> Prelude.filter ((`elem` ids) . promotionInfoId)
               Nothing -> id
             beltFilter = case promotionFilterBelt of
-              Just belts -> Prelude.filter ((`elem` belts) . promotionInfoBelt)
-              Nothing -> id
-            achievedByFilter = case promotionFilterAchievedByProfileId of
-              Just ids -> Prelude.filter ((`elem` ids) . promotionInfoAchievedByProfileId)
-              Nothing -> id
-            awardedByFilter = case promotionFilterAwardedByProfileId of
-              Just ids -> Prelude.filter ((`elem` ids) . promotionInfoAwardedByProfileId)
-              Nothing -> id
-            achievementDateFilter = case promotionFilterAchievementDateInterval of
-              (Just from, Just to) -> Prelude.filter (\promotion -> promotionInfoAchievementDate promotion >= from && promotionInfoAchievementDate promotion <= to)
-              (Nothing, Just to) -> Prelude.filter (\promotion -> promotionInfoAchievementDate promotion <= to)
-              (Just from, Nothing) -> Prelude.filter (\promotion -> promotionInfoAchievementDate promotion >= from)
-              (Nothing, Nothing) -> id
-         in idFilter . beltFilter . achievedByFilter . awardedByFilter . achievementDateFilter $ promotions
-
-  getPromotionsCount :: Maybe PromotionFilter -> AppMonad Int
-  getPromotionsCount maybePromotionFilter = Prelude.length <$> getPromotions Nothing maybePromotionFilter
-
-instance RanksStatsQueryMonad AppMonad where
-  getRanks :: Maybe (Limit, Offset) -> Maybe RankFilter -> AppMonad [RankInformation]
-  getRanks maybeLimitOffset maybeRankFilter = do
-    TxBuildingContext {..} <- ask
-    allRanks <- liftIO $ runQuery providerCtx (getAllRanks (cfgNetworkId . ctxCoreCfg $ providerCtx))
-    return $ applyLimits maybeLimitOffset $ applyRankFilter maybeRankFilter allRanks
-    where
-      applyLimits :: Maybe (Limit, Offset) -> [RankInformation] -> [RankInformation]
-      applyLimits Nothing ranks = ranks
-      applyLimits (Just (limit, offset)) ranks | limit > 0 && offset >= 0 = Prelude.take limit $ Prelude.drop offset ranks
-      applyLimits _ ranks = ranks
-
-      applyRankFilter :: Maybe RankFilter -> [RankInformation] -> [RankInformation]
-      applyRankFilter Nothing ranks = ranks
-      applyRankFilter (Just RankFilter {..}) ranks =
-        let idFilter = case rankFilterId of
-              Just ids -> Prelude.filter ((`elem` ids) . rankInfoId)
-              Nothing -> id
-            beltFilter = case rankFilterBelt of
-              Just belts -> Prelude.filter ((`elem` belts) . rankInfoBelt)
-              Nothing -> id
-            achievedByFilter = case rankFilterAchievedByProfileId of
-              Just ids -> Prelude.filter ((`elem` ids) . rankInfoAchievedByProfileId)
-              Nothing -> id
-            awardedByFilter = case rankFilterAwardedByProfileId of
-              Just ids -> Prelude.filter ((`elem` ids) . rankInfoAwardedByProfileId)
-              Nothing -> id
-            achievementDateFilter = case rankFilterAchievementDateInterval of
-              (Just from, Just to) -> Prelude.filter (\rank -> rankInfoAchievementDate rank >= from && rankInfoAchievementDate rank <= to)
-              (Nothing, Just to) -> Prelude.filter (\rank -> rankInfoAchievementDate rank <= to)
-              (Just from, Nothing) -> Prelude.filter (\rank -> rankInfoAchievementDate rank >= from)
-              (Nothing, Nothing) -> id
-         in idFilter . beltFilter . achievedByFilter . awardedByFilter . achievementDateFilter $ ranks
-
-  getRanksCount :: Maybe RankFilter -> AppMonad Int
-  getRanksCount maybeRankFilter = Prelude.length <$> getRanks Nothing maybeRankFilter
-
-  getBeltTotals :: AppMonad [(BJJBelt, Int)]
-  getBeltTotals = do
-    allRankInfo <- getRanks Nothing Nothing
-    let allBelts = Prelude.map rankInfoBelt allRankInfo
-    let beltTotals = toOccurList . fromList $ allBelts
-    return beltTotals
+              Just belts -> Prelude.filter ((`

@@ -13,7 +13,8 @@ import PlutusLedgerApi.V1.Value
 import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Functors
 import TxBuilding.Utils
-import TxBuilding.Validators (ranksValidatorHashGY)
+import TxBuilding.Validators (ranksValidatorHashGY, profilesValidatorHashGY)
+import DomainTypes.Profile.Types (ProfileInformation)
 
 ------------------------------------------------------------------------------------------------
 
@@ -92,6 +93,26 @@ getAllRanks :: (GYTxQueryMonad m) => GYNetworkId -> m [RankInformation]
 getAllRanks nid = do
   onChainRanks <- getAllOnchainValidRanks nid
   catMaybes <$> mapM onchainRankToRankInformation onChainRanks
+
+getAllProfiles :: (GYTxQueryMonad m) => GYNetworkId -> m [ProfileInformation]
+getAllProfiles nid = do
+  let profilesValidatorAddress = addressFromScriptHash nid profilesValidatorHashGY
+  allDatums <- fmap snd <$> utxosAtAddressesWithDatums [profilesValidatorAddress]
+  let profileDatums = mapMaybe profileDatumFromDatum (catMaybes allDatums)
+  return $ mapMaybe onchainProfileToProfileInformation profileDatums
+
+-- | Convert onchain profile to unified profile information
+onchainProfileToProfileInformation :: CIP68Datum OnchainProfile -> Maybe ProfileInformation
+onchainProfileToProfileInformation (CIP68Datum _metadata _version profile) = do
+  let profileType' = case Onchain.profileType profile of
+        Onchain.Practitioner -> Practitioner
+        Onchain.Organization -> Organization
+  -- For now, we'll use a default creation date since it's not stored in the profile
+  -- In a real implementation, you might want to extract this from metadata or use a different approach
+  return $ ProfileInformation 
+    { profileType = profileType',
+      profileCreationDate = GYTime 0  -- Default creation date
+    }
 
 ------------------------------------------------------------------------------------------------
 

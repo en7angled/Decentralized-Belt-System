@@ -925,6 +925,73 @@
                 "summary": "Get Pending Promotions Count"
             }
         },
+        "/profiles/count": {
+            "get": {
+                "description": "Get Total Profiles Count",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "enum": [
+                                "Practitioner",
+                                "Organization"
+                            ],
+                            "type": "string"
+                        },
+                        "name": "profile_type",
+                        "type": "array"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "from",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "to",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `to` or `from` or `profile_type` or `offset` or `limit`"
+                    }
+                },
+                "summary": "Get Total Profiles Count"
+            }
+        },
         "/submit-tx": {
             "post": {
                 "consumes": [
