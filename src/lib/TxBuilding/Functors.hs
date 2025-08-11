@@ -5,7 +5,7 @@ import DomainTypes.Profile.Types
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (intToBelt)
-import Onchain.CIP68 (MetadataFields (..))
+import Onchain.CIP68 (MetadataFields (..), CIP68Datum (CIP68Datum), getMetadataFields, extra)
 import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V3
 import PlutusTx.Builtins (decodeUtf8)
@@ -37,6 +37,10 @@ fromBuiltinByteStringUtf8 = T.pack . init . tail . show . decodeUtf8
 profileTypeToOnChainProfileType :: ProfileType -> Onchain.OnChainProfileType
 profileTypeToOnChainProfileType Practitioner = Onchain.Practitioner
 profileTypeToOnChainProfileType Organization = Onchain.Organization
+
+onChainProfileTypeToProfileType :: Onchain.OnChainProfileType -> ProfileType
+onChainProfileTypeToProfileType Onchain.Practitioner = Practitioner
+onChainProfileTypeToProfileType Onchain.Organization = Organization
 
 onchainRankToRankInformation :: (MonadError GYTxMonadException m) => Onchain.OnchainRank -> m (Maybe RankInformation)
 onchainRankToRankInformation (Onchain.Rank {..}) = do
@@ -73,3 +77,21 @@ onchainPromotionToPromotionInformation (Onchain.Promotion {..}) = do
 onchainPromotionToPromotionInformation (Onchain.Rank {}) = return Nothing
 
 
+
+profileDatumToProfileData :: CIP68Datum Onchain.OnchainProfile ->  ProfileData
+profileDatumToProfileData  = metadataFieldsToProfileData . getMetadataFields
+
+
+profileDatumToProfileSummary :: (MonadError GYTxMonadException m) => CIP68Datum Onchain.OnchainProfile -> m ProfileSummary
+profileDatumToProfileSummary datum = do
+  let ProfileData {..} = profileDatumToProfileData datum
+      onchainProfile =  extra datum
+  let profileType = onChainProfileTypeToProfileType $ Onchain.profileType onchainProfile
+  gyProfileId <- assetClassFromPlutus' (Onchain.profileId onchainProfile)
+  return $ ProfileSummary
+    { profileSummaryId = gyProfileId,
+      profileSummaryName = profileName,
+      profileSummaryDescription = profileDescription,
+      profileSummaryImageURI = profileImageURI,
+      profileSummaryType = profileType
+    }

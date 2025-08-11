@@ -6,6 +6,7 @@ import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Maybe
+import Data.MultiSet
 import Data.Text hiding (elem)
 import qualified Data.Text.Encoding
 import DomainTypes.Profile.Types
@@ -16,7 +17,6 @@ import Onchain.BJJ
 import Servant
 import TxBuilding.Context
 import TxBuilding.Lookups
-import Data.MultiSet
 
 ------------------------------------------------------------------------------------------------
 
@@ -29,19 +29,17 @@ type Limit = Int
 type Offset = Int
 
 data ProfileFilter = ProfileFilter
-  { profileFilterType :: Maybe ProfileType,
+  { profileFilterId :: Maybe [ProfileRefAC],
+    profileFilterType :: Maybe ProfileType,
     profileFilterName :: Maybe Text,
     profileFilterDescription :: Maybe Text
   }
-
 
 class ProfilesQueryMonad m where
   getPractitionerProfile :: ProfileRefAC -> m PractitionerProfileInformation
   getOrganizationProfile :: ProfileRefAC -> m OrganizationProfileInformation
   getProfilesCount :: Maybe ProfileType -> m Int
-  getPractitioners :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> m [ProfileSummary]
-  getOrganizations :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> m [ProfileSummary]
-
+  getProfiles :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> m [ProfileSummary]
 
 data PromotionFilter = PromotionFilter
   { promotionFilterId :: Maybe [ProfileRefAC],
@@ -117,7 +115,35 @@ instance ProfilesQueryMonad AppMonad where
   getProfilesCount :: Maybe ProfileType -> AppMonad Int
   getProfilesCount maybeProfileType = do
     TxBuildingContext {..} <- ask
-    liftIO $ runQuery providerCtx $ getAllProfilesCount (cfgNetworkId . ctxCoreCfg $ providerCtx) maybeProfileType
+    liftIO $ runQuery providerCtx $ getAllProfilesCount (cfgNetworkId . ctxCoreCfg $ providerCtx)
+
+  getProfiles :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> AppMonad [ProfileSummary]
+  getProfiles maybeLimitOffset maybeProfileFilter = do
+    TxBuildingContext {..} <- ask
+    allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (cfgNetworkId . ctxCoreCfg $ providerCtx))
+    return $ applyLimits maybeLimitOffset $ applyProfileFilter maybeProfileFilter allProfiles
+    where
+      applyLimits :: Maybe (Limit, Offset) -> [ProfileSummary] -> [ProfileSummary]
+      applyLimits Nothing profiles = profiles
+      applyLimits (Just (limit, offset)) profiles | limit > 0 && offset >= 0 = Prelude.take limit $ Prelude.drop offset profiles
+      applyLimits _ profiles = profiles
+
+      applyProfileFilter :: Maybe ProfileFilter -> [ProfileSummary] -> [ProfileSummary]
+      applyProfileFilter Nothing profiles = profiles
+      applyProfileFilter (Just ProfileFilter {..}) profiles =
+        let idFilter = case profileFilterId of
+              Just ids -> Prelude.filter ((`elem` ids) . profileSummaryId)
+              Nothing -> id
+            typeFilter = case profileFilterType of
+              Just profileType -> Prelude.filter ((== profileType) . profileSummaryType)
+              Nothing -> id
+            nameFilter = case profileFilterName of
+              Just name -> Prelude.filter ((== name) . profileSummaryName)
+              Nothing -> id
+            descriptionFilter = case profileFilterDescription of
+              Just description -> Prelude.filter ((== description) . profileSummaryDescription)
+              Nothing -> id
+         in idFilter . typeFilter . nameFilter . descriptionFilter $ profiles
 
 instance PromotionsStatsQueryMonad AppMonad where
   getPromotions :: Maybe (Limit, Offset) -> Maybe PromotionFilter -> AppMonad [PromotionInformation]

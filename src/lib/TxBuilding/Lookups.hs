@@ -13,7 +13,7 @@ import PlutusLedgerApi.V1.Value
 import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Functors
 import TxBuilding.Utils
-import TxBuilding.Validators (ranksValidatorHashGY, profilesValidatorHashGY)
+import TxBuilding.Validators (profilesValidatorHashGY, ranksValidatorHashGY)
 
 ------------------------------------------------------------------------------------------------
 
@@ -93,17 +93,20 @@ getAllRanks nid = do
   onChainRanks <- getAllOnchainValidRanks nid
   catMaybes <$> mapM onchainRankToRankInformation onChainRanks
 
-getAllProfilesCount :: (GYTxQueryMonad m) => GYNetworkId -> Maybe ProfileType -> m Int
-getAllProfilesCount nid maybeProfileType = do
+getAllOnchainProfiles :: (GYTxQueryMonad m) => GYNetworkId -> m [CIP68Datum OnchainProfile]
+getAllOnchainProfiles nid = do
   let profilesValidatorAddress = addressFromScriptHash nid profilesValidatorHashGY
   allDatums <- fmap snd <$> utxosAtAddressesWithDatums [profilesValidatorAddress]
   let allProfiles = mapMaybe profileDatumFromDatum (catMaybes allDatums)
-  case maybeProfileType of
-    Nothing -> return $ length allProfiles
-    Just profileType -> do
-      let filteredProfiles = filter (\profile -> profileTypeToOnChainProfileType profileType == Onchain.profileType (extra profile)) allProfiles
-      return $ length filteredProfiles
+  return allProfiles
 
+getAllProfilesCount :: (GYTxQueryMonad m) => GYNetworkId -> m Int
+getAllProfilesCount nid = length <$> getAllOnchainProfiles nid
+
+getAllProfiles :: (GYTxQueryMonad m) => GYNetworkId -> m [ProfileSummary]
+getAllProfiles nid = do
+  allProfiles <- getAllOnchainProfiles nid
+  mapM profileDatumToProfileSummary allProfiles
 
 ------------------------------------------------------------------------------------------------
 

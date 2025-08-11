@@ -46,14 +46,14 @@ instance ToSchema ProfileData where
             }
 
 data ProfileType = Practitioner | Organization
-  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema)
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema, Eq)
 
 type ProfileRefAC = GYAssetClass
 
 type RankAC = GYAssetClass
 
 data ProfileSummary = ProfileSummary
-  { profileSummary :: ProfileRefAC,
+  { profileSummaryId :: ProfileRefAC,
     profileSummaryName :: Text,
     profileSummaryDescription :: Text,
     profileSummaryImageURI :: Text,
