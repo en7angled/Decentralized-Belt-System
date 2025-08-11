@@ -5,7 +5,7 @@ import DomainTypes.Profile.Types
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (intToBelt)
-import Onchain.CIP68 (MetadataFields (..), CIP68Datum (CIP68Datum), getMetadataFields, extra)
+import Onchain.CIP68 (MetadataFields (..), getMetadataFields, extra, CIP68Datum)
 import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V3
 import PlutusTx.Builtins (decodeUtf8)

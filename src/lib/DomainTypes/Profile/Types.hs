@@ -8,13 +8,13 @@ import Data.Aeson.Types qualified as AesonTypes
 import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.List.Extra
 import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
-import Data.Swagger.Internal.Schema (ToSchema)
+import Data.Swagger.Internal.Schema ()
 import Data.Swagger.ParamSchema
 import Data.Swagger.SchemaOptions (fromAesonOptions)
 import Data.Text hiding (init, tail)
 import Data.Text qualified as T
 import Deriving.Aeson
-import GHC.Generics
+import GHC.Generics ()
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
 import Onchain.BJJ (BJJBelt)
@@ -46,7 +46,7 @@ instance ToSchema ProfileData where
             }
 
 data ProfileType = Practitioner | Organization
-  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema, Eq)
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema, Eq, Ord)
 
 type ProfileRefAC = GYAssetClass
 
@@ -155,6 +155,38 @@ instance ToSchema PromotionInformation where
           AesonTypes.defaultOptions
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "promotionInfo"
             }
+
+-------------------------------------------------------------------------------
+
+-- * Ordering helpers for API endpoints
+
+-------------------------------------------------------------------------------
+
+data SortOrder = Asc | Desc
+  deriving (Show, Generic, ToParamSchema, ToSchema, Eq)
+
+data ProfilesOrderBy
+  = ProfilesOrderById
+  | ProfilesOrderByName
+  | ProfilesOrderByDescription
+  | ProfilesOrderByType
+  deriving (Show, Generic, ToParamSchema, ToSchema, Eq)
+
+data PromotionsOrderBy
+  = PromotionsOrderById
+  | PromotionsOrderByBelt
+  | PromotionsOrderByAchievedBy
+  | PromotionsOrderByAwardedBy
+  | PromotionsOrderByDate
+  deriving (Show, Generic, ToParamSchema, ToSchema, Eq)
+
+data RanksOrderBy
+  = RanksOrderById
+  | RanksOrderByBelt
+  | RanksOrderByAchievedBy
+  | RanksOrderByAwardedBy
+  | RanksOrderByDate
+  deriving (Show, Generic, ToParamSchema, ToSchema, Eq)
 
 data ProfileActionType
   = InitProfileAction

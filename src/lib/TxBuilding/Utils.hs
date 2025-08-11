@@ -17,7 +17,6 @@ import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
 import TxBuilding.Exceptions (ProfileException (..))
 import Data.Text
-import Data.Aeson (FromJSON, decodeFileStrict)
 import System.Directory.Extra
 import Utils
 import qualified Data.Text.IO
