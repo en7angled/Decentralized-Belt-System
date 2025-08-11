@@ -1,7 +1,7 @@
 {
     "coreProvider": {
-        "maestroToken": "q3oWOOU25S7QpJJXdIVV45HOqn2BUeVw",
-        "turboSubmit": true
+        "maestroToken": "1hTlEf8NeXRKrFppqZdC1Kq2FXR1pSUt",
+        "turboSubmit": false
     },
     "networkId": "preview",
     "logging": [

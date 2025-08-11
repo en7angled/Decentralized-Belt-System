@@ -273,6 +273,33 @@
             ],
             "type": "object"
         },
+        "ProfileSummary": {
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/ProfileType"
+                }
+            },
+            "required": [
+                "id",
+                "name",
+                "description",
+                "image_uri",
+                "type"
+            ],
+            "type": "object"
+        },
         "ProfileType": {
             "enum": [
                 "Practitioner",
@@ -708,6 +735,78 @@
                     }
                 },
                 "summary": "Get Practitioner Profile Information"
+            }
+        },
+        "/profiles": {
+            "get": {
+                "description": "Get Profiles",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
+                        "enum": [
+                            "Practitioner",
+                            "Organization"
+                        ],
+                        "in": "query",
+                        "name": "profile-type",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "name",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "description",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/ProfileSummary"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `description` or `name` or `profile-type` or `profile` or `offset` or `limit`"
+                    }
+                },
+                "summary": "Get Profiles"
             }
         },
         "/profiles/count": {

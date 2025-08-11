@@ -100,6 +100,19 @@ type Profiles =
         :> Get '[JSON] OrganizationProfileInformation
     )
     :<|>
+    -- Get profiles endpoint
+    ( Summary "Get Profiles"
+        :> Description "Get Profiles"
+        :> "profiles"
+        :> QueryParam' '[Optional] "limit" Int
+        :> QueryParam' '[Optional] "offset" Int
+        :> QueryParams "profile" ProfileRefAC
+        :> QueryParam "profile-type" ProfileType
+        :> QueryParam' '[Optional] "name" Text
+        :> QueryParam' '[Optional] "description" Text
+        :> Get '[JSON] [ProfileSummary]
+    )
+    :<|>
     -- Get profiles count endpoint
     ( Summary "Get Profiles Count"
         :> Description "Get count of profiles by type"
@@ -115,12 +128,27 @@ handleGetPractitionerProfile = getPractitionerProfile
 handleGetOrganizationProfile :: ProfileRefAC -> AppMonad OrganizationProfileInformation
 handleGetOrganizationProfile = getOrganizationProfile
 
+handleGetProfiles :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> Maybe ProfileType -> Maybe Text -> Maybe Text -> AppMonad [ProfileSummary]
+handleGetProfiles (Just limit) (Just offset) profiles maybeProfileType name description =
+  getProfiles
+    (Just (limit, offset))
+    ( Just
+        ( ProfileFilter
+            { profileFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              profileFilterType = maybeProfileType,
+              profileFilterName = name,
+              profileFilterDescription = description
+            }
+        )
+    )
+handleGetProfiles _ _ _ _ _ _ = getProfiles Nothing Nothing
+
 handleGetProfilesCount :: Maybe ProfileType -> AppMonad Int
 handleGetProfilesCount maybeProfileType = do
   getProfilesCount maybeProfileType
 
 profilesServer :: ServerT Profiles AppMonad
-profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile :<|> handleGetProfilesCount
+profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile :<|> handleGetProfiles :<|> handleGetProfilesCount
 
 ------------------------------------------------------------------------------------------------
 
