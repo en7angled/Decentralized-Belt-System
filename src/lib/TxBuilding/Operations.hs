@@ -19,6 +19,10 @@ import TxBuilding.Skeletons
 import TxBuilding.Utils
 import TxBuilding.Validators
 
+
+datumLovelaces :: Integer
+datumLovelaces = 3500000
+
 ------------------------------------------------------------------------------------------------
 
 -- * OnChainProfile Operations
@@ -72,7 +76,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
       plutusProfileCIP68Datum
-      (valueSingleton gyProfileRefAC 1 <> valueFromLovelace 3500000)
+      (valueSingleton gyProfileRefAC 1 <> valueFromLovelace datumLovelaces)
   isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton gyProfileUserAC 1)
 
   ifPractitionerMintAndLockFirstRankState <- case profileType of
@@ -85,7 +89,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
         txMustLockStateWithInlineDatumAndValue
           ranksValidatorGY
           rankData
-          (valueSingleton gyRankAC 1 <> valueFromLovelace 3500000)
+          (valueSingleton gyRankAC 1 <> valueFromLovelace datumLovelaces)
       return $
         mconcat
           [ isMintingRank,
@@ -184,7 +188,7 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
     txMustLockStateWithInlineDatumAndValue
       ranksValidatorGY
       pendingRankDatum
-      (valueSingleton gyPromotionRankAC 1 <> valueFromLovelace 3500000)
+      (valueSingleton gyPromotionRankAC 1 <> valueFromLovelace datumLovelaces)
 
   return
     ( mconcat

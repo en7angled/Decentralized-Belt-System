@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
+
 module DomainTypes.Profile.Types where
 
 import Control.Lens ((&), (?~))
@@ -167,6 +168,13 @@ instance ToSchema PromotionInformation where
 data SortOrder = Asc | Desc
   deriving (Show, Generic, ToSchema, Eq)
 
+instance ToParamSchema SortOrder where
+  toParamSchema _ =
+    mempty
+      & type_ ?~ SwaggerString
+      & enum_ ?~ [Aeson.String (T.pack "asc"), Aeson.String (T.pack "desc")]
+
+
 data ProfilesOrderBy
   = ProfilesOrderById
   | ProfilesOrderByName
@@ -174,6 +182,18 @@ data ProfilesOrderBy
   | ProfilesOrderByType
   deriving (Show, Generic, Eq)
   deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripPrefix "ProfilesOrderBy", CamelToSnake]] ProfilesOrderBy
+
+
+instance ToParamSchema ProfilesOrderBy where
+  toParamSchema _ =
+    mempty
+      & type_ ?~ SwaggerString
+      & enum_
+        ?~ [ Aeson.String (T.pack "id"),
+             Aeson.String (T.pack "name"),
+             Aeson.String (T.pack "description"),
+             Aeson.String (T.pack "type")
+           ]
 
 instance ToSchema ProfilesOrderBy where
   declareNamedSchema = genericDeclareNamedSchema profilesOrderBySchemaOptions
@@ -204,6 +224,19 @@ instance ToSchema PromotionsOrderBy where
             { AesonTypes.constructorTagModifier = camelTo2 '_' . dropPrefix "PromotionsOrderBy"
             }
 
+
+instance ToParamSchema PromotionsOrderBy where
+  toParamSchema _ =
+    mempty
+      & type_ ?~ SwaggerString
+      & enum_
+        ?~ [ Aeson.String (T.pack "id"),
+             Aeson.String (T.pack "belt"),
+             Aeson.String (T.pack "achieved_by"),
+             Aeson.String (T.pack "awarded_by"),
+             Aeson.String (T.pack "date")
+           ]
+
 data RanksOrderBy
   = RanksOrderById
   | RanksOrderByBelt
@@ -223,40 +256,6 @@ instance ToSchema RanksOrderBy where
             { AesonTypes.constructorTagModifier = camelTo2 '_' . dropPrefix "RanksOrderBy"
             }
 
--------------------------------------------------------------------------------
-
--- Custom ToParamSchema for clean Swagger enum values in query params
-
--------------------------------------------------------------------------------
-
-instance ToParamSchema SortOrder where
-  toParamSchema _ =
-    mempty
-      & type_ ?~ SwaggerString
-      & enum_ ?~ [Aeson.String (T.pack "asc"), Aeson.String (T.pack "desc")]
-
-instance ToParamSchema ProfilesOrderBy where
-  toParamSchema _ =
-    mempty
-      & type_ ?~ SwaggerString
-      & enum_
-        ?~ [ Aeson.String (T.pack "id"),
-             Aeson.String (T.pack "name"),
-             Aeson.String (T.pack "description"),
-             Aeson.String (T.pack "type")
-           ]
-
-instance ToParamSchema PromotionsOrderBy where
-  toParamSchema _ =
-    mempty
-      & type_ ?~ SwaggerString
-      & enum_
-        ?~ [ Aeson.String (T.pack "id"),
-             Aeson.String (T.pack "belt"),
-             Aeson.String (T.pack "achieved_by"),
-             Aeson.String (T.pack "awarded_by"),
-             Aeson.String (T.pack "date")
-           ]
 
 instance ToParamSchema RanksOrderBy where
   toParamSchema _ =
