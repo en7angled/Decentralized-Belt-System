@@ -6,26 +6,24 @@ import Data.Aeson
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.ByteString.Lazy.Char8 qualified as BL
+import Data.List.Extra
+import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
 import Data.Swagger.Internal.Schema (ToSchema)
-import Data.Swagger.SchemaOptions ( fromAesonOptions)
-import Data.Swagger (genericDeclareNamedSchema, ToSchema (..))
+import Data.Swagger.ParamSchema
+import Data.Swagger.SchemaOptions (fromAesonOptions)
 import Data.Text hiding (init, tail)
 import Data.Text qualified as T
+import Deriving.Aeson
 import GHC.Generics
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
 import Onchain.BJJ (BJJBelt)
-import Deriving.Aeson
-import Data.List.Extra
-import Data.Swagger.ParamSchema
 
 -------------------------------------------------------------------------------
 
 -- * Profile
 
 -------------------------------------------------------------------------------
-
-
 
 data ProfileData
   = ProfileData
@@ -39,29 +37,50 @@ data ProfileData
 instance ToSchema ProfileData where
   declareNamedSchema = genericDeclareNamedSchema profileDataSchemaOptions
     where
-    -- Schema options that match the JSON field modifiers
-    profileDataSchemaOptions :: SchemaOptions
-    profileDataSchemaOptions = fromAesonOptions $ AesonTypes.defaultOptions
-      { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profile"}
+      -- Schema options that match the JSON field modifiers
+      profileDataSchemaOptions :: SchemaOptions
+      profileDataSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profile"
+            }
 
 data ProfileType = Practitioner | Organization
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema)
-
-
 
 type ProfileRefAC = GYAssetClass
 
 type RankAC = GYAssetClass
 
+data ProfileSummary = ProfileSummary
+  { profileSummary :: ProfileRefAC,
+    profileSummaryName :: Text,
+    profileSummaryDescription :: Text,
+    profileSummaryImageURI :: Text,
+    profileSummaryType :: ProfileType
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "profileSummary", CamelToSnake]] ProfileSummary
+
+instance ToSchema ProfileSummary where
+  declareNamedSchema = genericDeclareNamedSchema profileSummarySchemaOptions
+    where
+      profileSummarySchemaOptions :: SchemaOptions
+      profileSummarySchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profileSummary"
+            }
+
 data PractitionerProfileInformation
   = PractitionerProfileInformation
-      { practitionerId :: ProfileRefAC,
-        practitionerName :: Text,
-        practitionerDescription :: Text,
-        practitionerImageURI :: Text,
-        practitionerCurrentRank :: RankInformation,
-        practitionerPreviousRanks :: [RankInformation]
-      }
+  { practitionerId :: ProfileRefAC,
+    practitionerName :: Text,
+    practitionerDescription :: Text,
+    practitionerImageURI :: Text,
+    practitionerCurrentRank :: RankInformation,
+    practitionerPreviousRanks :: [RankInformation]
+  }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "practitioner", CamelToSnake]] PractitionerProfileInformation
 
@@ -69,16 +88,19 @@ instance ToSchema PractitionerProfileInformation where
   declareNamedSchema = genericDeclareNamedSchema practitionerSchemaOptions
     where
       practitionerSchemaOptions :: SchemaOptions
-      practitionerSchemaOptions = fromAesonOptions $ AesonTypes.defaultOptions
-        { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "practitioner"}
+      practitionerSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "practitioner"
+            }
 
 data OrganizationProfileInformation
   = OrganizationProfileInformation
-      { organizationId :: ProfileRefAC,
-        organizationName :: Text,
-        organizationDescription :: Text,
-        organizationImageURI :: Text
-      }
+  { organizationId :: ProfileRefAC,
+    organizationName :: Text,
+    organizationDescription :: Text,
+    organizationImageURI :: Text
+  }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "organization", CamelToSnake]] OrganizationProfileInformation
 
@@ -86,8 +108,11 @@ instance ToSchema OrganizationProfileInformation where
   declareNamedSchema = genericDeclareNamedSchema organizationSchemaOptions
     where
       organizationSchemaOptions :: SchemaOptions
-      organizationSchemaOptions = fromAesonOptions $ AesonTypes.defaultOptions
-        { AesonTypes.fieldLabelModifier =  camelTo2 '_' . dropPrefix "organization"}
+      organizationSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "organization"
+            }
 
 data RankInformation
   = RankInformation
@@ -104,8 +129,11 @@ instance ToSchema RankInformation where
   declareNamedSchema = genericDeclareNamedSchema rankInfoSchemaOptions
     where
       rankInfoSchemaOptions :: SchemaOptions
-      rankInfoSchemaOptions = fromAesonOptions $ AesonTypes.defaultOptions
-        { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "rankInfo"}
+      rankInfoSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "rankInfo"
+            }
 
 data PromotionInformation
   = PromotionInformation
@@ -122,10 +150,11 @@ instance ToSchema PromotionInformation where
   declareNamedSchema = genericDeclareNamedSchema promotionInfoSchemaOptions
     where
       promotionInfoSchemaOptions :: SchemaOptions
-      promotionInfoSchemaOptions = fromAesonOptions $ AesonTypes.defaultOptions
-        { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "promotionInfo"}
-
-
+      promotionInfoSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "promotionInfo"
+            }
 
 data ProfileActionType
   = InitProfileAction

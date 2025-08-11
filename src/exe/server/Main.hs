@@ -13,6 +13,7 @@ import RestAPI (apiSwagger, mkBJJApp)
 import System.Environment
 import TxBuilding.Context
 import TxBuilding.Utils
+import Utils (decodeConfigEnvOrFile)
 
 getPortFromEnv :: IO Int
 getPortFromEnv = do
@@ -33,22 +34,15 @@ defaultAtlasCoreConfig = "config/config_atlas.json"
 defaultTxBuldingContextFile :: FilePath
 defaultTxBuldingContextFile = "config/config_bjj_validators.json"
 
-getDeployedValidatorsConfigFromEnv :: IO FilePath
-getDeployedValidatorsConfigFromEnv = fromMaybe defaultTxBuldingContextFile <$> lookupEnv "DEPLOYED_VALIDATORS_CONFIG"
-
-getAtlasCoreConfigFromEnv :: IO FilePath
-getAtlasCoreConfigFromEnv = fromMaybe defaultAtlasCoreConfig <$> lookupEnv "ATLAS_CORE_CONFIG"
 
 main :: IO ()
 main = do
   putStrLn "Writing Swagger file ..."
   BL8.writeFile "swagger-api.json" (encodePretty apiSwagger)
 
-  atlasCoreConfig <- getAtlasCoreConfigFromEnv
-  atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration file not found") <$> decodeConfigFile @GYCoreConfig atlasCoreConfig
 
-  deployedValidatorsConfig <- getDeployedValidatorsConfigFromEnv
-  deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration file not found") <$> decodeConfigFile @DeployedScriptsContext deployedValidatorsConfig
+  atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration file not found") <$> decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
+  deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration file not found") <$> decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
 
   withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do
     let providersContext = ProviderCtx atlasConfig providers

@@ -24,14 +24,24 @@ import Data.MultiSet
 
 ------------------------------------------------------------------------------------------------
 
+type Limit = Int
+
+type Offset = Int
+
+data ProfileFilter = ProfileFilter
+  { profileFilterType :: Maybe ProfileType,
+    profileFilterName :: Maybe Text,
+    profileFilterDescription :: Maybe Text
+  }
+
+
 class ProfilesQueryMonad m where
   getPractitionerProfile :: ProfileRefAC -> m PractitionerProfileInformation
   getOrganizationProfile :: ProfileRefAC -> m OrganizationProfileInformation
   getProfilesCount :: Maybe ProfileType -> m Int
+  getPractitioners :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> m [ProfileSummary]
+  getOrganizations :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> m [ProfileSummary]
 
-type Limit = Int
-
-type Offset = Int
 
 data PromotionFilter = PromotionFilter
   { promotionFilterId :: Maybe [ProfileRefAC],
