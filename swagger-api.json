@@ -487,6 +487,29 @@
                         "name": "to",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "belt",
+                            "achieved_by",
+                            "awarded_by",
+                            "date"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "order",
+                        "required": false,
+                        "type": "string"
                     }
                 ],
                 "produces": [
@@ -503,7 +526,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Belts"
@@ -787,6 +810,28 @@
                         "name": "description",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "name",
+                            "description",
+                            "type"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "order",
+                        "required": false,
+                        "type": "string"
                     }
                 ],
                 "produces": [
@@ -803,7 +848,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `description` or `name` or `profile-type` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `order` or `order_by` or `description` or `name` or `profile-type` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Profiles"
@@ -929,6 +974,29 @@
                         "name": "to",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "belt",
+                            "achieved_by",
+                            "awarded_by",
+                            "date"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "order",
+                        "required": false,
+                        "type": "string"
                     }
                 ],
                 "produces": [
@@ -945,7 +1013,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Pending Promotions"

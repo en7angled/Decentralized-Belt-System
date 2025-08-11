@@ -34,6 +34,8 @@ instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
   parseQueryParam = maybe (Left "Invalid belt") Right . parseBelt . T.unpack
 
+
+
 instance FromHttpApiData ProfileType where
   parseQueryParam :: Text -> Either Text ProfileType
   parseQueryParam = maybe (Left "Invalid profile type") Right . parseProfileType . T.unpack
@@ -82,6 +84,20 @@ instance FromHttpApiData RanksOrderBy where
       "awarded_by" -> Right RanksOrderByAwardedBy
       "date" -> Right RanksOrderByDate
       _ -> Left "Invalid ranks order_by"
+
+-- Small helpers to keep handlers concise
+nonEmpty :: [a] -> Maybe [a]
+nonEmpty xs = if Prelude.null xs then Nothing else Just xs
+
+mkOrder :: Maybe a -> Maybe SortOrder -> Maybe (a, SortOrder)
+mkOrder maybeOrderBy maybeOrder =
+  case (maybeOrderBy, maybeOrder) of
+    (Just ob, Just o) -> Just (ob, o)
+    (Just ob, Nothing) -> Just (ob, Asc)
+    _ -> Nothing
+
+mkPagination :: Maybe Int -> Maybe Int -> Maybe (Int, Int)
+mkPagination  = liftA2 (,)
 
 ------------------------------------------------------------------------------------------------
 
@@ -189,7 +205,23 @@ handleGetProfiles (Just limit) (Just offset) profiles maybeProfileType name desc
         (Just ob, Nothing) -> Just (ob, Asc)
         _ -> Nothing
     )
-handleGetProfiles _ _ _ _ _ _ _ _ = getProfiles Nothing Nothing Nothing
+handleGetProfiles _ _ profiles maybeProfileType name description maybeOrderBy maybeOrder =
+  getProfiles
+    Nothing
+    ( Just
+        ( ProfileFilter
+            { profileFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              profileFilterType = maybeProfileType,
+              profileFilterName = name,
+              profileFilterDescription = description
+            }
+        )
+    )
+    ( case (maybeOrderBy, maybeOrder) of
+        (Just ob, Just o) -> Just (ob, o)
+        (Just ob, Nothing) -> Just (ob, Asc)
+        _ -> Nothing
+    )
 
 handleGetProfilesCount :: Maybe ProfileType -> AppMonad Int
 handleGetProfilesCount maybeProfileType = do
@@ -239,37 +271,29 @@ type Promotions =
     )
 
 handleGetPendingPromotions :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe PromotionsOrderBy -> Maybe SortOrder -> AppMonad [PromotionInformation]
-handleGetPendingPromotions (Just limit) (Just offset) profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder =
+handleGetPendingPromotions limit offset profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder =
   getPromotions
-    (Just (limit, offset))
+    (mkPagination limit offset)
     ( Just
-        ( PromotionFilter
-            { promotionFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              promotionFilterBelt = if Prelude.null belt then Nothing else Just belt,
-              promotionFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
-              promotionFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              promotionFilterAchievementDateInterval = (from, to)
-            }
-        )
+        PromotionFilter
+          { promotionFilterId = nonEmpty profiles,
+            promotionFilterBelt = nonEmpty belt,
+            promotionFilterAchievedByProfileId = nonEmpty achieved_by,
+            promotionFilterAwardedByProfileId = nonEmpty awarded_by,
+            promotionFilterAchievementDateInterval = (from, to)
+          }
     )
-    ( case (maybeOrderBy, maybeOrder) of
-        (Just ob, Just o) -> Just (ob, o)
-        (Just ob, Nothing) -> Just (ob, Asc)
-        _ -> Nothing
-    )
-handleGetPendingPromotions _ _ _ _ _ _ _ _ _ _ = getPromotions Nothing Nothing Nothing
+    (mkOrder maybeOrderBy maybeOrder)
 
 handleGetPendingPromotionsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> AppMonad Int
-handleGetPendingPromotionsCount limit offset profiles belt achieved_by awarded_by from to = do
-  let maybeFilter =
-        Just
-          PromotionFilter
-            { promotionFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              promotionFilterBelt = if Prelude.null belt then Nothing else Just belt,
-              promotionFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
-              promotionFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              promotionFilterAchievementDateInterval = (from, to)
-            }
+handleGetPendingPromotionsCount _ _ profiles belt achieved_by awarded_by from to = do
+  let maybeFilter = Just PromotionFilter
+        { promotionFilterId = nonEmpty profiles,
+          promotionFilterBelt = nonEmpty belt,
+          promotionFilterAchievedByProfileId = nonEmpty achieved_by,
+          promotionFilterAwardedByProfileId = nonEmpty awarded_by,
+          promotionFilterAchievementDateInterval = (from, to)
+        }
   getPromotionsCount maybeFilter
 
 promotionsServer :: ServerT Promotions AppMonad
@@ -344,7 +368,24 @@ handleGetBelts (Just limit) (Just offset) profiles belt achieved_by awarded_by f
         (Just ob, Nothing) -> Just (ob, Asc)
         _ -> Nothing
     )
-handleGetBelts _ _ _ _ _ _ _ _ _ _ = getRanks Nothing Nothing Nothing
+handleGetBelts _ _ profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder =
+  getRanks
+    Nothing
+    ( Just
+        ( RankFilter
+            { rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
+              rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
+              rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
+              rankFilterAchievementDateInterval = (from, to)
+            }
+        )
+    )
+    ( case (maybeOrderBy, maybeOrder) of
+        (Just ob, Just o) -> Just (ob, o)
+        (Just ob, Nothing) -> Just (ob, Asc)
+        _ -> Nothing
+    )
 
 handleGetBeltsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> AppMonad Int
 handleGetBeltsCount limit offset profiles belt achieved_by awarded_by from to = do

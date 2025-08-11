@@ -5,11 +5,11 @@ module AppMonad where
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Reader
-import Data.Maybe
 import Data.List (sortOn)
-import Data.Ord (Down (..))
+import Data.Maybe
 import Data.MultiSet
-import Data.Text hiding (elem)
+import Data.Ord (Down (..))
+import Data.Text hiding (elem, take)
 import qualified Data.Text.Encoding
 import DomainTypes.Profile.Types
 import GeniusYield.GYConfig (GYCoreConfig (..))
@@ -19,6 +19,16 @@ import Onchain.BJJ
 import Servant
 import TxBuilding.Context
 import TxBuilding.Lookups
+
+-- | Apply optional pagination limits to a list in a total and generic way.
+-- Negative limits or offsets are clamped to 0. If the list is shorter than
+-- the requested limit, the entire available suffix is returned safely.
+applyLimits :: Maybe (Int, Int) -> [a] -> [a]
+applyLimits Nothing xs = xs
+applyLimits (Just (limit, offset)) xs =
+  let safeLimit = Prelude.max 0 limit
+      safeOffset = Prelude.max 0 offset
+   in Prelude.take safeLimit (Prelude.drop safeOffset xs)
 
 ------------------------------------------------------------------------------------------------
 
@@ -125,23 +135,18 @@ instance ProfilesQueryMonad AppMonad where
     allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (cfgNetworkId . ctxCoreCfg $ providerCtx))
     return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyProfileFilter maybeProfileFilter allProfiles
     where
-      applyLimits :: Maybe (Limit, Offset) -> [ProfileSummary] -> [ProfileSummary]
-      applyLimits Nothing profiles = profiles
-      applyLimits (Just (limit, offset)) profiles | limit > 0 && offset >= 0 = Prelude.take limit $ Prelude.drop offset profiles
-      applyLimits _ profiles = profiles
-
       applyOrdering :: Maybe (ProfilesOrderBy, SortOrder) -> [ProfileSummary] -> [ProfileSummary]
       applyOrdering Nothing profiles = profiles
       applyOrdering (Just (orderBy, order)) profiles =
         case (orderBy, order) of
-             (ProfilesOrderById, Asc) -> sortOn profileSummaryId profiles
-             (ProfilesOrderById, Desc) -> sortOn (Down . profileSummaryId) profiles
-             (ProfilesOrderByName, Asc) -> sortOn profileSummaryName profiles
-             (ProfilesOrderByName, Desc) -> sortOn (Down . profileSummaryName) profiles
-             (ProfilesOrderByDescription, Asc) -> sortOn profileSummaryDescription profiles
-             (ProfilesOrderByDescription, Desc) -> sortOn (Down . profileSummaryDescription) profiles
-             (ProfilesOrderByType, Asc) -> sortOn profileSummaryType profiles
-             (ProfilesOrderByType, Desc) -> sortOn (Down . profileSummaryType) profiles
+          (ProfilesOrderById, Asc) -> sortOn profileSummaryId profiles
+          (ProfilesOrderById, Desc) -> sortOn (Down . profileSummaryId) profiles
+          (ProfilesOrderByName, Asc) -> sortOn profileSummaryName profiles
+          (ProfilesOrderByName, Desc) -> sortOn (Down . profileSummaryName) profiles
+          (ProfilesOrderByDescription, Asc) -> sortOn profileSummaryDescription profiles
+          (ProfilesOrderByDescription, Desc) -> sortOn (Down . profileSummaryDescription) profiles
+          (ProfilesOrderByType, Asc) -> sortOn profileSummaryType profiles
+          (ProfilesOrderByType, Desc) -> sortOn (Down . profileSummaryType) profiles
 
       applyProfileFilter :: Maybe ProfileFilter -> [ProfileSummary] -> [ProfileSummary]
       applyProfileFilter Nothing profiles = profiles
@@ -167,11 +172,6 @@ instance PromotionsStatsQueryMonad AppMonad where
     allPromotions <- liftIO $ runQuery providerCtx (getAllPromotions (cfgNetworkId . ctxCoreCfg $ providerCtx))
     return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyPromotionFilter maybePromotionFilter allPromotions
     where
-      applyLimits :: Maybe (Limit, Offset) -> [PromotionInformation] -> [PromotionInformation]
-      applyLimits Nothing promotions = promotions
-      applyLimits (Just (limit, offset)) promotions | limit > 0 && offset >= 0 = Prelude.take limit $ Prelude.drop offset promotions
-      applyLimits _ promotions = promotions
-
       applyOrdering :: Maybe (PromotionsOrderBy, SortOrder) -> [PromotionInformation] -> [PromotionInformation]
       applyOrdering Nothing promotions = promotions
       applyOrdering (Just (orderBy, order)) promotions =
@@ -219,11 +219,6 @@ instance RanksStatsQueryMonad AppMonad where
     allRanks <- liftIO $ runQuery providerCtx (getAllRanks (cfgNetworkId . ctxCoreCfg $ providerCtx))
     return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyRankFilter maybeRankFilter allRanks
     where
-      applyLimits :: Maybe (Limit, Offset) -> [RankInformation] -> [RankInformation]
-      applyLimits Nothing ranks = ranks
-      applyLimits (Just (limit, offset)) ranks | limit > 0 && offset >= 0 = Prelude.take limit $ Prelude.drop offset ranks
-      applyLimits _ ranks = ranks
-
       applyOrdering :: Maybe (RanksOrderBy, SortOrder) -> [RankInformation] -> [RankInformation]
       applyOrdering Nothing ranks = ranks
       applyOrdering (Just (orderBy, order)) ranks =

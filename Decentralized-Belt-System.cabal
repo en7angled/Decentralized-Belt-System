@@ -82,6 +82,7 @@ library
     , aeson
     , bytestring
     , containers
+    , lens
     , deriving-aeson
     , extra
     , mtl

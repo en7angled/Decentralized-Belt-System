@@ -3,6 +3,7 @@ import Data.Aeson
 import System.Directory.Extra
 import System.Environment
 import qualified Data.ByteString.Char8 as BS8
+import Prelude
 
 greenColorString :: String -> String
 greenColorString s =
@@ -69,3 +70,4 @@ decodeConfigEnvOrFile envName filePath = do
         Right a -> return (Just a)
         Left err -> error $ "Decoding env var " <> envName <> " failed: " <> err
     Nothing -> decodeConfigFile filePath
+
