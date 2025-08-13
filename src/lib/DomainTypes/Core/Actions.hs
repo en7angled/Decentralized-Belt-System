@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-partial-fields #-}
 module DomainTypes.Core.Actions where
 
 import Data.Aeson
@@ -10,10 +11,8 @@ import Data.Swagger.SchemaOptions (fromAesonOptions)
 import Data.Text hiding (init, tail)
 import Deriving.Aeson
 import GHC.Generics ()
-import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
 import Onchain.BJJ (BJJBelt)
-import Utils
 import DomainTypes.Core.Types
 
 -------------------------------------------------------------------------------

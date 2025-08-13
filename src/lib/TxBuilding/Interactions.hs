@@ -15,8 +15,6 @@ import TxBuilding.Context (DeployedScriptsContext)
 import TxBuilding.Functors
 import TxBuilding.Operations
 import DomainTypes.Core.Actions
-import DomainTypes.Core.Types
-import DomainTypes.Transfer.Types
 
 ------------------------------------------------------------------------------------------------
 
