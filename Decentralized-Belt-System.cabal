@@ -88,6 +88,7 @@ library
     , mtl
     , swagger2
     , text
+    , persistent
 
   --- Cardano specific dependencies
   build-depends:

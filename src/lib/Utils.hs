@@ -54,7 +54,9 @@ decodeConfigFile path = do
   fileExist <- doesFileExist path
   if fileExist
     then decodeFileStrict path 
-    else return Nothing
+    else do
+      putStrLn $ yellowColorString $ "File " <> path <> " does not exist"
+      return Nothing
     
 
 
@@ -69,5 +71,7 @@ decodeConfigEnvOrFile envName filePath = do
       case eitherDecodeStrict (BS8.pack raw) of
         Right a -> return (Just a)
         Left err -> error $ "Decoding env var " <> envName <> " failed: " <> err
-    Nothing -> decodeConfigFile filePath
+    Nothing -> do 
+      putStrLn $ yellowColorString $ "Parsing config from file " <> filePath
+      decodeConfigFile filePath
 

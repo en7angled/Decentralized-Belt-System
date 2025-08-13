@@ -30,12 +30,12 @@ import Onchain.BJJ (BJJBelt)
 
 data ProfileData
   = ProfileData
-  { profileName :: Text,
-    profileDescription :: Text,
-    profileImageURI :: Text
+  { profileDataName :: Text,
+    profileDataDescription :: Text,
+    profileDataImageURI :: Text
   }
   deriving (Show, Generic)
-  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "profile", CamelToSnake]] ProfileData
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "profileData", CamelToSnake]] ProfileData
 
 instance ToSchema ProfileData where
   declareNamedSchema = genericDeclareNamedSchema profileDataSchemaOptions
@@ -45,7 +45,7 @@ instance ToSchema ProfileData where
       profileDataSchemaOptions =
         fromAesonOptions $
           AesonTypes.defaultOptions
-            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profile"
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profileData"
             }
 
 data ProfileType = Practitioner | Organization
@@ -55,24 +55,24 @@ type ProfileRefAC = GYAssetClass
 
 type RankAC = GYAssetClass
 
-data ProfileSummary = ProfileSummary
-  { profileSummaryId :: ProfileRefAC,
-    profileSummaryName :: Text,
-    profileSummaryDescription :: Text,
-    profileSummaryImageURI :: Text,
-    profileSummaryType :: ProfileType
+data Profile = Profile
+  { profileId :: ProfileRefAC,
+    profileName :: Text,
+    profileDescription :: Text,
+    profileImageURI :: Text,
+    profileType :: ProfileType
   }
   deriving (Generic)
-  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "profileSummary", CamelToSnake]] ProfileSummary
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "profile", CamelToSnake]] Profile
 
-instance ToSchema ProfileSummary where
-  declareNamedSchema = genericDeclareNamedSchema profileSummarySchemaOptions
+instance ToSchema Profile where
+  declareNamedSchema = genericDeclareNamedSchema profileSchemaOptions
     where
-      profileSummarySchemaOptions :: SchemaOptions
-      profileSummarySchemaOptions =
+      profileSchemaOptions :: SchemaOptions
+      profileSchemaOptions =
         fromAesonOptions $
           AesonTypes.defaultOptions
-            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profileSummary"
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profile"
             }
 
 data PractitionerProfileInformation
@@ -271,30 +271,30 @@ instance ToParamSchema RanksOrderBy where
 
 data ProfileActionType
   = InitProfileAction
-      { profileData :: ProfileData,
-        profileType :: ProfileType,
-        creationDate :: GYTime
+      { profile_data :: ProfileData,
+        profile_type :: ProfileType,
+        creation_date :: GYTime
       }
   | UpdateProfileImageAction
-      { profileId :: ProfileRefAC,
-        imageURI :: Text
+      { profile_id :: ProfileRefAC,
+        image_uri :: Text
       }
   | DeleteProfileAction
-      { profileId :: ProfileRefAC
+      { profileIdentifier :: ProfileRefAC
       }
   | PromoteProfileAction
-      { promotedProfileId :: ProfileRefAC,
-        promotedByProfileId :: ProfileRefAC,
-        achievementDate :: GYTime,
-        promotedBelt :: BJJBelt
+      { promoted_profile_id :: ProfileRefAC,
+        promoted_by_profile_id :: ProfileRefAC,
+        achievement_date :: GYTime,
+        promoted_belt :: BJJBelt
       }
   | AcceptPromotionAction
-      { promotionId :: RankAC
+      { promotion_id :: RankAC
       }
   | CreateProfileWithRankAction
-      { profileData :: ProfileData,
-        profileType :: ProfileType,
-        creationDate :: GYTime,
+      { profile_data :: ProfileData,
+        profile_type :: ProfileType,
+        creation_date :: GYTime,
         belt :: BJJBelt
       }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

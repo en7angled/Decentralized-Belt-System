@@ -169,7 +169,7 @@ type Profiles =
         :> QueryParam' '[Optional] "description" Text
          :> QueryParam' '[Optional] "order_by" ProfilesOrderBy
          :> QueryParam' '[Optional] "order" SortOrder
-        :> Get '[JSON] [ProfileSummary]
+        :> Get '[JSON] [Profile]
     )
     :<|>
     -- Get profiles count endpoint
@@ -187,7 +187,7 @@ handleGetPractitionerProfile = getPractitionerProfile
 handleGetOrganizationProfile :: ProfileRefAC -> AppMonad OrganizationProfileInformation
 handleGetOrganizationProfile = getOrganizationProfile
 
-handleGetProfiles :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> Maybe ProfileType -> Maybe Text -> Maybe Text -> Maybe ProfilesOrderBy -> Maybe SortOrder -> AppMonad [ProfileSummary]
+handleGetProfiles :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> Maybe ProfileType -> Maybe Text -> Maybe Text -> Maybe ProfilesOrderBy -> Maybe SortOrder -> AppMonad [Profile]
 handleGetProfiles (Just limit) (Just offset) profiles maybeProfileType name description maybeOrderBy maybeOrder =
   getProfiles
     (Just (limit, offset))

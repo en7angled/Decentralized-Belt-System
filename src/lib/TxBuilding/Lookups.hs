@@ -103,10 +103,10 @@ getAllOnchainProfiles nid = do
 getAllProfilesCount :: (GYTxQueryMonad m) => GYNetworkId -> m Int
 getAllProfilesCount nid = length <$> getAllOnchainProfiles nid
 
-getAllProfiles :: (GYTxQueryMonad m) => GYNetworkId -> m [ProfileSummary]
+getAllProfiles :: (GYTxQueryMonad m) => GYNetworkId -> m [Profile]
 getAllProfiles nid = do
   allProfiles <- getAllOnchainProfiles nid
-  mapM profileDatumToProfileSummary allProfiles
+  mapM profileDatumToProfile allProfiles
 
 ------------------------------------------------------------------------------------------------
 
@@ -117,7 +117,7 @@ getAllProfiles nid = do
 getPractiotionerInformation :: (GYTxQueryMonad m) => ProfileRefAC -> m PractitionerProfileInformation
 getPractiotionerInformation profileRefAC = do
   (profileDatum, _profileValue) <- getProfileStateDataAndValue profileRefAC
-  let ProfileData {profileName, profileDescription, profileImageURI} = metadataFieldsToProfileData (getMetadataFields profileDatum)
+  let ProfileData {profileDataName, profileDataDescription, profileDataImageURI} = metadataFieldsToProfileData (getMetadataFields profileDatum)
   case Onchain.profileType (extra profileDatum) of
     Onchain.Practitioner -> do
       ranks <- getProfileRanks profileRefAC
@@ -127,9 +127,9 @@ getPractiotionerInformation profileRefAC = do
       return $
         PractitionerProfileInformation
           { practitionerId = profileRefAC,
-            practitionerName = profileName,
-            practitionerDescription = profileDescription,
-            practitionerImageURI = profileImageURI,
+            practitionerName = profileDataName,
+            practitionerDescription = profileDataDescription,
+            practitionerImageURI = profileDataImageURI,
             practitionerCurrentRank = currentRank,
             practitionerPreviousRanks = previousRanks
           }
@@ -138,14 +138,14 @@ getPractiotionerInformation profileRefAC = do
 getOrganizationInformation :: (GYTxQueryMonad m) => ProfileRefAC -> m OrganizationProfileInformation
 getOrganizationInformation profileRefAC = do
   (profileDatum, _profileValue) <- getProfileStateDataAndValue profileRefAC
-  let ProfileData {profileName, profileDescription, profileImageURI} = metadataFieldsToProfileData (getMetadataFields profileDatum)
+  let ProfileData {profileDataName, profileDataDescription, profileDataImageURI} = metadataFieldsToProfileData (getMetadataFields profileDatum)
   case Onchain.profileType (extra profileDatum) of
     Onchain.Organization -> do
       return $
         OrganizationProfileInformation
           { organizationId = profileRefAC,
-            organizationName = profileName,
-            organizationDescription = profileDescription,
-            organizationImageURI = profileImageURI
+            organizationName = profileDataName,
+            organizationDescription = profileDataDescription,
+            organizationImageURI = profileDataImageURI
           }
     _ -> throwError (GYApplicationException WrongProfileType)

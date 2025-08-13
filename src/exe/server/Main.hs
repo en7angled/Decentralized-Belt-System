@@ -41,10 +41,15 @@ main = do
   BL8.writeFile "swagger-api.json" (encodePretty apiSwagger)
 
 
-  atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration file not found") <$> decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
-  deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration file not found") <$> decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
+  atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration failed") <$> decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
+  deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
 
   withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do
+    putStrLn "Starting" 
+    putStrLn $ "Atlas config: " <> show atlasConfig
+    putStrLn $ "Deployed validators config: " <> show deployedScriptsContext
+
+
     let providersContext = ProviderCtx atlasConfig providers
     let txBuildingContext = TxBuildingContext deployedScriptsContext providersContext
     authContext <- getBasicAuthFromEnv

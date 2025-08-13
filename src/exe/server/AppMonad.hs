@@ -51,7 +51,7 @@ class ProfilesQueryMonad m where
   getPractitionerProfile :: ProfileRefAC -> m PractitionerProfileInformation
   getOrganizationProfile :: ProfileRefAC -> m OrganizationProfileInformation
   getProfilesCount :: Maybe ProfileType -> m Int
-  getProfiles :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [ProfileSummary]
+  getProfiles :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [Profile]
 
 data PromotionFilter = PromotionFilter
   { promotionFilterId :: Maybe [ProfileRefAC],
@@ -129,39 +129,39 @@ instance ProfilesQueryMonad AppMonad where
     TxBuildingContext {..} <- ask
     liftIO $ runQuery providerCtx $ getAllProfilesCount (cfgNetworkId . ctxCoreCfg $ providerCtx)
 
-  getProfiles :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> AppMonad [ProfileSummary]
+  getProfiles :: Maybe (Limit, Offset) -> Maybe ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> AppMonad [Profile]
   getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
     TxBuildingContext {..} <- ask
     allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (cfgNetworkId . ctxCoreCfg $ providerCtx))
     return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyProfileFilter maybeProfileFilter allProfiles
     where
-      applyOrdering :: Maybe (ProfilesOrderBy, SortOrder) -> [ProfileSummary] -> [ProfileSummary]
+      applyOrdering :: Maybe (ProfilesOrderBy, SortOrder) -> [Profile] -> [Profile]
       applyOrdering Nothing profiles = profiles
       applyOrdering (Just (orderBy, order)) profiles =
         case (orderBy, order) of
-          (ProfilesOrderById, Asc) -> sortOn profileSummaryId profiles
-          (ProfilesOrderById, Desc) -> sortOn (Down . profileSummaryId) profiles
-          (ProfilesOrderByName, Asc) -> sortOn profileSummaryName profiles
-          (ProfilesOrderByName, Desc) -> sortOn (Down . profileSummaryName) profiles
-          (ProfilesOrderByDescription, Asc) -> sortOn profileSummaryDescription profiles
-          (ProfilesOrderByDescription, Desc) -> sortOn (Down . profileSummaryDescription) profiles
-          (ProfilesOrderByType, Asc) -> sortOn profileSummaryType profiles
-          (ProfilesOrderByType, Desc) -> sortOn (Down . profileSummaryType) profiles
+          (ProfilesOrderById, Asc) -> sortOn profileId profiles
+          (ProfilesOrderById, Desc) -> sortOn (Down . profileId) profiles
+          (ProfilesOrderByName, Asc) -> sortOn profileName profiles
+          (ProfilesOrderByName, Desc) -> sortOn (Down . profileName) profiles
+          (ProfilesOrderByDescription, Asc) -> sortOn profileDescription profiles
+          (ProfilesOrderByDescription, Desc) -> sortOn (Down . profileDescription) profiles
+          (ProfilesOrderByType, Asc) -> sortOn profileType profiles
+          (ProfilesOrderByType, Desc) -> sortOn (Down . profileType) profiles
 
-      applyProfileFilter :: Maybe ProfileFilter -> [ProfileSummary] -> [ProfileSummary]
+      applyProfileFilter :: Maybe ProfileFilter -> [Profile] -> [Profile]
       applyProfileFilter Nothing profiles = profiles
       applyProfileFilter (Just ProfileFilter {..}) profiles =
         let idFilter = case profileFilterId of
-              Just ids -> Prelude.filter ((`elem` ids) . profileSummaryId)
+              Just ids -> Prelude.filter ((`elem` ids) . profileId)
               Nothing -> id
             typeFilter = case profileFilterType of
-              Just profileType -> Prelude.filter ((== profileType) . profileSummaryType)
+              Just pt -> Prelude.filter ((== pt) . profileType)
               Nothing -> id
             nameFilter = case profileFilterName of
-              Just name -> Prelude.filter ((== name) . profileSummaryName)
+              Just name -> Prelude.filter ((== name) . profileName)
               Nothing -> id
             descriptionFilter = case profileFilterDescription of
-              Just description -> Prelude.filter ((== description) . profileSummaryDescription)
+              Just description -> Prelude.filter ((== description) . profileDescription)
               Nothing -> id
          in idFilter . typeFilter . nameFilter . descriptionFilter $ profiles
 

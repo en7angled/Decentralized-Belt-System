@@ -12,19 +12,19 @@ import PlutusTx.Builtins (decodeUtf8)
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteStringUtf8)
 
 profileDataToMetadataFields :: ProfileData -> MetadataFields
-profileDataToMetadataFields ProfileData {profileName, profileDescription, profileImageURI} =
+profileDataToMetadataFields ProfileData {profileDataName, profileDataDescription, profileDataImageURI} =
   Metadata222
-    { metadataName = textToBuiltinByteString profileName,
-      metadataDescription = textToBuiltinByteString profileDescription,
-      metadataImageURI = textToBuiltinByteString profileImageURI
+    { metadataName = textToBuiltinByteString profileDataName,
+      metadataDescription = textToBuiltinByteString profileDataDescription,
+      metadataImageURI = textToBuiltinByteString profileDataImageURI
     }
 
 metadataFieldsToProfileData :: MetadataFields -> ProfileData
 metadataFieldsToProfileData Metadata222 {metadataName, metadataDescription, metadataImageURI} =
   ProfileData
-    { profileName = fromBuiltinByteStringUtf8 metadataName,
-      profileDescription = fromBuiltinByteStringUtf8 metadataDescription,
-      profileImageURI = fromBuiltinByteStringUtf8 metadataImageURI
+    { profileDataName = fromBuiltinByteStringUtf8 metadataName,
+      profileDataDescription = fromBuiltinByteStringUtf8 metadataDescription,
+      profileDataImageURI = fromBuiltinByteStringUtf8 metadataImageURI
     }
 
 textToBuiltinByteString :: T.Text -> BuiltinByteString
@@ -82,16 +82,16 @@ profileDatumToProfileData :: CIP68Datum Onchain.OnchainProfile ->  ProfileData
 profileDatumToProfileData  = metadataFieldsToProfileData . getMetadataFields
 
 
-profileDatumToProfileSummary :: (MonadError GYTxMonadException m) => CIP68Datum Onchain.OnchainProfile -> m ProfileSummary
-profileDatumToProfileSummary datum = do
+profileDatumToProfile :: (MonadError GYTxMonadException m) => CIP68Datum Onchain.OnchainProfile -> m Profile
+profileDatumToProfile datum = do
   let ProfileData {..} = profileDatumToProfileData datum
       onchainProfile =  extra datum
   let profileType = onChainProfileTypeToProfileType $ Onchain.profileType onchainProfile
   gyProfileId <- assetClassFromPlutus' (Onchain.profileId onchainProfile)
-  return $ ProfileSummary
-    { profileSummaryId = gyProfileId,
-      profileSummaryName = profileName,
-      profileSummaryDescription = profileDescription,
-      profileSummaryImageURI = profileImageURI,
-      profileSummaryType = profileType
+  return $ Profile
+    { profileId = gyProfileId,
+      profileName = profileDataName,
+      profileDescription = profileDataDescription,
+      profileImageURI = profileDataImageURI,
+      profileType = profileType
     }
