@@ -3,7 +3,9 @@ import Data.Aeson
 import System.Directory.Extra
 import System.Environment
 import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString.Lazy.Char8 as BL8
 import Prelude
+import qualified Data.Aeson as Aeson
 
 greenColorString :: String -> String
 greenColorString s =
@@ -75,3 +77,8 @@ decodeConfigEnvOrFile envName filePath = do
       putStrLn $ yellowColorString $ "Parsing config from file " <> filePath
       decodeConfigFile filePath
 
+
+
+
+stringFromJSON :: (ToJSON a) => a -> String
+stringFromJSON = init . tail . BL8.unpack . Aeson.encode

@@ -1,7 +1,8 @@
 module TxBuilding.Functors where
 
 import Data.Text qualified as T
-import DomainTypes.Profile.Types
+import DomainTypes.Core.Types
+import DomainTypes.Core.Actions
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (intToBelt)
@@ -42,7 +43,7 @@ onChainProfileTypeToProfileType :: Onchain.OnChainProfileType -> ProfileType
 onChainProfileTypeToProfileType Onchain.Practitioner = Practitioner
 onChainProfileTypeToProfileType Onchain.Organization = Organization
 
-onchainRankToRankInformation :: (MonadError GYTxMonadException m) => Onchain.OnchainRank -> m (Maybe RankInformation)
+onchainRankToRankInformation :: (MonadError GYTxMonadException m) => Onchain.OnchainRank -> m (Maybe Rank)
 onchainRankToRankInformation (Onchain.Rank {..}) = do
   gyRankId <- assetClassFromPlutus' rankId
   gyRankAchievedByProfileId <- assetClassFromPlutus' rankAchievedByProfileId
@@ -50,16 +51,16 @@ onchainRankToRankInformation (Onchain.Rank {..}) = do
 
   return $
     Just
-      RankInformation
-        { rankInfoId = gyRankId,
-          rankInfoBelt = intToBelt rankNumber,
-          rankInfoAchievedByProfileId = gyRankAchievedByProfileId,
-          rankInfoAwardedByProfileId = gyRankAwardedByProfileId,
-          rankInfoAchievementDate = timeFromPlutus rankAchievementDate
+      Rank
+        { rankId = gyRankId,
+          rankBelt = intToBelt rankNumber,
+          rankAchievedByProfileId = gyRankAchievedByProfileId,
+          rankAwardedByProfileId = gyRankAwardedByProfileId,
+          rankAchievementDate = timeFromPlutus rankAchievementDate
         }
 onchainRankToRankInformation (Onchain.Promotion {}) = return Nothing
 
-onchainPromotionToPromotionInformation :: (MonadError GYTxMonadException m) => Onchain.OnchainRank -> m (Maybe PromotionInformation)
+onchainPromotionToPromotionInformation :: (MonadError GYTxMonadException m) => Onchain.OnchainRank -> m (Maybe Promotion)
 onchainPromotionToPromotionInformation (Onchain.Promotion {..}) = do
   gyRankId <- assetClassFromPlutus' promotionId
   gyRankAchievedByProfileId <- assetClassFromPlutus' promotionAwardedTo
@@ -67,12 +68,12 @@ onchainPromotionToPromotionInformation (Onchain.Promotion {..}) = do
 
   return $
     Just
-      PromotionInformation
-        { promotionInfoId = gyRankId,
-          promotionInfoBelt = intToBelt promotionRankNumber,
-          promotionInfoAchievedByProfileId = gyRankAchievedByProfileId,
-          promotionInfoAwardedByProfileId = gyRankAwardedByProfileId,
-          promotionInfoAchievementDate = timeFromPlutus promotionAchievementDate
+      Promotion
+        { promotionId = gyRankId,
+          promotionBelt = intToBelt promotionRankNumber,
+          promotionAchievedByProfileId = gyRankAchievedByProfileId,
+          promotionAwardedByProfileId = gyRankAwardedByProfileId,
+          promotionAchievementDate = timeFromPlutus promotionAchievementDate
         }
 onchainPromotionToPromotionInformation (Onchain.Rank {}) = return Nothing
 

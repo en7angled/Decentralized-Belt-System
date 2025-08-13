@@ -105,7 +105,7 @@
         "PractitionerProfileInformation": {
             "properties": {
                 "current_rank": {
-                    "$ref": "#/definitions/RankInformation"
+                    "$ref": "#/definitions/Rank"
                 },
                 "description": {
                     "type": "string"
@@ -121,7 +121,7 @@
                 },
                 "previous_ranks": {
                     "items": {
-                        "$ref": "#/definitions/RankInformation"
+                        "$ref": "#/definitions/Rank"
                     },
                     "type": "array"
                 }
@@ -136,144 +136,7 @@
             ],
             "type": "object"
         },
-        "ProfileActionType": {
-            "maxProperties": 1,
-            "minProperties": 1,
-            "properties": {
-                "AcceptPromotionAction": {
-                    "properties": {
-                        "promotionId": {
-                            "$ref": "#/definitions/GYAssetClass"
-                        }
-                    },
-                    "required": [
-                        "promotionId"
-                    ],
-                    "type": "object"
-                },
-                "CreateProfileWithRankAction": {
-                    "properties": {
-                        "belt": {
-                            "$ref": "#/definitions/BJJBelt"
-                        },
-                        "creationDate": {
-                            "description": "This is the posix time in ISO8601 format.",
-                            "example": "1970-01-01T00:00:00Z",
-                            "format": "ISO8601",
-                            "type": "string"
-                        },
-                        "profileData": {
-                            "$ref": "#/definitions/ProfileData"
-                        },
-                        "profileType": {
-                            "$ref": "#/definitions/ProfileType"
-                        }
-                    },
-                    "required": [
-                        "profileData",
-                        "profileType",
-                        "creationDate",
-                        "belt"
-                    ],
-                    "type": "object"
-                },
-                "DeleteProfileAction": {
-                    "properties": {
-                        "profileId": {
-                            "$ref": "#/definitions/GYAssetClass"
-                        }
-                    },
-                    "required": [
-                        "profileId"
-                    ],
-                    "type": "object"
-                },
-                "InitProfileAction": {
-                    "properties": {
-                        "creationDate": {
-                            "description": "This is the posix time in ISO8601 format.",
-                            "example": "1970-01-01T00:00:00Z",
-                            "format": "ISO8601",
-                            "type": "string"
-                        },
-                        "profileData": {
-                            "$ref": "#/definitions/ProfileData"
-                        },
-                        "profileType": {
-                            "$ref": "#/definitions/ProfileType"
-                        }
-                    },
-                    "required": [
-                        "profileData",
-                        "profileType",
-                        "creationDate"
-                    ],
-                    "type": "object"
-                },
-                "PromoteProfileAction": {
-                    "properties": {
-                        "achievementDate": {
-                            "description": "This is the posix time in ISO8601 format.",
-                            "example": "1970-01-01T00:00:00Z",
-                            "format": "ISO8601",
-                            "type": "string"
-                        },
-                        "promotedBelt": {
-                            "$ref": "#/definitions/BJJBelt"
-                        },
-                        "promotedByProfileId": {
-                            "$ref": "#/definitions/GYAssetClass"
-                        },
-                        "promotedProfileId": {
-                            "$ref": "#/definitions/GYAssetClass"
-                        }
-                    },
-                    "required": [
-                        "promotedProfileId",
-                        "promotedByProfileId",
-                        "achievementDate",
-                        "promotedBelt"
-                    ],
-                    "type": "object"
-                },
-                "UpdateProfileImageAction": {
-                    "properties": {
-                        "imageURI": {
-                            "type": "string"
-                        },
-                        "profileId": {
-                            "$ref": "#/definitions/GYAssetClass"
-                        }
-                    },
-                    "required": [
-                        "profileId",
-                        "imageURI"
-                    ],
-                    "type": "object"
-                }
-            },
-            "type": "object"
-        },
-        "ProfileData": {
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "image_uri": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            },
-            "required": [
-                "name",
-                "description",
-                "image_uri"
-            ],
-            "type": "object"
-        },
-        "ProfileSummary": {
+        "Profile": {
             "properties": {
                 "description": {
                     "type": "string"
@@ -300,6 +163,143 @@
             ],
             "type": "object"
         },
+        "ProfileActionType": {
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+                "AcceptPromotionAction": {
+                    "properties": {
+                        "promotion_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        }
+                    },
+                    "required": [
+                        "promotion_id"
+                    ],
+                    "type": "object"
+                },
+                "CreateProfileWithRankAction": {
+                    "properties": {
+                        "belt": {
+                            "$ref": "#/definitions/BJJBelt"
+                        },
+                        "creation_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        },
+                        "profile_data": {
+                            "$ref": "#/definitions/ProfileData"
+                        },
+                        "profile_type": {
+                            "$ref": "#/definitions/ProfileType"
+                        }
+                    },
+                    "required": [
+                        "profile_data",
+                        "profile_type",
+                        "creation_date",
+                        "belt"
+                    ],
+                    "type": "object"
+                },
+                "DeleteProfileAction": {
+                    "properties": {
+                        "profileIdentifier": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        }
+                    },
+                    "required": [
+                        "profileIdentifier"
+                    ],
+                    "type": "object"
+                },
+                "InitProfileAction": {
+                    "properties": {
+                        "creation_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        },
+                        "profile_data": {
+                            "$ref": "#/definitions/ProfileData"
+                        },
+                        "profile_type": {
+                            "$ref": "#/definitions/ProfileType"
+                        }
+                    },
+                    "required": [
+                        "profile_data",
+                        "profile_type",
+                        "creation_date"
+                    ],
+                    "type": "object"
+                },
+                "PromoteProfileAction": {
+                    "properties": {
+                        "achievement_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        },
+                        "promoted_belt": {
+                            "$ref": "#/definitions/BJJBelt"
+                        },
+                        "promoted_by_profile_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "promoted_profile_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        }
+                    },
+                    "required": [
+                        "promoted_profile_id",
+                        "promoted_by_profile_id",
+                        "achievement_date",
+                        "promoted_belt"
+                    ],
+                    "type": "object"
+                },
+                "UpdateProfileImageAction": {
+                    "properties": {
+                        "image_uri": {
+                            "type": "string"
+                        },
+                        "profile_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        }
+                    },
+                    "required": [
+                        "profile_id",
+                        "image_uri"
+                    ],
+                    "type": "object"
+                }
+            },
+            "type": "object"
+        },
+        "ProfileData": {
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name",
+                "description",
+                "image_uri"
+            ],
+            "type": "object"
+        },
         "ProfileType": {
             "enum": [
                 "Practitioner",
@@ -307,7 +307,7 @@
             ],
             "type": "string"
         },
-        "PromotionInformation": {
+        "Promotion": {
             "properties": {
                 "achieved_by_profile_id": {
                     "$ref": "#/definitions/GYAssetClass"
@@ -337,7 +337,7 @@
             ],
             "type": "object"
         },
-        "RankInformation": {
+        "Rank": {
             "properties": {
                 "achieved_by_profile_id": {
                     "$ref": "#/definitions/GYAssetClass"
@@ -520,7 +520,7 @@
                         "description": "",
                         "schema": {
                             "items": {
-                                "$ref": "#/definitions/RankInformation"
+                                "$ref": "#/definitions/Rank"
                             },
                             "type": "array"
                         }
@@ -842,7 +842,7 @@
                         "description": "",
                         "schema": {
                             "items": {
-                                "$ref": "#/definitions/ProfileSummary"
+                                "$ref": "#/definitions/Profile"
                             },
                             "type": "array"
                         }
@@ -1007,7 +1007,7 @@
                         "description": "",
                         "schema": {
                             "items": {
-                                "$ref": "#/definitions/PromotionInformation"
+                                "$ref": "#/definitions/Promotion"
                             },
                             "type": "array"
                         }

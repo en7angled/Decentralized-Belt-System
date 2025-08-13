@@ -13,7 +13,8 @@ import Data.Swagger
 import Data.Text hiding (length)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
-import DomainTypes.Profile.Types
+import DomainTypes.Core.Types
+import DomainTypes.Transfer.Types
 import GeniusYield.Imports
 import GeniusYield.Types hiding (title)
 import qualified Network.HTTP.Types as HttpTypes
@@ -29,12 +30,11 @@ import TxBuilding.Context (runQuery)
 import TxBuilding.Interactions
 import TxBuilding.Lookups (getOrganizationInformation, getPractiotionerInformation)
 import TxBuilding.Transactions
+import Types
 
 instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
   parseQueryParam = maybe (Left "Invalid belt") Right . parseBelt . T.unpack
-
-
 
 instance FromHttpApiData ProfileType where
   parseQueryParam :: Text -> Either Text ProfileType
@@ -97,7 +97,7 @@ mkOrder maybeOrderBy maybeOrder =
     _ -> Nothing
 
 mkPagination :: Maybe Int -> Maybe Int -> Maybe (Int, Int)
-mkPagination  = liftA2 (,)
+mkPagination = liftA2 (,)
 
 ------------------------------------------------------------------------------------------------
 
@@ -167,8 +167,8 @@ type Profiles =
         :> QueryParam "profile-type" ProfileType
         :> QueryParam' '[Optional] "name" Text
         :> QueryParam' '[Optional] "description" Text
-         :> QueryParam' '[Optional] "order_by" ProfilesOrderBy
-         :> QueryParam' '[Optional] "order" SortOrder
+        :> QueryParam' '[Optional] "order_by" ProfilesOrderBy
+        :> QueryParam' '[Optional] "order" SortOrder
         :> Get '[JSON] [Profile]
     )
     :<|>
@@ -249,9 +249,9 @@ type Promotions =
       :> QueryParams "awarded_by" ProfileRefAC
       :> QueryParam' '[Optional] "from" GYTime
       :> QueryParam' '[Optional] "to" GYTime
-         :> QueryParam' '[Optional] "order_by" PromotionsOrderBy
-         :> QueryParam' '[Optional] "order" SortOrder
-      :> Get '[JSON] [PromotionInformation]
+      :> QueryParam' '[Optional] "order_by" PromotionsOrderBy
+      :> QueryParam' '[Optional] "order" SortOrder
+      :> Get '[JSON] [Promotion]
   )
     :<|>
     -- Get pending promotions count endpoint
@@ -270,7 +270,7 @@ type Promotions =
         :> Get '[JSON] Int
     )
 
-handleGetPendingPromotions :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe PromotionsOrderBy -> Maybe SortOrder -> AppMonad [PromotionInformation]
+handleGetPendingPromotions :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe PromotionsOrderBy -> Maybe SortOrder -> AppMonad [Promotion]
 handleGetPendingPromotions limit offset profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder =
   getPromotions
     (mkPagination limit offset)
@@ -287,13 +287,15 @@ handleGetPendingPromotions limit offset profiles belt achieved_by awarded_by fro
 
 handleGetPendingPromotionsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> AppMonad Int
 handleGetPendingPromotionsCount _ _ profiles belt achieved_by awarded_by from to = do
-  let maybeFilter = Just PromotionFilter
-        { promotionFilterId = nonEmpty profiles,
-          promotionFilterBelt = nonEmpty belt,
-          promotionFilterAchievedByProfileId = nonEmpty achieved_by,
-          promotionFilterAwardedByProfileId = nonEmpty awarded_by,
-          promotionFilterAchievementDateInterval = (from, to)
-        }
+  let maybeFilter =
+        Just
+          PromotionFilter
+            { promotionFilterId = nonEmpty profiles,
+              promotionFilterBelt = nonEmpty belt,
+              promotionFilterAchievedByProfileId = nonEmpty achieved_by,
+              promotionFilterAwardedByProfileId = nonEmpty awarded_by,
+              promotionFilterAchievementDateInterval = (from, to)
+            }
   getPromotionsCount maybeFilter
 
 promotionsServer :: ServerT Promotions AppMonad
@@ -320,9 +322,9 @@ type Belts =
       :> QueryParams "awarded_by" ProfileRefAC
       :> QueryParam' '[Optional] "from" GYTime
       :> QueryParam' '[Optional] "to" GYTime
-         :> QueryParam' '[Optional] "order_by" RanksOrderBy
-         :> QueryParam' '[Optional] "order" SortOrder
-      :> Get '[JSON] [RankInformation]
+      :> QueryParam' '[Optional] "order_by" RanksOrderBy
+      :> QueryParam' '[Optional] "order" SortOrder
+      :> Get '[JSON] [Rank]
   )
     :<|>
     -- Get belts count endpoint
@@ -349,7 +351,7 @@ type Belts =
         :> Get '[JSON] [(BJJBelt, Int)]
     )
 
-handleGetBelts :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> AppMonad [RankInformation]
+handleGetBelts :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> AppMonad [Rank]
 handleGetBelts (Just limit) (Just offset) profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder =
   getRanks
     (Just (limit, offset))

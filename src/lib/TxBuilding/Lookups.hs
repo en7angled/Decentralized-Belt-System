@@ -1,7 +1,9 @@
 module TxBuilding.Lookups where
 
 import Data.Maybe
-import DomainTypes.Profile.Types
+import DomainTypes.Core.Actions
+import DomainTypes.Core.Types
+import DomainTypes.Transfer.Types
 import GeniusYield.TxBuilder
 import GeniusYield.Types (GYNetworkId, GYUTxO, filterUTxOs, utxoValue, utxosToList)
 import GeniusYield.Types.Address
@@ -69,8 +71,8 @@ getProfileRanks profileRef = do
     getRankList rankRef = do
       (rankData, _rankValue) <- getRankStateDataAndValue rankRef
       case rankData of
-        Promotion {} -> throwError (GYApplicationException WrongRankDataType)
-        Rank {} -> case rankPreviousRankId rankData of
+        Onchain.Promotion {} -> throwError (GYApplicationException WrongRankDataType)
+        Onchain.Rank {} -> case rankPreviousRankId rankData of
           Nothing -> return [rankData]
           Just previousRankId -> do
             gyPreviousRankId <- assetClassFromPlutus' previousRankId
@@ -83,12 +85,12 @@ getAllOnchainValidRanks nid = do
   allDatums <- fmap snd <$> utxosAtAddressesWithDatums [ranksValidatorAddress]
   return $ mapMaybe rankDatumFromDatum (catMaybes allDatums)
 
-getAllPromotions :: (GYTxQueryMonad m) => GYNetworkId -> m [PromotionInformation]
+getAllPromotions :: (GYTxQueryMonad m) => GYNetworkId -> m [Promotion]
 getAllPromotions nid = do
   onChainRanks <- getAllOnchainValidRanks nid
   catMaybes <$> mapM onchainPromotionToPromotionInformation onChainRanks
 
-getAllRanks :: (GYTxQueryMonad m) => GYNetworkId -> m [RankInformation]
+getAllRanks :: (GYTxQueryMonad m) => GYNetworkId -> m [Rank]
 getAllRanks nid = do
   onChainRanks <- getAllOnchainValidRanks nid
   catMaybes <$> mapM onchainRankToRankInformation onChainRanks

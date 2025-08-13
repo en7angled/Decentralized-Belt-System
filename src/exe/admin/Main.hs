@@ -3,7 +3,9 @@ module Main where
 import Data.Char (toLower)
 import Data.Text qualified as T
 import Data.Word (Word8)
-import DomainTypes.Profile.Types (ProfileActionType (..), ProfileData (..), ProfileType (..))
+import DomainTypes.Core.Actions (ProfileActionType (..), ProfileData (..))
+import DomainTypes.Core.Types (ProfileType (..))
+import DomainTypes.Transfer.Types
 import GeniusYield.GYConfig
 import GeniusYield.Types
 import Onchain.BJJ ( BJJBelt(..), parseBelt )
