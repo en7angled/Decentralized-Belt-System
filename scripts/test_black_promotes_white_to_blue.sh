@@ -4,6 +4,7 @@
 # This script reproduces the core part of blackPromotesWhiteToBlue test from UnitTests.hs
 
 set -e # Exit on any error
+set -o pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -29,9 +30,26 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if the BJJ CLI is available
-if ! command -v admin &>/dev/null; then
-    print_error "BJJ CLI (admin) not found. Please make sure it's built and available in PATH."
+# Resolve repo root (script may be run from anywhere)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Determine how to run the admin CLI
+if command -v admin >/dev/null 2>&1; then
+    ADMIN="admin"
+else
+    ADMIN="cabal run admin --"
+    print_warning "'admin' executable not found in PATH. Falling back to 'cabal run admin --' (will build if needed)."
+fi
+
+# Pre-flight checks for required files
+if [ ! -f "$REPO_ROOT/config/config_atlas.json" ]; then
+    print_error "Missing $REPO_ROOT/config/config_atlas.json"
+    exit 1
+fi
+
+if [ ! -f "$REPO_ROOT/operation.prv" ]; then
+    print_error "Missing $REPO_ROOT/operation.prv (signing key)."
     exit 1
 fi
 
@@ -40,8 +58,8 @@ print_info "This script reproduces the core part of blackPromotesWhiteToBlue tes
 
 # Step 1: Deploy reference scripts (if not already deployed)
 print_info "Step 1: Deploying reference scripts..."
-if [ ! -f "config_bjj_validators.json" ]; then
-    admin deploy-reference-scripts
+if [ ! -f "$REPO_ROOT/config/config_bjj_validators.json" ]; then
+    (cd "$REPO_ROOT" && $ADMIN deploy-reference-scripts)
     print_success "Reference scripts deployed successfully"
 else
     print_info "Reference scripts already deployed (config_bjj_validators.json exists)"
@@ -57,20 +75,20 @@ print_info "Master profile creation time: $MASTER_PROFILE_CREATION_TIME"
 
 # Step 2: Create master profile with Black belt
 print_info "Step 2: Creating master profile with Black belt..."
-MASTER_PROFILE_ID=$(admin create-profile-with-rank \
+MASTER_PROFILE_ID=$(cd "$REPO_ROOT" && $ADMIN create-profile-with-rank \
     --name "Master" \
     --description "Master is a master" \
     --image-uri "https://github.com/en7angled/Decentralized-Belt-System/blob/main/out/puml/CARDANO-BJJ-BANNER.jpeg?raw=true" \
     --practitioner \
     --posix "$MASTER_PROFILE_CREATION_TIME" \
-    --belt black \
+    --belt Black \
     --output-id | tee /dev/tty | tail -n 1)
 
 print_success "Master profile created with ID: $MASTER_PROFILE_ID"
 
 # Step 3: Create student profile with White belt (initially)
 print_info "Step 3: Creating student profile with White belt..."
-STUDENT_PROFILE_ID=$(admin init-profile \
+STUDENT_PROFILE_ID=$(cd "$REPO_ROOT" && $ADMIN init-profile \
     --name "John Doe" \
     --description "John Doe is a student" \
     --image-uri "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk" \
@@ -82,18 +100,18 @@ print_success "Student profile created with ID: $STUDENT_PROFILE_ID"
 
 # Step 4: Promote student from White to Blue belt
 print_info "Step 4: Promoting student from White to Blue belt..."
-BLUE_PROMOTION_ID=$(admin promote-profile \
+BLUE_PROMOTION_ID=$(cd "$REPO_ROOT" && $ADMIN promote-profile \
     --promoted-profile-id "$STUDENT_PROFILE_ID" \
     --promoted-by-profile-id "$MASTER_PROFILE_ID" \
     --posix "$BLUE_PROMOTION_TIME" \
-    --belt blue \
+    --belt Blue \
     --output-id | tee /dev/tty | tail -n 1)
 
 print_success "Blue belt promotion created with ID: $BLUE_PROMOTION_ID"
 
 # Step 5: Accept the Blue belt promotion
 print_info "Step 5: Accepting Blue belt promotion..."
-admin accept-promotion --asset-class "$BLUE_PROMOTION_ID"
+(cd "$REPO_ROOT" && $ADMIN accept-promotion --asset-class "$BLUE_PROMOTION_ID")
 print_success "Blue belt promotion accepted"
 
 print_success "Test completed successfully!"
