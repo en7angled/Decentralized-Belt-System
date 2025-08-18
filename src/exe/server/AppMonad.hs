@@ -21,6 +21,7 @@ import Servant
 import TxBuilding.Context
 import TxBuilding.Lookups
 import Types
+import qualified Data.Text as Text
 
 -- | Apply optional pagination limits to a list in a total and generic way.
 -- Negative limits or offsets are clamped to 0. If the list is shorter than
@@ -160,7 +161,7 @@ instance ProfilesQueryMonad AppMonad where
               Just pt -> Prelude.filter ((== pt) . profileType)
               Nothing -> id
             nameFilter = case profileFilterName of
-              Just name -> Prelude.filter ((== name) . profileName)
+              Just name -> Prelude.filter ((name `Text.isInfixOf`) . profileName)
               Nothing -> id
             descriptionFilter = case profileFilterDescription of
               Just description -> Prelude.filter ((== description) . profileDescription)
