@@ -53,10 +53,12 @@ promotionTests =
   where
     blackPromotesWhiteToBlue :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
     blackPromotesWhiteToBlue TestInfo {..} = do
+      waitNSlots_ 1000
       s <- slotOfCurrentBlock
       t <- slotToBeginTime s
-      let creationDate = timeFromPOSIX $ timeToPOSIX t - 1
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
       txBuildingContext <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
       (gyTxId, masterAC) <-
         bjjInteraction
           txBuildingContext

@@ -4,10 +4,9 @@
 {-# LANGUAGE TypeOperators #-}
 
 module KupoClient
+  where
 
-where
-
-import Data.Aeson (FromJSON (..), Value, withObject, (.:), (.:?))
+import Data.Aeson (FromJSON (..), ToJSON (..), Value, withObject, (.:), (.:?))
 import qualified Data.Aeson as Aeson
 import qualified Data.Map.Strict as Map
 import Data.Proxy (Proxy (..))
@@ -88,7 +87,7 @@ instance FromJSON KupoMatch where
       <*> o .: "address"
       <*> o .: "value"
       <*> o .:? "datum_hash"
-      <*> o .: "datum_type"
+      <*> o .:? "datum_type"
       <*> o .:? "datum"
       <*> o .:? "script_hash"
       <*> o .: "created_at"
@@ -180,3 +179,43 @@ parseKupoBaseUrl url =
   case parseBaseUrl url of
     Left err -> fail ("Invalid KUPO_URL: " <> show err)
     Right bu -> pure bu
+
+--------------------------------------------------------------------------------
+-- Checkpoints API
+
+--------------------------------------------------------------------------------
+
+-- | A checkpoint is a chain point identified by slot and header hash.
+data KupoCheckpoint = KupoCheckpoint
+  { ck_slot_no :: Integer,
+    ck_header_hash :: Text
+  }
+  deriving (Show, Generic)
+
+instance FromJSON KupoCheckpoint where
+  parseJSON = withObject "KupoCheckpoint" $ \o ->
+    KupoCheckpoint
+      <$> o .: "slot_no"
+      <*> o .: "header_hash"
+
+instance ToJSON KupoCheckpoint where
+  toJSON (KupoCheckpoint s h) =
+    Aeson.object ["slot_no" Aeson..= s, "header_hash" Aeson..= h]
+
+type CheckpointsListAPI =
+  "v1" :> "checkpoints" :> Get '[JSON] [KupoCheckpoint]
+
+checkpointsListClient :: ClientM [KupoCheckpoint]
+checkpointsListClient = client (Proxy :: Proxy CheckpointsListAPI)
+
+-- Helpers using a provided ClientEnv
+kupoCheckpointsList :: ClientEnv -> IO (Either ClientError [KupoCheckpoint])
+kupoCheckpointsList = runClientM checkpointsListClient 
+
+-- Convenience versions that build their own ClientEnv
+runKupoCheckpointsList :: String -> IO (Either ClientError [KupoCheckpoint])
+runKupoCheckpointsList baseUrlStr = do
+  baseUrl <- parseKupoBaseUrl baseUrlStr
+  manager <- newManager tlsManagerSettings
+  let env = mkClientEnv manager baseUrl
+  kupoCheckpointsList env

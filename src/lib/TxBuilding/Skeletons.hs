@@ -78,13 +78,13 @@ isValidBetween s1 s2 =
 safeEraTime :: Natural
 safeEraTime = 25920 -- ~7h in seconds (era safe zone)
 
-txIsValidByDDL :: (GYTxQueryMonad m) => POSIXTime -> m (GYTxSkeleton 'PlutusV3)
-txIsValidByDDL ddl = do
-  now <- slotOfCurrentBlock
-  afterSafeEraSlot <- advanceSlot' now safeEraTime
-  afterSafeEraTime <- pPOSIXTimeFromGYSlot afterSafeEraSlot
-  validUntil <- gySlotFromPOSIXTime (min ddl afterSafeEraTime)
-  return $ isValidBetween now validUntil
+-- txIsValidByDDL :: (GYTxQueryMonad m) => POSIXTime -> m (GYTxSkeleton 'PlutusV3)
+-- txIsValidByDDL ddl = do
+--   now <- slotOfCurrentBlock
+--   afterSafeEraSlot <- advanceSlot' now safeEraTime
+--   afterSafeEraTime <- pPOSIXTimeFromGYSlot afterSafeEraSlot
+--   validUntil <- gySlotFromPOSIXTime (min ddl afterSafeEraTime)
+--   return $ isValidBetween now validUntil
 
 txIsValidForSafeEra :: (GYTxQueryMonad m) => m (GYTxSkeleton 'PlutusV3)
 txIsValidForSafeEra = do

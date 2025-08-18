@@ -16,7 +16,7 @@ import qualified PlutusLedgerApi.V3.Tx as V3
 import TxBuilding.Context (DeployedScriptsContext (..))
 import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue)
 import TxBuilding.Skeletons
-import TxBuilding.Utils
+
 import TxBuilding.Validators
 
 
@@ -49,8 +49,8 @@ createProfileWithRankTX ::
   BJJBelt ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 createProfileWithRankTX recipient metadata profileType creationDate belt = do
-  creationDateSlot <- gySlotFromPOSIXTime (creationDate + 1000)
-  let isAfterCreationDate = isInvalidBefore creationDateSlot
+  now <- slotOfCurrentBlock
+  let isInvalidBeforeNow = isInvalidBefore now
 
   mintingPolicyRef <- asks mintingPolicyRef
   seedTxOutRef <- someUTxOWithoutRefScript
@@ -99,7 +99,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   return
     ( mconcat
         [ isSpendingSeedUTxO,
-          isAfterCreationDate,
+          isInvalidBeforeNow,
           isMintingProfileCIP68UserAndRef,
           isPayingProfileUserNFT,
           isLockingProfileState,

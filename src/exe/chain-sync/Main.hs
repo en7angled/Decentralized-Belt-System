@@ -27,14 +27,14 @@ import System.Environment (lookupEnv)
 import Data.Foldable (toList)
 import GeniusYield.Types (GYNetworkId (..))
 import GeniusYield.Types.Address (addressFromScriptHash, addressToText)
-import TxBuilding.Validators 
+import TxBuilding.Validators
 import qualified Data.ByteString.Base16 as B16
 import PlutusLedgerApi.V1.Value (unCurrencySymbol)
 import PlutusTx.Builtins (fromBuiltin)
 import TxBuilding.Validators (mintingPolicyGY)
 import GeniusYield.Types (mintingPolicyCurrencySymbol)
 import qualified Data.Vector as V
-import KupoClient (KupoMatch(..), runKupoMatches)
+import KupoClient (KupoMatch(..), runKupoMatches, runKupoCheckpointsList)
 import KupoAltas (AtlasMatch(..), kupoMatchToAtlasMatch)
 
 main :: IO ()
@@ -47,17 +47,19 @@ main = do
             bytes = fromBuiltin (unCurrencySymbol cs)
          in TE.decodeUtf8 (B16.encode bytes)
 
-  putStrLn ("Querying Kupo (address pattern) ...")
+  let matchPattern = policyHexText <> ".*"
+  putStrLn "Querying Kupo (address pattern) ..."
   putStrLn ("Base URL: " <> kupoUrl)
-  putStrLn ("Pattern: " <> T.unpack ranksAddrText)
+  putStrLn ("Pattern: " <> T.unpack matchPattern)
+  putStrLn ("Policy ID: " <> T.unpack policyHexText)
   res <- runKupoMatches
            kupoUrl
-           ranksAddrText
-           Nothing --(Just policyHexText) -- policy_id
+           matchPattern
+           (Just policyHexText) -- policy_id
            Nothing              -- asset_name
            Nothing              -- transaction_id
            Nothing              -- output_index
-           Nothing Nothing      -- created_after/before
+           (Just "88864369") Nothing      -- created_after/before
            Nothing Nothing      -- spent_after/before
            (Just "most_recent_first") -- order
            False False True     -- spent, unspent, resolve_hashes
@@ -66,3 +68,10 @@ main = do
     Right matches -> do
       putStrLn ("Kupo returned matches: " <> show (length matches))
       mapM_ (print) $  kupoMatchToAtlasMatch <$> matches
+
+  resC <- runKupoCheckpointsList kupoUrl
+  case resC of
+    Left err -> putStrLn ("Kupo client error: " <> show err)
+    Right checkpoints -> do
+      putStrLn ("Kupo returned checkpoints: " <> show (length checkpoints))
+      mapM_ (print) $  checkpoints
