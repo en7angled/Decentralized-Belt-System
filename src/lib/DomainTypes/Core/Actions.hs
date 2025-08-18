@@ -52,7 +52,7 @@ data ProfileActionType
         image_uri :: Text
       }
   | DeleteProfileAction
-      { profileIdentifier :: ProfileRefAC
+      { profile_id :: ProfileRefAC
       }
   | PromoteProfileAction
       { promoted_profile_id :: ProfileRefAC,
