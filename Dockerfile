@@ -6,12 +6,12 @@ FROM --platform=$TARGETPLATFORM benz0li/ghc-musl:9.6.6 AS builder
 ARG TARGETARCH
 
 # Install common dependencies
-RUN apk add --no-cache bash curl ca-certificates git pkgconfig build-base \
+RUN apk add  bash curl ca-certificates git pkgconfig build-base \
     automake autoconf libtool gmp-dev zlib-dev musl-dev musl-utils
 
 
 # Cardano Dependencies - Alpine equivalent
-RUN apk add --no-cache \
+RUN apk add  \
     curl \
     ca-certificates \
     automake \
@@ -39,7 +39,7 @@ RUN apk add --no-cache \
     autoconf \
     libtool
 
-RUN apk add --no-cache \
+RUN apk add  \
     postgresql-libs \
     ncurses-libs \
     libsodium \
@@ -81,7 +81,7 @@ RUN git clone https://github.com/supranational/blst && \
     /usr/lib/libblst.a  
 
 # PostgreSQL repository setup for Alpine
-RUN apk add --no-cache postgresql-client postgresql-dev
+RUN apk add  postgresql-client postgresql-dev
 
 
 
@@ -120,12 +120,12 @@ RUN cabal install server --enable-executable-static --overwrite-policy=always --
 FROM --platform=$TARGETPLATFORM alpine:3.20 AS runtime
 
 # Install common dependencies
-RUN apk add --no-cache bash curl ca-certificates git pkgconfig build-base \
+RUN apk add  bash curl ca-certificates git pkgconfig build-base \
     automake autoconf libtool gmp-dev zlib-dev musl-dev musl-utils
 
 
 # Cardano Dependencies - Alpine equivalent
-RUN apk add --no-cache \
+RUN apk add  \
     curl \
     ca-certificates \
     automake \
@@ -153,7 +153,7 @@ RUN apk add --no-cache \
     autoconf \
     libtool
 
-RUN apk add --no-cache \
+RUN apk add  \
     postgresql-libs \
     ncurses-libs \
     libsodium \
@@ -163,7 +163,7 @@ RUN apk add --no-cache \
     libgcc
 
 
-RUN apk add --no-cache postgresql-client postgresql-dev
+RUN apk add  postgresql-client postgresql-dev
 
 # Build and install libsodium 1.0.19 (for libsodium.so.26)
 RUN curl -LO https://download.libsodium.org/libsodium/releases/libsodium-1.0.19.tar.gz && \

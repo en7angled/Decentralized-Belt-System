@@ -5,7 +5,9 @@ module TestRuns where
 
 import Control.Monad.Reader
 import Data.Foldable.Extra
-import DomainTypes.Profile.Types (ProfileActionType, ProfileRefAC, PractitionerProfileInformation, OrganizationProfileInformation)
+import DomainTypes.Core.Actions
+import DomainTypes.Core.Types
+import DomainTypes.Transfer.Types
 import GHC.Stack
 import GeniusYield.Test.Clb (sendSkeleton')
 import GeniusYield.Test.Utils

@@ -105,7 +105,7 @@
         "PractitionerProfileInformation": {
             "properties": {
                 "current_rank": {
-                    "$ref": "#/definitions/RankInformation"
+                    "$ref": "#/definitions/Rank"
                 },
                 "description": {
                     "type": "string"
@@ -121,7 +121,7 @@
                 },
                 "previous_ranks": {
                     "items": {
-                        "$ref": "#/definitions/RankInformation"
+                        "$ref": "#/definitions/Rank"
                     },
                     "type": "array"
                 }
@@ -136,18 +136,45 @@
             ],
             "type": "object"
         },
+        "Profile": {
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/ProfileType"
+                }
+            },
+            "required": [
+                "id",
+                "name",
+                "description",
+                "image_uri",
+                "type"
+            ],
+            "type": "object"
+        },
         "ProfileActionType": {
             "maxProperties": 1,
             "minProperties": 1,
             "properties": {
                 "AcceptPromotionAction": {
                     "properties": {
-                        "promotionId": {
+                        "promotion_id": {
                             "$ref": "#/definitions/GYAssetClass"
                         }
                     },
                     "required": [
-                        "promotionId"
+                        "promotion_id"
                     ],
                     "type": "object"
                 },
@@ -156,98 +183,98 @@
                         "belt": {
                             "$ref": "#/definitions/BJJBelt"
                         },
-                        "creationDate": {
+                        "creation_date": {
                             "description": "This is the posix time in ISO8601 format.",
                             "example": "1970-01-01T00:00:00Z",
                             "format": "ISO8601",
                             "type": "string"
                         },
-                        "profileData": {
+                        "profile_data": {
                             "$ref": "#/definitions/ProfileData"
                         },
-                        "profileType": {
+                        "profile_type": {
                             "$ref": "#/definitions/ProfileType"
                         }
                     },
                     "required": [
-                        "profileData",
-                        "profileType",
-                        "creationDate",
+                        "profile_data",
+                        "profile_type",
+                        "creation_date",
                         "belt"
                     ],
                     "type": "object"
                 },
                 "DeleteProfileAction": {
                     "properties": {
-                        "profileId": {
+                        "profileIdentifier": {
                             "$ref": "#/definitions/GYAssetClass"
                         }
                     },
                     "required": [
-                        "profileId"
+                        "profileIdentifier"
                     ],
                     "type": "object"
                 },
                 "InitProfileAction": {
                     "properties": {
-                        "creationDate": {
+                        "creation_date": {
                             "description": "This is the posix time in ISO8601 format.",
                             "example": "1970-01-01T00:00:00Z",
                             "format": "ISO8601",
                             "type": "string"
                         },
-                        "profileData": {
+                        "profile_data": {
                             "$ref": "#/definitions/ProfileData"
                         },
-                        "profileType": {
+                        "profile_type": {
                             "$ref": "#/definitions/ProfileType"
                         }
                     },
                     "required": [
-                        "profileData",
-                        "profileType",
-                        "creationDate"
+                        "profile_data",
+                        "profile_type",
+                        "creation_date"
                     ],
                     "type": "object"
                 },
                 "PromoteProfileAction": {
                     "properties": {
-                        "achievementDate": {
+                        "achievement_date": {
                             "description": "This is the posix time in ISO8601 format.",
                             "example": "1970-01-01T00:00:00Z",
                             "format": "ISO8601",
                             "type": "string"
                         },
-                        "promotedBelt": {
+                        "promoted_belt": {
                             "$ref": "#/definitions/BJJBelt"
                         },
-                        "promotedByProfileId": {
+                        "promoted_by_profile_id": {
                             "$ref": "#/definitions/GYAssetClass"
                         },
-                        "promotedProfileId": {
+                        "promoted_profile_id": {
                             "$ref": "#/definitions/GYAssetClass"
                         }
                     },
                     "required": [
-                        "promotedProfileId",
-                        "promotedByProfileId",
-                        "achievementDate",
-                        "promotedBelt"
+                        "promoted_profile_id",
+                        "promoted_by_profile_id",
+                        "achievement_date",
+                        "promoted_belt"
                     ],
                     "type": "object"
                 },
                 "UpdateProfileImageAction": {
                     "properties": {
-                        "imageURI": {
+                        "image_uri": {
                             "type": "string"
                         },
-                        "profileId": {
+                        "profile_id": {
                             "$ref": "#/definitions/GYAssetClass"
                         }
                     },
                     "required": [
-                        "profileId",
-                        "imageURI"
+                        "profile_id",
+                        "image_uri"
                     ],
                     "type": "object"
                 }
@@ -280,7 +307,7 @@
             ],
             "type": "string"
         },
-        "PromotionInformation": {
+        "Promotion": {
             "properties": {
                 "achieved_by_profile_id": {
                     "$ref": "#/definitions/GYAssetClass"
@@ -310,7 +337,7 @@
             ],
             "type": "object"
         },
-        "RankInformation": {
+        "Rank": {
             "properties": {
                 "achieved_by_profile_id": {
                     "$ref": "#/definitions/GYAssetClass"
@@ -460,6 +487,29 @@
                         "name": "to",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "belt",
+                            "achieved_by",
+                            "awarded_by",
+                            "date"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "order",
+                        "required": false,
+                        "type": "string"
                     }
                 ],
                 "produces": [
@@ -470,13 +520,13 @@
                         "description": "",
                         "schema": {
                             "items": {
-                                "$ref": "#/definitions/RankInformation"
+                                "$ref": "#/definitions/Rank"
                             },
                             "type": "array"
                         }
                     },
                     "400": {
-                        "description": "Invalid `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Belts"
@@ -710,6 +760,134 @@
                 "summary": "Get Practitioner Profile Information"
             }
         },
+        "/profiles": {
+            "get": {
+                "description": "Get Profiles",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
+                        "enum": [
+                            "Practitioner",
+                            "Organization"
+                        ],
+                        "in": "query",
+                        "name": "profile-type",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "name",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "description",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "name",
+                            "description",
+                            "type"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "order",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/Profile"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `order` or `order_by` or `description` or `name` or `profile-type` or `profile` or `offset` or `limit`"
+                    }
+                },
+                "summary": "Get Profiles"
+            }
+        },
+        "/profiles/count": {
+            "get": {
+                "description": "Get count of profiles by type",
+                "parameters": [
+                    {
+                        "enum": [
+                            "Practitioner",
+                            "Organization"
+                        ],
+                        "in": "query",
+                        "name": "profile-type",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `profile-type`"
+                    }
+                },
+                "summary": "Get Profiles Count"
+            }
+        },
         "/promotions": {
             "get": {
                 "description": "Get Pending Promotions",
@@ -796,6 +974,29 @@
                         "name": "to",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "belt",
+                            "achieved_by",
+                            "awarded_by",
+                            "date"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "order",
+                        "required": false,
+                        "type": "string"
                     }
                 ],
                 "produces": [
@@ -806,13 +1007,13 @@
                         "description": "",
                         "schema": {
                             "items": {
-                                "$ref": "#/definitions/PromotionInformation"
+                                "$ref": "#/definitions/Promotion"
                             },
                             "type": "array"
                         }
                     },
                     "400": {
-                        "description": "Invalid `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Pending Promotions"

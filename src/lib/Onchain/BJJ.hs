@@ -13,7 +13,7 @@ import Prelude qualified
 import Data.Aeson.Types
 import Data.Swagger
 import Data.String (IsString (..))
-import Data.Char (toLower)
+
 
 -------------------------------------------------------------------------------
 
@@ -48,9 +48,9 @@ instance IsString BJJBelt where
   fromString s = case parseBelt s of
     Just belt -> belt
     Nothing -> traceError "Invalid belt"
-  
+
 parseBelt :: Prelude.String -> Maybe BJJBelt
-parseBelt s = case map toLower s of
+parseBelt s = case s of
   "White" -> Just White
   "Blue" -> Just Blue
   "Purple" -> Just Purple
@@ -119,7 +119,7 @@ instance Eq BJJBelt where
 
 instance Prelude.Eq BJJBelt where
   (==) :: BJJBelt -> BJJBelt -> Bool
-  (==) = (==)
+  (==) x y = Prelude.fromEnum x Prelude.== Prelude.fromEnum y
 
 instance Ord BJJBelt where
   compare :: BJJBelt -> BJJBelt -> Ordering
@@ -127,7 +127,7 @@ instance Ord BJJBelt where
 
 instance Prelude.Ord BJJBelt where
   compare :: BJJBelt -> BJJBelt -> Ordering
-  compare = compare
+  compare x y = Prelude.compare (Prelude.fromEnum x) (Prelude.fromEnum y)
 
 
 instance Enum BJJBelt where
@@ -199,13 +199,13 @@ validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBel
  where
   generalRules =
     and
-      [ traceIfFalse "Master belt must be greater than the student's next belt" 
+      [ traceIfFalse "Master belt must be greater than the student's next belt"
         $ masterBelt > studentNextBelt
-      , traceIfFalse "Master belt date must be before the student's next belt date" 
+      , traceIfFalse "Master belt date must be before the student's next belt date"
         $ masterBeltDate < studentNextBeltDate
-      , traceIfFalse "Student's next belt must be greater than the student's current belt" 
+      , traceIfFalse "Student's next belt must be greater than the student's current belt"
         $ studentNextBelt > studentCurrentBelt
-      , traceIfFalse "Student Next belt date must be after the student's current belt date" 
+      , traceIfFalse "Student Next belt date must be after the student's current belt date"
         $ studentNextBeltDate > studentCurrentBeltDate
       , traceIfFalse "Time in the current belt must be greater than the minimum time for the next belt" $
          studentNextBeltDate - studentCurrentBeltDate > monthsToPosixTime (minMonthsForBelt studentCurrentBelt)

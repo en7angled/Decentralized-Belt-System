@@ -1,9 +1,11 @@
 module Main where
 
-import Data.Char (toLower)
+import Data.Char (toLower, toUpper)
 import Data.Text qualified as T
 import Data.Word (Word8)
-import DomainTypes.Profile.Types (ProfileActionType (..), ProfileData (..), ProfileType (..))
+import DomainTypes.Core.Actions (ProfileActionType (..), ProfileData (..))
+import DomainTypes.Core.Types (ProfileType (..))
+import DomainTypes.Transfer.Types
 import GeniusYield.GYConfig
 import GeniusYield.Types
 import Onchain.BJJ ( BJJBelt(..), parseBelt )
@@ -171,12 +173,25 @@ assetClassParser =
 bjjBeltParser :: Parser BJJBelt
 bjjBeltParser =
   option
-    (maybeReader parseBelt)
+    (maybeReader parseBeltFromCLI)
     ( long "belt"
         <> short 'b'
         <> metavar "BELT"
         <> help "BJJ belt type (white, blue, purple, brown, black, black1, black2, black3, black4, black5, black6, red-and-black, red-and-white, red, red10)"
     )
+
+-- Accept case-insensitive and hyphenated values: e.g., "black", "Red-And-Black" -> "Black", "RedAndBlack"
+parseBeltFromCLI :: String -> Maybe BJJBelt
+parseBeltFromCLI = parseBelt . concatMap capitalize . splitOnDash
+  where
+    splitOnDash :: String -> [String]
+    splitOnDash s = case break (== '-') s of
+      (chunk, []) -> [chunk]
+      (chunk, _ : rest) -> chunk : splitOnDash rest
+
+    capitalize :: String -> String
+    capitalize [] = []
+    capitalize (x : xs) = toUpper x : map toLower xs
 
 
 -- Output ID flag parser
@@ -292,8 +307,15 @@ executeCommand (Left pCtx) signKey cmd = case cmd of
     txBuildingCtx <- deployReferenceScripts pCtx signKey
     B.writeFile txBuldingContextFile (encode . toJSON $ txBuildingCtx)
     printGreen $ "Reference scripts deployed successfully! \n\t" <>  "File: " <> txBuldingContextFile
+  _ -> do
+    printYellow "No transaction building context found."
+    printYellow "Please run 'deploy-reference-scripts' first to set up the system."
 
 executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
+  DeployReferenceScripts -> do
+    printYellow "Transaction building context already exists, skipping deployment."
+  
+
   InitProfile args -> do
     printYellow "Initializing profile..."
     let actionType = initProfileToActionType args
@@ -343,6 +365,7 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     if cpwraOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
       else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
+
 
 main :: IO ()
 main = do

@@ -17,7 +17,6 @@ import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
 import TxBuilding.Exceptions (ProfileException (..))
 import Data.Text
-import Data.Aeson (FromJSON, decodeFileStrict)
 import System.Directory.Extra
 import Utils
 import qualified Data.Text.IO
@@ -82,13 +81,8 @@ readMnemonic content = do
       error err
     Right key -> return key
 
-decodeConfigFile :: (FromJSON a) => FilePath -> IO (Maybe a)
-decodeConfigFile path = do
-  fileExist <- doesFileExist path
-  if fileExist
-    then decodeFileStrict path 
-    else return Nothing
-    
+
+
 
 -- | Get inline datum and value from UTxO
 getInlineDatumAndValue :: GYUTxO -> Maybe (GYDatum, GYValue)

@@ -4,7 +4,7 @@
 module UnitTests where
 
 import Control.Monad
-import DomainTypes.Profile.Types
+import DomainTypes.Transfer.Types
 import GHC.Stack
 import GeniusYield.Test.Clb
 import GeniusYield.Test.Utils
@@ -16,6 +16,8 @@ import Test.Tasty
 import TestRuns (bjjInteraction, deployBJJValidators, getProfileAndRank, logPractitionerProfileInformation)
 import TxBuilding.Interactions
 import GeniusYield.Imports (ToJSON(..))
+import DomainTypes.Core.Types
+import DomainTypes.Core.Actions
 
 unitTests :: (HasCallStack) => TestTree
 unitTests =
@@ -25,16 +27,16 @@ unitTests =
 
 studentProfileData =
   ProfileData
-    { profileName = "John Doe",
-      profileDescription = "John Doe is a student",
-      profileImageURI = "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk"
+    { profileDataName = "John Doe",
+      profileDataDescription = "John Doe is a student",
+      profileDataImageURI = "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk"
     }
 
 masterProfileData =
   ProfileData
-    { profileName = "Master",
-      profileDescription = "Master is a master",
-      profileImageURI = "ipfs://Qmb3JXJHQxuReSUaH6rXAoP5oX9NRs6JmnRFGTj2RVhGwe"
+    { profileDataName = "Master",
+      profileDataDescription = "Master is a master",
+      profileDataImageURI = "ipfs://Qmb3JXJHQxuReSUaH6rXAoP5oX9NRs6JmnRFGTj2RVhGwe"
     }
 
 -- ------------------------------------------------------------------------------------------------
@@ -86,10 +88,10 @@ promotionTests =
           txBuildingContext
           (w1 testWallets)
           ( PromoteProfileAction
-              { promotedProfileId = studentAC,
-                promotedByProfileId = masterAC,
-                achievementDate = blueBeltDate,
-                promotedBelt = Blue
+              { promoted_profile_id = studentAC,
+                promoted_by_profile_id = masterAC,
+                achievement_date = blueBeltDate,
+                promoted_belt = Blue
               }
           )
           Nothing
@@ -110,10 +112,10 @@ promotionTests =
           txBuildingContext
           (w1 testWallets)
           ( PromoteProfileAction
-              { promotedProfileId = studentAC,
-                promotedByProfileId = masterAC,
-                achievementDate = purpleBeltDate,
-                promotedBelt = Purple
+              { promoted_profile_id = studentAC,
+                promoted_by_profile_id = masterAC,
+                achievement_date = purpleBeltDate,
+                promoted_belt = Purple
               }
           )
           Nothing

@@ -1,0 +1,74 @@
+# Git and version control
+.git/
+.gitignore
+.cz.toml
+
+# Development environment
+.vscode/
+.direnv/
+.envrc
+.justfile
+
+# Build artifacts and temporary files
+dist-newstyle/
+compiled/
+.cabal/
+.hie/
+result/
+result-*/
+out/
+
+# Documentation and diagrams
+docs/
+puml/
+*.md
+CHANGELOG.md
+README.md
+
+# Scripts (not needed in container)
+scripts/
+
+# IDE and editor files
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime and temporary files
+*.tmp
+*.temp
+*.pid
+
+# Sensitive files
+operation.prv
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Test files
+test/
+tests/
+
+# Haskell specific
+*.hi
+*.o
+*.a
+*.so
+*.dylib
+
+# Docker files (avoid recursive copying)
+Dockerfile*
+.dockerignore
