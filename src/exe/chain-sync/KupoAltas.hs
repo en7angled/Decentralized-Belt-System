@@ -4,8 +4,12 @@ module KupoAltas where
 
 import qualified Cardano.Api as C
 import qualified Cardano.Api.Shelley as C
+import qualified Data.Aeson as Aeson
+import qualified Data.Bifunctor
 import qualified Data.ByteString.Base16 as B16
+import qualified Data.Csv as Csv
 import Data.Either.Extra (maybeToEither)
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.String (fromString)
 import Data.Text (Text)
@@ -90,7 +94,7 @@ kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index
         amTransactionId = txId,
         amOutputIndex = output_index,
         amAddress = address,
-        amValue = mempty,
+        amValue = kupoValueToGYValue value,
         amDatum = datum,
         amScriptHash = decodeGYScriptHash <$> script_hash,
         amCreatedAt = createdSlot,
@@ -101,3 +105,14 @@ kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index
         amSpentAtInputIndex = amSpentAtInputIndex,
         amSpentAtRedeemer = amSpentWithRedeemer
       }
+
+kupoValueToGYValue :: KupoValue -> GYValue
+kupoValueToGYValue KupoValue {coins, assets} =
+  let listOfAssets = Map.toList assets
+      listOfAssetsGY = (GYLovelace, coins) : map (Data.Bifunctor.first toGYAssetClass) listOfAssets
+   in valueFromList listOfAssetsGY
+
+toGYAssetClass :: Text -> GYAssetClass
+toGYAssetClass assetName = case parseAssetClassWithSep '.' assetName of
+  Left err -> error $ "Invalid asset name: " <> show err
+  Right assetClass -> assetClass

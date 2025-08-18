@@ -206,12 +206,12 @@
                 },
                 "DeleteProfileAction": {
                     "properties": {
-                        "profileIdentifier": {
+                        "profile_id": {
                             "$ref": "#/definitions/GYAssetClass"
                         }
                     },
                     "required": [
-                        "profileIdentifier"
+                        "profile_id"
                     ],
                     "type": "object"
                 },

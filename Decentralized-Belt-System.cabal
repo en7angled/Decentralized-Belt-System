@@ -257,9 +257,11 @@ executable chain-sync
     , servant
     , servant-client
     , transformers
+    , cassava
   other-modules:
     KupoClient
     KupoAltas
+    Ingestion
 
   --- Cardano specific dependencies
   build-depends:

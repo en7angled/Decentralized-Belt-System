@@ -1,7 +1,7 @@
 {
     "coreProvider": {
-        "ogmiosUrl": "https://ogmios1f5422pcj93lszwckg23.preview-v6.ogmios-m1.demeter.run",
-        "kupoUrl": "https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run"
+        "maestroToken": "wsblV4K33cT3N3o9WYnJJP3MDGPADf7Q",
+        "turboSubmit": true
     },
     "networkId": "preview",
     "logging": [

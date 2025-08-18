@@ -131,3 +131,11 @@ rankDatumFromDatum :: GYDatum -> Maybe Onchain.OnchainRank
 rankDatumFromDatum gyDatum =
   fromBuiltinData (datumToPlutus' gyDatum)
 
+
+rankFromGYOutDatum :: GYOutDatum -> Maybe Onchain.OnchainRank
+rankFromGYOutDatum (GYOutDatumInline gyDatum) = rankDatumFromDatum gyDatum
+rankFromGYOutDatum _ = Nothing
+
+profileFromGYOutDatum :: GYOutDatum -> Maybe  (CIP68Datum Onchain.OnchainProfile)
+profileFromGYOutDatum (GYOutDatumInline gyDatum) = profileDatumFromDatum gyDatum
+profileFromGYOutDatum _ = Nothing

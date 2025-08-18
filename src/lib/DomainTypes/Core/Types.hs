@@ -117,6 +117,22 @@ data Promotion
 
 derivePersistFieldJSON "Promotion"
 
+instance Show Promotion where
+  show :: Promotion -> String
+  show (Promotion {..}) =
+    Prelude.init $
+      Prelude.unlines
+        [ "┌─────────────────────────────────────────────────────────────",
+          "│ Promotion: " <> stringFromJSON promotionBelt,
+          "│ ID: " <> stringFromJSON promotionId,
+          "│ Achieved by: " <> stringFromJSON promotionAchievedByProfileId,
+          "│ Awarded by: " <> stringFromJSON promotionAwardedByProfileId,
+          "│ Achievement Date: " <> stringFromJSON promotionAchievementDate,
+          "└─────────────────────────────────────────────────────────────"
+        ]
+
+
+
 instance ToSchema Promotion where
   declareNamedSchema = genericDeclareNamedSchema promotionSchemaOptions
     where
