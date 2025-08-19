@@ -260,7 +260,7 @@ executable chain-sync
     , cassava
   other-modules:
     KupoClient
-    KupoAltas
+    KupoAtlas
     Ingestion
 
   --- Cardano specific dependencies
