@@ -142,7 +142,7 @@ deleteProfileTX ::
   m (GYTxSkeleton 'PlutusV3)
 deleteProfileTX gyProfileRefAC recipient ownAddrs = do
   profilesScriptRef <- asks profilesValidatorRef
-  mintingPolicyRef <- asks profilesValidatorRef
+  mintingPolicyRef <- asks mintingPolicyRef
   (_plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyProfileRefAC
   let gySpendProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ DeleteProfile (assetClassToPlutus gyProfileRefAC)
   let gyBurnProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ BurnProfileId
