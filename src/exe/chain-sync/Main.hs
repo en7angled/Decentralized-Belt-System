@@ -32,7 +32,7 @@ import qualified Data.Vector as V
 import GeniusYield.Types (GYNetworkId (..), mintingPolicyCurrencySymbol)
 import GeniusYield.Types.Address (addressFromScriptHash, addressToText)
 import Ingestion
-import KupoAltas (AtlasMatch (..), kupoMatchToAtlasMatch)
+import KupoAtlas (AtlasMatch (..), kupoMatchToAtlasMatch)
 import KupoClient (KupoMatch (..), runKupoCheckpointsList, runKupoMatches)
 import PlutusLedgerApi.V1.Value (unCurrencySymbol)
 import PlutusTx.Builtins (fromBuiltin)

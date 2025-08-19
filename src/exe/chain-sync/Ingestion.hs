@@ -7,7 +7,7 @@ import DomainTypes.Core.Types
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import GeniusYield.Types.Address
-import KupoAltas
+import KupoAtlas
 import TxBuilding.Functors
 import TxBuilding.Utils
 import TxBuilding.Validators

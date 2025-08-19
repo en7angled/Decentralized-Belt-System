@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module KupoAltas where
+module KupoAtlas where
 
 import qualified Cardano.Api as C
 import qualified Cardano.Api.Shelley as C
