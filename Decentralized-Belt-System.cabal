@@ -253,15 +253,20 @@ executable chain-sync
     , vector
     , persistent
     , persistent-sqlite
+    , persistent-template
     , text
+    , time
     , servant
     , servant-client
     , transformers
     , cassava
+    , deriving-aeson
+    
   other-modules:
     KupoClient
     KupoAtlas
     Ingestion
+    Storage
 
   --- Cardano specific dependencies
   build-depends:

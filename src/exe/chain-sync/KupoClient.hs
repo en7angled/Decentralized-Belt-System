@@ -1,16 +1,17 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 
-module KupoClient
-  where
+module KupoClient where
 
 import Data.Aeson (FromJSON (..), ToJSON (..), Value, withObject, (.:), (.:?))
 import qualified Data.Aeson as Aeson
 import qualified Data.Map.Strict as Map
 import Data.Proxy (Proxy (..))
 import Data.Text (Text)
+import Database.Persist.TH
 import GHC.Generics (Generic)
 import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
@@ -30,6 +31,12 @@ instance FromJSON KupoValue where
       <$> o .: "coins"
       <*> o .: "assets"
 
+instance ToJSON KupoValue where
+  toJSON (KupoValue c as) =
+    Aeson.object ["coins" Aeson..= c, "assets" Aeson..= as]
+
+derivePersistFieldJSON "KupoValue"
+
 -- | Point representation for created_at / spent_at
 data CreatedAt = CreatedAt
   { slot_no :: Integer,
@@ -42,6 +49,15 @@ instance FromJSON CreatedAt where
     CreatedAt
       <$> o .: "slot_no"
       <*> o .: "header_hash"
+
+instance ToJSON CreatedAt where
+  toJSON (CreatedAt s h) =
+    Aeson.object
+      [ "slot_no" Aeson..= s,
+        "header_hash" Aeson..= h
+      ]
+
+derivePersistFieldJSON "CreatedAt"
 
 -- | Point representation for created_at / spent_at
 data SpentAt = SpentAt
@@ -61,6 +77,18 @@ instance FromJSON SpentAt where
       <*> o .: "transaction_id"
       <*> o .: "input_index"
       <*> o .: "redeemer"
+
+instance ToJSON SpentAt where
+  toJSON (SpentAt s h t i r) =
+    Aeson.object
+      [ "slot_no" Aeson..= s,
+        "header_hash" Aeson..= h,
+        "transaction_id" Aeson..= t,
+        "input_index" Aeson..= i,
+        "redeemer" Aeson..= r
+      ]
+
+derivePersistFieldJSON "SpentAt"
 
 -- | Complete representation of a Kupo match entry as returned by the Matches API.
 data KupoMatch = KupoMatch
@@ -93,6 +121,24 @@ instance FromJSON KupoMatch where
       <*> o .: "created_at"
       <*> o .:? "spent_at"
 
+instance ToJSON KupoMatch where
+  toJSON (KupoMatch txIndex txId outIndex addr value datumHash datumType datum scriptHash createdAt spentAt) =
+    Aeson.object
+      [ "transaction_index" Aeson..= txIndex,
+        "transaction_id" Aeson..= txId,
+        "output_index" Aeson..= outIndex,
+        "address" Aeson..= addr,
+        "value" Aeson..= value,
+        "datum_hash" Aeson..= datumHash,
+        "datum_type" Aeson..= datumType,
+        "datum" Aeson..= datum,
+        "script_hash" Aeson..= scriptHash,
+        "created_at" Aeson..= createdAt,
+        "spent_at" Aeson..= spentAt
+      ]
+
+derivePersistFieldJSON "KupoMatch"
+
 -- | Kupo Matches API: GET /v1/matches/{pattern}?resolve_datums
 -- | Kupo Matches API with full query parameters as per docs
 -- Reference: https://cardanosolutions.github.io/kupo/#tag/Matches
@@ -104,10 +150,10 @@ type MatchesAPI =
     :> QueryParam "asset_name" Text
     :> QueryParam "transaction_id" Text
     :> QueryParam "output_index" Int
-    :> QueryParam "created_after" Text
-    :> QueryParam "created_before" Text
-    :> QueryParam "spent_after" Text
-    :> QueryParam "spent_before" Text
+    :> QueryParam "created_after" Integer
+    :> QueryParam "created_before" Integer
+    :> QueryParam "spent_after" Integer
+    :> QueryParam "spent_before" Integer
     :> QueryParam "order" Text
     :> QueryFlag "spent"
     :> QueryFlag "unspent"
@@ -120,10 +166,10 @@ matchesClient ::
   Maybe Text ->
   Maybe Text ->
   Maybe Int ->
-  Maybe Text ->
-  Maybe Text ->
-  Maybe Text ->
-  Maybe Text ->
+  Maybe Integer ->
+  Maybe Integer ->
+  Maybe Integer ->
+  Maybe Integer ->
   Maybe Text ->
   Bool ->
   Bool ->
@@ -139,10 +185,10 @@ kupoMatches ::
   Maybe Text ->
   Maybe Text ->
   Maybe Int ->
-  Maybe Text ->
-  Maybe Text ->
-  Maybe Text ->
-  Maybe Text ->
+  Maybe Integer ->
+  Maybe Integer ->
+  Maybe Integer ->
+  Maybe Integer ->
   Maybe Text ->
   Bool ->
   Bool ->
@@ -159,10 +205,10 @@ runKupoMatches ::
   Maybe Text ->
   Maybe Text ->
   Maybe Int ->
-  Maybe Text ->
-  Maybe Text ->
-  Maybe Text ->
-  Maybe Text ->
+  Maybe Integer ->
+  Maybe Integer ->
+  Maybe Integer ->
+  Maybe Integer ->
   Maybe Text ->
   Bool ->
   Bool ->
@@ -210,7 +256,7 @@ checkpointsListClient = client (Proxy :: Proxy CheckpointsListAPI)
 
 -- Helpers using a provided ClientEnv
 kupoCheckpointsList :: ClientEnv -> IO (Either ClientError [KupoCheckpoint])
-kupoCheckpointsList = runClientM checkpointsListClient 
+kupoCheckpointsList = runClientM checkpointsListClient
 
 -- Convenience versions that build their own ClientEnv
 runKupoCheckpointsList :: String -> IO (Either ClientError [KupoCheckpoint])
@@ -219,3 +265,23 @@ runKupoCheckpointsList baseUrlStr = do
   manager <- newManager tlsManagerSettings
   let env = mkClientEnv manager baseUrl
   kupoCheckpointsList env
+
+--------------------------------------------------------------------------------
+-- Checkpoint by slot API
+--------------------------------------------------------------------------------
+
+type CheckpointBySlotAPI =
+  "v1" :> "checkpoints" :> Capture "slot_no" Integer :> Get '[JSON] KupoCheckpoint
+
+checkpointBySlotClient :: Integer -> ClientM KupoCheckpoint
+checkpointBySlotClient = client (Proxy :: Proxy CheckpointBySlotAPI)
+
+kupoCheckpointBySlot :: ClientEnv -> Integer -> IO (Either ClientError KupoCheckpoint)
+kupoCheckpointBySlot env slotNo = runClientM (checkpointBySlotClient slotNo) env
+
+runKupoCheckpointBySlot :: String -> Integer -> IO (Either ClientError KupoCheckpoint)
+runKupoCheckpointBySlot baseUrlStr slotNo = do
+  baseUrl <- parseKupoBaseUrl baseUrlStr
+  manager <- newManager tlsManagerSettings
+  let env = mkClientEnv manager baseUrl
+  kupoCheckpointBySlot env slotNo

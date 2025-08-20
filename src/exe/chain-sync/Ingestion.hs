@@ -13,10 +13,10 @@ import TxBuilding.Utils
 import TxBuilding.Validators
 
 data ChainEventProjection
-  = RankProjection Rank
-  | ProfileProjection Profile
-  | PromotionProjection Promotion
-  | NoProjection AtlasMatch
+  = RankEvent Rank
+  | ProfileEvent Profile
+  | PromotionEvent Promotion
+  | NoEvent AtlasMatch
   deriving (Show)
 
 projectChainEvent :: (MonadError GYTxMonadException m) => GYNetworkId -> AtlasMatch -> m ChainEventProjection
@@ -26,17 +26,17 @@ projectChainEvent networkId am@AtlasMatch {..} = case amAddress of
       Just onchainRank -> do
         rank <- onchainRankToRankInformation onchainRank
         case rank of
-          Just rank -> return $ RankProjection rank
+          Just rank -> return $ RankEvent rank
           Nothing -> do
             promotion <- onchainPromotionToPromotionInformation onchainRank
             case promotion of
-              Nothing -> return $ NoProjection am
-              Just promotion -> return $ PromotionProjection promotion
-      Nothing -> return $ NoProjection am
+              Nothing -> return $ NoEvent am
+              Just promotion -> return $ PromotionEvent promotion
+      Nothing -> return $ NoEvent am
   add | add == addressFromScriptHash networkId profilesValidatorHashGY -> do
     case profileFromGYOutDatum amDatum of
-      Nothing -> return $ NoProjection am
+      Nothing -> return $ NoEvent am
       Just onchainProfile -> do
         profile <- profileDatumToProfile onchainProfile
-        return $ ProfileProjection profile
-  _ -> return $ NoProjection am
+        return $ ProfileEvent profile
+  _ -> return $ NoEvent am
