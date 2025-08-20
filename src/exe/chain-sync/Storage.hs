@@ -101,31 +101,22 @@ runMigrations :: (MonadIO m) => SqlPersistT m ()
 runMigrations = runMigration migrateAll
 
 -- Fetch current cursor if exists
-getCursor :: (MonadIO m) => SqlPersistT m (Maybe (Entity ChainCursor))
-getCursor = getBy (UniqueCursor True)
+getCursorValue :: (MonadIO m) => SqlPersistT m (Maybe ChainCursor)
+getCursorValue = fmap entityVal <$> getBy (UniqueCursor True)
 
 -- Upsert the singleton cursor
-putCursor :: (MonadIO m) => Integer -> Text -> Maybe Text -> Maybe Int -> SqlPersistT m ()
-putCursor slotNo header mTxId mOutIx = do
-  let rec = ChainCursor True slotNo header mTxId mOutIx
-  mExisting <- getBy (UniqueCursor True)
-  case mExisting of
-    Nothing -> void (insert rec)
-    Just (Entity key _) -> replace key rec
+upsertCursor :: (MonadIO m) => ChainCursor -> SqlPersistT m ()
+upsertCursor cur = void $ upsert cur []
 
--- Helpers
-encodeJSONText :: (Aeson.ToJSON a) => a -> Text
-encodeJSONText = TL.toStrict . TLE.decodeUtf8 . Aeson.encode
-
-insertKupoMatch :: (MonadIO m) => KupoMatch -> SqlPersistT m ()
-insertKupoMatch km = do
+upsertKupoMatch :: (MonadIO m) => KupoMatch -> SqlPersistT m ()
+upsertKupoMatch km = do
   let cSlot = slot_no (created_at km)
       cHash = header_hash (created_at km)
       ev = OnchainMatchEvent cSlot cHash km
-  void $ insertUnique ev
+  void $ upsert ev []
 
-insertRankProjectionRow :: (MonadIO m) => Integer -> Text -> Rank -> SqlPersistT m ()
-insertRankProjectionRow createdSlot createdHash r = do
+upsertRankProjection :: (MonadIO m) => Integer -> Text -> Rank -> SqlPersistT m ()
+upsertRankProjection createdSlot createdHash r = do
   now <- liftIO getCurrentTime
   let ev =
         RankProjection
@@ -137,10 +128,10 @@ insertRankProjectionRow createdSlot createdHash r = do
           (rankAwardedByProfileId r)
           (rankAchievementDate r)
           now
-  void $ insertUnique ev
+  void $ upsert ev []
 
-insertProfileProjectionRow :: (MonadIO m) => Integer -> Text -> Profile -> SqlPersistT m ()
-insertProfileProjectionRow createdSlot createdHash p = do
+upsertProfileProjection :: (MonadIO m) => Integer -> Text -> Profile -> SqlPersistT m ()
+upsertProfileProjection createdSlot createdHash p = do
   now <- liftIO getCurrentTime
   let ev =
         ProfileProjection
@@ -152,10 +143,10 @@ insertProfileProjectionRow createdSlot createdHash p = do
           (profileImageURI p)
           (profileType p)
           now
-  void $ insertUnique ev
+  void $ upsert ev []
 
-insertPromotionProjectionRow :: (MonadIO m) => Integer -> Text -> Promotion -> SqlPersistT m ()
-insertPromotionProjectionRow createdSlot createdHash pr = do
+upsertPromotionProjection :: (MonadIO m) => Integer -> Text -> Promotion -> SqlPersistT m ()
+upsertPromotionProjection createdSlot createdHash pr = do
   now <- liftIO getCurrentTime
   let ev =
         PromotionProjection
@@ -167,4 +158,4 @@ insertPromotionProjectionRow createdSlot createdHash pr = do
           (promotionAwardedByProfileId pr)
           (promotionAchievementDate pr)
           now
-  void $ insertUnique ev
+  void $ upsert ev []

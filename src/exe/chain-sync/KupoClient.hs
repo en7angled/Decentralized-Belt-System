@@ -271,15 +271,15 @@ runKupoCheckpointsList baseUrlStr = do
 --------------------------------------------------------------------------------
 
 type CheckpointBySlotAPI =
-  "v1" :> "checkpoints" :> Capture "slot_no" Integer :> Get '[JSON] KupoCheckpoint
+  "v1" :> "checkpoints" :> Capture "slot_no" Integer :> Get '[JSON] (Maybe KupoCheckpoint)
 
-checkpointBySlotClient :: Integer -> ClientM KupoCheckpoint
+checkpointBySlotClient :: Integer -> ClientM (Maybe KupoCheckpoint)
 checkpointBySlotClient = client (Proxy :: Proxy CheckpointBySlotAPI)
 
-kupoCheckpointBySlot :: ClientEnv -> Integer -> IO (Either ClientError KupoCheckpoint)
+kupoCheckpointBySlot :: ClientEnv -> Integer -> IO (Either ClientError (Maybe KupoCheckpoint))
 kupoCheckpointBySlot env slotNo = runClientM (checkpointBySlotClient slotNo) env
 
-runKupoCheckpointBySlot :: String -> Integer -> IO (Either ClientError KupoCheckpoint)
+runKupoCheckpointBySlot :: String -> Integer -> IO (Either ClientError (Maybe KupoCheckpoint))
 runKupoCheckpointBySlot baseUrlStr slotNo = do
   baseUrl <- parseKupoBaseUrl baseUrlStr
   manager <- newManager tlsManagerSettings
