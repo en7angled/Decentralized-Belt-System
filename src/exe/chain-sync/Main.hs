@@ -43,8 +43,8 @@ import TxBuilding.Validators (mintingPolicyGY)
 main :: IO ()
 main = do
   kupoUrl <- fmap (fromMaybe "http://localhost:1442") (lookupEnv "KUPO_URL")
-  kupoDBPath <- fmap (fromMaybe "db/chainsync.sqlite") (lookupEnv "KUPO_DB_PATH")
-  let kupoDBPathText = T.pack kupoDBPath
+
+  let kupoDBPathText = T.pack "db/chainsync.sqlite"
   let policyHexText =
         let cs = mintingPolicyCurrencySymbol mintingPolicyGY
          in T.pack $ show cs
@@ -57,10 +57,11 @@ main = do
   runSqlite kupoDBPathText $ do
     runMigrations
 
-    countMvar <- liftIO $ newMVar (0 :: Integer)
-    let batch_size = (10000000 :: Integer)
+  countMvar <- liftIO $ newMVar (0 :: Integer)
+  let batch_size = (10000000 :: Integer)
 
-    forever $ do
+  forever $
+    runSqlite kupoDBPathText $ do
       mCur <- getCursorValue
       let (curSlot, curHeader) = case mCur of
             Just cur -> (chainCursorSlotNo cur, chainCursorHeaderHash cur)
