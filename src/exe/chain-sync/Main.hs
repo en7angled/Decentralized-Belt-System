@@ -51,7 +51,7 @@ import Utils
 
 main :: IO ()
 main = do
-  kupoUrl <- liftIO $ fmap (fromMaybe "http://localhost:1442") (lookupEnv "KUPO_URL")
+  kupoUrl <- liftIO $ fmap (fromMaybe Constants.defaultKupoUrl) (lookupEnv "KUPO_URL")
   kupoDBPath <- liftIO $ fmap (fromMaybe Constants.defaultLookUpPath) (lookupEnv "LOOKUP_PATH")
 
   let policyHexText =
