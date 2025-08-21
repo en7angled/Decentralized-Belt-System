@@ -157,6 +157,7 @@ executable admin
 executable server
   main-is:          Main.hs
   hs-source-dirs:   src/exe/server
+                   , src/exe/chain-sync
   default-language: GHC2021
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
@@ -164,6 +165,10 @@ executable server
     AppMonad
     RestAPI
     Types
+    Storage
+    Ingestion
+    KupoAtlas
+    KupoClient
 
   build-depends:
     , base
@@ -172,22 +177,35 @@ executable server
   build-depends:
     , aeson
     , aeson-pretty
+    , base16-bytestring
     , bytestring            ^>=0.11.5
+    , cardano-api
+    , containers
     , conduit
+    , esqueleto
     , deriving-aeson
     , extra
+    , cassava
+    , http-client
+    , http-client-tls
     , http-types            ^>=0.12.4
     , lens                  ^>=5.2.3
     , mtl
     , multiset
+    , persistent
+    , persistent-sqlite
+    , persistent-template
     , servant-conduit
     , servant-event-stream
     , servant-options
+    , servant
     , servant-server
+    , servant-client
     , servant-swagger
     , servant-swagger-ui
     , swagger2
     , text
+    , time
     , transformers          ^>=0.6.1
     , utf8-string
     , wai
@@ -195,6 +213,7 @@ executable server
     , wai-websockets
     , warp
     , websockets
+    , vector
 
   --- Cardano specific dependencies
   build-depends:    atlas-cardano
