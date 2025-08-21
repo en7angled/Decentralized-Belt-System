@@ -510,6 +510,13 @@
                         "name": "order",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
                     }
                 ],
                 "produces": [
@@ -526,7 +533,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Belts"
@@ -618,6 +625,13 @@
                         "name": "to",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
                     }
                 ],
                 "produces": [
@@ -633,7 +647,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Belts Count"
@@ -642,6 +656,15 @@
         "/belts/frequency": {
             "get": {
                 "description": "Get Belts Frequency",
+                "parameters": [
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
                 "produces": [
                     "application/json;charset=utf-8"
                 ],
@@ -666,6 +689,9 @@
                             },
                             "type": "array"
                         }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection`"
                     }
                 },
                 "summary": "Get Belts Frequency"
@@ -713,6 +739,13 @@
                         "name": "organization-id",
                         "required": true,
                         "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
                     }
                 ],
                 "produces": [
@@ -726,7 +759,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `organization-id`"
+                        "description": "Invalid `liveprojection` or `organization-id`"
                     }
                 },
                 "summary": "Get Organization Profile Information"
@@ -741,6 +774,13 @@
                         "name": "profile-id",
                         "required": true,
                         "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
                     }
                 ],
                 "produces": [
@@ -754,7 +794,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `profile-id`"
+                        "description": "Invalid `liveprojection` or `profile-id`"
                     }
                 },
                 "summary": "Get Practitioner Profile Information"
@@ -832,6 +872,13 @@
                         "name": "order",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
                     }
                 ],
                 "produces": [
@@ -848,7 +895,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `order` or `order_by` or `description` or `name` or `profile-type` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `order` or `order_by` or `description` or `name` or `profile-type` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Profiles"
@@ -867,6 +914,13 @@
                         "name": "profile-type",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
                     }
                 ],
                 "produces": [
@@ -882,7 +936,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `profile-type`"
+                        "description": "Invalid `liveprojection` or `profile-type`"
                     }
                 },
                 "summary": "Get Profiles Count"
@@ -997,6 +1051,13 @@
                         "name": "order",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
                     }
                 ],
                 "produces": [
@@ -1013,7 +1074,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Pending Promotions"
@@ -1105,6 +1166,13 @@
                         "name": "to",
                         "required": false,
                         "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
                     }
                 ],
                 "produces": [
@@ -1120,7 +1188,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Pending Promotions Count"

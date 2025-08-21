@@ -169,6 +169,9 @@ executable server
     Ingestion
     KupoAtlas
     KupoClient
+    Query.Common
+    Query.Live
+    Query.Projected
 
   build-depends:
     , base

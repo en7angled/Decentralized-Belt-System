@@ -31,6 +31,9 @@ import TxBuilding.Interactions
 import TxBuilding.Lookups (getOrganizationInformation, getPractiotionerInformation)
 import TxBuilding.Transactions
 import Types
+import qualified Query.Common as C
+import qualified Query.Live as L
+import qualified Query.Projected as P
 
 instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
@@ -146,6 +149,7 @@ type Profiles =
       :> Description "Get Practitioner Profile Information"
       :> "practitioner"
       :> Capture "profile-id" ProfileRefAC
+      :> QueryFlag "liveprojection"
       :> Get '[JSON] PractitionerProfileInformation
   )
     :<|>
@@ -154,6 +158,7 @@ type Profiles =
         :> Description "Get Organization Profile Information"
         :> "organization"
         :> Capture "organization-id" ProfileRefAC
+        :> QueryFlag "liveprojection"
         :> Get '[JSON] OrganizationProfileInformation
     )
     :<|>
@@ -169,6 +174,7 @@ type Profiles =
         :> QueryParam' '[Optional] "description" Text
         :> QueryParam' '[Optional] "order_by" ProfilesOrderBy
         :> QueryParam' '[Optional] "order" SortOrder
+        :> QueryFlag "liveprojection"
         :> Get '[JSON] [Profile]
     )
     :<|>
@@ -178,25 +184,26 @@ type Profiles =
         :> "profiles"
         :> "count"
         :> QueryParam "profile-type" ProfileType
+        :> QueryFlag "liveprojection"
         :> Get '[JSON] Int
     )
 
-handleGetPractitionerProfile :: ProfileRefAC -> AppMonad PractitionerProfileInformation
-handleGetPractitionerProfile = getPractitionerProfile
+handleGetPractitionerProfile :: ProfileRefAC -> Bool -> AppMonad PractitionerProfileInformation
+handleGetPractitionerProfile pid live = if live then L.getPractitionerProfile pid else P.getPractitionerProfile pid
 
-handleGetOrganizationProfile :: ProfileRefAC -> AppMonad OrganizationProfileInformation
-handleGetOrganizationProfile = getOrganizationProfile
+handleGetOrganizationProfile :: ProfileRefAC -> Bool -> AppMonad OrganizationProfileInformation
+handleGetOrganizationProfile pid live = if live then L.getOrganizationProfile pid else P.getOrganizationProfile pid
 
-handleGetProfiles :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> Maybe ProfileType -> Maybe Text -> Maybe Text -> Maybe ProfilesOrderBy -> Maybe SortOrder -> AppMonad [Profile]
-handleGetProfiles (Just limit) (Just offset) profiles maybeProfileType name description maybeOrderBy maybeOrder =
-  getProfiles
+handleGetProfiles :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> Maybe ProfileType -> Maybe Text -> Maybe Text -> Maybe ProfilesOrderBy -> Maybe SortOrder -> Bool -> AppMonad [Profile]
+handleGetProfiles (Just limit) (Just offset) profiles maybeProfileType name description maybeOrderBy maybeOrder live =
+  (if live then L.getProfiles else P.getProfiles)
     (Just (limit, offset))
     ( Just
-        ( ProfileFilter
-            { profileFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              profileFilterType = maybeProfileType,
-              profileFilterName = name,
-              profileFilterDescription = description
+        ( C.ProfileFilter
+            { C.profileFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              C.profileFilterType = maybeProfileType,
+              C.profileFilterName = name,
+              C.profileFilterDescription = description
             }
         )
     )
@@ -205,15 +212,15 @@ handleGetProfiles (Just limit) (Just offset) profiles maybeProfileType name desc
         (Just ob, Nothing) -> Just (ob, Asc)
         _ -> Nothing
     )
-handleGetProfiles _ _ profiles maybeProfileType name description maybeOrderBy maybeOrder =
-  getProfiles
+handleGetProfiles _ _ profiles maybeProfileType name description maybeOrderBy maybeOrder live =
+  (if live then L.getProfiles else P.getProfiles)
     Nothing
     ( Just
-        ( ProfileFilter
-            { profileFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              profileFilterType = maybeProfileType,
-              profileFilterName = name,
-              profileFilterDescription = description
+        ( C.ProfileFilter
+            { C.profileFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              C.profileFilterType = maybeProfileType,
+              C.profileFilterName = name,
+              C.profileFilterDescription = description
             }
         )
     )
@@ -223,9 +230,9 @@ handleGetProfiles _ _ profiles maybeProfileType name description maybeOrderBy ma
         _ -> Nothing
     )
 
-handleGetProfilesCount :: Maybe ProfileType -> AppMonad Int
-handleGetProfilesCount maybeProfileType = do
-  getProfilesCount maybeProfileType
+handleGetProfilesCount :: Maybe ProfileType -> Bool -> AppMonad Int
+handleGetProfilesCount maybeProfileType live =
+  (if live then L.getProfilesCount else P.getProfilesCount) maybeProfileType
 
 profilesServer :: ServerT Profiles AppMonad
 profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile :<|> handleGetProfiles :<|> handleGetProfilesCount
@@ -251,6 +258,7 @@ type Promotions =
       :> QueryParam' '[Optional] "to" GYTime
       :> QueryParam' '[Optional] "order_by" PromotionsOrderBy
       :> QueryParam' '[Optional] "order" SortOrder
+      :> QueryFlag "liveprojection"
       :> Get '[JSON] [Promotion]
   )
     :<|>
@@ -267,36 +275,37 @@ type Promotions =
         :> QueryParams "awarded_by" ProfileRefAC
         :> QueryParam' '[Optional] "from" GYTime
         :> QueryParam' '[Optional] "to" GYTime
+        :> QueryFlag "liveprojection"
         :> Get '[JSON] Int
     )
 
-handleGetPendingPromotions :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe PromotionsOrderBy -> Maybe SortOrder -> AppMonad [Promotion]
-handleGetPendingPromotions limit offset profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder =
-  getPromotions
+handleGetPendingPromotions :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe PromotionsOrderBy -> Maybe SortOrder -> Bool -> AppMonad [Promotion]
+handleGetPendingPromotions limit offset profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder live =
+  (if live then L.getPromotions else P.getPromotions)
     (mkPagination limit offset)
     ( Just
-        PromotionFilter
-          { promotionFilterId = nonEmpty profiles,
-            promotionFilterBelt = nonEmpty belt,
-            promotionFilterAchievedByProfileId = nonEmpty achieved_by,
-            promotionFilterAwardedByProfileId = nonEmpty awarded_by,
-            promotionFilterAchievementDateInterval = (from, to)
+        C.PromotionFilter
+          { C.promotionFilterId = nonEmpty profiles,
+            C.promotionFilterBelt = nonEmpty belt,
+            C.promotionFilterAchievedByProfileId = nonEmpty achieved_by,
+            C.promotionFilterAwardedByProfileId = nonEmpty awarded_by,
+            C.promotionFilterAchievementDateInterval = (from, to)
           }
     )
     (mkOrder maybeOrderBy maybeOrder)
 
-handleGetPendingPromotionsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> AppMonad Int
-handleGetPendingPromotionsCount _ _ profiles belt achieved_by awarded_by from to = do
+handleGetPendingPromotionsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Bool -> AppMonad Int
+handleGetPendingPromotionsCount _ _ profiles belt achieved_by awarded_by from to live = do
   let maybeFilter =
         Just
-          PromotionFilter
-            { promotionFilterId = nonEmpty profiles,
-              promotionFilterBelt = nonEmpty belt,
-              promotionFilterAchievedByProfileId = nonEmpty achieved_by,
-              promotionFilterAwardedByProfileId = nonEmpty awarded_by,
-              promotionFilterAchievementDateInterval = (from, to)
+          C.PromotionFilter
+            { C.promotionFilterId = nonEmpty profiles,
+              C.promotionFilterBelt = nonEmpty belt,
+              C.promotionFilterAchievedByProfileId = nonEmpty achieved_by,
+              C.promotionFilterAwardedByProfileId = nonEmpty awarded_by,
+              C.promotionFilterAchievementDateInterval = (from, to)
             }
-  getPromotionsCount maybeFilter
+  (if live then L.getPromotionsCount else P.getPromotionsCount) maybeFilter
 
 promotionsServer :: ServerT Promotions AppMonad
 promotionsServer =
@@ -324,6 +333,7 @@ type Belts =
       :> QueryParam' '[Optional] "to" GYTime
       :> QueryParam' '[Optional] "order_by" RanksOrderBy
       :> QueryParam' '[Optional] "order" SortOrder
+      :> QueryFlag "liveprojection"
       :> Get '[JSON] [Rank]
   )
     :<|>
@@ -340,6 +350,7 @@ type Belts =
         :> QueryParams "awarded_by" ProfileRefAC
         :> QueryParam' '[Optional] "from" GYTime
         :> QueryParam' '[Optional] "to" GYTime
+        :> QueryFlag "liveprojection"
         :> Get '[JSON] Int
     )
     :<|>
@@ -347,21 +358,22 @@ type Belts =
     ( Summary "Get Belts Frequency"
         :> Description "Get Belts Frequency"
         :> "belts"
+        :> QueryFlag "liveprojection"
         :> "frequency"
         :> Get '[JSON] [(BJJBelt, Int)]
     )
 
-handleGetBelts :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> AppMonad [Rank]
-handleGetBelts (Just limit) (Just offset) profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder =
-  getRanks
+handleGetBelts :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> Bool -> AppMonad [Rank]
+handleGetBelts (Just limit) (Just offset) profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder live =
+  (if live then L.getRanks else P.getRanks)
     (Just (limit, offset))
     ( Just
-        ( RankFilter
-            { rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
-              rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
-              rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              rankFilterAchievementDateInterval = (from, to)
+        ( C.RankFilter
+            { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
+              C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
+              C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
+              C.rankFilterAchievementDateInterval = (from, to)
             }
         )
     )
@@ -370,16 +382,16 @@ handleGetBelts (Just limit) (Just offset) profiles belt achieved_by awarded_by f
         (Just ob, Nothing) -> Just (ob, Asc)
         _ -> Nothing
     )
-handleGetBelts _ _ profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder =
-  getRanks
+handleGetBelts _ _ profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder live =
+  (if live then L.getRanks else P.getRanks)
     Nothing
     ( Just
-        ( RankFilter
-            { rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
-              rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
-              rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              rankFilterAchievementDateInterval = (from, to)
+        ( C.RankFilter
+            { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
+              C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
+              C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
+              C.rankFilterAchievementDateInterval = (from, to)
             }
         )
     )
@@ -389,21 +401,21 @@ handleGetBelts _ _ profiles belt achieved_by awarded_by from to maybeOrderBy may
         _ -> Nothing
     )
 
-handleGetBeltsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> AppMonad Int
-handleGetBeltsCount limit offset profiles belt achieved_by awarded_by from to = do
+handleGetBeltsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Bool -> AppMonad Int
+handleGetBeltsCount limit offset profiles belt achieved_by awarded_by from to live = do
   let maybeFilter =
         Just
-          RankFilter
-            { rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
-              rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
-              rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              rankFilterAchievementDateInterval = (from, to)
+          C.RankFilter
+            { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
+              C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
+              C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
+              C.rankFilterAchievementDateInterval = (from, to)
             }
-  getRanksCount maybeFilter
+  (if live then L.getRanksCount else P.getRanksCount) maybeFilter
 
-handleGetBeltFrequency :: AppMonad [(BJJBelt, Int)]
-handleGetBeltFrequency = getBeltTotals
+handleGetBeltFrequency :: Bool -> AppMonad [(BJJBelt, Int)]
+handleGetBeltFrequency live = if live then L.getBeltTotals else P.getBeltTotals
 
 beltsServer :: ServerT Belts AppMonad
 beltsServer = handleGetBelts :<|> handleGetBeltsCount :<|> handleGetBeltFrequency
