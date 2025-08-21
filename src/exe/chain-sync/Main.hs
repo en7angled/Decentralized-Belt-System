@@ -66,6 +66,7 @@ main = do
     runMigrations
 
   let batch_size = (10_000_000 :: Integer)
+  let fetch_batch_size = (10_000 :: Integer)
 
   initialTip <- getLocalTip kupoDBPathText
   firstCheckPoint <- findCheckpoint kupoUrl batch_size (ck_slot_no initialTip)
@@ -85,12 +86,13 @@ main = do
       Behind -> do
         liftIO $ putStrLn "Chain is behind"
         liftIO $ putStrLn "Fetching matches"
-        fetchingMatches kupoUrl matchPattern policyHexText kupoDBPathText (ck_slot_no localTip) (ck_slot_no blockchainTip) batch_size
+        fetchingMatches kupoUrl matchPattern policyHexText kupoDBPathText (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
         blockchainTip <- getBlockchainTip kupoUrl
         updateLocalTip kupoDBPathText blockchainTip
       Ahead -> do
         liftIO $ putStrLn "Chain is ahead"
         liftIO $ putStrLn "Starting rollback"
+        -- TODO: Rollback (delete all projection with slot > blockchainTip)
         updateLocalTip kupoDBPathText blockchainTip
         liftIO $ putStrLn "Updated local tip with first common checkpoint"
       UpToDateButDifferentBlockHash -> do
@@ -115,7 +117,7 @@ evaluateChainSyncState localTip@(KupoCheckpoint localSlot localHeader) blockchai
 updateLocalTip :: T.Text -> KupoCheckpoint -> IO ()
 updateLocalTip kupoDBPathText tip = do
   runSqlite kupoDBPathText $ do
-    upsertCursor (ChainCursor True (ck_slot_no tip) (ck_header_hash tip) Nothing Nothing)
+    putCursor (ChainCursor True (ck_slot_no tip) (ck_header_hash tip) Nothing Nothing)
 
 getLocalTip :: T.Text -> IO KupoCheckpoint
 getLocalTip kupoDBPathText = do
@@ -191,8 +193,9 @@ fetchingMatches kupoUrl matchPattern policyHexText kupoDBPathText start end batc
       fetchingMatches kupoUrl matchPattern policyHexText kupoDBPathText endInterval end batch_size
 
 applyMatches :: GYNetworkId -> T.Text -> [KupoMatch] -> IO ()
+applyMatches networkId kupoDBPathText [] = return ()
 applyMatches networkId kupoDBPathText matches =
   runSqlite kupoDBPathText $ do
-    liftIO $ putStrLn ("Applying matches: " <> show (length matches))
+    liftIO $ putStrLn ("-----------------------------------------> Applying matches: " <> show (length matches))
     -- process each match
-    forM_ matches (upsertMatchAndProjections networkId)
+    forM_ matches (putMatchAndProjections networkId)
