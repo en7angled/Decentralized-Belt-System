@@ -5,34 +5,34 @@ module AppMonad where
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Reader
+import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.List (sortOn)
 import Data.Maybe
 import Data.MultiSet
 import Data.Ord (Down (..))
-import Data.Text hiding (elem, take, reverse)
+import Data.Text hiding (elem, reverse, take)
+import qualified Data.Text as T
+import qualified Data.Text as Text
 import qualified Data.Text.Encoding
+import Database.Esqueleto.Experimental
+import Database.Persist (Entity (..), entityVal)
+import qualified Database.Persist as P
+import Database.Persist.Sqlite (runSqlite)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.GYConfig (GYCoreConfig (..))
 import GeniusYield.TxBuilder (GYTxQueryMonad)
+import GeniusYield.TxBuilder.Errors (GYTxMonadException)
 import GeniusYield.Types
 import Onchain.BJJ
-import Servant
-import TxBuilding.Context
-import TxBuilding.Lookups
-import TxBuilding.Transactions (submitTx, interactionToHexEncodedCBOR)
-import TxBuilding.Interactions (Interaction)
-import Types
 import qualified Query.Common as QC
-import qualified Data.Text as Text
-import qualified Data.Text as T
-import qualified Database.Persist as P
-import Database.Persist (Entity (..), entityVal)
-import Database.Persist.Sqlite (runSqlite)
-import Database.Esqueleto.Experimental
+import Servant
 import Storage
-
-
+import TxBuilding.Context
+import TxBuilding.Interactions (Interaction)
+import TxBuilding.Lookups
+import TxBuilding.Transactions (interactionToHexEncodedCBOR, submitTx)
+import Types
 
 ------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------
@@ -83,10 +83,20 @@ buildInteractionApp inter = do
   -- Lift into the TxBuildingContext reader
   AppMonad $ do
     AppContext {..} <- ask
-    runReaderT (interactionToHexEncodedCBOR inter) txBuildingContext
+    res <- liftIO $ try (runReaderT (interactionToHexEncodedCBOR inter) txBuildingContext)
+    case res of
+      Left (e :: GYTxMonadException) -> do
+        liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
+        throwError err400 {errBody = BL8.pack (show e)}
+      Right ok -> pure ok
 
 submitTxApp :: GYTx -> AppMonad GYTxId
 submitTxApp tx = do
   AppMonad $ do
     AppContext {..} <- ask
-    runReaderT (submitTx tx) txBuildingContext
+    res <- liftIO $ try (runReaderT (submitTx tx) txBuildingContext)
+    case res of
+      Left (e :: GYTxMonadException) -> do
+        liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
+        throwError err400 {errBody = BL8.pack (show e)}
+      Right ok -> pure ok
