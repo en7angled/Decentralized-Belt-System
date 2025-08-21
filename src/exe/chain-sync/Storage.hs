@@ -17,6 +17,7 @@ module Storage where
 
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO (..))
+import Control.Monad.Trans.Except (runExceptT)
 import qualified Data.Aeson as Aeson
 import Data.Int (Int64)
 import Data.Text (Text)
@@ -28,6 +29,8 @@ import Database.Persist.Sqlite
 import Database.Persist.TH
 import DomainTypes.Core.Types
 import GeniusYield.Types
+import Ingestion
+import KupoAtlas (kupoMatchToAtlasMatch)
 import KupoClient (CreatedAt (..), KupoMatch (..), KupoValue (..), SpentAt (..))
 import Onchain.BJJ (BJJBelt)
 
@@ -106,14 +109,41 @@ getCursorValue = fmap entityVal <$> getBy (UniqueCursor True)
 
 -- Upsert the singleton cursor
 upsertCursor :: (MonadIO m) => ChainCursor -> SqlPersistT m ()
-upsertCursor cur = void $ upsert cur []
+upsertCursor cur =
+  void $
+    upsert
+      cur
+      [ ChainCursorSlotNo =. chainCursorSlotNo cur,
+        ChainCursorHeaderHash =. chainCursorHeaderHash cur,
+        ChainCursorLastTxId =. chainCursorLastTxId cur,
+        ChainCursorLastOutputIndex =. chainCursorLastOutputIndex cur
+      ]
+
+upsertMatchAndProjections :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
+upsertMatchAndProjections networkId km = do
+  upsertKupoMatch km
+  case kupoMatchToAtlasMatch km of
+    Left convErr -> liftIO $ putStrLn ("Conversion error: " <> convErr)
+    Right am -> do
+      let slotNoInt = slot_no (created_at km)
+          header = header_hash (created_at km)
+          txIdTxt = transaction_id km
+          outIx = output_index km
+      ev <- runExceptT (projectChainEvent networkId am)
+      case ev of
+        Left e -> liftIO $ putStrLn ("Projection error: " <> show e)
+        Right proj -> case proj of
+          RankEvent r -> upsertRankProjection slotNoInt header r
+          ProfileEvent p -> upsertProfileProjection slotNoInt header p
+          PromotionEvent pr -> upsertPromotionProjection slotNoInt header pr
+          NoEvent _ -> pure ()
 
 upsertKupoMatch :: (MonadIO m) => KupoMatch -> SqlPersistT m ()
 upsertKupoMatch km = do
   let cSlot = slot_no (created_at km)
       cHash = header_hash (created_at km)
       ev = OnchainMatchEvent cSlot cHash km
-  void $ upsert ev []
+  void $ upsert ev [OnchainMatchEventCreatedSlot =. cSlot, OnchainMatchEventCreatedHeader =. cHash]
 
 upsertRankProjection :: (MonadIO m) => Integer -> Text -> Rank -> SqlPersistT m ()
 upsertRankProjection createdSlot createdHash r = do

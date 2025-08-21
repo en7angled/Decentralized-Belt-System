@@ -236,7 +236,7 @@ data KupoCheckpoint = KupoCheckpoint
   { ck_slot_no :: Integer,
     ck_header_hash :: Text
   }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance FromJSON KupoCheckpoint where
   parseJSON = withObject "KupoCheckpoint" $ \o ->

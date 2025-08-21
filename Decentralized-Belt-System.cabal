@@ -51,6 +51,7 @@ library
   import:             common-options, plinth-ghc-options
   default-language:   Haskell2010
   exposed-modules:
+    Constants
     DomainTypes.Core.Actions
     DomainTypes.Core.Types
     DomainTypes.Transfer.Types
@@ -243,29 +244,29 @@ executable chain-sync
 
   build-depends:
     , aeson
-    , extra
     , base16-bytestring
-    , containers
     , bytestring
     , cardano-api
+    , cassava
+    , containers
+    , deriving-aeson
+    , extra
     , http-client
     , http-client-tls
-    , vector
     , persistent
     , persistent-sqlite
     , persistent-template
-    , text
-    , time
     , servant
     , servant-client
+    , text
+    , time
     , transformers
-    , cassava
-    , deriving-aeson
-    
+    , vector
+
   other-modules:
-    KupoClient
-    KupoAtlas
     Ingestion
+    KupoAtlas
+    KupoClient
     Storage
 
   --- Cardano specific dependencies

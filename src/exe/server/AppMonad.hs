@@ -161,7 +161,7 @@ instance ProfilesQueryMonad AppMonad where
               Just pt -> Prelude.filter ((== pt) . profileType)
               Nothing -> id
             nameFilter = case profileFilterName of
-              Just name -> Prelude.filter ((name `Text.isInfixOf`) . profileName)
+              Just name -> Prelude.filter ((Text.toLower name `Text.isInfixOf`) . Text.toLower . profileName)
               Nothing -> id
             descriptionFilter = case profileFilterDescription of
               Just description -> Prelude.filter ((== description) . profileDescription)
