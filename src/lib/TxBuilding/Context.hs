@@ -103,3 +103,4 @@ data TxBuildingContext = TxBuildingContext
   { deployedScriptsCtx :: DeployedScriptsContext,
     providerCtx :: ProviderCtx
   }
+  deriving stock (Generic)

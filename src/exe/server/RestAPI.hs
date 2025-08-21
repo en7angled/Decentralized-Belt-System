@@ -126,13 +126,13 @@ type Transactions =
     )
 
 handleBuildTx :: Interaction -> AppMonad String
-handleBuildTx = interactionToHexEncodedCBOR
+handleBuildTx = buildInteractionApp
 
 handleSubmitTx :: AddWitAndSubmitParams -> AppMonad GYTxId
 handleSubmitTx AddWitAndSubmitParams {..} = do
   let txBody = getTxBody awasTxUnsigned
   let signedTx = makeSignedTransaction awasTxWit txBody
-  submitTx signedTx
+  submitTxApp signedTx
 
 transactionsServer :: ServerT Transactions AppMonad
 transactionsServer = handleBuildTx :<|> handleSubmitTx

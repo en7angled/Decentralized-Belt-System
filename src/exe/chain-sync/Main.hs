@@ -51,6 +51,7 @@ import Utils
 main :: IO ()
 main = do
   kupoUrl <- liftIO $ fmap (fromMaybe "http://localhost:1442") (lookupEnv "KUPO_URL")
+  kupoDBPath <- liftIO $ fmap (fromMaybe "db/chainsync.sqlite") (lookupEnv "LOOKUP_PATH")
 
   let policyHexText =
         let cs = mintingPolicyCurrencySymbol mintingPolicyGY
@@ -59,14 +60,19 @@ main = do
   putStrLn "Starting chain-sync ..."
   putStrLn ("Base URL: " <> kupoUrl)
   putStrLn ("Pattern: " <> T.unpack matchPattern)
+  putStrLn ("Lookup (projection) DB: " <> kupoDBPath)
 
-  let kupoDBPathText = T.pack "db/chainsync.sqlite"
+  let kupoDBPathText = T.pack kupoDBPath
 
   runSqlite kupoDBPathText $ do
     runMigrations
 
-  let batch_size = (10_000_000 :: Integer)
-  let fetch_batch_size = (10_000 :: Integer)
+  batch_size <- do
+    mb <- lookupEnv "BATCH_SIZE"
+    pure $ maybe (10_000_000 :: Integer) read mb
+  fetch_batch_size <- do
+    mb <- lookupEnv "FETCH_BATCH_SIZE"
+    pure $ maybe (10_000 :: Integer) read mb
 
   initialTip <- getLocalTip kupoDBPathText
   firstCheckPoint <- findCheckpoint kupoUrl batch_size (ck_slot_no initialTip)
