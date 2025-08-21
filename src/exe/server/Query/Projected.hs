@@ -1,20 +1,23 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Redundant ^." #-}
 
 module Query.Projected where
 
+import Control.Monad.IO.Class (MonadIO (..))
+import Data.MultiSet (fromList, toOccurList)
 import qualified Data.Text as T
+import Database.Esqueleto.Experimental
 import Database.Persist (Entity (..), entityVal)
 import qualified Database.Persist as P
 import Database.Persist.Sqlite (runSqlite)
-import Database.Esqueleto.Experimental
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import Onchain.BJJ (BJJBelt)
-import Storage
 import qualified Query.Common as C
+import Storage
 import Types
-import Control.Monad.IO.Class (MonadIO (..))
-import Data.MultiSet (toOccurList, fromList)
 
 whenJust :: Maybe a -> (a -> SqlQuery ()) -> SqlQuery ()
 whenJust Nothing _ = pure ()
@@ -45,7 +48,7 @@ getPractitionerProfile profileRefAC = liftIO $ runSqlite chainsyncDBPath $ do
           domainRanks = Prelude.map (toRank . entityVal) ranksAsc
       case Prelude.reverse domainRanks of
         [] -> liftIO $ ioError (userError "No ranks found for practitioner")
-        (current:restRev) ->
+        (current : restRev) ->
           return
             PractitionerProfileInformation
               { practitionerId = profileRefAC,
@@ -244,5 +247,3 @@ getBeltTotals = liftIO $ runSqlite chainsyncDBPath $ do
     pure (rp ^. RankProjectionRankBelt)
   let belts = Prelude.map unValue rows
   pure (toOccurList . fromList $ belts)
-
-

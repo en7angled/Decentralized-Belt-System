@@ -1,10 +1,8 @@
-{-# LANGUAGE RecordWildCards #-}
-
 module Query.Common where
 
 import Data.List (drop, take)
-import qualified Data.Text as Text
 import Data.Text (Text)
+import qualified Data.Text as Text
 import DomainTypes.Core.Types
 import GeniusYield.Types (GYTime)
 import Onchain.BJJ (BJJBelt)
@@ -50,5 +48,3 @@ whenJust (Just a) f _ = f a
 -- Abstraction for retrieving the projection DB connection info from an environment
 class HasProjectionDB r where
   getProjectionDbPath :: r -> Text
-
-

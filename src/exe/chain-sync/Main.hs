@@ -98,9 +98,11 @@ main = do
       Ahead -> do
         liftIO $ putStrLn "Chain is ahead"
         liftIO $ putStrLn "Starting rollback"
-        -- TODO: Rollback (delete all projection with slot > blockchainTip)
+        -- Rollback DB state to blockchain tip (retain rows up to tip with matching header)
+        runSqlite kupoDBPathText $ rollbackTo (ck_slot_no blockchainTip) (ck_header_hash blockchainTip)
+        -- Update the local tip cursor to match the blockchain tip
         updateLocalTip kupoDBPathText blockchainTip
-        liftIO $ putStrLn "Updated local tip with first common checkpoint"
+        liftIO $ putStrLn "Rollback complete and local tip updated"
       UpToDateButDifferentBlockHash -> do
         liftIO $ putStrLn "Chain is on the same slot but different block hash"
         updateLocalTip kupoDBPathText blockchainTip

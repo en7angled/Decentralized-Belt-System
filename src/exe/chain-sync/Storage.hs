@@ -203,3 +203,21 @@ putPromotionProjection createdSlot createdHash pr = do
 deletePromotionProjection :: (MonadIO m) => GYAssetClass -> SqlPersistT m ()
 deletePromotionProjection promotionId = do
   deleteBy (UniquePromotionProjection promotionId)
+
+-- | Rollback all stored events and projections strictly beyond the given slot,
+--   and any rows at the slot with a mismatching block header hash.
+rollbackTo :: (MonadIO m) => Integer -> Text -> SqlPersistT m ()
+rollbackTo slotNo headerHash = do
+  -- Remove Onchain matches beyond tip or same slot but different header
+  deleteWhere [OnchainMatchEventCreatedSlot >. slotNo]
+  deleteWhere [OnchainMatchEventCreatedSlot ==. slotNo, OnchainMatchEventCreatedHeader !=. headerHash]
+
+  -- Remove projections beyond tip or same slot but different header
+  deleteWhere [ProfileProjectionCreatedAtSlot >. slotNo]
+  deleteWhere [ProfileProjectionCreatedAtSlot ==. slotNo, ProfileProjectionCreatedAtHash !=. headerHash]
+
+  deleteWhere [RankProjectionCreatedAtSlot >. slotNo]
+  deleteWhere [RankProjectionCreatedAtSlot ==. slotNo, RankProjectionCreatedAtHash !=. headerHash]
+
+  deleteWhere [PromotionProjectionCreatedAtSlot >. slotNo]
+  deleteWhere [PromotionProjectionCreatedAtSlot ==. slotNo, PromotionProjectionCreatedAtHash !=. headerHash]
