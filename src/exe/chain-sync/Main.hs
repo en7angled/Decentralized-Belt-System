@@ -15,6 +15,7 @@
 
 module Main where
 
+import Constants as C
 import qualified Constants
 import Control.Concurrent.Extra
 import Control.Monad (forM_, when)
@@ -51,7 +52,7 @@ import Utils
 main :: IO ()
 main = do
   kupoUrl <- liftIO $ fmap (fromMaybe "http://localhost:1442") (lookupEnv "KUPO_URL")
-  kupoDBPath <- liftIO $ fmap (fromMaybe "db/chainsync.sqlite") (lookupEnv "LOOKUP_PATH")
+  kupoDBPath <- liftIO $ fmap (fromMaybe Constants.defaultLookUpPath) (lookupEnv "LOOKUP_PATH")
 
   let policyHexText =
         let cs = mintingPolicyCurrencySymbol mintingPolicyGY

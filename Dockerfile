@@ -202,3 +202,4 @@ COPY --from=builder /Decentralized-Belt-System/server /app/server
 COPY ./config  /app/config
 
 
+ENTRYPOINT ["/app/server"]

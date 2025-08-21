@@ -1,0 +1,34 @@
+
+services:
+  chainsync:
+    image: mariusgeorgescu/chainsync:chainsync
+    container_name: bjj-chainsync
+    environment:
+      - KUPO_URL=https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run
+      - LOOKUP_PATH=/data/chainsync.sqlite
+      - BATCH_SIZE=100000000
+      - FETCH_BATCH_SIZE=10000000
+    volumes:
+      - chainsync-db:/data
+    restart: unless-stopped
+
+  server:
+    image: mariusgeorgescu/bjjserver:chainsync
+    container_name: bjj-server
+    environment:
+      - PORT=8082
+      - LOOKUP_PATH=/data/chainsync.sqlite
+      # - BASIC_USER=cardano
+      # - BASIC_PASS=lovelace
+    volumes:
+      - chainsync-db:/data
+    ports:
+      - "8082:8082"
+    depends_on:
+      - chainsync
+    restart: unless-stopped
+    command: ["/app/server"] 
+
+volumes:
+  chainsync-db:
+

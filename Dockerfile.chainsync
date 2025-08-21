@@ -192,7 +192,7 @@ COPY ./config /app/config
 ENV KUPO_URL=http://localhost:1442 \
     LOOKUP_PATH=/app/db/chainsync.sqlite \
     BATCH_SIZE=10000000 \
-    FETCH_BATCH_SIZE=10000
+    FETCH_BATCH_SIZE=10000000
 
 # Data dir for sqlite
 RUN mkdir -p /app/db

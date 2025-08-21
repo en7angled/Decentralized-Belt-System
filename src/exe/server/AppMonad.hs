@@ -60,23 +60,12 @@ instance MonadIO AppMonad where
   liftIO :: IO a -> AppMonad a
   liftIO = AppMonad . liftIO
 
-instance MonadReader TxBuildingContext AppMonad where
-  ask :: AppMonad TxBuildingContext
-  ask = AppMonad (asks txBuildingContext)
+instance MonadReader AppContext AppMonad where
+  ask :: AppMonad AppContext
+  ask = AppMonad ask
 
-  local :: (TxBuildingContext -> TxBuildingContext) -> AppMonad a -> AppMonad a
-  local f (AppMonad app) =
-    let f' :: AppContext -> AppContext
-        f' AppContext {authContext, txBuildingContext, projectionDbPath} = AppContext {authContext, txBuildingContext = f txBuildingContext, projectionDbPath}
-     in AppMonad (local f' app)
-
-instance QC.HasProjectionDB AppContext where
-  getProjectionDbPath :: AppContext -> Text
-  getProjectionDbPath = projectionDbPath
-
--- Removed legacy instances in favor of constrained functions above
-
--- Wrappers to run TxBuilding actions that require MonadReader TxBuildingContext
+  local :: (AppContext -> AppContext) -> AppMonad a -> AppMonad a
+  local f (AppMonad app) = AppMonad (local f app)
 
 buildInteractionApp :: Interaction -> AppMonad String
 buildInteractionApp inter = do

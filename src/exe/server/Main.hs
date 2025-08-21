@@ -14,6 +14,9 @@ import System.Environment
 import TxBuilding.Context
 import TxBuilding.Utils
 import Utils (decodeConfigEnvOrFile)
+import Constants (defaultAtlasCoreConfig)
+import Constants (defaultTxBuldingContextFile)
+import Constants (defaultLookUpPath)
 
 getPortFromEnv :: IO Int
 getPortFromEnv = do
@@ -28,11 +31,8 @@ getBasicAuthFromEnv = do
   pass <- fromMaybe "lovelace" <$> lookupEnv "BASIC_PASS"
   return AuthContext {authUser = Data.Text.pack user, authPassword = Data.Text.pack pass}
 
-defaultAtlasCoreConfig :: FilePath
-defaultAtlasCoreConfig = "config/config_atlas.json"
 
-defaultTxBuldingContextFile :: FilePath
-defaultTxBuldingContextFile = "config/config_bjj_validators.json"
+
 
 main :: IO ()
 main = do
@@ -50,7 +50,7 @@ main = do
     let providersContext = ProviderCtx atlasConfig providers
     let txBuildingContext = TxBuildingContext deployedScriptsContext providersContext
     authContext <- getBasicAuthFromEnv
-    lookupContext <- Data.Text.pack . fromMaybe "db/chainsync.sqlite" <$> lookupEnv "LOOKUP_PATH"
+    lookupContext <- Data.Text.pack . fromMaybe defaultLookUpPath <$> lookupEnv "LOOKUP_PATH"
     let appContext = AppContext authContext txBuildingContext lookupContext
 
     let host = "0.0.0.0"
