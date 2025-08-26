@@ -29,6 +29,31 @@ services:
     restart: unless-stopped
     command: ["/app/server"] 
 
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: bjj-nginx
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot-www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: bjj-certbot
+    entrypoint: sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;"
+    volumes:
+      - certbot-www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+
 volumes:
   chainsync-db:
+  certbot-www:
+  letsencrypt:
 

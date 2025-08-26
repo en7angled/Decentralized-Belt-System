@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # Deployment pentru API‑ul bjj-server
+  name: bjj-server
+  namespace: bjj
+spec:
+  # 3 replici pentru disponibilitate și scalare orizontală
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Nu vrem indisponibilitate în timpul upgrade‑ului
+      maxUnavailable: 0
+      # Creează un singur pod nou peste cele existente la fiecare pas
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: bjj-server
+  template:
+    metadata:
+      labels:
+        app: bjj-server
+    spec:
+      initContainers:
+        - name: wait-for-db
+          image: alpine:3.20
+          # Așteaptă ca fișierul SQLite să fie creat de chainsync înainte să pornească aplicația
+          command: ["sh","-c","i=0; while [ $i -lt 60 ]; do [ -f /data/chainsync.sqlite ] && exit 0; echo waiting for db; i=$((i+1)); sleep 5; done; echo db not found; exit 1"]
+          volumeMounts:
+            - name: lookup-db
+              mountPath: /data
+              readOnly: true
+      containers:
+        - name: server
+          image: mariusgeorgescu/bjjserver:chainsync
+          imagePullPolicy: IfNotPresent
+          env:
+            # Portul HTTP expus de server
+            - name: PORT
+              value: "8082"
+            # Calea către baza de proiecții (montată din PVC)
+            - name: LOOKUP_PATH
+              value: "/data/chainsync.sqlite"
+            # Parametri GHC RTS (număr capete, memorie)
+            - name: GHCRTS
+              value: "-N -M768m -A64m"
+          ports:
+            - name: http
+              containerPort: 8082
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          readinessProbe:
+            tcpSocket:
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - name: lookup-db
+              mountPath: /data
+              # write‑able pentru fișierele WAL/SHM ale SQLite
+              readOnly: false
+      volumes:
+        - name: lookup-db
+          persistentVolumeClaim:
+            claimName: lookup-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Service intern care load‑balance‑ază către podurile bjj-server
+  name: bjj-server
+  namespace: bjj
+spec:
+  selector:
+    app: bjj-server
+  ports:
+    - name: http
+      # Portul pe care îl expune Service‑ul în cluster
+      port: 8082
+      # Portul pe care îl ascultă containerul "server"
+      targetPort: 8082
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: bjj-server-pdb
+  namespace: bjj
+spec:
+  # Păstrează cel puțin 1 pod disponibil la întreruperi planificate
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: bjj-server
+
+
