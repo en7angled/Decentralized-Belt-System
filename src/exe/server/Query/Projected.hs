@@ -101,6 +101,8 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
         Just C.ProfileFilter {..} -> do
           whenJust profileFilterId (\ids -> where_ (pp ^. ProfileProjectionProfileId `in_` valList ids))
           whenJust profileFilterType (\pt -> where_ (pp ^. ProfileProjectionProfileType ==. val pt))
+          whenJust profileFilterName (\nameSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileName) `like` val (T.pack "%" <> T.toLower nameSubstring <> T.pack "%")))
+          whenJust profileFilterDescription (\descriptionSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileDescription) `like` val (T.pack "%" <> T.toLower descriptionSubstring <> T.pack "%")))
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->

@@ -3,8 +3,6 @@ kind: Gateway
 metadata:
   name: bjj-gateway
   namespace: bjj
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-godaddy-prod
 spec:
   gatewayClassName: traefik
   listeners:

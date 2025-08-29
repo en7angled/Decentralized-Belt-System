@@ -60,10 +60,10 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
             Just pt -> Prelude.filter ((== pt) . profileType)
             Nothing -> id
           nameFilter = case profileFilterName of
-            Just name -> Prelude.filter ((Text.toLower name `Text.isInfixOf`) . Text.toLower . profileName)
+            Just nameSubstring -> Prelude.filter ((Text.toLower nameSubstring `Text.isInfixOf`) . Text.toLower . profileName)
             Nothing -> id
           descriptionFilter = case profileFilterDescription of
-            Just description -> Prelude.filter ((== description) . profileDescription)
+            Just descriptionSubstring -> Prelude.filter ((Text.toLower descriptionSubstring `Text.isInfixOf`) . Text.toLower . profileDescription)
             Nothing -> id
        in idFilter . typeFilter . nameFilter . descriptionFilter $ profiles
 
