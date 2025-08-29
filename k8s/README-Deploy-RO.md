@@ -17,7 +17,7 @@ kubectl get nodes -o wide
 
 ## 1) Instalare cert-manager (emite și reînnoiește certificate TLS)
 - ce este: controller care gestionează automat certificate TLS (Let’s Encrypt)
-- de ce: Ingress-ul cere TLS; cert-manager emite și reînnoiește automat
+- de ce: Expunerea HTTP(S) cere TLS; cert-manager emite și reînnoiește automat
 ```bash
 helm repo add jetstack https://charts.jetstack.io
 helm repo update
@@ -63,14 +63,16 @@ kubectl get clusterissuers
 kubectl apply -f k8s/namespace.yaml
 ```
 
-## 6) Deploy aplicație și Ingress (ordine corectă)
+## 6) Deploy aplicație și Gateway API (ordine corectă)
 - 1) chainsync → creează/actualizează baza SQLite
 - 2) server → citește din baza creată de chainsync
-- 3) ingress → expune HTTPS prin Traefik și cert-manager
+- 3) certificate → cere/gestionează TLS cu cert-manager (DNS‑01 GoDaddy)
+- 4) gateway → expune HTTPS prin Traefik (Gateway API)
 ```bash
 kubectl -n bjj apply -f k8s/chain-sync.yaml
 kubectl -n bjj apply -f k8s/server.yaml
-kubectl -n bjj apply -f k8s/ingress.yaml
+kubectl -n bjj apply -f k8s/certificate.yaml
+kubectl -n bjj apply -f k8s/gateway.yaml
 ```
 
 ### Ce face fiecare manifest
@@ -91,11 +93,15 @@ kubectl -n bjj apply -f k8s/ingress.yaml
   - Service `bjj-server` pe 8082 (intern)
   - PodDisruptionBudget `bjj-server-pdb` (min 1 pod disponibil la întreruperi)
 
-- `k8s/ingress.yaml`
-  - `ingressClassName: traefik`, host `bjjbackend.cardano.vip`
-  - `cert-manager.io/cluster-issuer: letsencrypt-godaddy-prod`
-  - TLS `secretName: bjjbackend-tls`
-  - rutează către `Service bjj-server:8082`
+- `k8s/certificate.yaml`
+  - `Certificate` pentru `bjjbackend.cardano.vip` emis de `ClusterIssuer letsencrypt-godaddy-prod`
+  - `spec.secretName: bjjbackend-tls` — secretul TLS creat/actualizat automat de cert-manager
+
+- `k8s/gateway.yaml`
+  - `Gateway` (gatewayClassName `traefik`) cu listener pe 80 (HTTP) și 443 (HTTPS)
+  - Adnotare `cert-manager.io/cluster-issuer: letsencrypt-godaddy-prod` pe `Gateway`
+  - TLS pe 443 cu `certificateRefs: secret bjjbackend-tls`
+  - `HTTPRoute` cu redirect 80→443 și rutare către `Service bjj-server:8082`
 
 - `k8s/clusterissuer-godaddy-*.yaml`
   - definesc conectarea la Let’s Encrypt (prod/staging) și DNS‑01 prin GoDaddy (folosește Secret-ul `godaddy-api-token`)
@@ -105,9 +111,10 @@ kubectl -n bjj apply -f k8s/ingress.yaml
 
 ## 7) Verificări după deploy
 ```bash
-kubectl -n bjj get deploy,po,svc,pvc,ingress
+kubectl -n bjj get deploy,po,svc,pvc,gateway,httproute
 kubectl -n bjj get certificate,certificaterequest,challenge,order,secret
-kubectl -n bjj get ingress bjj-ingress -o wide
+kubectl -n bjj get gateway bjj-gateway -o wide
+kubectl -n bjj get httproute -o wide
 curl -I https://bjjbackend.cardano.vip
 ```
 Verifică DB în pod:
@@ -132,7 +139,7 @@ kubectl -n bjj get events --sort-by=.lastTimestamp
 kubectl -n bjj logs deploy/chainsync --tail=200 -f
 ```
 
-- traefik (Ingress):
+- traefik (Gateway/Traefik):
 ```bash
 kubectl -n kube-system logs deploy/traefik --tail=200 -f
 ```
@@ -223,13 +230,13 @@ kubectl -n bjj apply -f k8s/ingress.yaml
 
 ## 12) Checklist scurt (operare zilnică)
 ```bash
-kubectl -n bjj get deploy,po,svc,pvc,ingress
+kubectl -n bjj get deploy,po,svc,pvc,gateway,httproute
 kubectl -n bjj logs -l app=bjj-server -c server --tail=200 --prefix -f
 kubectl -n bjj logs deploy/chainsync --tail=200 -f
 kubectl -n bjj set image deploy/bjj-server server=mariusgeorgescu/bjjserver:chainsync
 kubectl -n bjj rollout status deploy/bjj-server
 kubectl -n bjj get certificate,challenge,order,secret
-kubectl -n bjj get ingress bjj-ingress -o wide
+kubectl -n bjj get gateway bjj-gateway -o wide
 curl -I https://bjjbackend.cardano.vip
 ```
 
@@ -294,18 +301,21 @@ kubectl -n bjj patch deploy/chainsync --type='json' -p='[{"op":"add","path":"/sp
 kubectl -n bjj patch deploy/bjj-server --type='json' -p='[{"op":"add","path":"/spec/template/spec/nodeSelector","value":{"storage":"lookup"}}]'
 ```
 
-### C. Ingress (k8s/ingress.yaml)
-- `metadata.annotations.cert-manager.io/cluster-issuer`
-  - `letsencrypt-godaddy-prod` (prod) sau poți seta `-staging` pentru teste.
-- `spec.tls.secretName: bjjbackend-tls`
-  - Secretul TLS creat automat de cert-manager. Nu schimbă numele decât dacă ai motiv.
-- `spec.rules.host: bjjbackend.cardano.vip`
-  - Domeniul accesat din internet. Dacă îl schimbi, actualizează și DNS-ul.
+### C. Gateway API (k8s/gateway.yaml) și Certificate (k8s/certificate.yaml)
+- `Gateway.spec.gatewayClassName: traefik`
+  - Necesită Traefik cu suport Gateway API activ în cluster (implicit în k3s noi).
+- `Gateway.metadata.annotations.cert-manager.io/cluster-issuer: letsencrypt-godaddy-prod`
+  - Cert-manager va emite TLS pentru hostul din listenerul HTTPS.
+- `Gateway.listeners[https].tls.certificateRefs.name: bjjbackend-tls`
+  - Leagă certificatul generat de `Certificate` la listenerul HTTPS.
+- `HTTPRoute.rules[].backendRefs`: trimite traficul către `Service bjj-server:8082`.
 
 Reapply după schimbări:
 ```bash
-kubectl -n bjj apply -f k8s/ingress.yaml
-kubectl -n bjj get ingress bjj-ingress -o wide
+kubectl -n bjj apply -f k8s/certificate.yaml
+kubectl -n bjj apply -f k8s/gateway.yaml
+kubectl -n bjj get gateway bjj-gateway -o wide
+kubectl -n bjj get httproute -o wide
 ```
 
 ### D. ClusterIssuers (k8s/clusterissuer-godaddy-*.yaml)
@@ -338,8 +348,9 @@ graph LR
 
   subgraph "Kubernetes Cluster (k3s)"
     subgraph "Namespace: bjj"
-      traefik["Ingress Controller (Traefik)"]
-      ingress["Ingress bjj-ingress (TLS)"]
+      traefik["Gateway Controller (Traefik)"]
+      gateway["Gateway bjj-gateway (TLS)"]
+      route["HTTPRoute bjj-server-route"]
       svc["Service bjj-server (ClusterIP:8082)"]
       subgraph "Deployment bjj-server (3 pods)"
         server1["Pod server-1"]
@@ -355,10 +366,10 @@ graph LR
     end
   end
 
-  user --> dns --> ingress
-  ingress --> svc --> server1
-  ingress --> svc --> server2
-  ingress --> svc --> server3
+  user --> dns --> gateway --> route --> svc
+  svc --> server1
+  svc --> server2
+  svc --> server3
 
   cs --> pvc
   server1 --> pvc
@@ -409,7 +420,7 @@ Explicații:
 - initContainer: un container care rulează înaintea aplicației ca să pregătească mediul (ex. așteptăm fișierul DB să apară).
 
 ### Rețea
-- ClusterIP Service: accesibil doar din interiorul clusterului; Ingress îl folosește ca “backend”.
+- ClusterIP Service: accesibil doar din interiorul clusterului; Gateway/HTTPRoute îl folosesc ca “backend”.
 - NodePort/LoadBalancer: alte tipuri de servicii pentru expunere externă; aici nu le folosim direct (Traefik gestionează 80/443).
 - DNS intern K8s: fiecare Service are un nume DNS (ex. `bjj-server.bjj.svc.cluster.local`).
 

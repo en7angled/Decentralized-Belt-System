@@ -129,15 +129,23 @@ spec:
       targetPort: 8080
 ```
 
-### Ingress (networking.k8s.io/v1)
-- Scop: expune HTTP/HTTPS din exterior către servicii interne; necesită un Ingress Controller (ex.: Traefik, NGINX).
-- Chei:
-  - `spec.ingressClassName` sau adnotare `kubernetes.io/ingress.class`.
-  - `spec.tls`: host-uri și numele secretului TLS.
-  - `spec.rules`: mapping host/path → service/port.
+### Gateway API (gateway.networking.k8s.io/v1)
+- Resurse principale:
+  - `Gateway`: listener-e pe porturi (80/443), TLS, SNI/hostname
+  - `HTTPRoute`: reguli L7 (host/path) care trimit către Service-uri
+- Chei la `Gateway`:
+  - `spec.gatewayClassName` (ex.: `traefik`)
+  - `spec.listeners[]`:
+    - `name`, `hostname`, `port`, `protocol: HTTP|HTTPS`
+    - `tls.mode: Terminate` și `tls.certificateRefs` pentru TLS
+  - `metadata.annotations["cert-manager.io/cluster-issuer"]` — opțional, pentru integrare automată TLS
+- Chei la `HTTPRoute`:
+  - `spec.parentRefs[]` — referă `Gateway`
+  - `spec.hostnames[]` — host-urile servite
+  - `spec.rules[]` — `matches` (path), `filters` (Redirect), `backendRefs` (Service/port)
 
-### IngressClass (networking.k8s.io/v1)
-- Scop: definește un controller pentru Ingress (ex.: traefik, nginx). De obicei e creat de operatorul controller‑ului.
+### GatewayClass (gateway.networking.k8s.io/v1)
+- Scop: definește un controller pentru Gateway API (ex.: Traefik). De obicei este creat de operatorul controller‑ului (k3s include Traefik cu GatewayClass).
 
 ### PodDisruptionBudget (policy/v1)
 - Scop: asigură un minim de poduri disponibile în timpul întreruperilor planificate.
