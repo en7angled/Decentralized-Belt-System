@@ -56,15 +56,19 @@ spec:
               cpu: "1"
               memory: "1Gi"
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /swagger-ui
               port: 8082
+              scheme: HTTP
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /swagger-ui
               port: 8082
+              scheme: HTTP
             initialDelaySeconds: 10
             periodSeconds: 20
             timeoutSeconds: 2
