@@ -63,7 +63,38 @@ kubectl get clusterissuers
 kubectl apply -f k8s/namespace.yaml
 ```
 
-## 6) Deploy aplicație și Gateway API (ordine corectă)
+## 6) Activare Gateway API în Traefik (o singură dată)
+- Creează `GatewayClass` pentru Traefik și dă permisiuni pentru Gateway API:
+```bash
+kubectl apply -f k8s/gatewayclass-traefik.yaml
+kubectl apply -f k8s/traefik-gateway-rbac.yaml
+```
+- Activează providerul Gateway și intrările 80/443; apoi aliniază Service-ul Traefik (dacă e nevoie):
+```bash
+# adaugă providerul Gateway
+kubectl -n kube-system patch deploy/traefik --type='json' \
+  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--providers.kubernetesgateway"}]'
+
+# schimbă entryPoints pe 80/443
+kubectl -n kube-system patch deploy/traefik --type='json' \
+  -p='[{"op":"replace","path":"/spec/template/spec/containers/0/args/4","value":"--entryPoints.web.address=:80/tcp"},
+      {"op":"replace","path":"/spec/template/spec/containers/0/args/5","value":"--entryPoints.websecure.address=:443/tcp"}]'
+
+kubectl -n kube-system rollout status deploy/traefik
+
+# dacă Service-ul Traefik țintește porturi denumite (web/websecure), aliniază targetPort la 80/443
+kubectl -n kube-system patch svc traefik --type='json' \
+  -p='[{"op":"replace","path":"/spec/ports/0/targetPort","value":80},
+       {"op":"replace","path":"/spec/ports/1/targetPort","value":443}]'
+```
+
+Verifică:
+```bash
+kubectl get gatewayclass
+kubectl -n kube-system logs deploy/traefik --tail=100 | grep -Ei "gateway|entryPoint|forbidden|error" || true
+```
+
+## 7) Deploy aplicație și Gateway API (ordine corectă)
 - 1) chainsync → creează/actualizează baza SQLite
 - 2) server → citește din baza creată de chainsync
 - 3) certificate → cere/gestionează TLS cu cert-manager (DNS‑01 GoDaddy)
@@ -102,6 +133,12 @@ kubectl -n bjj apply -f k8s/gateway.yaml
   - Adnotare `cert-manager.io/cluster-issuer: letsencrypt-godaddy-prod` pe `Gateway`
   - TLS pe 443 cu `certificateRefs: secret bjjbackend-tls`
   - `HTTPRoute` cu redirect 80→443 și rutare către `Service bjj-server:8082`
+
+- `k8s/gatewayclass-traefik.yaml`
+  - Definește `GatewayClass` numit `traefik` cu `controllerName: traefik.io/gateway-controller` folosit de Gateway API.
+
+- `k8s/traefik-gateway-rbac.yaml`
+  - Oferă permisiuni ServiceAccount-ului `kube-system/traefik` pentru a lista/watch resursele Gateway API și a scrie status (`/status`) pentru `GatewayClass`, `Gateway`, `HTTPRoute`.
 
 - `k8s/clusterissuer-godaddy-*.yaml`
   - definesc conectarea la Let’s Encrypt (prod/staging) și DNS‑01 prin GoDaddy (folosește Secret-ul `godaddy-api-token`)
@@ -208,7 +245,8 @@ kubectl -n cert-manager logs deploy/acme-godaddy-webhook --tail=200
 kubectl -n bjj delete challenges.acme.cert-manager.io,orders.acme.cert-manager.io --all
 kubectl -n bjj delete certificaterequest bjjbackend-tls-1 --ignore-not-found
 kubectl -n bjj delete certificate bjjbackend-tls --ignore-not-found
-kubectl -n bjj apply -f k8s/ingress.yaml
+kubectl -n bjj apply -f k8s/certificate.yaml
+kubectl -n bjj apply -f k8s/gateway.yaml
 ```
 
 - Eroare SQLite “unable to open database file”:
@@ -225,7 +263,8 @@ kubectl get ns bjj -o json | jq '.spec.finalizers=[]' | \
 kubectl apply -f k8s/namespace.yaml
 kubectl -n bjj apply -f k8s/chain-sync.yaml
 kubectl -n bjj apply -f k8s/server.yaml
-kubectl -n bjj apply -f k8s/ingress.yaml
+kubectl -n bjj apply -f k8s/certificate.yaml
+kubectl -n bjj apply -f k8s/gateway.yaml
 ```
 
 ## 12) Checklist scurt (operare zilnică)

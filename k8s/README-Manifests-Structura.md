@@ -144,6 +144,11 @@ spec:
   - `spec.hostnames[]` — host-urile servite
   - `spec.rules[]` — `matches` (path), `filters` (Redirect), `backendRefs` (Service/port)
 
+Exemple în repo:
+- `k8s/gatewayclass-traefik.yaml` — definește clasa de gateway `traefik`.
+- `k8s/gateway.yaml` — `Gateway` + două `HTTPRoute` (redirect 80→443 și rutare către `bjj-server:8082`).
+- `k8s/traefik-gateway-rbac.yaml` — RBAC pentru ca Traefik să citească resursele Gateway API și să actualizeze statusul.
+
 ### GatewayClass (gateway.networking.k8s.io/v1)
 - Scop: definește un controller pentru Gateway API (ex.: Traefik). De obicei este creat de operatorul controller‑ului (k3s include Traefik cu GatewayClass).
 
