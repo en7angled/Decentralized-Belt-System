@@ -1,6 +1,7 @@
 module Main where
 
-import AppMonad (AppContext (..), AuthContext (..))
+import QueryAppMonad (QueryAppContext (..))
+import WebAPI.Auth (AuthContext (..), getBasicAuthFromEnv)
 import Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Maybe
@@ -25,11 +26,6 @@ getPortFromEnv = do
     Nothing -> return 8083
     Just p -> return (read p)
 
-getBasicAuthFromEnv :: IO AuthContext
-getBasicAuthFromEnv = do
-  user <- fromMaybe "cardano" <$> lookupEnv "BASIC_USER"
-  pass <- fromMaybe "lovelace" <$> lookupEnv "BASIC_PASS"
-  return AuthContext {authUser = Data.Text.pack user, authPassword = Data.Text.pack pass}
 
 main :: IO ()
 main = do
@@ -48,7 +44,7 @@ main = do
     let txBuildingContext = TxBuildingContext deployedScriptsContext providersContext
     authContext <- getBasicAuthFromEnv
     lookupContext <- Data.Text.pack . fromMaybe defaultLookUpPath <$> lookupEnv "LOOKUP_PATH"
-    let appContext = AppContext authContext txBuildingContext lookupContext
+    let appContext = QueryAppContext authContext providersContext lookupContext
 
     let host = "0.0.0.0"
     port <- getPortFromEnv

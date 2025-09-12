@@ -47,22 +47,55 @@ common plinth-ghc-options
   ghc-options:        -fplugin-opt PlutusTx.Plugin:no-remove-trace
   ghc-options:        -fplugin-opt PlutusTx.Plugin:no-optimize
 
-library
+library webapi
+  import:             common-options
+  default-language:   Haskell2010
+  hs-source-dirs:     src/webapi-lib
+  default-extensions:
+    DataKinds
+    NamedFieldPuns
+    TypeOperators
+    OverloadedStrings
+  exposed-modules:
+    WebAPI.Auth
+    WebAPI.Health
+    WebAPI.CORS
+
+  build-depends:
+    , aeson
+    , http-types
+    , servant
+    , servant-server
+    , swagger2
+    , text
+    , time
+    , wai
+    , wai-cors
+
+library offchain
   import:             common-options, plinth-ghc-options
   default-language:   Haskell2010
+  hs-source-dirs:     src/offchain-lib
+  default-extensions:
+    ImportQualifiedPost
+    DerivingStrategies
+    DerivingVia
+    DeriveGeneric
+    DeriveAnyClass
+    GeneralizedNewtypeDeriving
+    DataKinds
+    TupleSections
+    InstanceSigs
+    RecordWildCards
+    FlexibleContexts
+    NamedFieldPuns
+    TypeApplications
+    OverloadedStrings
+    BlockArguments
   exposed-modules:
-    Constants
     DomainTypes.Core.Actions
     DomainTypes.Core.Types
     DomainTypes.Transfer.Types
-    Onchain.BJJ
-    Onchain.Blueprint
-    Onchain.CIP68
-    Onchain.MintingPolicy
-    Onchain.ProfilesValidator
-    Onchain.Protocol
-    Onchain.RanksValidator
-    Onchain.Utils
     TxBuilding.Context
     TxBuilding.Exceptions
     TxBuilding.Functors
@@ -73,15 +106,12 @@ library
     TxBuilding.Transactions
     TxBuilding.Utils
     TxBuilding.Validators
-    Utils
 
   if !(impl(ghcjs) || os(ghcjs))
     build-depends: plutus-tx-plugin
 
-  -- other-modules:    
-
-  -- other-extensions:
   build-depends:
+    , Decentralized-Belt-System
     , aeson
     , bytestring
     , containers
@@ -97,6 +127,42 @@ library
   build-depends:
     , atlas-cardano
     , cardano-api
+    , plutus-core
+    , plutus-ledger-api
+    , plutus-tx
+
+library
+  import:             common-options, plinth-ghc-options
+  default-language:   Haskell2010
+  exposed-modules:
+    Constants
+    Onchain.BJJ
+    Onchain.Blueprint
+    Onchain.CIP68
+    Onchain.MintingPolicy
+    Onchain.ProfilesValidator
+    Onchain.Protocol
+    Onchain.RanksValidator
+    Onchain.Utils
+    Utils
+
+  if !(impl(ghcjs) || os(ghcjs))
+    build-depends: plutus-tx-plugin
+
+  -- other-modules:    
+
+  -- other-extensions:
+  build-depends:
+    , aeson
+    , bytestring
+    , containers
+    , extra
+    , swagger2
+    , text
+
+  --- Cardano specific dependencies
+  build-depends:
+    , atlas-cardano
     , plutus-core
     , plutus-ledger-api
     , plutus-tx
@@ -141,6 +207,7 @@ executable admin
   build-depends:
     , base
     , Decentralized-Belt-System
+    , offchain
 
   build-depends:
     , aeson
@@ -161,13 +228,15 @@ executable interaction-api
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
-    AppMonad
+    InteractionAppMonad
     RestAPI
     Types
 
   build-depends:
     , base
     , Decentralized-Belt-System
+    , offchain
+    , webapi
 
   build-depends:
     , aeson
@@ -221,7 +290,7 @@ executable query-api
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
-    AppMonad
+    QueryAppMonad
     RestAPI
     Types
     Storage
@@ -235,6 +304,8 @@ executable query-api
   build-depends:
     , base
     , Decentralized-Belt-System
+    , offchain
+    , webapi
 
   build-depends:
     , aeson
@@ -297,6 +368,7 @@ test-suite Decentralized-Belt-System-test
   build-depends:
     , base
     , Decentralized-Belt-System
+    , offchain
 
   build-depends:
     , extra
@@ -322,6 +394,7 @@ executable chain-sync
   build-depends:
     , base
     , Decentralized-Belt-System
+    , offchain
 
   build-depends:
     , aeson

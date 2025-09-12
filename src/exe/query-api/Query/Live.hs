@@ -2,7 +2,7 @@
 
 module Query.Live where
 
-import AppMonad (AppContext (..))
+import QueryAppMonad (QueryAppContext (..))
 import Control.Monad.Reader
 import qualified Data.List as L
 import Data.MultiSet (fromList, toOccurList)
@@ -18,24 +18,24 @@ import TxBuilding.Context
 import TxBuilding.Lookups
 import Types
 
-getPractitionerProfile :: (MonadReader AppContext m, MonadIO m) => ProfileRefAC -> m PractitionerProfileInformation
+getPractitionerProfile :: (MonadReader QueryAppContext m, MonadIO m) => ProfileRefAC -> m PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
-  TxBuildingContext {..} <- asks txBuildingContext
+  providerCtx <- asks providerContext
   liftIO $ runQuery providerCtx $ getPractiotionerInformation profileRefAC
 
-getOrganizationProfile :: (MonadReader AppContext m, MonadIO m) => ProfileRefAC -> m OrganizationProfileInformation
+getOrganizationProfile :: (MonadReader QueryAppContext m, MonadIO m) => ProfileRefAC -> m OrganizationProfileInformation
 getOrganizationProfile profileRefAC = do
-  TxBuildingContext {..} <- asks txBuildingContext
+  providerCtx <- asks providerContext
   liftIO $ runQuery providerCtx $ getOrganizationInformation profileRefAC
 
-getProfilesCount :: (MonadReader AppContext m, MonadIO m) => Maybe ProfileType -> m Int
+getProfilesCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe ProfileType -> m Int
 getProfilesCount _ = do
-  TxBuildingContext {..} <- asks txBuildingContext
+  providerCtx <- asks providerContext
   liftIO $ runQuery providerCtx $ getAllProfilesCount (cfgNetworkId . ctxCoreCfg $ providerCtx)
 
-getProfiles :: (MonadReader AppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [Profile]
+getProfiles :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [Profile]
 getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
-  TxBuildingContext {..} <- asks txBuildingContext
+  providerCtx <- asks providerContext
   allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (cfgNetworkId . ctxCoreCfg $ providerCtx))
   return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyProfileFilter maybeProfileFilter allProfiles
   where
@@ -67,9 +67,9 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
             Nothing -> id
        in idFilter . typeFilter . nameFilter . descriptionFilter $ profiles
 
-getPromotions :: (MonadReader AppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe PromotionFilter -> Maybe (PromotionsOrderBy, SortOrder) -> m [Promotion]
+getPromotions :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe PromotionFilter -> Maybe (PromotionsOrderBy, SortOrder) -> m [Promotion]
 getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
-  TxBuildingContext {..} <- asks txBuildingContext
+  providerCtx <- asks providerContext
   allPromotions <- liftIO $ runQuery providerCtx (getAllPromotions (cfgNetworkId . ctxCoreCfg $ providerCtx))
   return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyPromotionFilter maybePromotionFilter allPromotions
   where
@@ -108,12 +108,12 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
             (Nothing, Nothing) -> id
        in idFilter . beltFilter . achievedByFilter . awardedByFilter . achievementDateFilter $ promotions
 
-getPromotionsCount :: (MonadReader AppContext m, MonadIO m) => Maybe PromotionFilter -> m Int
+getPromotionsCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe PromotionFilter -> m Int
 getPromotionsCount maybePromotionFilter = Prelude.length <$> getPromotions Nothing maybePromotionFilter Nothing
 
-getRanks :: (MonadReader AppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe RankFilter -> Maybe (RanksOrderBy, SortOrder) -> m [Rank]
+getRanks :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe RankFilter -> Maybe (RanksOrderBy, SortOrder) -> m [Rank]
 getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
-  TxBuildingContext {..} <- asks txBuildingContext
+  providerCtx <- asks providerContext
   allRanks <- liftIO $ runQuery providerCtx (getAllRanks (cfgNetworkId . ctxCoreCfg $ providerCtx))
   return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyRankFilter maybeRankFilter allRanks
   where
@@ -152,10 +152,10 @@ getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
             (Nothing, Nothing) -> id
        in idFilter . beltFilter . achievedByFilter . awardedByFilter . achievementDateFilter $ ranks
 
-getRanksCount :: (MonadReader AppContext m, MonadIO m) => Maybe RankFilter -> m Int
+getRanksCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe RankFilter -> m Int
 getRanksCount maybeRankFilter = Prelude.length <$> getRanks Nothing maybeRankFilter Nothing
 
-getBeltTotals :: (MonadReader AppContext m, MonadIO m) => m [(BJJBelt, Int)]
+getBeltTotals :: (MonadReader QueryAppContext m, MonadIO m) => m [(BJJBelt, Int)]
 getBeltTotals = do
   allRanks <- getRanks Nothing Nothing Nothing
   let allBelts = Prelude.map rankBelt allRanks

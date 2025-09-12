@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module AppMonad where
+module QueryAppMonad where
 
 import Control.Exception
 import Control.Monad.Except
@@ -33,59 +33,31 @@ import TxBuilding.Interactions (Interaction)
 import TxBuilding.Lookups
 import TxBuilding.Transactions (interactionToHexEncodedCBOR, submitTx)
 import Types
+import WebAPI.Auth (AuthContext)
 
 ------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------
 
-data AuthContext = AuthContext
-  { authUser :: Text,
-    authPassword :: Text
-  }
-  deriving (Eq, Show)
-
-data AppContext = AppContext
+data QueryAppContext = QueryAppContext
   { authContext :: AuthContext,
-    txBuildingContext :: TxBuildingContext,
+    providerContext :: ProviderCtx,
     projectionDbPath :: Text
   }
 
-newtype AppMonad a = AppMonad {unAppMonad :: ReaderT AppContext Servant.Handler a}
+newtype QueryAppMonad a = QueryAppMonad {unAppMonad :: ReaderT QueryAppContext Servant.Handler a}
   deriving (Functor, Applicative, Monad)
 
-runAppMonad :: AppContext -> AppMonad a -> Servant.Handler a
+runAppMonad :: QueryAppContext -> QueryAppMonad a -> Servant.Handler a
 runAppMonad ctx app = runReaderT (unAppMonad app) ctx
 
-instance MonadIO AppMonad where
-  liftIO :: IO a -> AppMonad a
-  liftIO = AppMonad . liftIO
+instance MonadIO QueryAppMonad where
+  liftIO :: IO a -> QueryAppMonad a
+  liftIO = QueryAppMonad . liftIO
 
-instance MonadReader AppContext AppMonad where
-  ask :: AppMonad AppContext
-  ask = AppMonad ask
+instance MonadReader QueryAppContext QueryAppMonad where
+  ask :: QueryAppMonad QueryAppContext
+  ask = QueryAppMonad ask
 
-  local :: (AppContext -> AppContext) -> AppMonad a -> AppMonad a
-  local f (AppMonad app) = AppMonad (local f app)
-
-buildInteractionApp :: Interaction -> AppMonad String
-buildInteractionApp inter = do
-  -- Lift into the TxBuildingContext reader
-  AppMonad $ do
-    AppContext {..} <- ask
-    res <- liftIO $ try (runReaderT (interactionToHexEncodedCBOR inter) txBuildingContext)
-    case res of
-      Left (e :: GYTxMonadException) -> do
-        liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
-        throwError err400 {errBody = BL8.pack (show e)}
-      Right ok -> pure ok
-
-submitTxApp :: GYTx -> AppMonad GYTxId
-submitTxApp tx = do
-  AppMonad $ do
-    AppContext {..} <- ask
-    res <- liftIO $ try (runReaderT (submitTx tx) txBuildingContext)
-    case res of
-      Left (e :: GYTxMonadException) -> do
-        liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
-        throwError err400 {errBody = BL8.pack (show e)}
-      Right ok -> pure ok
+  local :: (QueryAppContext -> QueryAppContext) -> QueryAppMonad a -> QueryAppMonad a
+  local f (QueryAppMonad app) = QueryAppMonad (local f app)

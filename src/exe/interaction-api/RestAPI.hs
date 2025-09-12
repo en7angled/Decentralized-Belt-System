@@ -5,7 +5,7 @@
 
 module RestAPI where
 
-import AppMonad
+import InteractionAppMonad
 import Control.Lens hiding (Context)
 import Control.Monad.Reader (MonadIO (liftIO), ReaderT (runReaderT), asks)
 import qualified Data.List
@@ -14,7 +14,6 @@ import Data.Swagger
 import Data.Text hiding (length)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
-import Data.Time (getCurrentTime, formatTime, defaultTimeLocale)
 import Data.Aeson (ToJSON, FromJSON)
 import GHC.Generics (Generic)
 import DomainTypes.Core.Types
@@ -24,7 +23,6 @@ import GeniusYield.Types hiding (title)
 import qualified Network.HTTP.Types as HttpTypes
 import Network.HTTP.Types.Header
 import Network.Wai
-import Network.Wai.Middleware.Cors
 import Network.Wai.Middleware.Servant.Options (provideOptions)
 import Onchain.BJJ (BJJBelt, parseBelt)
 import Servant
@@ -33,6 +31,9 @@ import Servant.Swagger.UI
 import TxBuilding.Interactions
 import TxBuilding.Transactions
 import Types
+import WebAPI.Auth
+import WebAPI.Health
+import WebAPI.CORS
 
 instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
@@ -58,25 +59,7 @@ instance FromHttpApiData SortOrder where
 
 
 
-newtype AuthUser = AuthUser
-  { user :: Text
-  }
-  deriving (Eq, Show)
-
-proxyBasicAuthContext :: Proxy '[BasicAuthCheck AuthUser]
-proxyBasicAuthContext = Proxy
-
--- | 'BasicAuthCheck' holds the handler we'll use to verify a username and password.
-authCheck :: AuthContext -> BasicAuthCheck AuthUser
-authCheck AuthContext {authUser, authPassword} =
-  let check (BasicAuthData username password) =
-        if Data.Text.Encoding.decodeUtf8 username == authUser && Data.Text.Encoding.decodeUtf8 password == authPassword
-          then return (Authorized (AuthUser authUser))
-          else return Unauthorized
-   in BasicAuthCheck check
-
-basicAuthServerContext :: AuthContext -> Context (BasicAuthCheck AuthUser ': '[])
-basicAuthServerContext authContext = authCheck authContext :. EmptyContext
+-- Auth code moved to WebAPI.Auth
 
 ------------------------------------------------------------------------------------------------
 
@@ -84,20 +67,7 @@ basicAuthServerContext authContext = authCheck authContext :. EmptyContext
 
 ------------------------------------------------------------------------------------------------
 
-type Health =
-  -- Health check endpoint
-  ( Summary "Health Check"
-      :> Description "Returns the health status of the service"
-      :> "health"
-      :> Get '[JSON] HealthStatus
-  )
-    :<|>
-    -- Readiness check endpoint
-    ( Summary "Readiness Check"
-        :> Description "Returns the readiness status of the service"
-        :> "ready"
-        :> Get '[JSON] HealthStatus
-    )
+-- Health API moved to WebAPI.Health
 
 type Transactions =
   -- Build tx endpoint
@@ -116,53 +86,21 @@ type Transactions =
         :> Post '[JSON] GYTxId
     )
 
--- Health check data type
-data HealthStatus = HealthStatus
-  { status :: Text
-  , service :: Text
-  , version :: Text
-  , timestamp :: Text
-  }
-  deriving (Generic, ToJSON, FromJSON, ToSchema)
+-- Health handlers moved to WebAPI.Health
 
-handleHealth :: AppMonad HealthStatus
-handleHealth = do
-  now <- liftIO getCurrentTime
-  return $ HealthStatus
-    { status = "healthy"
-    , service = "interaction-api"
-    , version = "1.0.0"
-    , timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
-    }
-
-handleReady :: AppMonad HealthStatus
-handleReady = do
-  -- Check if the service is ready to accept requests
-  -- For now, we'll just return healthy, but this could check:
-  -- - Database connectivity
-  -- - External service dependencies
-  -- - Configuration validity
-  now <- liftIO getCurrentTime
-  return $ HealthStatus
-    { status = "ready"
-    , service = "interaction-api"
-    , version = "1.0.0"
-    , timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
-    }
-
-handleBuildTx :: Interaction -> AppMonad String
+handleBuildTx :: Interaction -> InteractionAppMonad String
 handleBuildTx = buildInteractionApp
 
-handleSubmitTx :: AddWitAndSubmitParams -> AppMonad GYTxId
+handleSubmitTx :: AddWitAndSubmitParams -> InteractionAppMonad GYTxId
 handleSubmitTx AddWitAndSubmitParams {..} = do
   let txBody = getTxBody awasTxUnsigned
   let signedTx = makeSignedTransaction awasTxWit txBody
   submitTxApp signedTx
 
-healthServer :: ServerT Health AppMonad
-healthServer = handleHealth :<|> handleReady
+interactionHealthServer :: ServerT Health InteractionAppMonad
+interactionHealthServer = WebAPI.Health.healthServer "interaction-api"
 
-transactionsServer :: ServerT Transactions AppMonad
+transactionsServer :: ServerT Transactions InteractionAppMonad
 transactionsServer = handleBuildTx :<|> handleSubmitTx
 
 ------------------------------------------------------------------------------------------------
@@ -196,8 +134,8 @@ type RestAPI = Health :<|> Transactions
 proxyRestAPI :: Proxy RestAPI
 proxyRestAPI = Proxy
 
-restServer :: ServerT RestAPI AppMonad
-restServer = healthServer :<|> transactionsServer
+restServer :: ServerT RestAPI InteractionAppMonad
+restServer = interactionHealthServer :<|> transactionsServer
 
 -- | Adding Basic Auth to the Rest API
 type PrivateRestAPI =
@@ -206,7 +144,7 @@ type PrivateRestAPI =
 proxyPrivateRestAPI :: Proxy PrivateRestAPI
 proxyPrivateRestAPI = Proxy
 
-privateRestServer :: ServerT PrivateRestAPI AppMonad
+privateRestServer :: ServerT PrivateRestAPI InteractionAppMonad
 privateRestServer = const restServer
 
 -- | Adding Swagger UI on top of Private Rest API
@@ -217,7 +155,7 @@ type FullAPI =
 proxyFullAPI :: Proxy FullAPI
 proxyFullAPI = Proxy
 
-fullServer :: ServerT FullAPI AppMonad
+fullServer :: ServerT FullAPI InteractionAppMonad
 fullServer = swaggerServer :<|> privateRestServer
 
 ------------------------------------------------------------------------------------------------
@@ -226,28 +164,11 @@ fullServer = swaggerServer :<|> privateRestServer
 
 ------------------------------------------------------------------------------------------------
 
-mkBJJApp :: AppContext -> Application
+mkBJJApp :: InteractionAppContext -> Application
 mkBJJApp ctx =
-  cors
-    ( \req ->
-        let originHeader = Data.List.lookup hOrigin (requestHeaders req)
-         in case originHeader of
-              Just o ->
-                Just
-                  simpleCorsResourcePolicy
-                    { corsOrigins = Just ([o], True), -- Reflect request's Origin dynamically
-                      corsMethods = ["GET", "POST", "PUT", "OPTIONS", "DELETE"],
-                      corsRequestHeaders = simpleHeaders <> [HttpTypes.hAuthorization],
-                      corsExposedHeaders = Just $ simpleHeaders <> [HttpTypes.hAuthorization],
-                      corsVaryOrigin = True,
-                      corsRequireOrigin = False,
-                      corsIgnoreFailures = False,
-                      corsMaxAge = Just 600
-                    }
-              Nothing -> Nothing -- If no origin set skips cors headers
-    )
+  WebAPI.CORS.setupCors
     $ provideOptions proxyRestAPI
     $ serveWithContext proxyFullAPI basicCtx hoistedServer
   where
     basicCtx = basicAuthServerContext (authContext ctx)
-    hoistedServer = hoistServerWithContext proxyFullAPI proxyBasicAuthContext (runAppMonad ctx) fullServer
+    hoistedServer = hoistServerWithContext proxyFullAPI proxyBasicAuthContext (runInteractionAppMonad ctx) fullServer

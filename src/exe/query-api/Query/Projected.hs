@@ -5,7 +5,7 @@
 
 module Query.Projected where
 
-import AppMonad
+import QueryAppMonad
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Reader (MonadReader)
 import Control.Monad.Reader.Class
@@ -26,7 +26,7 @@ whenJust :: Maybe a -> (a -> SqlQuery ()) -> SqlQuery ()
 whenJust Nothing _ = pure ()
 whenJust (Just a) f = f a
 
-getPractitionerProfile :: (MonadIO m, MonadReader AppContext m) => ProfileRefAC -> m PractitionerProfileInformation
+getPractitionerProfile :: (MonadIO m, MonadReader QueryAppContext m) => ProfileRefAC -> m PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do
@@ -61,7 +61,7 @@ getPractitionerProfile profileRefAC = do
                   practitionerPreviousRanks = Prelude.reverse restRev
                 }
 
-getOrganizationProfile :: (MonadIO m, MonadReader AppContext m) => ProfileRefAC -> m OrganizationProfileInformation
+getOrganizationProfile :: (MonadIO m, MonadReader QueryAppContext m) => ProfileRefAC -> m OrganizationProfileInformation
 getOrganizationProfile profileRefAC = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do
@@ -77,7 +77,7 @@ getOrganizationProfile profileRefAC = do
               organizationImageURI = profileProjectionProfileImageURI prof
             }
 
-getProfilesCount :: (MonadIO m, MonadReader AppContext m) => Maybe ProfileType -> m Int
+getProfilesCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe ProfileType -> m Int
 getProfilesCount maybeProfileType = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do
@@ -90,7 +90,7 @@ getProfilesCount maybeProfileType = do
           pure countRows
     pure (maybe 0 unValue cnt)
 
-getProfiles :: (MonadIO m, MonadReader AppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [Profile]
+getProfiles :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [Profile]
 getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do
@@ -128,7 +128,7 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
             }
     pure (Prelude.map (toProfile . entityVal) rows)
 
-getPromotions :: (MonadIO m, MonadReader AppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.PromotionFilter -> Maybe (PromotionsOrderBy, SortOrder) -> m [Promotion]
+getPromotions :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.PromotionFilter -> Maybe (PromotionsOrderBy, SortOrder) -> m [Promotion]
 getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do
@@ -172,7 +172,7 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
             }
     pure (Prelude.map (toPromotion . entityVal) rows)
 
-getPromotionsCount :: (MonadIO m, MonadReader AppContext m) => Maybe C.PromotionFilter -> m Int
+getPromotionsCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.PromotionFilter -> m Int
 getPromotionsCount maybePromotionFilter = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do
@@ -193,7 +193,7 @@ getPromotionsCount maybePromotionFilter = do
           pure countRows
     pure (maybe 0 unValue cnt)
 
-getRanks :: (MonadIO m, MonadReader AppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.RankFilter -> Maybe (RanksOrderBy, SortOrder) -> m [Rank]
+getRanks :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.RankFilter -> Maybe (RanksOrderBy, SortOrder) -> m [Rank]
 getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do
@@ -237,7 +237,7 @@ getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
             }
     pure (Prelude.map (toRank . entityVal) rows)
 
-getRanksCount :: (MonadIO m, MonadReader AppContext m) => Maybe C.RankFilter -> m Int
+getRanksCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.RankFilter -> m Int
 getRanksCount maybeRankFilter = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do
@@ -258,7 +258,7 @@ getRanksCount maybeRankFilter = do
           pure countRows
     pure (maybe 0 unValue cnt)
 
-getBeltTotals :: (MonadIO m, MonadReader AppContext m) => m [(BJJBelt, Int)]
+getBeltTotals :: (MonadIO m, MonadReader QueryAppContext m) => m [(BJJBelt, Int)]
 getBeltTotals = do
   chainsyncDBPath <- asks projectionDbPath
   liftIO $ runSqlite chainsyncDBPath $ do

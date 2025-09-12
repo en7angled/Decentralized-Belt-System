@@ -5,7 +5,7 @@
 
 module RestAPI where
 
-import AppMonad
+import QueryAppMonad
 import Control.Lens hiding (Context)
 import Control.Monad.Reader (MonadIO (liftIO), ReaderT (runReaderT), asks)
 import qualified Data.List
@@ -14,7 +14,6 @@ import Data.Swagger
 import Data.Text hiding (length)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
-import Data.Time (getCurrentTime, formatTime, defaultTimeLocale)
 import Data.Aeson (ToJSON, FromJSON)
 import GHC.Generics (Generic)
 import DomainTypes.Core.Types
@@ -24,7 +23,6 @@ import GeniusYield.Types hiding (title)
 import qualified Network.HTTP.Types as HttpTypes
 import Network.HTTP.Types.Header
 import Network.Wai
-import Network.Wai.Middleware.Cors
 import Network.Wai.Middleware.Servant.Options (provideOptions)
 import Onchain.BJJ (BJJBelt, parseBelt)
 import Servant
@@ -38,6 +36,9 @@ import Types
 import qualified Query.Common as C
 import qualified Query.Live as L
 import qualified Query.Projected as P
+import WebAPI.Auth
+import WebAPI.Health
+import WebAPI.CORS
 
 instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
@@ -93,25 +94,7 @@ instance FromHttpApiData RanksOrderBy where
       _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
 
 
-newtype AuthUser = AuthUser
-  { user :: Text
-  }
-  deriving (Eq, Show)
-
-proxyBasicAuthContext :: Proxy '[BasicAuthCheck AuthUser]
-proxyBasicAuthContext = Proxy
-
--- | 'BasicAuthCheck' holds the handler we'll use to verify a username and password.
-authCheck :: AuthContext -> BasicAuthCheck AuthUser
-authCheck AuthContext {authUser, authPassword} =
-  let check (BasicAuthData username password) =
-        if Data.Text.Encoding.decodeUtf8 username == authUser && Data.Text.Encoding.decodeUtf8 password == authPassword
-          then return (Authorized (AuthUser authUser))
-          else return Unauthorized
-   in BasicAuthCheck check
-
-basicAuthServerContext :: AuthContext -> Context (BasicAuthCheck AuthUser ': '[])
-basicAuthServerContext authContext = authCheck authContext :. EmptyContext
+-- Auth code moved to WebAPI.Auth
 
 ------------------------------------------------------------------------------------------------
 
@@ -119,20 +102,7 @@ basicAuthServerContext authContext = authCheck authContext :. EmptyContext
 
 ------------------------------------------------------------------------------------------------
 
-type Health =
-  -- Health check endpoint
-  ( Summary "Health Check"
-      :> Description "Returns the health status of the service"
-      :> "health"
-      :> Get '[JSON] HealthStatus
-  )
-    :<|>
-    -- Readiness check endpoint
-    ( Summary "Readiness Check"
-        :> Description "Returns the readiness status of the service"
-        :> "ready"
-        :> Get '[JSON] HealthStatus
-    )
+-- Health API moved to WebAPI.Health
 
 ------------------------------------------------------------------------------------------------
 
@@ -173,47 +143,15 @@ type Profiles =
         :> Get '[JSON] [Profile]
     )
 
--- Health check data type
-data HealthStatus = HealthStatus
-  { status :: Text
-  , service :: Text
-  , version :: Text
-  , timestamp :: Text
-  }
-  deriving (Generic, ToJSON, FromJSON, ToSchema)
+-- Health handlers moved to WebAPI.Health
 
-handleHealth :: AppMonad HealthStatus
-handleHealth = do
-  now <- liftIO getCurrentTime
-  return $ HealthStatus
-    { status = "healthy"
-    , service = "query-api"
-    , version = "1.0.0"
-    , timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
-    }
-
-handleReady :: AppMonad HealthStatus
-handleReady = do
-  -- Check if the service is ready to accept requests
-  -- This could check:
-  -- - Database connectivity
-  -- - External service dependencies
-  -- - Configuration validity
-  now <- liftIO getCurrentTime
-  return $ HealthStatus
-    { status = "ready"
-    , service = "query-api"
-    , version = "1.0.0"
-    , timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
-    }
-
-handleGetPractitionerProfile :: ProfileRefAC -> Bool -> AppMonad PractitionerProfileInformation
+handleGetPractitionerProfile :: ProfileRefAC -> Bool -> QueryAppMonad PractitionerProfileInformation
 handleGetPractitionerProfile profileRefAC liveProjection = do
   if liveProjection
     then L.getPractitionerProfile profileRefAC
     else P.getPractitionerProfile profileRefAC
 
-handleGetOrganizationProfile :: ProfileRefAC -> Bool -> AppMonad OrganizationProfileInformation
+handleGetOrganizationProfile :: ProfileRefAC -> Bool -> QueryAppMonad OrganizationProfileInformation
 handleGetOrganizationProfile profileRefAC liveProjection = do
   if liveProjection
     then L.getOrganizationProfile profileRefAC
@@ -227,7 +165,7 @@ handleGetProfiles ::
   Maybe ProfilesOrderBy ->
   Maybe SortOrder ->
   Bool ->
-  AppMonad [Profile]
+  QueryAppMonad [Profile]
 handleGetProfiles limit offset profileRefs profileType orderBy sortOrder liveProjection = do
   let limitOffset = case (limit, offset) of
         (Just l, Just o) -> Just (l, o)
@@ -248,7 +186,7 @@ handleGetProfiles limit offset profileRefs profileType orderBy sortOrder livePro
     then L.getProfiles limitOffset filter order
     else P.getProfiles limitOffset filter order
 
-profilesServer :: ServerT Profiles AppMonad
+profilesServer :: ServerT Profiles QueryAppMonad
 profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile :<|> handleGetProfiles
 
 ------------------------------------------------------------------------------------------------
@@ -284,7 +222,7 @@ handleGetPromotions ::
   Maybe PromotionsOrderBy ->
   Maybe SortOrder ->
   Bool ->
-  AppMonad [Promotion]
+  QueryAppMonad [Promotion]
 handleGetPromotions limit offset profileRefs beltRefs achievedByRefs awardedByRefs orderBy sortOrder liveProjection = do
   let limitOffset = case (limit, offset) of
         (Just l, Just o) -> Just (l, o)
@@ -306,7 +244,7 @@ handleGetPromotions limit offset profileRefs beltRefs achievedByRefs awardedByRe
     then L.getPromotions limitOffset filter order
     else P.getPromotions limitOffset filter order
 
-promotionsServer :: ServerT Promotions AppMonad
+promotionsServer :: ServerT Promotions QueryAppMonad
 promotionsServer = handleGetPromotions
 
 ------------------------------------------------------------------------------------------------
@@ -360,7 +298,7 @@ type Belts =
         :> Get '[JSON] [(BJJBelt, Int)]
     )
 
-handleGetBelts :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> Bool -> AppMonad [Rank]
+handleGetBelts :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> Bool -> QueryAppMonad [Rank]
 handleGetBelts limit offset profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder live = do
   let limitOffset = case (limit, offset) of
         (Just l, Just o) -> Just (l, o)
@@ -382,7 +320,7 @@ handleGetBelts limit offset profiles belt achieved_by awarded_by from to maybeOr
     then L.getRanks limitOffset filter order
     else P.getRanks limitOffset filter order
 
-handleGetBeltsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Bool -> AppMonad Int
+handleGetBeltsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Bool -> QueryAppMonad Int
 handleGetBeltsCount limit offset profiles belt achieved_by awarded_by from to live = do
   let filter = Just $ C.RankFilter
         { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles
@@ -395,11 +333,11 @@ handleGetBeltsCount limit offset profiles belt achieved_by awarded_by from to li
     then L.getRanksCount filter
     else P.getRanksCount filter
 
-handleGetBeltsFrequency :: Bool -> AppMonad [(BJJBelt, Int)]
+handleGetBeltsFrequency :: Bool -> QueryAppMonad [(BJJBelt, Int)]
 handleGetBeltsFrequency live =
   (if live then L.getBeltTotals else P.getBeltTotals)
 
-beltsServer :: ServerT Belts AppMonad
+beltsServer :: ServerT Belts QueryAppMonad
 beltsServer = handleGetBelts :<|> handleGetBeltsCount :<|> handleGetBeltsFrequency
 
 ------------------------------------------------------------------------------------------------
@@ -437,11 +375,11 @@ type RestAPI =
 proxyRestAPI :: Proxy RestAPI
 proxyRestAPI = Proxy
 
-healthServer :: ServerT Health AppMonad
-healthServer = handleHealth :<|> handleReady
+queryHealthServer :: ServerT Health QueryAppMonad
+queryHealthServer = WebAPI.Health.healthServer "query-api"
 
-restServer :: ServerT RestAPI AppMonad
-restServer = healthServer :<|> profilesServer :<|> promotionsServer :<|> beltsServer
+restServer :: ServerT RestAPI QueryAppMonad
+restServer = queryHealthServer :<|> profilesServer :<|> promotionsServer :<|> beltsServer
 
 -- | Adding Basic Auth to the Rest API
 type PrivateRestAPI =
@@ -450,7 +388,7 @@ type PrivateRestAPI =
 proxyPrivateRestAPI :: Proxy PrivateRestAPI
 proxyPrivateRestAPI = Proxy
 
-privateRestServer :: ServerT PrivateRestAPI AppMonad
+privateRestServer :: ServerT PrivateRestAPI QueryAppMonad
 privateRestServer = const restServer
 
 -- | Adding Swagger UI on top of Private Rest API
@@ -461,7 +399,7 @@ type FullAPI =
 proxyFullAPI :: Proxy FullAPI
 proxyFullAPI = Proxy
 
-fullServer :: ServerT FullAPI AppMonad
+fullServer :: ServerT FullAPI QueryAppMonad
 fullServer = swaggerServer :<|> privateRestServer
 
 ------------------------------------------------------------------------------------------------
@@ -470,26 +408,9 @@ fullServer = swaggerServer :<|> privateRestServer
 
 ------------------------------------------------------------------------------------------------
 
-mkBJJApp :: AppContext -> Application
+mkBJJApp :: QueryAppContext -> Application
 mkBJJApp ctx =
-  cors
-    ( \req ->
-        let originHeader = Data.List.lookup hOrigin (requestHeaders req)
-         in case originHeader of
-              Just o ->
-                Just
-                  simpleCorsResourcePolicy
-                    { corsOrigins = Just ([o], True), -- Reflect request's Origin dynamically
-                      corsMethods = ["GET", "POST", "PUT", "OPTIONS", "DELETE"],
-                      corsRequestHeaders = simpleHeaders <> [HttpTypes.hAuthorization],
-                      corsExposedHeaders = Just $ simpleHeaders <> [HttpTypes.hAuthorization],
-                      corsVaryOrigin = True,
-                      corsRequireOrigin = False,
-                      corsIgnoreFailures = False,
-                      corsMaxAge = Just 600
-                    }
-              Nothing -> Nothing -- If no origin set skips cors headers
-    )
+  WebAPI.CORS.setupCors
     $ provideOptions proxyRestAPI
     $ serveWithContext proxyFullAPI basicCtx hoistedServer
   where
