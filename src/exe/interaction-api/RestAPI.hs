@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -13,6 +14,9 @@ import Data.Swagger
 import Data.Text hiding (length)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
+import Data.Time (getCurrentTime, formatTime, defaultTimeLocale)
+import Data.Aeson (ToJSON, FromJSON)
+import GHC.Generics (Generic)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.Imports
@@ -80,6 +84,21 @@ basicAuthServerContext authContext = authCheck authContext :. EmptyContext
 
 ------------------------------------------------------------------------------------------------
 
+type Health =
+  -- Health check endpoint
+  ( Summary "Health Check"
+      :> Description "Returns the health status of the service"
+      :> "health"
+      :> Get '[JSON] HealthStatus
+  )
+    :<|>
+    -- Readiness check endpoint
+    ( Summary "Readiness Check"
+        :> Description "Returns the readiness status of the service"
+        :> "ready"
+        :> Get '[JSON] HealthStatus
+    )
+
 type Transactions =
   -- Build tx endpoint
   ( Summary "Build Transaction"
@@ -97,6 +116,40 @@ type Transactions =
         :> Post '[JSON] GYTxId
     )
 
+-- Health check data type
+data HealthStatus = HealthStatus
+  { status :: Text
+  , service :: Text
+  , version :: Text
+  , timestamp :: Text
+  }
+  deriving (Generic, ToJSON, FromJSON, ToSchema)
+
+handleHealth :: AppMonad HealthStatus
+handleHealth = do
+  now <- liftIO getCurrentTime
+  return $ HealthStatus
+    { status = "healthy"
+    , service = "interaction-api"
+    , version = "1.0.0"
+    , timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
+    }
+
+handleReady :: AppMonad HealthStatus
+handleReady = do
+  -- Check if the service is ready to accept requests
+  -- For now, we'll just return healthy, but this could check:
+  -- - Database connectivity
+  -- - External service dependencies
+  -- - Configuration validity
+  now <- liftIO getCurrentTime
+  return $ HealthStatus
+    { status = "ready"
+    , service = "interaction-api"
+    , version = "1.0.0"
+    , timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
+    }
+
 handleBuildTx :: Interaction -> AppMonad String
 handleBuildTx = buildInteractionApp
 
@@ -105,6 +158,9 @@ handleSubmitTx AddWitAndSubmitParams {..} = do
   let txBody = getTxBody awasTxUnsigned
   let signedTx = makeSignedTransaction awasTxWit txBody
   submitTxApp signedTx
+
+healthServer :: ServerT Health AppMonad
+healthServer = handleHealth :<|> handleReady
 
 transactionsServer :: ServerT Transactions AppMonad
 transactionsServer = handleBuildTx :<|> handleSubmitTx
@@ -119,7 +175,7 @@ apiSwagger :: Swagger
 apiSwagger =
   toSwagger proxyRestAPI
     & info . title .~ "Decentralized Belt System Interaction API"
-    & info . version .~ "1.0"
+    & info . Data.Swagger.version .~ "1.0"
     & info . Data.Swagger.description ?~ "This is the Interaction API for the Decentralized Belt System - handles transaction building and submission"
     & info
       . license
@@ -135,13 +191,13 @@ swaggerServer = swaggerSchemaUIServerT apiSwagger
 ------------------------------------------------------------------------------------------------
 
 -- | Combined API
-type RestAPI = Transactions
+type RestAPI = Health :<|> Transactions
 
 proxyRestAPI :: Proxy RestAPI
 proxyRestAPI = Proxy
 
 restServer :: ServerT RestAPI AppMonad
-restServer = transactionsServer
+restServer = healthServer :<|> transactionsServer
 
 -- | Adding Basic Auth to the Rest API
 type PrivateRestAPI =

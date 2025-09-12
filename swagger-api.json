@@ -61,6 +61,29 @@
         "GYTxWitness": {
             "type": "string"
         },
+        "HealthStatus": {
+            "properties": {
+                "service": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "status",
+                "service",
+                "version",
+                "timestamp"
+            ],
+            "type": "object"
+        },
         "Interaction": {
             "properties": {
                 "action": {
@@ -76,90 +99,6 @@
             "required": [
                 "action",
                 "userAddresses"
-            ],
-            "type": "object"
-        },
-        "OrganizationProfileInformation": {
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                },
-                "image_uri": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            },
-            "required": [
-                "id",
-                "name",
-                "description",
-                "image_uri"
-            ],
-            "type": "object"
-        },
-        "PractitionerProfileInformation": {
-            "properties": {
-                "current_rank": {
-                    "$ref": "#/definitions/Rank"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                },
-                "image_uri": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "previous_ranks": {
-                    "items": {
-                        "$ref": "#/definitions/Rank"
-                    },
-                    "type": "array"
-                }
-            },
-            "required": [
-                "id",
-                "name",
-                "description",
-                "image_uri",
-                "current_rank",
-                "previous_ranks"
-            ],
-            "type": "object"
-        },
-        "Profile": {
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                },
-                "image_uri": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "type": {
-                    "$ref": "#/definitions/ProfileType"
-                }
-            },
-            "required": [
-                "id",
-                "name",
-                "description",
-                "image_uri",
-                "type"
             ],
             "type": "object"
         },
@@ -307,66 +246,6 @@
             ],
             "type": "string"
         },
-        "Promotion": {
-            "properties": {
-                "achieved_by_profile_id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                },
-                "achievement_date": {
-                    "description": "This is the posix time in ISO8601 format.",
-                    "example": "1970-01-01T00:00:00Z",
-                    "format": "ISO8601",
-                    "type": "string"
-                },
-                "awarded_by_profile_id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                },
-                "belt": {
-                    "$ref": "#/definitions/BJJBelt"
-                },
-                "id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                }
-            },
-            "required": [
-                "id",
-                "belt",
-                "achieved_by_profile_id",
-                "awarded_by_profile_id",
-                "achievement_date"
-            ],
-            "type": "object"
-        },
-        "Rank": {
-            "properties": {
-                "achieved_by_profile_id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                },
-                "achievement_date": {
-                    "description": "This is the posix time in ISO8601 format.",
-                    "example": "1970-01-01T00:00:00Z",
-                    "format": "ISO8601",
-                    "type": "string"
-                },
-                "awarded_by_profile_id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                },
-                "belt": {
-                    "$ref": "#/definitions/BJJBelt"
-                },
-                "id": {
-                    "$ref": "#/definitions/GYAssetClass"
-                }
-            },
-            "required": [
-                "id",
-                "belt",
-                "achieved_by_profile_id",
-                "awarded_by_profile_id",
-                "achievement_date"
-            ],
-            "type": "object"
-        },
         "UserAddresses": {
             "properties": {
                 "changeAddress": {
@@ -393,310 +272,14 @@
         }
     },
     "info": {
-        "description": "This is an API for the Decentralized Belt System",
+        "description": "This is the Interaction API for the Decentralized Belt System - handles transaction building and submission",
         "license": {
             "name": "GPL-3.0 license"
         },
-        "title": "Decentralized Belt System API",
+        "title": "Decentralized Belt System Interaction API",
         "version": "1.0"
     },
     "paths": {
-        "/belts": {
-            "get": {
-                "description": "Get Belts",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "limit",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "offset",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "profile",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "enum": [
-                                "White",
-                                "Blue",
-                                "Purple",
-                                "Brown",
-                                "Black",
-                                "Black1",
-                                "Black2",
-                                "Black3",
-                                "Black4",
-                                "Black5",
-                                "Black6",
-                                "RedAndBlack",
-                                "RedAndWhite",
-                                "Red",
-                                "Red10"
-                            ],
-                            "type": "string"
-                        },
-                        "name": "belt",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "achieved_by",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "awarded_by",
-                        "type": "array"
-                    },
-                    {
-                        "format": "string",
-                        "in": "query",
-                        "name": "from",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "format": "string",
-                        "in": "query",
-                        "name": "to",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "enum": [
-                            "id",
-                            "belt",
-                            "achieved_by",
-                            "awarded_by",
-                            "date"
-                        ],
-                        "in": "query",
-                        "name": "order_by",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "enum": [
-                            "asc",
-                            "desc"
-                        ],
-                        "in": "query",
-                        "name": "order",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
-                "produces": [
-                    "application/json;charset=utf-8"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "schema": {
-                            "items": {
-                                "$ref": "#/definitions/Rank"
-                            },
-                            "type": "array"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection` or `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
-                    }
-                },
-                "summary": "Get Belts"
-            }
-        },
-        "/belts/count": {
-            "get": {
-                "description": "Get Belts Count",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "limit",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "offset",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "profile",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "enum": [
-                                "White",
-                                "Blue",
-                                "Purple",
-                                "Brown",
-                                "Black",
-                                "Black1",
-                                "Black2",
-                                "Black3",
-                                "Black4",
-                                "Black5",
-                                "Black6",
-                                "RedAndBlack",
-                                "RedAndWhite",
-                                "Red",
-                                "Red10"
-                            ],
-                            "type": "string"
-                        },
-                        "name": "belt",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "achieved_by",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "awarded_by",
-                        "type": "array"
-                    },
-                    {
-                        "format": "string",
-                        "in": "query",
-                        "name": "from",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "format": "string",
-                        "in": "query",
-                        "name": "to",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
-                "produces": [
-                    "application/json;charset=utf-8"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "schema": {
-                            "maximum": 9223372036854775807,
-                            "minimum": -9223372036854775808,
-                            "type": "integer"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
-                    }
-                },
-                "summary": "Get Belts Count"
-            }
-        },
-        "/belts/frequency": {
-            "get": {
-                "description": "Get Belts Frequency",
-                "parameters": [
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
-                "produces": [
-                    "application/json;charset=utf-8"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "schema": {
-                            "items": {
-                                "items": [
-                                    {
-                                        "$ref": "#/definitions/BJJBelt"
-                                    },
-                                    {
-                                        "maximum": 9223372036854775807,
-                                        "minimum": -9223372036854775808,
-                                        "type": "integer"
-                                    }
-                                ],
-                                "maxItems": 2,
-                                "minItems": 2,
-                                "type": "array"
-                            },
-                            "type": "array"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection`"
-                    }
-                },
-                "summary": "Get Belts Frequency"
-            }
-        },
         "/build-tx": {
             "post": {
                 "consumes": [
@@ -730,24 +313,9 @@
                 "summary": "Build Transaction"
             }
         },
-        "/organization/{organization-id}": {
+        "/health": {
             "get": {
-                "description": "Get Organization Profile Information",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "organization-id",
-                        "required": true,
-                        "type": "string"
-                    },
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
+                "description": "Returns the health status of the service",
                 "produces": [
                     "application/json;charset=utf-8"
                 ],
@@ -755,34 +323,16 @@
                     "200": {
                         "description": "",
                         "schema": {
-                            "$ref": "#/definitions/OrganizationProfileInformation"
+                            "$ref": "#/definitions/HealthStatus"
                         }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection` or `organization-id`"
                     }
                 },
-                "summary": "Get Organization Profile Information"
+                "summary": "Health Check"
             }
         },
-        "/practitioner/{profile-id}": {
+        "/ready": {
             "get": {
-                "description": "Get Practitioner Profile Information",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "profile-id",
-                        "required": true,
-                        "type": "string"
-                    },
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
+                "description": "Returns the readiness status of the service",
                 "produces": [
                     "application/json;charset=utf-8"
                 ],
@@ -790,408 +340,11 @@
                     "200": {
                         "description": "",
                         "schema": {
-                            "$ref": "#/definitions/PractitionerProfileInformation"
+                            "$ref": "#/definitions/HealthStatus"
                         }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection` or `profile-id`"
                     }
                 },
-                "summary": "Get Practitioner Profile Information"
-            }
-        },
-        "/profiles": {
-            "get": {
-                "description": "Get Profiles",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "limit",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "offset",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "profile",
-                        "type": "array"
-                    },
-                    {
-                        "enum": [
-                            "Practitioner",
-                            "Organization"
-                        ],
-                        "in": "query",
-                        "name": "profile-type",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "in": "query",
-                        "name": "name",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "in": "query",
-                        "name": "description",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "enum": [
-                            "id",
-                            "name",
-                            "description",
-                            "type"
-                        ],
-                        "in": "query",
-                        "name": "order_by",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "enum": [
-                            "asc",
-                            "desc"
-                        ],
-                        "in": "query",
-                        "name": "order",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
-                "produces": [
-                    "application/json;charset=utf-8"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "schema": {
-                            "items": {
-                                "$ref": "#/definitions/Profile"
-                            },
-                            "type": "array"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection` or `order` or `order_by` or `description` or `name` or `profile-type` or `profile` or `offset` or `limit`"
-                    }
-                },
-                "summary": "Get Profiles"
-            }
-        },
-        "/profiles/count": {
-            "get": {
-                "description": "Get count of profiles by type",
-                "parameters": [
-                    {
-                        "enum": [
-                            "Practitioner",
-                            "Organization"
-                        ],
-                        "in": "query",
-                        "name": "profile-type",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
-                "produces": [
-                    "application/json;charset=utf-8"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "schema": {
-                            "maximum": 9223372036854775807,
-                            "minimum": -9223372036854775808,
-                            "type": "integer"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection` or `profile-type`"
-                    }
-                },
-                "summary": "Get Profiles Count"
-            }
-        },
-        "/promotions": {
-            "get": {
-                "description": "Get Pending Promotions",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "limit",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "offset",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "profile",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "enum": [
-                                "White",
-                                "Blue",
-                                "Purple",
-                                "Brown",
-                                "Black",
-                                "Black1",
-                                "Black2",
-                                "Black3",
-                                "Black4",
-                                "Black5",
-                                "Black6",
-                                "RedAndBlack",
-                                "RedAndWhite",
-                                "Red",
-                                "Red10"
-                            ],
-                            "type": "string"
-                        },
-                        "name": "belt",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "achieved_by",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "awarded_by",
-                        "type": "array"
-                    },
-                    {
-                        "format": "string",
-                        "in": "query",
-                        "name": "from",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "format": "string",
-                        "in": "query",
-                        "name": "to",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "enum": [
-                            "id",
-                            "belt",
-                            "achieved_by",
-                            "awarded_by",
-                            "date"
-                        ],
-                        "in": "query",
-                        "name": "order_by",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "enum": [
-                            "asc",
-                            "desc"
-                        ],
-                        "in": "query",
-                        "name": "order",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
-                "produces": [
-                    "application/json;charset=utf-8"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "schema": {
-                            "items": {
-                                "$ref": "#/definitions/Promotion"
-                            },
-                            "type": "array"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection` or `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
-                    }
-                },
-                "summary": "Get Pending Promotions"
-            }
-        },
-        "/promotions/count": {
-            "get": {
-                "description": "Get Pending Promotions Count",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "limit",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "offset",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "profile",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "enum": [
-                                "White",
-                                "Blue",
-                                "Purple",
-                                "Brown",
-                                "Black",
-                                "Black1",
-                                "Black2",
-                                "Black3",
-                                "Black4",
-                                "Black5",
-                                "Black6",
-                                "RedAndBlack",
-                                "RedAndWhite",
-                                "Red",
-                                "Red10"
-                            ],
-                            "type": "string"
-                        },
-                        "name": "belt",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "achieved_by",
-                        "type": "array"
-                    },
-                    {
-                        "collectionFormat": "multi",
-                        "in": "query",
-                        "items": {
-                            "type": "string"
-                        },
-                        "name": "awarded_by",
-                        "type": "array"
-                    },
-                    {
-                        "format": "string",
-                        "in": "query",
-                        "name": "from",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "format": "string",
-                        "in": "query",
-                        "name": "to",
-                        "required": false,
-                        "type": "string"
-                    },
-                    {
-                        "allowEmptyValue": true,
-                        "default": false,
-                        "in": "query",
-                        "name": "liveprojection",
-                        "type": "boolean"
-                    }
-                ],
-                "produces": [
-                    "application/json;charset=utf-8"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "schema": {
-                            "maximum": 9223372036854775807,
-                            "minimum": -9223372036854775808,
-                            "type": "integer"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid `liveprojection` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
-                    }
-                },
-                "summary": "Get Pending Promotions Count"
+                "summary": "Readiness Check"
             }
         },
         "/submit-tx": {

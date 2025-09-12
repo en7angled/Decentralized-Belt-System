@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -13,6 +14,9 @@ import Data.Swagger
 import Data.Text hiding (length)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
+import Data.Time (getCurrentTime, formatTime, defaultTimeLocale)
+import Data.Aeson (ToJSON, FromJSON)
+import GHC.Generics (Generic)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.Imports
@@ -60,18 +64,22 @@ instance FromHttpApiData ProfilesOrderBy where
   parseQueryParam :: Text -> Either Text ProfilesOrderBy
   parseQueryParam t =
     case T.toLower t of
-      "name" -> Right Name
-      "created_at" -> Right CreatedAt
-      "updated_at" -> Right UpdatedAt
-      _ -> Left "Invalid order by. Use 'name', 'created_at', or 'updated_at'"
+      "name" -> Right ProfilesOrderByName
+      "id" -> Right ProfilesOrderById
+      "description" -> Right ProfilesOrderByDescription
+      "type" -> Right ProfilesOrderByType
+      _ -> Left "Invalid order by. Use 'name', 'id', 'description', or 'type'"
 
 instance FromHttpApiData PromotionsOrderBy where
   parseQueryParam :: Text -> Either Text PromotionsOrderBy
   parseQueryParam t =
     case T.toLower t of
-      "created_at" -> Right CreatedAt
-      "updated_at" -> Right UpdatedAt
-      _ -> Left "Invalid order by. Use 'created_at' or 'updated_at'"
+      "id" -> Right PromotionsOrderById
+      "belt" -> Right PromotionsOrderByBelt
+      "achieved_by" -> Right PromotionsOrderByAchievedBy
+      "awarded_by" -> Right PromotionsOrderByAwardedBy
+      "date" -> Right PromotionsOrderByDate
+      _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
 
 instance FromHttpApiData RanksOrderBy where
   parseQueryParam :: Text -> Either Text RanksOrderBy
@@ -104,6 +112,27 @@ authCheck AuthContext {authUser, authPassword} =
 
 basicAuthServerContext :: AuthContext -> Context (BasicAuthCheck AuthUser ': '[])
 basicAuthServerContext authContext = authCheck authContext :. EmptyContext
+
+------------------------------------------------------------------------------------------------
+
+--  Health API
+
+------------------------------------------------------------------------------------------------
+
+type Health =
+  -- Health check endpoint
+  ( Summary "Health Check"
+      :> Description "Returns the health status of the service"
+      :> "health"
+      :> Get '[JSON] HealthStatus
+  )
+    :<|>
+    -- Readiness check endpoint
+    ( Summary "Readiness Check"
+        :> Description "Returns the readiness status of the service"
+        :> "ready"
+        :> Get '[JSON] HealthStatus
+    )
 
 ------------------------------------------------------------------------------------------------
 
@@ -143,6 +172,40 @@ type Profiles =
         :> QueryFlag "liveprojection"
         :> Get '[JSON] [Profile]
     )
+
+-- Health check data type
+data HealthStatus = HealthStatus
+  { status :: Text
+  , service :: Text
+  , version :: Text
+  , timestamp :: Text
+  }
+  deriving (Generic, ToJSON, FromJSON, ToSchema)
+
+handleHealth :: AppMonad HealthStatus
+handleHealth = do
+  now <- liftIO getCurrentTime
+  return $ HealthStatus
+    { status = "healthy"
+    , service = "query-api"
+    , version = "1.0.0"
+    , timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
+    }
+
+handleReady :: AppMonad HealthStatus
+handleReady = do
+  -- Check if the service is ready to accept requests
+  -- This could check:
+  -- - Database connectivity
+  -- - External service dependencies
+  -- - Configuration validity
+  now <- liftIO getCurrentTime
+  return $ HealthStatus
+    { status = "ready"
+    , service = "query-api"
+    , version = "1.0.0"
+    , timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
+    }
 
 handleGetPractitionerProfile :: ProfileRefAC -> Bool -> AppMonad PractitionerProfileInformation
 handleGetPractitionerProfile profileRefAC liveProjection = do
@@ -349,7 +412,7 @@ apiSwagger :: Swagger
 apiSwagger =
   toSwagger proxyRestAPI
     & info . title .~ "Decentralized Belt System Query API"
-    & info . version .~ "1.0"
+    & info . Data.Swagger.version .~ "1.0"
     & info . Data.Swagger.description ?~ "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, and belts"
     & info
       . license
@@ -366,15 +429,19 @@ swaggerServer = swaggerSchemaUIServerT apiSwagger
 
 -- | Combined API
 type RestAPI =
-  Profiles
+  Health
+    :<|> Profiles
     :<|> Promotions
     :<|> Belts
 
 proxyRestAPI :: Proxy RestAPI
 proxyRestAPI = Proxy
 
+healthServer :: ServerT Health AppMonad
+healthServer = handleHealth :<|> handleReady
+
 restServer :: ServerT RestAPI AppMonad
-restServer = profilesServer :<|> promotionsServer :<|> beltsServer
+restServer = healthServer :<|> profilesServer :<|> promotionsServer :<|> beltsServer
 
 -- | Adding Basic Auth to the Rest API
 type PrivateRestAPI =
