@@ -56,24 +56,57 @@ For more details, see :
 ```plaintext
 .
 ├── src/
-│   ├── lib/              # Core library modules
-│   │   ├── DomainTypes/  # Domain-specific types and DTOs
-│   │   ├── Onchain/      # Cardano smart contracts (validators and minting policies)
-│   │   ├── TxBuilding/   # Transaction building utilities
-│   │   └── Utils.hs      # Common utilities
-│   ├── exe/              # Executable applications
-│   │   ├── admin/        # Command-line admin tool
-│   │   ├── interaction-api/  # Transaction building and submission API
-│   │   └── query-api/    # Data querying API
-│   └── test/             # Test suites
-│       ├── TestRuns.hs   # Integration tests
-│       ├── UnitTests.hs  # Unit tests
-│       └── BJJPropertyTests.hs # Property-based tests
-├── docs/                 # Documentation, specifications, diagrams
-├── puml/                 # Plantuml diagrams
-├── out/                  # Images of plantuml diagrams
-└── README.md             # This file
+│   ├── lib/                          # 📁 All libraries organized here
+│   │   ├── onchain-lib/             # 🔗 Onchain logic (Plutus smart contracts)
+│   │   │   └── Onchain/             # Validators, minting policies, protocols
+│   │   ├── webapi-lib/              # 🌐 Web infrastructure
+│   │   │   └── WebAPI/              # Auth, Health, CORS modules
+│   │   ├── chainsync-lib/           # ⛓️ Generic chain sync utilities
+│   │   │   ├── KupoClient.hs        # Kupo API client
+│   │   │   └── KupoAtlas.hs         # Data conversion utilities
+│   │   └── offchain-lib/            # 🏛️ Domain + infrastructure
+│   │       ├── DomainTypes/         # Domain-specific types and DTOs
+│   │       ├── TxBuilding/          # Transaction building utilities
+│   │       ├── Storage.hs           # Database operations
+│   │       ├── Ingestion.hs         # Event projection
+│   │       ├── Constants.hs         # Configuration constants
+│   │       └── Utils.hs             # Common utilities
+│   ├── exe/                         # 📁 Executable applications
+│   │   ├── admin/                   # Command-line admin tool
+│   │   ├── chain-sync/              # Blockchain synchronization service
+│   │   ├── interaction-api/         # Transaction building and submission API
+│   │   └── query-api/               # Data querying API
+│   └── test/                        # Test suites
+│       ├── TestRuns.hs              # Integration tests
+│       ├── UnitTests.hs             # Unit tests
+│       └── BJJPropertyTests.hs      # Property-based tests
+├── docs/                            # Documentation, specifications, diagrams
+├── puml/                            # Plantuml diagrams
+├── out/                             # Images of plantuml diagrams
+└── README.md                        # This file
 ```
+
+### 4.1 Library Architecture
+
+The project is organized into **4 distinct libraries** with clear separation of concerns:
+
+- **📦 onchain** - Plutus smart contracts and blockchain logic
+- **📦 webapi** - Web infrastructure (Auth, Health, CORS)  
+- **📦 chainsync** - Generic chain synchronization utilities
+- **📦 offchain** - Domain logic and supporting infrastructure
+
+**Dependency Flow:**
+```
+chainsync → offchain → webapi
+    ↓         ↓         ↓
+   onchain ← onchain ← onchain
+```
+
+This architecture ensures:
+- **🔧 Maximum Reusability**: Generic components can be used by other projects
+- **🏗️ Clean Separation**: Domain logic is separate from infrastructure
+- **📈 Scalability**: Each library can evolve independently
+- **🧪 Testability**: Components can be tested in isolation
 
 ## 5. Installation & Setup
 

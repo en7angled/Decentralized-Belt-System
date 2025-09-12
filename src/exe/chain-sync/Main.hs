@@ -37,9 +37,9 @@ import GeniusYield.GYConfig
 import GeniusYield.Types (GYNetworkId (..), mintingPolicyCurrencySymbol)
 import GeniusYield.Types.Logging (GYLogNamespace)
 import GeniusYield.Types.Slot
-import Ingestion
 import KupoAtlas (AtlasMatch (..), kupoMatchToAtlasMatch)
 import KupoClient (CreatedAt (..), KupoCheckpoint (..), KupoMatch (..), runKupoCheckpointBySlot, runKupoCheckpointsList, runKupoMatches)
+import Ingestion
 import PlutusLedgerApi.V1.Value (unCurrencySymbol)
 import PlutusTx.Builtins (fromBuiltin)
 import Storage

@@ -120,6 +120,11 @@ The system seeks to:
 >   - **Query API Service**: Provides quick queries for ranks, achievements, profiles, etc.  
 >   - **Chain Sync Service**: Monitors the Cardano blockchain for updates.  
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
+> - **Libraries**  
+>   - **onchain**: Plutus smart contracts and blockchain logic
+>   - **webapi**: Web infrastructure (Auth, Health, CORS)
+>   - **chainsync**: Generic chain synchronization utilities  
+>   - **offchain**: Domain logic and supporting infrastructure
 > - **Persistence** : A database or index for quick lookups of ranks, achievements, memberships (off-chain).
 
 
