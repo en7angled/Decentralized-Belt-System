@@ -116,9 +116,9 @@ The system seeks to:
 >   - **BJJ-DApp Frontend**: The web interface for practitioners, masters, and organizations.  
 >   - **3rd Party Browser Wallet** (e.g., Eternl, Lace): For signing transactions.
 > - **Backend**  
->   - **Interactions Service**: Builds transactions for promotions, achievements, membership.  
+>   - **Interaction API Service**: Builds and submits transactions for promotions, achievements, membership.  
+>   - **Query API Service**: Provides quick queries for ranks, achievements, profiles, etc.  
 >   - **Chain Sync Service**: Monitors the Cardano blockchain for updates.  
->   - **Lookups Service**: Provides quick queries for ranks, achievements, etc.  
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
 > - **Persistence** : A database or index for quick lookups of ranks, achievements, memberships (off-chain).
 

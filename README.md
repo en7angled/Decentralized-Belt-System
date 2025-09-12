@@ -38,9 +38,9 @@ The **Decentralized Belt System** aims to bring **transparency** and **trust** t
 >   - **BJJ-DApp Frontend**: The web interface for practitioners, masters, and organizations.  
 >   - **3rd Party Browser Wallet** (e.g., Eternl, Lace): For signing transactions.
 > - **Backend**  
->   - **Interactions Service**: Builds transactions for promotions, achievements, membership.  
+>   - **Interaction API Service**: Builds and submits transactions for promotions, achievements, membership.  
+>   - **Query API Service**: Provides quick queries for ranks, achievements, profiles, etc.  
 >   - **Chain Sync Service**: Monitors the Cardano blockchain for updates.  
->   - **Lookups Service**: Provides quick queries for ranks, achievements, etc.  
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
 > - **Persistence** : A database or index for quick lookups of ranks, achievements, memberships (off-chain).
 
@@ -145,6 +145,8 @@ admin deploy-reference-scripts
 
 ## 6. Usage
 
+### 6.1 Command Line Interface
+
 ```bash
 admin --help
 ```
@@ -171,6 +173,25 @@ Available commands:
   accept-promotion         Accept a promotion
   create-profile-with-rank Create a profile with initial rank
 ```
+
+### 6.2 API Services
+
+The system provides two independent API services:
+
+#### **Interaction API** (Port 8082)
+- **Build Transaction**: `POST /build-tx` - Builds transaction for interactions
+- **Submit Transaction**: `POST /submit-tx` - Submits signed transactions
+- **Swagger UI**: `http://localhost:8082/swagger-ui/`
+
+#### **Query API** (Port 8083)  
+- **Profiles**: `GET /practitioner/{id}`, `GET /organization/{id}`, `GET /profiles`
+- **Promotions**: `GET /promotions` - Query pending promotions
+- **Belts**: `GET /belts`, `GET /belts/count`, `GET /belts/frequency`
+- **Swagger UI**: `http://localhost:8083/swagger-ui/`
+
+#### **Nginx Proxy** (Port 80)
+- Routes requests to appropriate services based on URL patterns
+- Default routes point to Query API for backward compatibility
 
 
 
