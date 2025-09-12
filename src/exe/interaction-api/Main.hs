@@ -1,7 +1,9 @@
 module Main where
 
-import InteractionAppMonad (InteractionAppContext (..))
-import WebAPI.Auth (AuthContext (..), getBasicAuthFromEnv)
+import Constants
+  ( defaultAtlasCoreConfig,
+    defaultTxBuldingContextFile,
+  )
 import Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Maybe
@@ -9,15 +11,17 @@ import Data.String (IsString (..))
 import Data.Text
 import GeniusYield.GYConfig
 import GeniusYield.Types
+import InteractionAppMonad (InteractionAppContext (..))
 import Network.Wai.Handler.Warp
 import RestAPI (apiSwagger, mkBJJApp)
 import System.Environment
 import TxBuilding.Context
 import TxBuilding.Utils
 import Utils (decodeConfigEnvOrFile)
-import Constants (defaultAtlasCoreConfig)
-import Constants (defaultTxBuldingContextFile)
-import Constants (defaultLookUpPath)
+import WebAPI.Auth (AuthContext (..), getBasicAuthFromEnv)
+
+defaultLookUpPath :: FilePath
+defaultLookUpPath = "db/chainsync.sqlite"
 
 getPortFromEnv :: IO Int
 getPortFromEnv = do
@@ -25,7 +29,6 @@ getPortFromEnv = do
   case eport of
     Nothing -> return 8082
     Just p -> return (read p)
-
 
 main :: IO ()
 main = do

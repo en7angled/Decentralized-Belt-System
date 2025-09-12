@@ -15,7 +15,6 @@
 
 module Main where
 
-import Constants as C
 import qualified Constants
 import Control.Concurrent.Extra
 import Control.Monad (forM_, when)
@@ -49,10 +48,17 @@ import TxBuilding.Context
 import TxBuilding.Validators (mintingPolicyGY)
 import Utils
 
+defaultLookUpPath :: FilePath
+defaultLookUpPath = "db/chainsync.sqlite"
+
+
+defaultKupoUrl :: String
+defaultKupoUrl = "http://localhost:1442"
+
 main :: IO ()
 main = do
-  kupoUrl <- liftIO $ fmap (fromMaybe Constants.defaultKupoUrl) (lookupEnv "KUPO_URL")
-  kupoDBPath <- liftIO $ fmap (fromMaybe Constants.defaultLookUpPath) (lookupEnv "LOOKUP_PATH")
+  kupoUrl <- liftIO $ fmap (fromMaybe defaultKupoUrl) (lookupEnv "KUPO_URL")
+  kupoDBPath <- liftIO $ fmap (fromMaybe defaultLookUpPath) (lookupEnv "LOOKUP_PATH")
 
   let policyHexText =
         let cs = mintingPolicyCurrencySymbol mintingPolicyGY
