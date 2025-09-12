@@ -112,7 +112,7 @@ COPY src ./src
 
 
 # Add and Install Application Code
-RUN cabal install server --enable-executable-static --overwrite-policy=always --installdir=.  --install-method=copy --ghc-options="-optl=-static -optl=-pthread -optc=-static"
+RUN cabal install query-api --enable-executable-static --overwrite-policy=always --installdir=.  --install-method=copy --ghc-options="-optl=-static -optl=-pthread -optc=-static"
 
 
 ### STAGE 2: Runtime ###
@@ -198,8 +198,8 @@ RUN git clone https://github.com/supranational/blst && \
 
 # Copy config files
 WORKDIR /app
-COPY --from=builder /Decentralized-Belt-System/server /app/server
+COPY --from=builder /Decentralized-Belt-System/query-api /app/query-api
 COPY ./config  /app/config
 
 
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/query-api"]

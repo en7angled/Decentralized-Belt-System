@@ -12,9 +12,9 @@ services:
       - chainsync-db:/data
     restart: unless-stopped
 
-  server:
-    image: mariusgeorgescu/bjjserver:chainsync
-    container_name: bjj-server
+  interaction-api:
+    image: mariusgeorgescu/bjj-interaction-api:latest
+    container_name: bjj-interaction-api
     environment:
       - PORT=8082
       - LOOKUP_PATH=/data/chainsync.sqlite
@@ -27,13 +27,31 @@ services:
     depends_on:
       - chainsync
     restart: unless-stopped
-    command: ["/app/server"] 
+    command: ["/app/interaction-api"]
+
+  query-api:
+    image: mariusgeorgescu/bjj-query-api:latest
+    container_name: bjj-query-api
+    environment:
+      - PORT=8083
+      - LOOKUP_PATH=/data/chainsync.sqlite
+      # - BASIC_USER=cardano
+      # - BASIC_PASS=lovelace
+    volumes:
+      - chainsync-db:/data
+    ports:
+      - "8083:8083"
+    depends_on:
+      - chainsync
+    restart: unless-stopped
+    command: ["/app/query-api"] 
 
   nginx:
     image: nginx:1.27-alpine
     container_name: bjj-nginx
     depends_on:
-      - server
+      - interaction-api
+      - query-api
     ports:
       - "80:80"
       - "443:443"

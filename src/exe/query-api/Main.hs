@@ -22,7 +22,7 @@ getPortFromEnv :: IO Int
 getPortFromEnv = do
   eport <- lookupEnv "PORT"
   case eport of
-    Nothing -> return 8082
+    Nothing -> return 8083
     Just p -> return (read p)
 
 getBasicAuthFromEnv :: IO AuthContext
@@ -30,9 +30,6 @@ getBasicAuthFromEnv = do
   user <- fromMaybe "cardano" <$> lookupEnv "BASIC_USER"
   pass <- fromMaybe "lovelace" <$> lookupEnv "BASIC_PASS"
   return AuthContext {authUser = Data.Text.pack user, authPassword = Data.Text.pack pass}
-
-
-
 
 main :: IO ()
 main = do
@@ -43,7 +40,7 @@ main = do
   deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
 
   withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do
-    putStrLn "Starting server"
+    putStrLn "Starting Query API server"
     putStrLn $ "Atlas config: " <> show atlasConfig
     putStrLn $ "Deployed validators config: " <> show deployedScriptsContext
 
@@ -55,11 +52,11 @@ main = do
 
     let host = "0.0.0.0"
     port <- getPortFromEnv
-    putStrLn $ "Starting server at " <> host <> " " <> show port
+    putStrLn $ "Starting Query API server at " <> host <> " " <> show port
     putStrLn $ "Lookup path: " <> show lookupContext
 
-    putStrLn $ "Swagget-UI available at : http://" <> host <> ":" <> show port <> "/swagger-ui"
+    putStrLn $ "Swagger-UI available at : http://" <> host <> ":" <> show port <> "/swagger-ui"
 
-    let settings = setHost (fromString host :: HostPreference) $ setPort port defaultSettings -- host and port customized for heroku
+    let settings = setHost (fromString host :: HostPreference) $ setPort port defaultSettings
     let bjjDApp = mkBJJApp appContext
     runSettings settings bjjDApp

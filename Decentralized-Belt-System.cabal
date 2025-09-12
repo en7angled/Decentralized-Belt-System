@@ -154,9 +154,68 @@ executable admin
     , plutus-ledger-api
     , plutus-tx
 
-executable server
+executable interaction-api
   main-is:          Main.hs
-  hs-source-dirs:   src/exe/server
+  hs-source-dirs:   src/exe/interaction-api
+  default-language: GHC2021
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
+  extra-lib-dirs:   /usr/lib /usr/local/lib
+  other-modules:
+    AppMonad
+    RestAPI
+    Types
+
+  build-depends:
+    , base
+    , Decentralized-Belt-System
+
+  build-depends:
+    , aeson
+    , aeson-pretty
+    , base16-bytestring
+    , bytestring            ^>=0.11.5
+    , cardano-api
+    , containers
+    , conduit
+    , esqueleto
+    , deriving-aeson
+    , extra
+    , cassava
+    , http-client
+    , http-client-tls
+    , http-types            ^>=0.12.4
+    , lens                  ^>=5.2.3
+    , mtl
+    , multiset
+    , persistent
+    , persistent-sqlite
+    , persistent-template
+    , servant-conduit
+    , servant-event-stream
+    , servant-options
+    , servant
+    , servant-server
+    , servant-client
+    , servant-swagger
+    , servant-swagger-ui
+    , swagger2
+    , text
+    , time
+    , transformers          ^>=0.6.1
+    , utf8-string
+    , wai
+    , wai-cors
+    , wai-websockets
+    , warp
+    , websockets
+    , vector
+
+  --- Cardano specific dependencies
+  build-depends:    atlas-cardano
+
+executable query-api
+  main-is:          Main.hs
+  hs-source-dirs:   src/exe/query-api
                    , src/exe/chain-sync
   default-language: GHC2021
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2

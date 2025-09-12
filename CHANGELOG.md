@@ -72,7 +72,8 @@ src/
 │   └── DomainTypes/  # Domain type definitions
 ├── exe/              # Executable applications
 │   ├── admin/        # Command-line admin tool
-│   └── server/       # REST API server
+│   ├── interaction-api/  # Transaction building and submission API
+│   └── query-api/    # Data querying API
 └── test/             # Comprehensive testing suite
 docs/                 # Complete documentation
 puml/                 # Visual documentation diagrams

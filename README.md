@@ -63,7 +63,8 @@ For more details, see :
 │   │   └── Utils.hs      # Common utilities
 │   ├── exe/              # Executable applications
 │   │   ├── admin/        # Command-line admin tool
-│   │   └── server/       # REST API server
+│   │   ├── interaction-api/  # Transaction building and submission API
+│   │   └── query-api/    # Data querying API
 │   └── test/             # Test suites
 │       ├── TestRuns.hs   # Integration tests
 │       ├── UnitTests.hs  # Unit tests
