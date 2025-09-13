@@ -226,11 +226,6 @@ The system provides two independent API services:
 - **Health**: `GET /health` - Returns service health and current sync metrics
 - **Readiness**: `GET /ready` - Indicates readiness (DB/migrations complete)
 
-The health endpoint returns JSON with sync metrics (e.g., `local_tip`, `blockchain_tip`, `last_sync_time`, `db_ready`, `migrations_complete`, `chain_sync_state`). The service is implemented in `ChainsyncAPI` and started by `ChainSyncServer`.
-
-
-
-
 
 ## 7. License
 This project is licensed under the GNU GENERAL PUBLIC LICENSE v3.   

@@ -147,6 +147,6 @@ main = do
           liftIO $ putStrLn "Updated local tip with blockchain tip"
 
   -- Start probe server
-  startProbeServer port metricsVar
+  startProbeServer kupoUrl port metricsVar
 
 
