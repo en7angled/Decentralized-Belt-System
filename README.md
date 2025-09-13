@@ -222,9 +222,13 @@ The system provides two independent API services:
 - **Belts**: `GET /belts`, `GET /belts/count`, `GET /belts/frequency`
 - **Swagger UI**: `http://localhost:8083/swagger-ui/`
 
-#### **Nginx Proxy** (Port 80)
-- Routes requests to appropriate services based on URL patterns
-- Default routes point to Query API for backward compatibility
+#### **Chain Sync Probe** (Port 8084)
+- **Health**: `GET /health` - Returns service health and current sync metrics
+- **Readiness**: `GET /ready` - Indicates readiness (DB/migrations complete)
+
+The health endpoint returns JSON with sync metrics (e.g., `local_tip`, `blockchain_tip`, `last_sync_time`, `db_ready`, `migrations_complete`, `chain_sync_state`). The service is implemented in `ChainsyncAPI` and started by `ChainSyncServer`.
+
+
 
 
 

@@ -119,6 +119,8 @@ The system seeks to:
 >   - **Interaction API Service**: Builds and submits transactions for promotions, achievements, membership.  
 >   - **Query API Service**: Provides quick queries for ranks, achievements, profiles, etc.  
 >   - **Chain Sync Service**: Monitors the Cardano blockchain for updates.  
+>     - Exposes a probe API: `GET /health`, `GET /ready` (default port 8084)
+>     - Health returns sync metrics including `chain_sync_state`
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
 > - **Libraries**  
 >   - **onchain**: Plutus smart contracts and blockchain logic
