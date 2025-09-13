@@ -7,7 +7,6 @@ import Data.Maybe (isJust)
 import DomainTypes.Core.Types
 import GeniusYield.TxBuilder
 import GeniusYield.Types
-import GeniusYield.Types.Address
 import KupoAtlas
 import TxBuilding.Functors
 import TxBuilding.Utils
@@ -21,23 +20,23 @@ data ChainEventProjection
   deriving (Show)
 
 projectChainEvent :: (MonadError GYTxMonadException m) => GYNetworkId -> AtlasMatch -> m ChainEventProjection
-projectChainEvent networkId am@AtlasMatch {..} =
+projectChainEvent nid am@AtlasMatch {..} =
   if isJust amSpentAt
     then return $ NoEvent am
     else case amAddress of
-      add | add == addressFromScriptHash networkId ranksValidatorHashGY -> do
+      add | add == addressFromScriptHash nid ranksValidatorHashGY -> do
         case rankFromGYOutDatum amDatum of
           Just onchainRank -> do
             rank <- onchainRankToRankInformation onchainRank
             case rank of
-              Just rank -> return $ RankEvent rank
+              Just r -> return $ RankEvent r
               Nothing -> do
                 promotion <- onchainPromotionToPromotionInformation onchainRank
                 case promotion of
                   Nothing -> return $ NoEvent am
-                  Just promotion -> return $ PromotionEvent promotion
+                  Just p -> return $ PromotionEvent p
           Nothing -> return $ NoEvent am
-      add | add == addressFromScriptHash networkId profilesValidatorHashGY -> do
+      add | add == addressFromScriptHash nid profilesValidatorHashGY -> do
         case profileFromGYOutDatum amDatum of
           Nothing -> return $ NoEvent am
           Just onchainProfile -> do

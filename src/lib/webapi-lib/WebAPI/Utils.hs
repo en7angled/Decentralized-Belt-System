@@ -1,8 +1,6 @@
 module WebAPI.Utils where
 
 import System.Environment (lookupEnv)
-import Data.Aeson (ToJSON, encode)
-import qualified Data.ByteString.Lazy.Char8 as BL8
 
 
 

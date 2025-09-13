@@ -12,17 +12,15 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Storage where
 
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO (..))
-import Control.Monad.Trans.Except (runExceptT)
-import qualified Data.Aeson as Aeson
-import Data.Int (Int64)
+
 import Data.Text (Text)
-import qualified Data.Text.Lazy as TL
-import qualified Data.Text.Lazy.Encoding as TLE
 import Data.Time (UTCTime, getCurrentTime)
 import Database.Persist
 import Database.Persist.Sqlite
@@ -31,8 +29,9 @@ import DomainTypes.Core.Types
 import GeniusYield.Types
 import Ingestion
 import KupoAtlas (kupoMatchToAtlasMatch)
-import KupoClient (CreatedAt (..), KupoMatch (..), KupoValue (..), SpentAt (..))
+import KupoClient (CreatedAt (..), KupoMatch (..))
 import Onchain.BJJ (BJJBelt)
+import Control.Monad.Except (runExceptT)
 
 derivePersistFieldJSON "BJJBelt"
 derivePersistFieldJSON "GYAssetClass"
@@ -123,8 +122,6 @@ putMatchAndProjections networkId km = do
     Right am -> do
       let slotNoInt = slot_no (created_at km)
           header = header_hash (created_at km)
-          txIdTxt = transaction_id km
-          outIx = output_index km
       ev <- runExceptT (projectChainEvent networkId am)
       case ev of
         Left e -> liftIO $ putStrLn ("Projection error: " <> show e)

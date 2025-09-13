@@ -47,35 +47,70 @@ common plinth-ghc-options
   ghc-options:        -fplugin-opt PlutusTx.Plugin:no-remove-trace
   ghc-options:        -fplugin-opt PlutusTx.Plugin:no-optimize
 
-library webapi
-  import:             common-options
+library onchain-lib
+  import:             common-options, plinth-ghc-options
   default-language:   Haskell2010
-  hs-source-dirs:     src/lib/webapi-lib
-  default-extensions:
-    DataKinds
-    NamedFieldPuns
-    OverloadedStrings
-    TypeOperators
-
+  hs-source-dirs:     src/lib/onchain-lib
   exposed-modules:
-    WebAPI.Auth
-    WebAPI.CORS
-    WebAPI.ServiceProbe
-    WebAPI.Utils
+    Onchain.BJJ
+    Onchain.Blueprint
+    Onchain.CIP68
+    Onchain.MintingPolicy
+    Onchain.ProfilesValidator
+    Onchain.Protocol
+    Onchain.RanksValidator
+    Onchain.Utils
 
+  if !(impl(ghcjs) || os(ghcjs))
+    build-depends: plutus-tx-plugin
+
+  -- other-modules:    
+
+  -- other-extensions:
   build-depends:
     , aeson
-    , http-types
-    , servant
-    , servant-server
-    , swagger2
-    , text
-    , time
-    , wai
-    , wai-cors
     , bytestring
+    , containers
+    , swagger2
 
-library chainsync
+  --- Cardano specific dependencies
+  build-depends:
+    , plutus-core
+    , plutus-ledger-api
+    , plutus-tx
+
+  hs-source-dirs:     src/lib
+  default-extensions:
+    BangPatterns
+    BlockArguments
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
+    DerivingStrategies
+    DerivingVia
+    FlexibleContexts
+    FlexibleInstances
+    GeneralizedNewtypeDeriving
+    ImportQualifiedPost
+    InstanceSigs
+    LambdaCase
+    MultiParamTypeClasses
+    NamedFieldPuns
+    NumericUnderscores
+    OverloadedStrings
+    PatternSynonyms
+    RecordWildCards
+    ScopedTypeVariables
+    StandaloneDeriving
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+    UndecidableInstances
+    ViewPatterns
+
+library chainsync-lib
   import:             common-options
   default-language:   Haskell2010
   hs-source-dirs:     src/lib/chainsync-lib
@@ -95,24 +130,20 @@ library chainsync
     , aeson
     , base
     , base16-bytestring
-    , bytestring
     , cardano-api
-    , cassava
     , containers
-    , csv
     , extra
     , http-client
     , http-client-tls
     , persistent
     , servant
     , servant-client
-    , servant-client-core
     , text
 
   --- Cardano specific dependencies
   build-depends:      atlas-cardano
 
-library offchain
+library offchain-lib
   import:             common-options, plinth-ghc-options
   default-language:   Haskell2010
   hs-source-dirs:     src/lib/offchain-lib
@@ -152,100 +183,52 @@ library offchain
     TxBuilding.Validators
     Utils
 
-  if !(impl(ghcjs) || os(ghcjs))
-    build-depends: plutus-tx-plugin
-
   build-depends:
     , aeson
     , bytestring
-    , chainsync
-    , containers
+    , chainsync-lib
     , deriving-aeson
     , extra
-    , lens
     , mtl
-    , onchain
+    , onchain-lib
     , persistent
     , persistent-sqlite
     , swagger2
     , text
     , time
-    , transformers
 
   --- Cardano specific dependencies
   build-depends:
     , atlas-cardano
     , cardano-api
-    , plutus-core
     , plutus-ledger-api
     , plutus-tx
 
-library onchain
-  import:             common-options, plinth-ghc-options
+library webapi-lib
+  import:             common-options
   default-language:   Haskell2010
-  hs-source-dirs:     src/lib/onchain-lib
+  hs-source-dirs:     src/lib/webapi-lib
+  default-extensions:
+    DataKinds
+    NamedFieldPuns
+    OverloadedStrings
+    TypeOperators
+
   exposed-modules:
-    Onchain.BJJ
-    Onchain.Blueprint
-    Onchain.CIP68
-    Onchain.MintingPolicy
-    Onchain.ProfilesValidator
-    Onchain.Protocol
-    Onchain.RanksValidator
-    Onchain.Utils
+    WebAPI.Auth
+    WebAPI.CORS
+    WebAPI.ServiceProbe
+    WebAPI.Utils
 
-  if !(impl(ghcjs) || os(ghcjs))
-    build-depends: plutus-tx-plugin
-
-  -- other-modules:    
-
-  -- other-extensions:
   build-depends:
     , aeson
-    , bytestring
-    , containers
-    , extra
+    , http-types
+    , servant-server
     , swagger2
     , text
-
-  --- Cardano specific dependencies
-  build-depends:
-    , atlas-cardano
-    , plutus-core
-    , plutus-ledger-api
-    , plutus-tx
-    , plutus-tx-plugin
-
-  hs-source-dirs:     src/lib
-  default-extensions:
-    BangPatterns
-    BlockArguments
-    DataKinds
-    DeriveAnyClass
-    DeriveGeneric
-    DerivingStrategies
-    DerivingVia
-    FlexibleContexts
-    FlexibleInstances
-    GeneralizedNewtypeDeriving
-    ImportQualifiedPost
-    InstanceSigs
-    LambdaCase
-    MultiParamTypeClasses
-    NamedFieldPuns
-    NumericUnderscores
-    OverloadedStrings
-    PatternSynonyms
-    RecordWildCards
-    ScopedTypeVariables
-    StandaloneDeriving
-    TemplateHaskell
-    TupleSections
-    TypeApplications
-    TypeFamilies
-    TypeOperators
-    UndecidableInstances
-    ViewPatterns
+    , time
+    , wai
+    , wai-cors
 
 executable admin
   -- import:           
@@ -254,8 +237,8 @@ executable admin
   default-language: GHC2021
   build-depends:
     , base
-    , offchain
-    , onchain
+    , offchain-lib
+    , onchain-lib
 
   build-depends:
     , aeson
@@ -282,35 +265,23 @@ executable interaction-api
 
   build-depends:
     , base
-    , offchain
-    , onchain
-    , webapi
+    , offchain-lib
+    , onchain-lib
+    , webapi-lib
 
   build-depends:
     , aeson
     , aeson-pretty
-    , base16-bytestring
-    , bytestring            ^>=0.11.5
-    , cardano-api
-    , cassava
-    , conduit
-    , containers
+    , bytestring          ^>=0.11.5
     , deriving-aeson
     , esqueleto
     , extra
-    , http-client
-    , http-client-tls
-    , http-types            ^>=0.12.4
-    , lens                  ^>=5.2.3
+    , http-types          ^>=0.12.4
+    , lens                ^>=5.2.3
     , mtl
     , multiset
     , persistent
     , persistent-sqlite
-    , persistent-template
-    , servant
-    , servant-client
-    , servant-conduit
-    , servant-event-stream
     , servant-options
     , servant-server
     , servant-swagger
@@ -318,14 +289,8 @@ executable interaction-api
     , swagger2
     , text
     , time
-    , transformers          ^>=0.6.1
-    , utf8-string
-    , vector
     , wai
-    , wai-cors
-    , wai-websockets
     , warp
-    , websockets
 
   --- Cardano specific dependencies
   build-depends:    atlas-cardano
@@ -346,55 +311,74 @@ executable query-api
 
   build-depends:
     , base
-    , offchain
-    , onchain
-    , webapi
+    , offchain-lib
+    , onchain-lib
+    , webapi-lib
 
   build-depends:
     , aeson
     , aeson-pretty
-    , base16-bytestring
-    , bytestring            ^>=0.11.5
-    , cardano-api
-    , cassava
-    , conduit
-    , containers
+    , bytestring          ^>=0.11.5
     , deriving-aeson
     , esqueleto
     , extra
-    , http-client
-    , http-client-tls
-    , http-types            ^>=0.12.4
-    , lens                  ^>=5.2.3
+    , http-types          ^>=0.12.4
+    , lens                ^>=5.2.3
     , mtl
     , multiset
     , persistent
     , persistent-sqlite
-    , persistent-template
-    , servant
-    , servant-client
-    , servant-conduit
-    , servant-event-stream
     , servant-options
     , servant-server
     , servant-swagger
     , servant-swagger-ui
     , swagger2
     , text
-    , time
-    , transformers          ^>=0.6.1
-    , utf8-string
-    , vector
     , wai
-    , wai-cors
-    , wai-websockets
     , warp
-    , websockets
 
   --- Cardano specific dependencies
   build-depends:    atlas-cardano
 
-test-suite Decentralized-Belt-System-test
+executable chainsync-service
+  -- import:           
+  main-is:          Main.hs
+  hs-source-dirs:   src/exe/chain-sync
+  default-language: GHC2021
+  build-depends:
+    , base
+    , chainsync-lib
+    , offchain-lib
+    , onchain-lib
+    , webapi-lib
+
+  build-depends:
+    , aeson
+    , bytestring
+    , deriving-aeson
+    , extra
+    , mtl
+    , persistent
+    , persistent-sqlite
+    , servant-server
+    , swagger2
+    , text
+    , time
+    , wai
+    , warp
+
+  other-modules:
+    ChainsyncAPI
+    ChainSyncLogic
+    ChainSyncServer
+
+  --- Cardano specific dependencies
+  build-depends:
+    , atlas-cardano
+    , plutus-ledger-api
+    , plutus-tx
+
+test-suite test
   -- import:           
   default-language: GHC2021
 
@@ -410,71 +394,17 @@ test-suite Decentralized-Belt-System-test
 
   build-depends:
     , base
-    , offchain
-    , onchain
+    , offchain-lib
+    , onchain-lib
 
   build-depends:
     , extra
     , hedgehog
     , mtl
-    , QuickCheck
     , tasty
     , tasty-hedgehog
-    , tasty-quickcheck
-
-  --- Cardano specific dependencies
-  build-depends:
-    , atlas-cardano
-    , clb
-    , plutus-ledger-api
-    , plutus-tx
-
-executable chain-sync
-  -- import:           
-  main-is:          Main.hs
-  hs-source-dirs:   src/exe/chain-sync
-  default-language: GHC2021
-  build-depends:
-    , base
-    , chainsync
-    , offchain
-    , onchain
-    , webapi
-
-  build-depends:
-    , aeson
-    , base16-bytestring
-    , bytestring
-    , cardano-api
-    , cassava
-    , containers
-    , deriving-aeson
-    , extra
-    , http-client
-    , http-client-tls
-    , http-types
-    , persistent
-    , persistent-sqlite
-    , persistent-template
-    , servant
-    , servant-client
-    , servant-server
-    , swagger2
-    , text
-    , time
-    , transformers
-    , vector
-    , wai
-    , wai-cors
-    , warp
-
-  other-modules:
-    ChainsyncAPI
-    ChainSyncLogic
-    ChainSyncServer
 
   --- Cardano specific dependencies
   build-depends:
     , atlas-cardano
     , plutus-ledger-api
-    , plutus-tx

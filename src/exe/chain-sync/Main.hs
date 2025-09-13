@@ -1,33 +1,28 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Main where
 
+import ChainSyncLogic
+import ChainSyncServer (startProbeServer)
 import ChainsyncAPI (ChainSyncState (..), SyncMetrics (..), mkServiceProbeApp)
 import qualified Constants
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Extra
 import Control.Concurrent.MVar
 import Control.Monad (forM_, when)
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Extra
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Except (runExceptT)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Either.Extra (rights)
-import Data.Functor.Constant (Constant (Constant))
 import Data.Int (Int64)
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
@@ -51,8 +46,6 @@ import System.Environment (lookupEnv)
 import TxBuilding.Context
 import TxBuilding.Validators (mintingPolicyGY)
 import Utils
-import ChainSyncLogic
-import ChainSyncServer (startProbeServer)
 
 getPortFromEnv :: IO Int
 getPortFromEnv = do
@@ -84,8 +77,7 @@ main = do
 
   let kupoDBPathText = T.pack kupoDBPath
 
-  runSqlite kupoDBPathText $ do
-    runMigrations
+  runSqlite kupoDBPathText runMigrations
 
   batch_size <- do
     mb <- lookupEnv "BATCH_SIZE"
@@ -148,5 +140,3 @@ main = do
 
   -- Start probe server
   startProbeServer kupoUrl port metricsVar
-
-
