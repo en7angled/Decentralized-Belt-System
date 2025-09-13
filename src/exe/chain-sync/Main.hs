@@ -19,7 +19,10 @@ import Control.Monad.IO.Class
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Time (getCurrentTime)
-import Database.Persist.Sqlite (runSqlite)
+import qualified Data.Text.Encoding as TE
+import Control.Monad.Logger (runStdoutLoggingT)
+import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool)
+import Database.Persist.Sql (runSqlPool)
 import GeniusYield.Types (mintingPolicyCurrencySymbol)
 import KupoClient (KupoCheckpoint (..))
 import Storage
@@ -33,8 +36,8 @@ getPortFromEnv = do
     Nothing -> return 8084
     Just p -> return (read p)
 
-defaultLookUpPath :: FilePath
-defaultLookUpPath = "db/chainsync.sqlite"
+defaultConnStr :: String
+defaultConnStr = "host=postgres user=postgres password=postgres dbname=chainsync port=5432"
 
 defaultKupoUrl :: String
 defaultKupoUrl = "http://localhost:1442"
@@ -43,7 +46,7 @@ main :: IO ()
 main = do
   port <- getPortFromEnv
   kupoUrl <- liftIO $ fmap (fromMaybe defaultKupoUrl) (lookupEnv "KUPO_URL")
-  kupoDBPath <- liftIO $ fmap (fromMaybe defaultLookUpPath) (lookupEnv "LOOKUP_PATH")
+  connStr <- liftIO $ fmap (fromMaybe defaultConnStr) (lookupEnv "PG_CONN_STR")
 
   let policyHexText =
         let cs = mintingPolicyCurrencySymbol mintingPolicyGY
@@ -52,11 +55,11 @@ main = do
   putStrLn "Starting chain-sync ..."
   putStrLn ("Base URL: " <> kupoUrl)
   putStrLn ("Pattern: " <> T.unpack matchPattern)
-  putStrLn ("Lookup (projection) DB: " <> kupoDBPath)
+  putStrLn ("Postgres DSN: " <> connStr)
 
-  let kupoDBPathText = T.pack kupoDBPath
-
-  runSqlite kupoDBPathText runMigrations
+  let connBS :: ConnectionString = TE.encodeUtf8 (T.pack connStr)
+  pool <- runStdoutLoggingT $ createPostgresqlPool connBS 16
+  runSqlPool runMigrations pool
 
   batch_size <- do
     mb <- lookupEnv "BATCH_SIZE"
@@ -65,7 +68,7 @@ main = do
     mb <- lookupEnv "FETCH_BATCH_SIZE"
     pure $ maybe (10_000 :: Integer) read mb
 
-  initialTip <- getLocalTip kupoDBPathText
+  initialTip <- getLocalTip pool
 
   now0 <- getCurrentTime
   metricsVar <-
@@ -81,14 +84,14 @@ main = do
 
   -- Sync loop in background thread (includes initial checkpoint alignment)
   _ <- forkIO $ do
-    initLocal <- getLocalTip kupoDBPathText
+    initLocal <- getLocalTip pool
     firstCheckPoint <- findCheckpoint kupoUrl batch_size (ck_slot_no initLocal)
-    updateLocalTip kupoDBPathText firstCheckPoint
+    updateLocalTip pool firstCheckPoint
     modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = ck_slot_no firstCheckPoint, smBlockchainTip = ck_slot_no firstCheckPoint}
 
     forever $ do
       blockchainTip <- getBlockchainTip kupoUrl
-      localTip <- getLocalTip kupoDBPathText
+      localTip <- getLocalTip pool
       let chainSyncState = evaluateChainSyncState localTip blockchainTip
       modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = ck_slot_no localTip, smBlockchainTip = ck_slot_no blockchainTip, smChainSyncState = chainSyncState}
       liftIO $ putStrLn ("Local tip      : " <> show localTip)
@@ -101,20 +104,20 @@ main = do
         Behind -> do
           liftIO $ putStrLn "Chain is behind"
           liftIO $ putStrLn "Fetching matches"
-          fetchingMatches metricsVar kupoUrl matchPattern policyHexText kupoDBPathText (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
+          fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
           blockchainTip' <- getBlockchainTip kupoUrl
-          updateLocalTip kupoDBPathText blockchainTip'
+          updateLocalTip pool blockchainTip'
         Ahead -> do
           liftIO $ putStrLn "Chain is ahead"
           liftIO $ putStrLn "Starting rollback"
           -- Rollback DB state to blockchain tip (retain rows up to tip with matching header)
-          runSqlite kupoDBPathText $ rollbackTo (ck_slot_no blockchainTip) (ck_header_hash blockchainTip)
+          runSqlPool (rollbackTo (ck_slot_no blockchainTip) (ck_header_hash blockchainTip)) pool
           -- Update the local tip cursor to match the blockchain tip
-          updateLocalTip kupoDBPathText blockchainTip
+          updateLocalTip pool blockchainTip
           liftIO $ putStrLn "Rollback complete and local tip updated"
         UpToDateButDifferentBlockHash -> do
           liftIO $ putStrLn "Chain is on the same slot but different block hash"
-          updateLocalTip kupoDBPathText blockchainTip
+          updateLocalTip pool blockchainTip
           liftIO $ putStrLn "Updated local tip with blockchain tip"
 
   -- Start probe server

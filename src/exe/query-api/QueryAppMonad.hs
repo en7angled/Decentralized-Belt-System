@@ -7,8 +7,10 @@ import Control.Monad.Reader
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Text hiding (elem, reverse, take)
 import Data.Time
+import Database.Persist.Sql (ConnectionPool, SqlPersistT, Single (..), rawSql, runSqlPool)
+import Control.Exception (SomeException, try)
 import Servant
-import System.Directory.Extra
+-- import System.Directory.Extra
 import TxBuilding.Context
 import WebAPI.Auth (AuthContext)
 import WebAPI.ServiceProbe (ServiceProbeStatus (..))
@@ -20,7 +22,7 @@ import WebAPI.ServiceProbe (ServiceProbeStatus (..))
 data QueryAppContext = QueryAppContext
   { authContext :: AuthContext,
     providerContext :: ProviderCtx,
-    projectionDbPath :: Text
+    pgPool :: ConnectionPool
   }
 
 newtype QueryAppMonad a = QueryAppMonad {unAppMonad :: ReaderT QueryAppContext Servant.Handler a}
@@ -43,11 +45,10 @@ instance MonadReader QueryAppContext QueryAppMonad where
 verifyProjectionDbConnection :: QueryAppMonad (ServiceProbeStatus Text)
 verifyProjectionDbConnection = QueryAppMonad $ do
   QueryAppContext {..} <- ask
-  dbExists <- liftIO $ doesFileExist (unpack projectionDbPath)
   now <- liftIO getCurrentTime
-
-  if dbExists
-    then
+  e <- liftIO (try (runSqlPool (rawSql "SELECT 1" [] :: SqlPersistT IO [Single Int]) pgPool) :: IO (Either SomeException [Single Int]))
+  case e of
+    Right _ ->
       return
         ServiceProbeStatus
           { status = "ready" :: Text,
@@ -55,14 +56,14 @@ verifyProjectionDbConnection = QueryAppMonad $ do
             version = "1.0.0",
             timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
           }
-    else
+    Left err ->
       throwError
         err503
           { errBody =
               BL8.pack $
                 show $
                   ServiceProbeStatus
-                    { status = "readiness timeout, projection database not found" :: Text,
+                    { status = "db not ready: " <> pack (show err),
                       service = "query-api",
                       version = "1.0.0",
                       timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now

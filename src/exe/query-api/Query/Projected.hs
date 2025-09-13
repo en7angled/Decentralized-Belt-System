@@ -11,7 +11,6 @@ import Data.MultiSet (fromList, toOccurList)
 import Data.Text qualified as T
 import Database.Esqueleto.Experimental
 import Database.Persist qualified as P
-import Database.Persist.Sqlite (runSqlite)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import Onchain.BJJ (BJJBelt)
@@ -26,8 +25,8 @@ whenJust (Just a) f = f a
 
 getPractitionerProfile :: (MonadIO m, MonadReader QueryAppContext m) => ProfileRefAC -> m PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     mProf <- P.getBy (UniqueProfileProjection profileRefAC)
     case mProf of
       Nothing -> liftIO $ ioError (userError "Practitioner profile not found")
@@ -58,11 +57,12 @@ getPractitionerProfile profileRefAC = do
                   practitionerCurrentRank = current,
                   practitionerPreviousRanks = Prelude.reverse restRev
                 }
+    ) pool
 
 getOrganizationProfile :: (MonadIO m, MonadReader QueryAppContext m) => ProfileRefAC -> m OrganizationProfileInformation
 getOrganizationProfile profileRefAC = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     mProf <- P.getBy (UniqueProfileProjection profileRefAC)
     case mProf of
       Nothing -> liftIO $ ioError (userError "Organization profile not found")
@@ -74,11 +74,12 @@ getOrganizationProfile profileRefAC = do
               organizationDescription = profileProjectionProfileDescription prof,
               organizationImageURI = profileProjectionProfileImageURI prof
             }
+    ) pool
 
 getProfilesCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe ProfileType -> m Int
 getProfilesCount maybeProfileType = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       pp <- from $ table @ProfileProjection
       case maybeProfileType of
@@ -87,11 +88,12 @@ getProfilesCount maybeProfileType = do
           where_ (pp ^. ProfileProjectionProfileType ==. val pt)
           pure countRows
     pure (maybe 0 unValue cnt)
+    ) pool
 
 getProfiles :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [Profile]
 getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     rows <- select $ do
       pp <- from $ table @ProfileProjection
       case maybeProfileFilter of
@@ -125,11 +127,12 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
               profileType = profileProjectionProfileType pp
             }
     pure (Prelude.map (toProfile . entityVal) rows)
+    ) pool
 
 getPromotions :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.PromotionFilter -> Maybe (PromotionsOrderBy, SortOrder) -> m [Promotion]
 getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     rows <- select $ do
       pr <- from $ table @PromotionProjection
       case maybePromotionFilter of
@@ -169,11 +172,12 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
               promotionAchievementDate = promotionProjectionPromotionAchievementDate p
             }
     pure (Prelude.map (toPromotion . entityVal) rows)
+    ) pool
 
 getPromotionsCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.PromotionFilter -> m Int
 getPromotionsCount maybePromotionFilter = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       pr <- from $ table @PromotionProjection
       case maybePromotionFilter of
@@ -190,11 +194,12 @@ getPromotionsCount maybePromotionFilter = do
             (Just f, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f &&. pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
           pure countRows
     pure (maybe 0 unValue cnt)
+    ) pool
 
 getRanks :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.RankFilter -> Maybe (RanksOrderBy, SortOrder) -> m [Rank]
 getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     rows <- select $ do
       rp <- from $ table @RankProjection
       case maybeRankFilter of
@@ -234,11 +239,12 @@ getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
               rankAchievementDate = rankProjectionRankAchievementDate rp
             }
     pure (Prelude.map (toRank . entityVal) rows)
+    ) pool
 
 getRanksCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.RankFilter -> m Int
 getRanksCount maybeRankFilter = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       rp <- from $ table @RankProjection
       case maybeRankFilter of
@@ -255,13 +261,15 @@ getRanksCount maybeRankFilter = do
             (Just f, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f &&. rp ^. RankProjectionRankAchievementDate <=. val to)
           pure countRows
     pure (maybe 0 unValue cnt)
+    ) pool
 
 getBeltTotals :: (MonadIO m, MonadReader QueryAppContext m) => m [(BJJBelt, Int)]
 getBeltTotals = do
-  chainsyncDBPath <- asks projectionDbPath
-  liftIO $ runSqlite chainsyncDBPath $ do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
     rows <- select $ do
       rp <- from $ table @RankProjection
       pure (rp ^. RankProjectionRankBelt)
     let belts = Prelude.map unValue rows
     pure (toOccurList . fromList $ belts)
+    ) pool

@@ -1,17 +1,36 @@
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bjj-projections
+    environment:
+      - POSTGRES_DB=chainsync
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chainsync || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
   chainsync:
     image: mariusgeorgescu/chainsync:chainsync
     container_name: bjj-chainsync
     environment:
       - KUPO_URL=https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run
-      - LOOKUP_PATH=/data/chainsync.sqlite
+      - PG_CONN_STR=host=postgres user=postgres password=postgres dbname=chainsync port=5432
       - BATCH_SIZE=100000000
       - FETCH_BATCH_SIZE=10000000
-    volumes:
-      - chainsync-db:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "test -f /data/chainsync.sqlite || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8084/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
@@ -23,15 +42,14 @@ services:
     container_name: bjj-interaction-api
     environment:
       - PORT=8082
-      - LOOKUP_PATH=/data/chainsync.sqlite
       # - BASIC_USER=cardano
       # - BASIC_PASS=lovelace
-    volumes:
-      - chainsync-db:/data
     ports:
       - "8082:8082"
     depends_on:
       chainsync:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     command: ["/app/interaction-api"]
@@ -47,15 +65,15 @@ services:
     container_name: bjj-query-api
     environment:
       - PORT=8083
-      - LOOKUP_PATH=/data/chainsync.sqlite
+      - PG_CONN_STR=host=postgres user=postgres password=postgres dbname=chainsync port=5432
       # - BASIC_USER=cardano
       # - BASIC_PASS=lovelace
-    volumes:
-      - chainsync-db:/data
     ports:
       - "8083:8083"
     depends_on:
       chainsync:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     command: ["/app/query-api"] 
@@ -93,7 +111,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  chainsync-db:
+  pgdata:
   certbot-www:
   letsencrypt:
 

@@ -5,9 +5,12 @@ import Data.Aeson.Encode.Pretty
 import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Maybe
 import Data.String (IsString (..))
-import Data.Text
 import GeniusYield.GYConfig
 import GeniusYield.Types
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import Control.Monad.Logger (runStdoutLoggingT)
+import Database.Persist.Postgresql (createPostgresqlPool)
 import Network.Wai.Handler.Warp
 import QueryAppMonad (QueryAppContext (..))
 import RestAPI (apiSwagger, mkBJJApp)
@@ -17,8 +20,8 @@ import Utils (decodeConfigEnvOrFile)
 import WebAPI.Auth (getBasicAuthFromEnv)
 import WebAPI.Utils (getPortFromEnvOrDefault)
 
-defaultLookUpPath :: FilePath
-defaultLookUpPath = "db/chainsync.sqlite"
+defaultConnStr :: String
+defaultConnStr = "host=postgres user=postgres password=postgres dbname=chainsync port=5432"
 
 main :: IO ()
 main = do
@@ -30,8 +33,9 @@ main = do
   withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do
     let providersContext = ProviderCtx atlasConfig providers
     authContext <- getBasicAuthFromEnv
-    lookupContext <- Data.Text.pack . fromMaybe defaultLookUpPath <$> lookupEnv "LOOKUP_PATH"
-    let appContext = QueryAppContext authContext providersContext lookupContext
+    connStr <- fromMaybe defaultConnStr <$> lookupEnv "PG_CONN_STR"
+    pool <- runStdoutLoggingT $ createPostgresqlPool (T.encodeUtf8 (T.pack connStr)) 10
+    let appContext = QueryAppContext authContext providersContext pool
     let host = "0.0.0.0"
     port <- getPortFromEnvOrDefault 8083
 
@@ -40,7 +44,7 @@ main = do
 
     putStrLn $ "Started Query API server at " <> host <> " " <> show port
     putStrLn $ "Atlas config: " <> show atlasConfig
-    putStrLn $ "Lookup path: " <> show lookupContext
+    putStrLn $ "Postgres DSN: " <> connStr
     putStrLn $ "Swagger-UI available at : http://" <> host <> ":" <> show port <> "/swagger-ui"
 
     runSettings settings bjjDApp

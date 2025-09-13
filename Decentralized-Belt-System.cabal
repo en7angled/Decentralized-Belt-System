@@ -195,7 +195,7 @@ library offchain-lib
     , mtl
     , onchain-lib
     , persistent
-    , persistent-sqlite
+    , persistent-postgresql
     , servant-server
     , swagger2
     , text
@@ -262,7 +262,7 @@ executable interaction-api
   main-is:          Main.hs
   hs-source-dirs:   src/exe/interaction-api
   default-language: GHC2021
-  ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-T -with-rtsopts=-N -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
     InteractionAppMonad
@@ -278,16 +278,17 @@ executable interaction-api
   build-depends:
     , aeson
     , aeson-pretty
-    , bytestring          ^>=0.11.5
+    , bytestring             ^>=0.11.5
     , deriving-aeson
     , esqueleto
     , extra
-    , http-types          ^>=0.12.4
-    , lens                ^>=5.2.3
+    , http-types             ^>=0.12.4
+    , lens                   ^>=5.2.3
+    , monad-logger
     , mtl
     , multiset
     , persistent
-    , persistent-sqlite
+    , persistent-postgresql
     , servant-options
     , servant-server
     , servant-swagger
@@ -306,7 +307,7 @@ executable query-api
   main-is:          Main.hs
   hs-source-dirs:   src/exe/query-api
   default-language: GHC2021
-  ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-T -with-rtsopts=-N -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
     Query.Common
@@ -325,16 +326,17 @@ executable query-api
   build-depends:
     , aeson
     , aeson-pretty
-    , bytestring          ^>=0.11.5
+    , bytestring             ^>=0.11.5
     , deriving-aeson
     , esqueleto
     , extra
-    , http-types          ^>=0.12.4
-    , lens                ^>=5.2.3
+    , http-types             ^>=0.12.4
+    , lens                   ^>=5.2.3
+    , monad-logger
     , mtl
     , multiset
     , persistent
-    , persistent-sqlite
+    , persistent-postgresql
     , servant-options
     , servant-server
     , servant-swagger
@@ -352,6 +354,7 @@ executable chainsync-service
   import:           common-options
   main-is:          Main.hs
   hs-source-dirs:   src/exe/chain-sync
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-T -with-rtsopts=-N -O2
   default-language: GHC2021
   build-depends:
     , base
@@ -365,9 +368,10 @@ executable chainsync-service
     , bytestring
     , deriving-aeson
     , extra
+    , monad-logger
     , mtl
     , persistent
-    , persistent-sqlite
+    , persistent-postgresql
     , servant-server
     , swagger2
     , text

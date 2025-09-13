@@ -23,7 +23,7 @@ import Control.Monad.IO.Class (MonadIO (..))
 import Data.Text (Text)
 import Data.Time (UTCTime, getCurrentTime)
 import Database.Persist
-import Database.Persist.Sqlite
+import Database.Persist.Sql
 import Database.Persist.TH
 import DomainTypes.Core.Types
 import GeniusYield.Types

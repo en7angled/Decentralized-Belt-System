@@ -1,35 +1,14 @@
 # syntax=docker/dockerfile:1.4
 
-### STAGE 1: Build ###
-FROM --platform=$TARGETPLATFORM bjj-builder:9.6.6 AS builder
-
-WORKDIR /Decentralized-Belt-System
-
-ENV PATH="/root/.cabal/bin:$PATH"
-ENV CC=musl-gcc
-ENV LD=musl-gcc
+# Shared builder image for all services
+FROM --platform=$TARGETPLATFORM benz0li/ghc-musl:9.6.6 AS builder
 
 
-# Copy sources and build chain-sync
-COPY src ./src
-COPY config ./config
-
-RUN cabal install chain-sync \
-    --enable-executable-static \
-    --overwrite-policy=always \
-    --installdir=. \
-    --install-method=copy \
-    --ghc-options="-optl=-static -optl=-pthread -optc=-static"
-
-
-### STAGE 2: Runtime ###
-FROM --platform=$TARGETPLATFORM alpine:3.20 AS runtime
-
-# Base libs
+# Base toolchain and common libs
 RUN apk add  bash curl ca-certificates git pkgconfig build-base \
     automake autoconf libtool gmp-dev zlib-dev musl-dev musl-utils
 
-# Cardano deps (align with server runtime)
+# Cardano deps and PostgreSQL client/dev (kept aligned with service images)
 RUN apk add  \
     curl \
     ca-certificates \
@@ -67,16 +46,14 @@ RUN apk add  \
     gmp \
     libgcc
 
-RUN apk add  postgresql-client postgresql-dev
-
-# libsodium
+# Build and install libsodium 1.0.19 (for libsodium.so.26)
 RUN curl -LO https://download.libsodium.org/libsodium/releases/libsodium-1.0.19.tar.gz && \
     tar xvf libsodium-1.0.19.tar.gz && \
     cd libsodium-stable && \
     ./configure --prefix=/usr --enable-shared --disable-static && \
     make && make install
 
-# secp256k1
+# Build and install secp256k1 (schnorr)
 RUN git clone --depth 1 --branch 'v0.3.2' https://github.com/bitcoin-core/secp256k1 && \
     cd secp256k1 && \
     ./autogen.sh && \
@@ -84,8 +61,6 @@ RUN git clone --depth 1 --branch 'v0.3.2' https://github.com/bitcoin-core/secp25
     make && \
     make check && \
     make install
-
-# ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
 
 # BLST
 ARG BLST_REF=v0.3.15
@@ -100,16 +75,19 @@ RUN git clone https://github.com/supranational/blst && \
     /usr/include/blst_aux.h /usr/include/blst.h /usr/include/blst.hpp \
     /usr/lib/libblst.a
 
-# Runtime app
-WORKDIR /app
-COPY --from=builder /Decentralized-Belt-System/chain-sync /app/chain-sync
-COPY ./config /app/config
 
-# Defaults (overridable)
-ENV KUPO_URL=http://localhost:1442 \
-    PG_CONN_STR="host=postgres user=postgres password=postgres dbname=chainsync port=5432" \
-    BATCH_SIZE=10000000 \
-    FETCH_BATCH_SIZE=10000000
 
-ENTRYPOINT ["/app/chain-sync"]
+## Stage 1 base toolchain and crypto libs are provided by bjj-builder
+
+# Build workspace
+WORKDIR /Decentralized-Belt-System
+
+ENV PATH="/root/.cabal/bin:$PATH"
+ENV CC=musl-gcc
+ENV LD=musl-gcc
+
+# Prime cabal
+COPY *.cabal cabal.project ./
+RUN cabal update
+RUN cabal build --only-dependencies
 

@@ -60,7 +60,8 @@ component BackEnd  as "BackEnd Services"  #LightGray   {
         --
         Transactions
         Metadata
-        UTXOs
+        UTxOs
+        --
         "
     }
 
@@ -75,15 +76,18 @@ component BackEnd  as "BackEnd Services"  #LightGray   {
     component ChainSync <<DApp>>  as "Chain Sync\nService"{
         control Monitoring as "Monitors matches and\n updates projections"
     }
-    database  LocalDB as "PROJECTIONS:
-    --
-    Profiles
-    Ranks
-    Promotions
-    Achievements
-    Memmberships
-    "
+    component Projections   as "Projections"{
 
+        database  LocalDB as "
+        --
+        Profiles
+        Ranks
+        Promotions
+        Achievements
+        Memmberships
+        --
+        "
+    }
 
     portin webserverPort as "."
     portin interactionsPort as "."
@@ -96,8 +100,8 @@ component BackEnd  as "BackEnd Services"  #LightGray   {
     Interactions -->> CardanoProvider : query\n and \n submit signed tx
     Lookups --> CardanoProvider : veryfy\n scripts\n availability
 
-    ChainSync -->> LocalDB : project
-    Lookups -->> LocalDB : query
+    ChainSync -->> Projections : uspert
+    Lookups -->> Projections : query
     ChainSync -->> Kupo : monitor
 
 
