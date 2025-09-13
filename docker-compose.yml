@@ -10,6 +10,12 @@ services:
       - FETCH_BATCH_SIZE=10000000
     volumes:
       - chainsync-db:/data
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/chainsync.sqlite || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
     restart: unless-stopped
 
   interaction-api:
@@ -25,9 +31,16 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      - chainsync
+      chainsync:
+        condition: service_healthy
     restart: unless-stopped
     command: ["/app/interaction-api"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8082/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   query-api:
     image: mariusgeorgescu/bjj-query-api:latest
@@ -42,16 +55,25 @@ services:
     ports:
       - "8083:8083"
     depends_on:
-      - chainsync
+      chainsync:
+        condition: service_healthy
     restart: unless-stopped
     command: ["/app/query-api"] 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   nginx:
     image: nginx:1.27-alpine
     container_name: bjj-nginx
     depends_on:
-      - interaction-api
-      - query-api
+      interaction-api:
+        condition: service_healthy
+      query-api:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
