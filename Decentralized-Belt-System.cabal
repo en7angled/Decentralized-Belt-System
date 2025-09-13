@@ -71,7 +71,10 @@ library onchain-lib
     , aeson
     , bytestring
     , containers
+    , http-types
+    , servant-server
     , swagger2
+    , text
 
   --- Cardano specific dependencies
   build-depends:
@@ -189,6 +192,7 @@ library offchain-lib
     , chainsync-lib
     , deriving-aeson
     , extra
+    , servant-server
     , mtl
     , onchain-lib
     , persistent
@@ -223,6 +227,7 @@ library webapi-lib
   build-depends:
     , aeson
     , http-types
+    , servant
     , servant-server
     , swagger2
     , text
@@ -230,8 +235,8 @@ library webapi-lib
     , wai
     , wai-cors
 
-executable admin  
-  import:             common-options
+executable admin
+  import:           common-options
   main-is:          Main.hs
   hs-source-dirs:   src/exe/admin
   default-language: GHC2021

@@ -1,19 +1,22 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 {-# HLINT ignore "Use guards" #-}
 
 module Onchain.BJJ where
 
+import Data.Aeson.Types
+import Data.String (IsString (..))
+import Data.Swagger
+import Data.Text (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 import PlutusLedgerApi.V3 (POSIXTime (POSIXTime))
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
+import Servant (FromHttpApiData (..))
 import Prelude qualified
-import Data.Aeson.Types
-import Data.Swagger
-import Data.String (IsString (..))
-
 
 -------------------------------------------------------------------------------
 
@@ -38,12 +41,11 @@ data BJJBelt
   | Red -- 9th Degree
   | Red10 -- 10th Degree
   deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition,FromJSON, ToJSON, ToSchema, ToParamSchema)
+  deriving anyclass (HasBlueprintDefinition, FromJSON, ToJSON, ToSchema, ToParamSchema)
 
 makeIsDataSchemaIndexed ''BJJBelt [('White, 0), ('Blue, 1), ('Purple, 2), ('Brown, 3), ('Black, 4), ('Black1, 5), ('Black2, 6), ('Black3, 7), ('Black4, 8), ('Black5, 9), ('Black6, 10), ('RedAndBlack, 11), ('RedAndWhite, 12), ('Red, 13), ('Red10, 14)]
 
 instance IsString BJJBelt where
-
   fromString :: Prelude.String -> BJJBelt
   fromString s = case parseBelt s of
     Just belt -> belt
@@ -68,8 +70,6 @@ parseBelt s = case s of
   "Red10" -> Just Red10
   _ -> Nothing
 
-
-
 {-# INLINEABLE beltToInt #-}
 beltToInt :: BJJBelt -> Integer
 beltToInt belt = case belt of
@@ -89,29 +89,54 @@ beltToInt belt = case belt of
   Red -> 13
   Red10 -> 14
 
-
-
 {-# INLINEABLE intToBelt #-}
 intToBelt :: Integer -> BJJBelt
 intToBelt n =
-  if n == 0 then White
-  else if n == 1 then Blue
-  else if n == 2 then Purple
-  else if n == 3 then Brown
-  else if n == 4 then Black
-  else if n == 5 then Black1
-  else if n == 6 then Black2
-  else if n == 7 then Black3
-  else if n == 8 then Black4
-  else if n == 9 then Black5
-  else if n == 10 then Black6
-  else if n == 11 then RedAndBlack
-  else if n == 12 then RedAndWhite
-  else if n == 13 then Red
-  else if n == 14 then Red10
-  else traceError "Invalid belt"
-
-
+  if n == 0
+    then White
+    else
+      if n == 1
+        then Blue
+        else
+          if n == 2
+            then Purple
+            else
+              if n == 3
+                then Brown
+                else
+                  if n == 4
+                    then Black
+                    else
+                      if n == 5
+                        then Black1
+                        else
+                          if n == 6
+                            then Black2
+                            else
+                              if n == 7
+                                then Black3
+                                else
+                                  if n == 8
+                                    then Black4
+                                    else
+                                      if n == 9
+                                        then Black5
+                                        else
+                                          if n == 10
+                                            then Black6
+                                            else
+                                              if n == 11
+                                                then RedAndBlack
+                                                else
+                                                  if n == 12
+                                                    then RedAndWhite
+                                                    else
+                                                      if n == 13
+                                                        then Red
+                                                        else
+                                                          if n == 14
+                                                            then Red10
+                                                            else traceError "Invalid belt"
 
 instance Eq BJJBelt where
   (==) :: BJJBelt -> BJJBelt -> Bool
@@ -128,7 +153,6 @@ instance Ord BJJBelt where
 instance Prelude.Ord BJJBelt where
   compare :: BJJBelt -> BJJBelt -> Ordering
   compare x y = Prelude.compare (Prelude.fromEnum x) (Prelude.fromEnum y)
-
 
 instance Enum BJJBelt where
   succ :: BJJBelt -> BJJBelt
@@ -156,11 +180,6 @@ instance Prelude.Enum BJJBelt where
   fromEnum :: BJJBelt -> Prelude.Int
   fromEnum = Prelude.fromIntegral . beltToInt
 
-
-
-
-
-
 {-# INLINEABLE minMonthsForBelt #-}
 minMonthsForBelt :: BJJBelt -> Integer
 minMonthsForBelt belt = case belt of
@@ -184,6 +203,10 @@ minMonthsForBelt belt = case belt of
 monthsToPosixTime :: Integer -> POSIXTime
 monthsToPosixTime months = POSIXTime $ months * 2629800000
 
+instance FromHttpApiData BJJBelt where
+  parseQueryParam :: Text -> Either Text BJJBelt
+  parseQueryParam = maybe (Left "Invalid belt") Right . parseBelt . T.unpack
+
 -- -------------------------------------------------------------------------------
 
 -- -- * BJJ Promotion Rules
@@ -196,17 +219,23 @@ validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBel
     r | r < Black -> traceIfFalse "Belts lower than black are not allowed to promote" False
     r | r == Black1 -> traceIfFalse "Only 2 degree black belts can promote to black" $ studentNextBelt < Black && generalRules
     _ -> generalRules
- where
-  generalRules =
-    and
-      [ traceIfFalse "Master belt must be greater than the student's next belt"
-        $ masterBelt > studentNextBelt
-      , traceIfFalse "Master belt date must be before the student's next belt date"
-        $ masterBeltDate < studentNextBeltDate
-      , traceIfFalse "Student's next belt must be greater than the student's current belt"
-        $ studentNextBelt > studentCurrentBelt
-      , traceIfFalse "Student Next belt date must be after the student's current belt date"
-        $ studentNextBeltDate > studentCurrentBeltDate
-      , traceIfFalse "Time in the current belt must be greater than the minimum time for the next belt" $
-         studentNextBeltDate - studentCurrentBeltDate > monthsToPosixTime (minMonthsForBelt studentCurrentBelt)
-      ]
+  where
+    generalRules =
+      and
+        [ traceIfFalse "Master belt must be greater than the student's next belt"
+            $ masterBelt
+            > studentNextBelt,
+          traceIfFalse "Master belt date must be before the student's next belt date"
+            $ masterBeltDate
+            < studentNextBeltDate,
+          traceIfFalse "Student's next belt must be greater than the student's current belt"
+            $ studentNextBelt
+            > studentCurrentBelt,
+          traceIfFalse "Student Next belt date must be after the student's current belt date"
+            $ studentNextBeltDate
+            > studentCurrentBeltDate,
+          traceIfFalse "Time in the current belt must be greater than the minimum time for the next belt"
+            $ studentNextBeltDate
+            - studentCurrentBeltDate
+            > monthsToPosixTime (minMonthsForBelt studentCurrentBelt)
+        ]

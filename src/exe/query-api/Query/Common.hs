@@ -1,8 +1,6 @@
 module Query.Common where
 
-import Data.List (drop, take)
 import Data.Text (Text)
-import qualified Data.Text as Text
 import DomainTypes.Core.Types
 import GeniusYield.Types (GYTime)
 import Onchain.BJJ (BJJBelt)

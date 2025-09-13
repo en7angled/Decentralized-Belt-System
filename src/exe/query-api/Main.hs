@@ -1,13 +1,11 @@
 module Main where
 
-import Constants (defaultAtlasCoreConfig, defaultTxBuldingContextFile)
-import Control.Concurrent.Extra
+import Constants (defaultAtlasCoreConfig)
 import Data.Aeson.Encode.Pretty
-import qualified Data.ByteString.Lazy.Char8 as BL8
+import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Maybe
 import Data.String (IsString (..))
 import Data.Text
-import qualified Data.Text as T
 import GeniusYield.GYConfig
 import GeniusYield.Types
 import Network.Wai.Handler.Warp
@@ -15,9 +13,8 @@ import QueryAppMonad (QueryAppContext (..))
 import RestAPI (apiSwagger, mkBJJApp)
 import System.Environment
 import TxBuilding.Context
-import TxBuilding.Utils
 import Utils (decodeConfigEnvOrFile)
-import WebAPI.Auth (AuthContext (..), getBasicAuthFromEnv)
+import WebAPI.Auth (getBasicAuthFromEnv)
 import WebAPI.Utils (getPortFromEnvOrDefault)
 
 defaultLookUpPath :: FilePath

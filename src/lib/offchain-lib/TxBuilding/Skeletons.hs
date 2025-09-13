@@ -97,7 +97,7 @@ txIsValidForSafeEra = do
 txMustSpendStateFromRefScriptWithRedeemer :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYAssetClass -> GYRedeemer -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyValidator =
   do
-    stateUTxO <- getUTxOWithNFT stateTokenId 
+    stateUTxO <- getUTxOWithNFT stateTokenId
     (gyDatum, _v) <- gyGetInlineDatumAndValue' stateUTxO
     return $
       mustHaveInput
@@ -110,12 +110,12 @@ txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyVa
     gyGetInlineDatumAndValue' utxo = maybe (throwError (GYApplicationException ProfileNotFound)) return $ getInlineDatumAndValue utxo
 
 txMustHaveUTxOAsRefInput :: (GYTxUserQueryMonad m) => GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
-txMustHaveUTxOAsRefInput gyAC  = do
-  utxo <- getUTxOWithNFT gyAC 
+txMustHaveUTxOAsRefInput gyAC = do
+  utxo <- getUTxOWithNFT gyAC
   return $ mustHaveRefInput (utxoRef utxo)
 
 txMustHaveUTxOsAsRefInputs :: (GYTxUserQueryMonad m) => [GYAssetClass] -> m (GYTxSkeleton 'PlutusV3)
-txMustHaveUTxOsAsRefInputs gyACs  =  mconcat <$> mapM txMustHaveUTxOAsRefInput gyACs
+txMustHaveUTxOsAsRefInputs gyACs = mconcat <$> mapM txMustHaveUTxOAsRefInput gyACs
 
 txMustSpendFromAddress :: (GYTxUserQueryMonad m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendFromAddress tokenId addrs = do

@@ -1,34 +1,25 @@
 module Main where
 
+import Data.Aeson (encode)
+import Data.Aeson qualified as Aeson
+import Data.ByteString.Char8 qualified as LSB8
+import Data.ByteString.Lazy qualified as B
 import Data.Char (toLower, toUpper)
 import Data.Text qualified as T
-import Data.Word (Word8)
 import DomainTypes.Core.Actions (ProfileActionType (..), ProfileData (..))
 import DomainTypes.Core.Types (ProfileType (..))
-import DomainTypes.Transfer.Types
 import GeniusYield.GYConfig
+import GeniusYield.Imports
 import GeniusYield.Types
-import Onchain.BJJ ( BJJBelt(..), parseBelt )
-import Onchain.Blueprint (contractBlueprint, mintingPolicyBlueprint)
-import Onchain.Protocol (ProtocolParams (..))
+import Onchain.BJJ (BJJBelt (..), parseBelt)
 import Options.Applicative
 import PlutusLedgerApi.V3
-import PlutusTx.Blueprint (writeBlueprint)
-import System.Environment (getArgs)
 import Text.Read qualified as Text
 import TxBuilding.Context
 import TxBuilding.Interactions
 import TxBuilding.Transactions
 import TxBuilding.Utils
-import TxBuilding.Validators (defaultProtocolParams)
 import Utils
-import Data.ByteString.Lazy qualified as B
-import GeniusYield.Imports
-import Data.Aeson (encode, decodeFileStrict)
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Char8 as LSB8
-
-
 
 atlasCoreConfig :: FilePath
 atlasCoreConfig = "config/config_atlas.json"
@@ -57,41 +48,47 @@ data Command
   deriving (Show)
 
 data InitProfileArgs = InitProfileArgs
-  { ipaProfileData :: ProfileData
-  , ipaProfileType :: ProfileType
-  , ipaCreationDate :: GYTime
-  , ipaOutputId :: Bool
-  } deriving (Show)
+  { ipaProfileData :: ProfileData,
+    ipaProfileType :: ProfileType,
+    ipaCreationDate :: GYTime,
+    ipaOutputId :: Bool
+  }
+  deriving (Show)
 
 data UpdateProfileImageArgs = UpdateProfileImageArgs
-  { upiaProfileId :: GYAssetClass
-  , upiaImageURI :: T.Text
-  , upiaOutputId :: Bool
-  } deriving (Show)
+  { upiaProfileId :: GYAssetClass,
+    upiaImageURI :: T.Text,
+    upiaOutputId :: Bool
+  }
+  deriving (Show)
 
 newtype DeleteProfileArgs = DeleteProfileArgs
   { dpaProfileId :: GYAssetClass
-  } deriving (Show)
+  }
+  deriving (Show)
 
 data PromoteProfileArgs = PromoteProfileArgs
-  { ppaPromotedProfileId :: GYAssetClass
-  , ppaPromotedByProfileId :: GYAssetClass
-  , ppaAchievementDate :: GYTime
-  , ppaPromotedBelt :: BJJBelt
-  , ppaOutputId :: Bool
-  } deriving (Show)
+  { ppaPromotedProfileId :: GYAssetClass,
+    ppaPromotedByProfileId :: GYAssetClass,
+    ppaAchievementDate :: GYTime,
+    ppaPromotedBelt :: BJJBelt,
+    ppaOutputId :: Bool
+  }
+  deriving (Show)
 
 newtype AcceptPromotionArgs = AcceptPromotionArgs
   { apaPromotionId :: GYAssetClass
-  } deriving (Show)
+  }
+  deriving (Show)
 
 data CreateProfileWithRankArgs = CreateProfileWithRankArgs
-  { cpwraProfileData :: ProfileData
-  , cpwraProfileType :: ProfileType
-  , cpwraCreationDate :: GYTime
-  , cpwraBelt :: BJJBelt
-  , cpwraOutputId :: Bool
-  } deriving (Show)
+  { cpwraProfileData :: ProfileData,
+    cpwraProfileType :: ProfileType,
+    cpwraCreationDate :: GYTime,
+    cpwraBelt :: BJJBelt,
+    cpwraOutputId :: Bool
+  }
+  deriving (Show)
 
 -- Profile data parser
 profileDataParser :: Parser ProfileData
@@ -121,8 +118,6 @@ profileDataParser =
               <> help "Profile image URI"
           )
       )
-
-
 
 -- Profile type parser
 profileTypeParser :: Parser ProfileType
@@ -193,26 +188,32 @@ parseBeltFromCLI = parseBelt . concatMap capitalize . splitOnDash
     capitalize [] = []
     capitalize (x : xs) = toUpper x : map toLower xs
 
-
 -- Output ID flag parser
 outputIdParser :: Parser Bool
-outputIdParser = flag False True
-  ( long "output-id"
-      <> short 'o'
-      <> help "Output the asset ID in a parseable format"
-  )
+outputIdParser =
+  flag
+    False
+    True
+    ( long "output-id"
+        <> short 'o'
+        <> help "Output the asset ID in a parseable format"
+    )
 
 -- Main command parser
 commandParser :: Parser Command
 commandParser =
   hsubparser
-    ( command "deploy-reference-scripts"
-        ( info (pure DeployReferenceScripts)
+    ( command
+        "deploy-reference-scripts"
+        ( info
+            (pure DeployReferenceScripts)
             ( progDesc "Deploy reference scripts for the BJJ belt system"
             )
         )
-        <> command "init-profile"
-        ( info ( InitProfile
+        <> command
+          "init-profile"
+          ( info
+              ( InitProfile
                   <$> ( InitProfileArgs
                           <$> profileDataParser
                           <*> profileTypeParser
@@ -222,9 +223,11 @@ commandParser =
               )
               ( progDesc "Initialize a new profile"
               )
-        )
-        <> command "update-profile-image"
-        ( info ( UpdateProfileImage
+          )
+        <> command
+          "update-profile-image"
+          ( info
+              ( UpdateProfileImage
                   <$> ( UpdateProfileImageArgs
                           <$> assetClassParser
                           <*> fmap T.pack (strOption (long "image-uri" <> metavar "IMAGE_URI" <> help "New image URI"))
@@ -233,15 +236,19 @@ commandParser =
               )
               ( progDesc "Update profile image"
               )
-        )
-        <> command "delete-profile"
-        ( info ( DeleteProfile . DeleteProfileArgs <$> assetClassParser
+          )
+        <> command
+          "delete-profile"
+          ( info
+              ( DeleteProfile . DeleteProfileArgs <$> assetClassParser
               )
               ( progDesc "Delete a profile"
               )
-        )
-        <> command "promote-profile"
-        ( info ( PromoteProfile
+          )
+        <> command
+          "promote-profile"
+          ( info
+              ( PromoteProfile
                   <$> ( PromoteProfileArgs
                           <$> option (maybeReader parseAssetClass) (long "promoted-profile-id" <> short 'p' <> metavar "PROMOTED_PROFILE_ID" <> help "ID of the profile being promoted")
                           <*> option (maybeReader parseAssetClass) (long "promoted-by-profile-id" <> short 'b' <> metavar "PROMOTED_BY_PROFILE_ID" <> help "ID of the profile doing the promotion")
@@ -252,15 +259,19 @@ commandParser =
               )
               ( progDesc "Promote a profile to a new belt"
               )
-        )
-        <> command "accept-promotion"
-        ( info ( AcceptPromotion . AcceptPromotionArgs <$> assetClassParser
+          )
+        <> command
+          "accept-promotion"
+          ( info
+              ( AcceptPromotion . AcceptPromotionArgs <$> assetClassParser
               )
               ( progDesc "Accept a promotion"
               )
-        )
-        <> command "create-profile-with-rank"
-        ( info ( CreateProfileWithRank
+          )
+        <> command
+          "create-profile-with-rank"
+          ( info
+              ( CreateProfileWithRank
                   <$> ( CreateProfileWithRankArgs
                           <$> profileDataParser
                           <*> profileTypeParser
@@ -271,32 +282,32 @@ commandParser =
               )
               ( progDesc "Create a profile with initial rank"
               )
-        )
+          )
     )
 
 -- Action type conversion functions
 initProfileToActionType :: InitProfileArgs -> ActionType
-initProfileToActionType InitProfileArgs{ipaProfileData, ipaProfileType, ipaCreationDate} =
+initProfileToActionType InitProfileArgs {ipaProfileData, ipaProfileType, ipaCreationDate} =
   ProfileAction $ InitProfileAction ipaProfileData ipaProfileType ipaCreationDate
 
 updateProfileImageToActionType :: UpdateProfileImageArgs -> ActionType
-updateProfileImageToActionType UpdateProfileImageArgs{upiaProfileId, upiaImageURI} =
+updateProfileImageToActionType UpdateProfileImageArgs {upiaProfileId, upiaImageURI} =
   ProfileAction $ UpdateProfileImageAction upiaProfileId upiaImageURI
 
 deleteProfileToActionType :: DeleteProfileArgs -> ActionType
-deleteProfileToActionType DeleteProfileArgs{dpaProfileId} =
+deleteProfileToActionType DeleteProfileArgs {dpaProfileId} =
   ProfileAction $ DeleteProfileAction dpaProfileId
 
 promoteProfileToActionType :: PromoteProfileArgs -> ActionType
-promoteProfileToActionType PromoteProfileArgs{ppaPromotedProfileId, ppaPromotedByProfileId, ppaAchievementDate, ppaPromotedBelt} =
+promoteProfileToActionType PromoteProfileArgs {ppaPromotedProfileId, ppaPromotedByProfileId, ppaAchievementDate, ppaPromotedBelt} =
   ProfileAction $ PromoteProfileAction ppaPromotedProfileId ppaPromotedByProfileId ppaAchievementDate ppaPromotedBelt
 
 acceptPromotionToActionType :: AcceptPromotionArgs -> ActionType
-acceptPromotionToActionType AcceptPromotionArgs{apaPromotionId} =
+acceptPromotionToActionType AcceptPromotionArgs {apaPromotionId} =
   ProfileAction $ AcceptPromotionAction apaPromotionId
 
 createProfileWithRankToActionType :: CreateProfileWithRankArgs -> ActionType
-createProfileWithRankToActionType CreateProfileWithRankArgs{cpwraProfileData, cpwraProfileType, cpwraCreationDate, cpwraBelt} =
+createProfileWithRankToActionType CreateProfileWithRankArgs {cpwraProfileData, cpwraProfileType, cpwraCreationDate, cpwraBelt} =
   ProfileAction $ CreateProfileWithRankAction cpwraProfileData cpwraProfileType cpwraCreationDate cpwraBelt
 
 -- Execute command function
@@ -306,66 +317,57 @@ executeCommand (Left pCtx) signKey cmd = case cmd of
     printYellow "Deploying reference scripts..."
     txBuildingCtx <- deployReferenceScripts pCtx signKey
     B.writeFile txBuldingContextFile (encode . toJSON $ txBuildingCtx)
-    printGreen $ "Reference scripts deployed successfully! \n\t" <>  "File: " <> txBuldingContextFile
+    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> txBuldingContextFile
   _ -> do
     printYellow "No transaction building context found."
     printYellow "Please run 'deploy-reference-scripts' first to set up the system."
-
 executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
   DeployReferenceScripts -> do
     printYellow "Transaction building context already exists, skipping deployment."
-  
-
   InitProfile args -> do
     printYellow "Initializing profile..."
     let actionType = initProfileToActionType args
-    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile initialized successfully!"
     if ipaOutputId args
-      then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
       else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
-
   UpdateProfileImage args -> do
     printYellow "Updating profile image..."
     let actionType = updateProfileImageToActionType args
-    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile image updated successfully!"
     if upiaOutputId args
-      then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
       else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
-
   DeleteProfile args -> do
     printYellow "Deleting profile..."
     let actionType = deleteProfileToActionType args
-    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile deleted successfully!"
     printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
-
   PromoteProfile args -> do
     printYellow "Promoting profile..."
     let actionType = promoteProfileToActionType args
-    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile promoted successfully!"
     if ppaOutputId args
-      then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
       else printGreen $ "Promotion ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
-
   AcceptPromotion args -> do
     printYellow "Accepting promotion..."
     let actionType = acceptPromotionToActionType args
-    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Promotion accepted successfully!"
     printGreen $ "Rank ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
-
   CreateProfileWithRank args -> do
     printYellow "Creating profile with rank..."
     let actionType = createProfileWithRankToActionType args
-    (txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile with rank created successfully!"
     if cpwraOutputId args
-      then putStrLn $ LSB8.unpack $ LSB8.toStrict  $ Aeson.encode assetClass
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
       else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
-
 
 main :: IO ()
 main = do
@@ -376,16 +378,18 @@ main = do
     Nothing -> do
       printYellow "No transaction building context found, please run deploy-reference-scripts first"
       printYellow "Please run deploy-reference-scripts first to set up the system"
-    Just txBuildingContext -> do
+    Just _txBuildingContext -> do
       printYellow "Transaction building context found, executing command"
 
   -- Parse command line arguments
-  cmd <- execParser $ info (commandParser <**> helper)
-    ( fullDesc
-        <> progDesc "A command-line tool for managing Brazilian Jiu Jitsu profiles, belt promotions, and achievements on the Cardano blockchain. Supports deploying reference scripts, initializing and updating profiles, handling promotions, and more."
-        <> header "BJJ Belt System - Decentralized Belt Management"
-    )
-
+  cmd <-
+    execParser $
+      info
+        (commandParser <**> helper)
+        ( fullDesc
+            <> progDesc "A command-line tool for managing Brazilian Jiu Jitsu profiles, belt promotions, and achievements on the Cardano blockchain. Supports deploying reference scripts, initializing and updating profiles, handling promotions, and more."
+            <> header "BJJ Belt System - Decentralized Belt Management"
+        )
 
   printYellow $ "Reading signing key file from " <> mnemonicFilePath
   signKey <- readMnemonicFile mnemonicFilePath
@@ -404,4 +408,3 @@ main = do
       Just validatorsCtx -> do
         let txBuildingContext = TxBuildingContext {deployedScriptsCtx = validatorsCtx, providerCtx = pCtx}
         executeCommand (Right txBuildingContext) signKey cmd
-

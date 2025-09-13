@@ -3,14 +3,13 @@
 module Query.Live where
 
 import Control.Monad.Reader
-import qualified Data.List as L
+import Data.List qualified as L
 import Data.MultiSet (fromList, toOccurList)
 import Data.Ord (Down (..))
-import qualified Data.Text as Text
+import Data.Text qualified as Text
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.GYConfig (GYCoreConfig (..))
-import GeniusYield.Types
 import Onchain.BJJ (BJJBelt)
 import Query.Common
 import QueryAppMonad (QueryAppContext (..))

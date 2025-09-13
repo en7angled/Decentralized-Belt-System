@@ -10,12 +10,14 @@ import Data.Swagger.Internal.Schema ()
 import Data.Swagger.ParamSchema
 import Data.Swagger.SchemaOptions (fromAesonOptions)
 import Data.Text hiding (init, tail)
+import Data.Text as T
 import Database.Persist.TH
 import Deriving.Aeson
 import GHC.Generics ()
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
 import Onchain.BJJ (BJJBelt)
+import Servant (FromHttpApiData (..))
 import Utils
 
 type ProfileRefAC = GYAssetClass
@@ -27,6 +29,15 @@ data ProfileType = Practitioner | Organization
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema, Eq, Ord)
 
 derivePersistFieldJSON "ProfileType"
+
+instance FromHttpApiData ProfileType where
+  parseQueryParam :: Text -> Either Text ProfileType
+  parseQueryParam = maybe (Left "Invalid profile type") Right . parseProfileType . T.unpack
+    where
+      parseProfileType s
+        | s == "Practitioner" = Just Practitioner
+        | s == "Organization" = Just Organization
+        | otherwise = Nothing
 
 -- | Profile
 data Profile = Profile

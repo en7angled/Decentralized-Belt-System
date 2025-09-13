@@ -6,18 +6,16 @@
 module Query.Projected where
 
 import Control.Monad.IO.Class (MonadIO (..))
-import Control.Monad.Reader (MonadReader)
 import Control.Monad.Reader.Class
 import Data.MultiSet (fromList, toOccurList)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Database.Esqueleto.Experimental
-import Database.Persist (Entity (..), entityVal)
-import qualified Database.Persist as P
+import Database.Persist qualified as P
 import Database.Persist.Sqlite (runSqlite)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import Onchain.BJJ (BJJBelt)
-import qualified Query.Common as C
+import Query.Common qualified as C
 import QueryAppMonad
 import Storage
 import Types
@@ -143,9 +141,9 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
           whenJust promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
           case promotionFilterAchievementDateInterval of
             (Nothing, Nothing) -> pure ()
-            (Just from, Nothing) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val from)
+            (Just f, Nothing) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f)
             (Nothing, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
-            (Just from, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val from &&. pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
+            (Just f, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f &&. pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
@@ -187,9 +185,9 @@ getPromotionsCount maybePromotionFilter = do
           whenJust promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
           case promotionFilterAchievementDateInterval of
             (Nothing, Nothing) -> pure ()
-            (Just from, Nothing) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val from)
+            (Just f, Nothing) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f)
             (Nothing, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
-            (Just from, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val from &&. pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
+            (Just f, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f &&. pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
           pure countRows
     pure (maybe 0 unValue cnt)
 
@@ -208,9 +206,9 @@ getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
           whenJust rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
           case rankFilterAchievementDateInterval of
             (Nothing, Nothing) -> pure ()
-            (Just from, Nothing) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val from)
+            (Just f, Nothing) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f)
             (Nothing, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate <=. val to)
-            (Just from, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val from &&. rp ^. RankProjectionRankAchievementDate <=. val to)
+            (Just f, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f &&. rp ^. RankProjectionRankAchievementDate <=. val to)
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
@@ -252,9 +250,9 @@ getRanksCount maybeRankFilter = do
           whenJust rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
           case rankFilterAchievementDateInterval of
             (Nothing, Nothing) -> pure ()
-            (Just from, Nothing) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val from)
+            (Just f, Nothing) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f)
             (Nothing, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate <=. val to)
-            (Just from, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val from &&. rp ^. RankProjectionRankAchievementDate <=. val to)
+            (Just f, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f &&. rp ^. RankProjectionRankAchievementDate <=. val to)
           pure countRows
     pure (maybe 0 unValue cnt)
 

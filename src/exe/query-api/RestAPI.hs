@@ -1,97 +1,33 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module RestAPI where
 
 import Control.Lens hiding (Context)
-import Control.Monad.Reader (MonadIO (liftIO), ReaderT (runReaderT), asks)
-import Data.Aeson (FromJSON, ToJSON)
-import qualified Data.List
-import Data.String (IsString (..))
 import Data.Swagger
 import Data.Text hiding (length)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
-import GHC.Generics (Generic)
 import GeniusYield.Imports
 import GeniusYield.Types hiding (title)
-import qualified Network.HTTP.Types as HttpTypes
-import Network.HTTP.Types.Header
 import Network.Wai
 import Network.Wai.Middleware.Servant.Options (provideOptions)
-import Onchain.BJJ (BJJBelt, parseBelt)
-import qualified Query.Common as C
-import qualified Query.Live as L
-import qualified Query.Projected as P
+import Onchain.BJJ (BJJBelt)
+import Query.Common qualified as C
+import Query.Live qualified as L
+import Query.Projected qualified as P
 import QueryAppMonad
 import Servant
 import Servant.Swagger
 import Servant.Swagger.UI
-import TxBuilding.Context (runQuery)
-import TxBuilding.Interactions
-import TxBuilding.Lookups (getOrganizationInformation, getPractiotionerInformation)
-import TxBuilding.Transactions
 import Types
 import WebAPI.Auth
 import WebAPI.CORS
 import WebAPI.ServiceProbe
-
-instance FromHttpApiData BJJBelt where
-  parseQueryParam :: Text -> Either Text BJJBelt
-  parseQueryParam = maybe (Left "Invalid belt") Right . parseBelt . T.unpack
-
-instance FromHttpApiData ProfileType where
-  parseQueryParam :: Text -> Either Text ProfileType
-  parseQueryParam = maybe (Left "Invalid profile type") Right . parseProfileType . T.unpack
-    where
-      parseProfileType s
-        | s == "Practitioner" = Just Practitioner
-        | s == "Organization" = Just Organization
-        | otherwise = Nothing
-
-instance FromHttpApiData SortOrder where
-  parseQueryParam :: Text -> Either Text SortOrder
-  parseQueryParam t =
-    case T.toLower t of
-      "asc" -> Right Asc
-      "desc" -> Right Desc
-      _ -> Left "Invalid sort order. Use 'asc' or 'desc'"
-
-instance FromHttpApiData ProfilesOrderBy where
-  parseQueryParam :: Text -> Either Text ProfilesOrderBy
-  parseQueryParam t =
-    case T.toLower t of
-      "name" -> Right ProfilesOrderByName
-      "id" -> Right ProfilesOrderById
-      "description" -> Right ProfilesOrderByDescription
-      "type" -> Right ProfilesOrderByType
-      _ -> Left "Invalid order by. Use 'name', 'id', 'description', or 'type'"
-
-instance FromHttpApiData PromotionsOrderBy where
-  parseQueryParam :: Text -> Either Text PromotionsOrderBy
-  parseQueryParam t =
-    case T.toLower t of
-      "id" -> Right PromotionsOrderById
-      "belt" -> Right PromotionsOrderByBelt
-      "achieved_by" -> Right PromotionsOrderByAchievedBy
-      "awarded_by" -> Right PromotionsOrderByAwardedBy
-      "date" -> Right PromotionsOrderByDate
-      _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
-
-instance FromHttpApiData RanksOrderBy where
-  parseQueryParam :: Text -> Either Text RanksOrderBy
-  parseQueryParam t =
-    case T.toLower t of
-      "id" -> Right RanksOrderById
-      "belt" -> Right RanksOrderByBelt
-      "achieved_by" -> Right RanksOrderByAchievedBy
-      "awarded_by" -> Right RanksOrderByAwardedBy
-      "date" -> Right RanksOrderByDate
-      _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
-
--- Auth code moved to WebAPI.Auth
 
 ------------------------------------------------------------------------------------------------
 
@@ -175,7 +111,7 @@ handleGetProfiles limit offset profileRefs profileType orderBy sortOrder livePro
         (Just l, Nothing) -> Just (l, 0)
         (Nothing, Just o) -> Just (100, o)
         (Nothing, Nothing) -> Nothing
-  let filter =
+  let profileFilter =
         Just $
           C.ProfileFilter
             { C.profileFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs,
@@ -188,8 +124,8 @@ handleGetProfiles limit offset profileRefs profileType orderBy sortOrder livePro
         (Just ob, Nothing) -> Just (ob, Asc)
         _ -> Nothing
   if liveProjection
-    then L.getProfiles limitOffset filter order
-    else P.getProfiles limitOffset filter order
+    then L.getProfiles limitOffset profileFilter order
+    else P.getProfiles limitOffset profileFilter order
 
 profilesServer :: ServerT Profiles QueryAppMonad
 profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile :<|> handleGetProfiles
@@ -234,7 +170,7 @@ handleGetPromotions limit offset profileRefs beltRefs achievedByRefs awardedByRe
         (Just l, Nothing) -> Just (l, 0)
         (Nothing, Just o) -> Just (100, o)
         (Nothing, Nothing) -> Nothing
-  let filter =
+  let promotionsFilter =
         Just $
           C.PromotionFilter
             { C.promotionFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs,
@@ -248,8 +184,8 @@ handleGetPromotions limit offset profileRefs beltRefs achievedByRefs awardedByRe
         (Just ob, Nothing) -> Just (ob, Asc)
         _ -> Nothing
   if liveProjection
-    then L.getPromotions limitOffset filter order
-    else P.getPromotions limitOffset filter order
+    then L.getPromotions limitOffset promotionsFilter order
+    else P.getPromotions limitOffset promotionsFilter order
 
 promotionsServer :: ServerT Promotions QueryAppMonad
 promotionsServer = handleGetPromotions
@@ -306,43 +242,43 @@ type Belts =
     )
 
 handleGetBelts :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> Bool -> QueryAppMonad [Rank]
-handleGetBelts limit offset profiles belt achieved_by awarded_by from to maybeOrderBy maybeOrder live = do
+handleGetBelts limit offset profiles belt achieved_by awarded_by fromPractitioner toPractitioner maybeOrderBy maybeOrder live = do
   let limitOffset = case (limit, offset) of
         (Just l, Just o) -> Just (l, o)
         (Just l, Nothing) -> Just (l, 0)
         (Nothing, Just o) -> Just (100, o)
         (Nothing, Nothing) -> Nothing
-  let filter =
+  let beltsFilter =
         Just $
           C.RankFilter
             { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
               C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
               C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
               C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              C.rankFilterAchievementDateInterval = (from, to)
+              C.rankFilterAchievementDateInterval = (fromPractitioner, toPractitioner)
             }
   let order = case (maybeOrderBy, maybeOrder) of
         (Just ob, Just o) -> Just (ob, o)
         (Just ob, Nothing) -> Just (ob, Asc)
         _ -> Nothing
   if live
-    then L.getRanks limitOffset filter order
-    else P.getRanks limitOffset filter order
+    then L.getRanks limitOffset beltsFilter order
+    else P.getRanks limitOffset beltsFilter order
 
 handleGetBeltsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Bool -> QueryAppMonad Int
-handleGetBeltsCount limit offset profiles belt achieved_by awarded_by from to live = do
-  let filter =
+handleGetBeltsCount _limit _offset profiles belt achieved_by awarded_by fromPractitioner toPractioner live = do
+  let beltCountFilter =
         Just $
           C.RankFilter
             { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
               C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
               C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
               C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              C.rankFilterAchievementDateInterval = (from, to)
+              C.rankFilterAchievementDateInterval = (fromPractitioner, toPractioner)
             }
   if live
-    then L.getRanksCount filter
-    else P.getRanksCount filter
+    then L.getRanksCount beltCountFilter
+    else P.getRanksCount beltCountFilter
 
 handleGetBeltsFrequency :: Bool -> QueryAppMonad [(BJJBelt, Int)]
 handleGetBeltsFrequency live =
@@ -393,6 +329,7 @@ apiSwagger =
       ?~ "GPL-3.0 license"
     & host .~ Nothing
 
+swaggerServer :: ServerT (SwaggerSchemaUI "swagger-ui" "swagger-api.json") QueryAppMonad
 swaggerServer = swaggerSchemaUIServerT apiSwagger
 
 ------------------------------------------------------------------------------------------------

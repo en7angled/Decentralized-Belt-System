@@ -3,10 +3,10 @@
 module TxBuilding.Validators where
 
 import GeniusYield.Types
-import qualified Onchain.MintingPolicy as MintingPolicy (mintingPolicyCompile)
-import qualified Onchain.ProfilesValidator as ProfilesValidator (profilesCompile)
+import Onchain.MintingPolicy qualified as MintingPolicy (mintingPolicyCompile)
+import Onchain.ProfilesValidator qualified as ProfilesValidator (profilesCompile)
 import Onchain.Protocol
-import qualified Onchain.RanksValidator as RanksValidator (ranksCompile)
+import Onchain.RanksValidator qualified as RanksValidator (ranksCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude

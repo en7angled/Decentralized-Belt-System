@@ -9,7 +9,7 @@ import Data.Text
 import GeniusYield.GYConfig
 import GeniusYield.Types
 import Text.Printf (printf)
-import qualified Text.Printf as Printf
+import Text.Printf qualified as Printf
 import TxBuilding.Context
 import TxBuilding.Interactions
 import TxBuilding.Skeletons

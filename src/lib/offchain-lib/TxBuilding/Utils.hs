@@ -2,6 +2,8 @@ module TxBuilding.Utils where
 
 import Cardano.Api (Key (getVerificationKey), castVerificationKey)
 import Control.Monad.Except (throwError)
+import Data.Text
+import Data.Text.IO qualified
 import GeniusYield.TxBuilder.Class (enclosingSlotFromTime', slotToBeginTime)
 import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import GeniusYield.TxBuilder.Query.Class (GYTxQueryMonad)
@@ -11,17 +13,14 @@ import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
 import GeniusYield.Types.Slot (unsafeSlotFromInteger)
 import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
+import GeniusYield.Types.Wallet
 import Onchain.CIP68 (CIP68Datum)
 import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import TxBuilding.Exceptions (ProfileException (..))
-import Data.Text
 import System.Directory.Extra
+import TxBuilding.Exceptions (ProfileException (..))
 import Utils
-import qualified Data.Text.IO
-import GeniusYield.Types.Wallet
-
 
 ------------------------------------------------------------------------------------------------
 
@@ -53,8 +52,6 @@ gySlotFromPOSIXTime :: (GYTxQueryMonad m) => POSIXTime -> m GYSlot
 gySlotFromPOSIXTime ptime = do
   enclosingSlotFromTime' (timeFromPlutus ptime)
 
-
-
 ------------------------------------------------------------------------------------------------
 
 -- * Mnemonic Utils
@@ -72,7 +69,6 @@ readMnemonicFile path = do
     else do
       error $ "File not found: " <> show path
 
-
 readMnemonic :: Text -> IO GYExtendedPaymentSigningKey
 readMnemonic content = do
   case walletKeysToExtendedPaymentSigningKey <$> walletKeysFromMnemonic (Data.Text.words content) of
@@ -81,20 +77,15 @@ readMnemonic content = do
       error err
     Right key -> return key
 
-
-
-
 -- | Get inline datum and value from UTxO
 getInlineDatumAndValue :: GYUTxO -> Maybe (GYDatum, GYValue)
 getInlineDatumAndValue utxo = case utxoOutDatum utxo of
   GYOutDatumInline datum -> Just (datum, utxoValue utxo)
   _ -> Nothing
 
-
 tnFromGYAssetClass :: (MonadError GYTxMonadException m) => GYAssetClass -> m GYTokenName
 tnFromGYAssetClass (GYToken _ gyProfileRefTN) = return gyProfileRefTN
 tnFromGYAssetClass _ = throwError (GYApplicationException InvalidAssetClass)
-
 
 ------------------------------------------------------------------------------------------------
 
@@ -110,14 +101,11 @@ profileAndValueFromUTxO profileStateUTxO = do
   let pVal = valueToPlutus gyValue
   return (cip68Datum, pVal)
 
-
-
 -- | Convert GY datum to profile datum
 profileDatumFromDatum :: GYDatum -> Maybe (CIP68Datum Onchain.OnchainProfile)
 profileDatumFromDatum gyDatum = do
   let plutusDatum = datumToPlutus' gyDatum
   fromBuiltinData plutusDatum
-
 
 rankAndValueFromUTxO :: GYUTxO -> Maybe (Onchain.OnchainRank, Value)
 rankAndValueFromUTxO rankStateUTxO = do
@@ -126,16 +114,14 @@ rankAndValueFromUTxO rankStateUTxO = do
   let pVal = valueToPlutus gyValue
   return (rankDatum, pVal)
 
-
 rankDatumFromDatum :: GYDatum -> Maybe Onchain.OnchainRank
 rankDatumFromDatum gyDatum =
   fromBuiltinData (datumToPlutus' gyDatum)
-
 
 rankFromGYOutDatum :: GYOutDatum -> Maybe Onchain.OnchainRank
 rankFromGYOutDatum (GYOutDatumInline gyDatum) = rankDatumFromDatum gyDatum
 rankFromGYOutDatum _ = Nothing
 
-profileFromGYOutDatum :: GYOutDatum -> Maybe  (CIP68Datum Onchain.OnchainProfile)
+profileFromGYOutDatum :: GYOutDatum -> Maybe (CIP68Datum Onchain.OnchainProfile)
 profileFromGYOutDatum (GYOutDatumInline gyDatum) = profileDatumFromDatum gyDatum
 profileFromGYOutDatum _ = Nothing

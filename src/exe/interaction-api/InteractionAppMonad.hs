@@ -1,40 +1,28 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StrictData #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module InteractionAppMonad where
 
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Reader
-import qualified Data.ByteString.Lazy.Char8 as BL8
-import Data.List (sortOn)
-import Data.Maybe
-import Data.MultiSet
-import Data.Ord (Down (..))
+import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Text hiding (elem, reverse, take)
-import qualified Data.Text as T
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding
 import Data.Time (defaultTimeLocale, getCurrentTime)
 import Data.Time.Format (formatTime)
-import Database.Esqueleto.Experimental
-import Database.Persist (Entity (..), entityVal)
-import qualified Database.Persist as P
-import Database.Persist.Sqlite (runSqlite)
-import DomainTypes.Core.Types
-import DomainTypes.Transfer.Types
-import GeniusYield.GYConfig (GYCoreConfig (..))
-import GeniusYield.TxBuilder (GYTxQueryMonad)
 import GeniusYield.TxBuilder.Errors (GYTxMonadException)
 import GeniusYield.Types
-import Onchain.BJJ
 import Servant
 import TxBuilding.Context
 import TxBuilding.Interactions (Interaction)
-import TxBuilding.Lookups
 import TxBuilding.Operations (verifyDeployedScriptsAreReady)
 import TxBuilding.Transactions (interactionToHexEncodedCBOR, submitTx)
-import Types
 import WebAPI.Auth (AuthContext)
 import WebAPI.ServiceProbe (ServiceProbeStatus (..))
 
@@ -98,8 +86,8 @@ checkDeployedScriptsAreReady = do
       then do
         return $
           ServiceProbeStatus
-            { status = "ready",
-              service = "interaction-api",
+            { status = "ready" :: Text,
+              service = "interaction-api" :: Text,
               version = "1.0.0",
               timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
             }
@@ -110,7 +98,7 @@ checkDeployedScriptsAreReady = do
                 BL8.pack $
                   show
                     ServiceProbeStatus
-                      { status = "readiness timeout, deployed scripts are not found",
+                      { status = "readiness timeout, deployed scripts are not found" :: Text,
                         service = "interaction-api",
                         version = "1.0.0",
                         timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now

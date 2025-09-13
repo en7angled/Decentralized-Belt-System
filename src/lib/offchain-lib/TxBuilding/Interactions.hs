@@ -2,7 +2,7 @@ module TxBuilding.Interactions where
 
 import Control.Monad.Reader.Class (MonadReader)
 import Data.Aeson
-import qualified Data.Aeson.Types as AesonTypes
+import Data.Aeson.Types qualified as AesonTypes
 import Data.List.Extra
 import Data.Maybe (fromMaybe)
 import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)

@@ -10,7 +10,7 @@ import GeniusYield.Types.Address
 import GeniusYield.Types.Value
 import Onchain.CIP68 (CIP68Datum (..), getMetadataFields)
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
-import qualified Onchain.Protocol as Onchain
+import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Value
 import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Functors

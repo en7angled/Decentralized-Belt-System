@@ -5,59 +5,21 @@
 module RestAPI where
 
 import Control.Lens hiding (Context)
-import Control.Monad.Reader (MonadIO (liftIO), MonadReader (ask), ReaderT (runReaderT), asks)
-import Data.Aeson (FromJSON, ToJSON)
-import qualified Data.List
-import Data.String (IsString (..))
 import Data.Swagger
 import Data.Text hiding (length)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding
-import Data.Time (getCurrentTime)
-import Data.Time.Format
-import DomainTypes.Core.Types
-import DomainTypes.Transfer.Types
-import GHC.Generics (Generic)
 import GeniusYield.Imports
 import GeniusYield.Types hiding (title)
 import InteractionAppMonad
-import qualified Network.HTTP.Types as HttpTypes
-import Network.HTTP.Types.Header
 import Network.Wai
 import Network.Wai.Middleware.Servant.Options (provideOptions)
-import Onchain.BJJ (BJJBelt, parseBelt)
 import Servant
 import Servant.Swagger
 import Servant.Swagger.UI
 import TxBuilding.Interactions
-import TxBuilding.Operations
-import TxBuilding.Transactions
-import Types
 import WebAPI.Auth
 import WebAPI.CORS
-import WebAPI.ServiceProbe (ServiceProbeStatus (..), alwaysHealthy, alwaysReady)
-import qualified WebAPI.ServiceProbe
-
-instance FromHttpApiData BJJBelt where
-  parseQueryParam :: Text -> Either Text BJJBelt
-  parseQueryParam = maybe (Left "Invalid belt") Right . parseBelt . T.unpack
-
-instance FromHttpApiData ProfileType where
-  parseQueryParam :: Text -> Either Text ProfileType
-  parseQueryParam = maybe (Left "Invalid profile type") Right . parseProfileType . T.unpack
-    where
-      parseProfileType s
-        | s == "Practitioner" = Just Practitioner
-        | s == "Organization" = Just Organization
-        | otherwise = Nothing
-
-instance FromHttpApiData SortOrder where
-  parseQueryParam :: Text -> Either Text SortOrder
-  parseQueryParam t =
-    case T.toLower t of
-      "asc" -> Right Asc
-      "desc" -> Right Desc
-      _ -> Left "Invalid sort order. Use 'asc' or 'desc'"
+import WebAPI.ServiceProbe (alwaysHealthy)
+import WebAPI.ServiceProbe qualified
 
 -- Auth code moved to WebAPI.Auth
 
@@ -131,6 +93,7 @@ apiSwagger =
       ?~ "GPL-3.0 license"
     & host .~ Nothing
 
+swaggerServer :: ServerT (SwaggerSchemaUI "swagger-ui" "swagger-api.json") InteractionAppMonad
 swaggerServer = swaggerSchemaUIServerT apiSwagger
 
 ------------------------------------------------------------------------------------------------

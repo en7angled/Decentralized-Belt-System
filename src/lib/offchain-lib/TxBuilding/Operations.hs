@@ -10,10 +10,10 @@ import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68
 import Onchain.MintingPolicy
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
 import Onchain.Protocol (OnchainRank (..), generateRankId, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, promoteProfile)
-import qualified Onchain.Protocol as Onchain
-import qualified PlutusLedgerApi.V1.Tx as V1
+import Onchain.Protocol qualified as Onchain
+import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
-import qualified PlutusLedgerApi.V3.Tx as V3
+import PlutusLedgerApi.V3.Tx qualified as V3
 import TxBuilding.Context (DeployedScriptsContext (..))
 import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue)
 import TxBuilding.Skeletons

@@ -1,12 +1,9 @@
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
-
 module DomainTypes.Transfer.Types where
 
 import Data.Aeson
-
 import Data.Aeson.Types qualified as AesonTypes
-
 import Data.List.Extra
 import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
 import Data.Swagger.Internal.Schema ()
@@ -15,12 +12,9 @@ import Data.Swagger.SchemaOptions (fromAesonOptions)
 import Data.Text hiding (init, tail)
 import Data.Text qualified as T
 import Deriving.Aeson
-import GHC.Generics ()
-
 import DomainTypes.Core.Types
+import GHC.Generics ()
 import Utils
-
-
 
 data PractitionerProfileInformation
   = PractitionerProfileInformation
@@ -64,9 +58,6 @@ instance ToSchema OrganizationProfileInformation where
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "organization"
             }
 
-
-
-
 -- Custom Show instances for better formatting
 instance Show PractitionerProfileInformation where
   show :: PractitionerProfileInformation -> String
@@ -108,7 +99,3 @@ showRankChain ranks =
   where
     showRankWithIndex (i, rank) =
       "│   " <> show i <> ". \n" <> show rank
-
-
-
-

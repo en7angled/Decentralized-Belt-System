@@ -1,9 +1,9 @@
 module Utils where
 
 import Data.Aeson
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Char8 as BS8
-import qualified Data.ByteString.Lazy.Char8 as BL8
+import Data.Aeson qualified as Aeson
+import Data.ByteString.Char8 qualified as BS8
+import Data.ByteString.Lazy.Char8 qualified as BL8
 import System.Directory.Extra
 import System.Environment
 import Prelude

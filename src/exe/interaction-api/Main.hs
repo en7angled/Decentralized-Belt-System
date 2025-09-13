@@ -4,22 +4,18 @@ import Constants
   ( defaultAtlasCoreConfig,
     defaultTxBuldingContextFile,
   )
-import Control.Concurrent (forkIO)
 import Data.Aeson.Encode.Pretty
-import qualified Data.ByteString.Lazy.Char8 as BL8
+import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Maybe
 import Data.String (IsString (..))
-import Data.Text
 import GeniusYield.GYConfig
 import GeniusYield.Types
 import InteractionAppMonad (InteractionAppContext (..))
 import Network.Wai.Handler.Warp
 import RestAPI (apiSwagger, mkBJJApp)
-import System.Environment
 import TxBuilding.Context
-import TxBuilding.Utils
 import Utils (decodeConfigEnvOrFile)
-import WebAPI.Auth (AuthContext (..), getBasicAuthFromEnv)
+import WebAPI.Auth (getBasicAuthFromEnv)
 import WebAPI.Utils (getPortFromEnvOrDefault)
 
 main :: IO ()

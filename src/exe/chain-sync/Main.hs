@@ -12,40 +12,19 @@ module Main where
 
 import ChainSyncLogic
 import ChainSyncServer (startProbeServer)
-import ChainsyncAPI (ChainSyncState (..), SyncMetrics (..), mkServiceProbeApp)
-import qualified Constants
-import Control.Concurrent (forkIO)
+import ChainsyncAPI (ChainSyncState (..), SyncMetrics (..))
 import Control.Concurrent.Extra
-import Control.Concurrent.MVar
-import Control.Monad (forM_, when)
-import Control.Monad.Except (runExceptT)
 import Control.Monad.Extra
 import Control.Monad.IO.Class
-import Data.Aeson (FromJSON, ToJSON)
-import Data.Either.Extra (rights)
-import Data.Int (Int64)
 import Data.Maybe (fromMaybe)
-import Data.String (fromString)
-import qualified Data.Text as T
-import Data.Time (UTCTime, defaultTimeLocale, formatTime, getCurrentTime)
-import Database.Persist (Entity (..))
-import Database.Persist.Sql
+import Data.Text qualified as T
+import Data.Time (getCurrentTime)
 import Database.Persist.Sqlite (runSqlite)
-import GeniusYield.GYConfig
-import GeniusYield.Types (GYNetworkId (..), mintingPolicyCurrencySymbol)
-import GeniusYield.Types.Logging (GYLogNamespace)
-import GeniusYield.Types.Slot
-import Ingestion
-import KupoAtlas (AtlasMatch (..), kupoMatchToAtlasMatch)
-import KupoClient (CreatedAt (..), KupoCheckpoint (..), KupoMatch (..))
-import Network.Wai.Handler.Warp (HostPreference, defaultSettings, runSettings, setHost, setPort)
-import PlutusLedgerApi.V1.Value (unCurrencySymbol)
-import PlutusTx.Builtins (fromBuiltin)
+import GeniusYield.Types (mintingPolicyCurrencySymbol)
+import KupoClient (KupoCheckpoint (..))
 import Storage
 import System.Environment (lookupEnv)
-import TxBuilding.Context
 import TxBuilding.Validators (mintingPolicyGY)
-import Utils
 
 getPortFromEnv :: IO Int
 getPortFromEnv = do
@@ -123,8 +102,8 @@ main = do
           liftIO $ putStrLn "Chain is behind"
           liftIO $ putStrLn "Fetching matches"
           fetchingMatches metricsVar kupoUrl matchPattern policyHexText kupoDBPathText (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
-          blockchainTip <- getBlockchainTip kupoUrl
-          updateLocalTip kupoDBPathText blockchainTip
+          blockchainTip' <- getBlockchainTip kupoUrl
+          updateLocalTip kupoDBPathText blockchainTip'
         Ahead -> do
           liftIO $ putStrLn "Chain is ahead"
           liftIO $ putStrLn "Starting rollback"
@@ -139,4 +118,4 @@ main = do
           liftIO $ putStrLn "Updated local tip with blockchain tip"
 
   -- Start probe server
-  startProbeServer kupoUrl port metricsVar
+  startProbeServer port metricsVar

@@ -1,26 +1,23 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Types where
 
-import Data.Swagger
-import GeniusYield.Imports
-import Deriving.Aeson
-import Data.Swagger.Internal.Schema ()
-import Data.Swagger.ParamSchema
-import Data.Swagger.SchemaOptions (fromAesonOptions, SchemaOptions)
-import Data.Text hiding (init, tail)
-import Data.Text qualified as T
-import DomainTypes.Core.Types
+import Control.Lens
 import Data.Aeson
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.List.Extra
-
-
+import Data.Swagger
+import Data.Swagger.Internal.Schema ()
+import Data.Text qualified as T
+import Deriving.Aeson
 import GHC.Generics ()
-import Control.Lens
+import Servant (FromHttpApiData (..))
 
 data SortOrder = Asc | Desc
   deriving (Show, Generic, Eq)
@@ -29,9 +26,9 @@ instance ToParamSchema SortOrder where
   toParamSchema _ =
     mempty
       & type_
-      ?~ SwaggerString
+        ?~ SwaggerString
       & enum_
-      ?~ [Aeson.String (T.pack "asc"), Aeson.String (T.pack "desc")]
+        ?~ [Aeson.String (T.pack "asc"), Aeson.String (T.pack "desc")]
 
 data ProfilesOrderBy
   = ProfilesOrderById
@@ -45,13 +42,13 @@ instance ToParamSchema ProfilesOrderBy where
   toParamSchema _ =
     mempty
       & type_
-      ?~ SwaggerString
+        ?~ SwaggerString
       & enum_
-      ?~ [ Aeson.String (T.pack "id"),
-           Aeson.String (T.pack "name"),
-           Aeson.String (T.pack "description"),
-           Aeson.String (T.pack "type")
-         ]
+        ?~ [ Aeson.String (T.pack "id"),
+             Aeson.String (T.pack "name"),
+             Aeson.String (T.pack "description"),
+             Aeson.String (T.pack "type")
+           ]
 
 instance ToSchema ProfilesOrderBy where
   declareNamedSchema = genericDeclareNamedSchema profilesOrderBySchemaOptions
@@ -86,14 +83,14 @@ instance ToParamSchema PromotionsOrderBy where
   toParamSchema _ =
     mempty
       & type_
-      ?~ SwaggerString
+        ?~ SwaggerString
       & enum_
-      ?~ [ Aeson.String (T.pack "id"),
-           Aeson.String (T.pack "belt"),
-           Aeson.String (T.pack "achieved_by"),
-           Aeson.String (T.pack "awarded_by"),
-           Aeson.String (T.pack "date")
-         ]
+        ?~ [ Aeson.String (T.pack "id"),
+             Aeson.String (T.pack "belt"),
+             Aeson.String (T.pack "achieved_by"),
+             Aeson.String (T.pack "awarded_by"),
+             Aeson.String (T.pack "date")
+           ]
 
 data RanksOrderBy
   = RanksOrderById
@@ -118,11 +115,19 @@ instance ToParamSchema RanksOrderBy where
   toParamSchema _ =
     mempty
       & type_
-      ?~ SwaggerString
+        ?~ SwaggerString
       & enum_
-      ?~ [ Aeson.String (T.pack "id"),
-           Aeson.String (T.pack "belt"),
-           Aeson.String (T.pack "achieved_by"),
-           Aeson.String (T.pack "awarded_by"),
-           Aeson.String (T.pack "date")
-         ]
+        ?~ [ Aeson.String (T.pack "id"),
+             Aeson.String (T.pack "belt"),
+             Aeson.String (T.pack "achieved_by"),
+             Aeson.String (T.pack "awarded_by"),
+             Aeson.String (T.pack "date")
+           ]
+
+instance FromHttpApiData SortOrder where
+  parseQueryParam :: T.Text -> Either T.Text SortOrder
+  parseQueryParam t =
+    case T.toLower t of
+      "asc" -> Right Asc
+      "desc" -> Right Desc
+      _ -> Left "Invalid sort order. Use 'asc' or 'desc'"

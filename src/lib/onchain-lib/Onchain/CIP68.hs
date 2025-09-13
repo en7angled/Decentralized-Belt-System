@@ -14,7 +14,6 @@ import Prelude qualified
 
 type ImageURI = BuiltinByteString
 
-
 type Metadata = PlutusTx.AssocMap.Map BuiltinByteString BuiltinByteString
 
 metadataVersion :: Integer
@@ -95,7 +94,6 @@ deriveUserFromRefTN (TokenName bs) = TokenName (userTokenPrefixBS <> sliceByteSt
 deriveRefFromUserTN :: TokenName -> TokenName
 deriveRefFromUserTN (TokenName bs) = TokenName (refTokenPrefixBS <> sliceByteString 4 (lengthOfByteString bs) bs)
 {-# INLINEABLE deriveRefFromUserTN #-}
-
 
 deriveUserFromRefAC :: AssetClass -> AssetClass
 deriveUserFromRefAC (AssetClass (cs, tn)) = AssetClass (cs, deriveUserFromRefTN tn)

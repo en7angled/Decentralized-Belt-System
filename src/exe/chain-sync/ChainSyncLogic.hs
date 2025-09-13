@@ -6,27 +6,29 @@ module ChainSyncLogic
     getLocalTip,
     findCheckpoint,
     getBlockchainTip,
-    fetchingMatches
-  ) where
+    fetchingMatches,
+  )
+where
 
 import ChainsyncAPI (ChainSyncState (..), SyncMetrics (..))
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (MVar, modifyMVar_)
 import Control.Monad (forM_)
 import Control.Monad.IO.Class (liftIO)
+import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Database.Persist.Sqlite (runSqlite)
-import qualified Data.Text as T
 import GeniusYield.Types (GYNetworkId (..))
-import KupoClient (CreatedAt (..), KupoCheckpoint (..), KupoMatch (..), runKupoCheckpointBySlot, runKupoCheckpointsList, runKupoMatches)
-import Storage (ChainCursor (..), getCursorValue, putCursor, rollbackTo, runMigrations, putMatchAndProjections)
+import KupoClient (KupoCheckpoint (..), KupoMatch (..), runKupoCheckpointBySlot, runKupoCheckpointsList, runKupoMatches)
+import Storage (ChainCursor (..), getCursorValue, putCursor, putMatchAndProjections)
 
 evaluateChainSyncState :: KupoCheckpoint -> KupoCheckpoint -> ChainSyncState
 evaluateChainSyncState localTip@(KupoCheckpoint localSlot localHeader) blockchainTip@(KupoCheckpoint blockchainSlot blockchainHeader)
   | localTip == blockchainTip = UpToDate
+  | localSlot == blockchainSlot && localHeader /= blockchainHeader = UpToDateButDifferentBlockHash
   | localSlot < blockchainSlot = Behind
   | localSlot > blockchainSlot = Ahead
-  | localSlot == blockchainSlot && localHeader /= blockchainHeader = UpToDateButDifferentBlockHash
+  | otherwise = error "Impossible state in evaluateChainSyncState"
 
 updateLocalTip :: T.Text -> KupoCheckpoint -> IO ()
 updateLocalTip kupoDBPathText tip = do
@@ -110,10 +112,8 @@ fetchingMatches metricsVar kupoUrl matchPattern policyHexText kupoDBPathText sta
       fetchingMatches metricsVar kupoUrl matchPattern policyHexText kupoDBPathText endInterval end batch_size
 
 applyMatches :: GYNetworkId -> T.Text -> [KupoMatch] -> IO ()
-applyMatches networkId kupoDBPathText [] = return ()
+applyMatches _networkId _kupoDBPathText [] = return ()
 applyMatches networkId kupoDBPathText matches =
   runSqlite kupoDBPathText $ do
     liftIO $ putStrLn ("-----------------------------------------> Applying matches: " <> show (length matches))
     forM_ matches (putMatchAndProjections networkId)
-
-

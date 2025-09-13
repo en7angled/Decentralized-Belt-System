@@ -1,15 +1,13 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 
-
 module Onchain.Utils where
 
 import PlutusLedgerApi.V1 qualified as V1
+import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
 import PlutusTx.Builtins (serialiseData)
 import PlutusTx.List qualified
 import PlutusTx.Prelude
-import PlutusLedgerApi.V1.Value
-
 
 --------------------------------------
 --  Helper Functions
@@ -20,12 +18,11 @@ mkUntypedLambda ::
   (ScriptContext -> Bool) ->
   (BuiltinData -> BuiltinUnit)
 mkUntypedLambda f c = check $ f (parseData c "Invalid context")
- where
-  parseData mdata message = case fromBuiltinData mdata of
-    Just d -> d
-    _ -> traceError message
+  where
+    parseData mdata message = case fromBuiltinData mdata of
+      Just d -> d
+      _ -> traceError message
 {-# INLINEABLE mkUntypedLambda #-}
-
 
 -- TODO update with new builtins
 {-# INLINEABLE integerToBs24 #-}
@@ -83,26 +80,21 @@ unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs =
         Nothing -> traceError "Own input not found"
 {-# INLINEABLE unsafeFindOwnInputByTxOutRef #-}
 
-
 ------------------------
 
 -- ** Unsafe Datum Helper Functions
 
 ------------------------
 
-
-
 unsafeGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, BuiltinData)
 unsafeGetCurrentStateDatumAndValue stateToken addr outs =
-  case filter (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress}) )-> ( txOutValue `geq` V1.assetClassValue stateToken 1) && (addr == txOutAddress) ) outs of
+  case filter (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress})) -> (txOutValue `geq` V1.assetClassValue stateToken 1) && (addr == txOutAddress)) outs of
     [TxInInfo _inOutRef out] -> (txOutValue out, unsafeGetInlineDatum out)
     _ -> traceError "state nft not found"
 {-# INLINEABLE unsafeGetCurrentStateDatumAndValue #-}
-
 
 unsafeGetInlineDatum :: TxOut -> BuiltinData
 unsafeGetInlineDatum out = case txOutDatum out of
   OutputDatum da -> getDatum da
   _ -> traceError "No inline datum"
 {-# INLINEABLE unsafeGetInlineDatum #-}
-
