@@ -3,22 +3,17 @@
 module KupoAtlas where
 
 import qualified Cardano.Api as C
-import qualified Cardano.Api.Shelley as C
-import qualified Data.Aeson as Aeson
+
 import qualified Data.Bifunctor
 import qualified Data.ByteString.Base16 as B16
-import qualified Data.Csv as Csv
 import Data.Either.Extra (maybeToEither)
 import qualified Data.Map as Map
-import Data.Maybe
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import GeniusYield.Types
-import GeniusYield.Types.Address
-import GeniusYield.Types.Datum
-import GeniusYield.Types.Script.ScriptHash (GYScriptHash)
+
 import KupoClient
 
 -- | Product type using Atlas (GeniusYield) types where applicable.
@@ -60,7 +55,7 @@ kupoDatumToGYDatum datum datumHash datumType =
   case (datum, datumHash, datumType) of
     (Just d, _, Just "inline") -> case decodeGYDatum d of
       Left err -> Left err
-      Right datum -> Right (GYOutDatumInline datum)
+      Right datum' -> Right (GYOutDatumInline datum')
     (Nothing, Just dh, Just "hash") -> case decodeGYDatumHash dh of
       Left err -> Left err
       Right hash -> Right (GYOutDatumHash hash)
@@ -81,8 +76,8 @@ decodeTxId t = maybeToEither "Invalid transaction ID" (txIdFromHex (T.unpack t))
 kupoMatchToAtlasMatch :: KupoMatch -> Either String AtlasMatch
 kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index, address, value, datum, datum_hash, datum_type, script_hash, created_at, spent_at} = do
   txId <- decodeTxId transaction_id
-  datum <- kupoDatumToGYDatum datum datum_hash datum_type
-  address <- maybeToEither "Invalid address" (addressFromTextMaybe address)
+  datum' <- kupoDatumToGYDatum datum datum_hash datum_type
+  address' <- maybeToEither "Invalid address" (addressFromTextMaybe address)
   spentSlot <- mapM (maybeToEither "Invalid spent slot") (slotFromInteger . spent_slot_no <$> spent_at)
   createdSlot <- maybeToEither "Invalid created slot" (slotFromInteger $ slot_no created_at)
   amSpentAtTransactionId <- mapM decodeTxId (spent_transaction_id =<< spent_at)
@@ -93,9 +88,9 @@ kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index
       { amTransactionIndex = transaction_index,
         amTransactionId = txId,
         amOutputIndex = output_index,
-        amAddress = address,
+        amAddress = address',
         amValue = kupoValueToGYValue value,
-        amDatum = datum,
+        amDatum = datum',
         amScriptHash = decodeGYScriptHash <$> script_hash,
         amCreatedAt = createdSlot,
         amCreatedAtHeaderHash = header_hash created_at,

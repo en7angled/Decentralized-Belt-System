@@ -332,7 +332,7 @@ executable interaction-api
 
 executable query-api
   main-is:          Main.hs
-  hs-source-dirs:   src/exe/query-api src/exe/chain-sync
+  hs-source-dirs:   src/exe/query-api
   default-language: GHC2021
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
@@ -469,6 +469,9 @@ executable chain-sync
     , warp
 
   other-modules:
+    ChainsyncAPI
+    ChainSyncLogic
+    ChainSyncServer
 
   --- Cardano specific dependencies
   build-depends:

@@ -6,7 +6,7 @@
 
 module KupoClient where
 
-import Data.Aeson (FromJSON (..), ToJSON (..), Value, withObject, (.:), (.:?))
+import Data.Aeson (FromJSON (..), ToJSON (..), withObject, (.:), (.:?))
 import qualified Data.Aeson as Aeson
 import qualified Data.Map.Strict as Map
 import Data.Proxy (Proxy (..))
@@ -285,3 +285,51 @@ runKupoCheckpointBySlot baseUrlStr slotNo = do
   manager <- newManager tlsManagerSettings
   let env = mkClientEnv manager baseUrl
   kupoCheckpointBySlot env slotNo
+
+--------------------------------------------------------------------------------
+-- Health API
+-- Reference: https://cardanosolutions.github.io/kupo/#tag/Health
+--------------------------------------------------------------------------------
+
+-- | Health check endpoint: GET /health
+-- Responds with plain text (e.g., "ok") when the service is healthy.
+type HealthAPI = "health" :> Get '[PlainText] Text
+
+healthClient :: ClientM Text
+healthClient = client (Proxy :: Proxy HealthAPI)
+
+-- | Helpers using a provided ClientEnv
+kupoHealth :: ClientEnv -> IO (Either ClientError Text)
+kupoHealth = runClientM healthClient
+
+-- | Convenience versions that build their own ClientEnv
+runKupoHealth :: String -> IO (Either ClientError Text)
+runKupoHealth baseUrlStr = do
+  baseUrl <- parseKupoBaseUrl baseUrlStr
+  manager <- newManager tlsManagerSettings
+  let env = mkClientEnv manager baseUrl
+  kupoHealth env
+
+--------------------------------------------------------------------------------
+-- Metrics API (Prometheus/OpenMetrics)
+-- Reference: https://cardanosolutions.github.io/kupo/#tag/Health
+--------------------------------------------------------------------------------
+
+-- | Metrics endpoint: GET /metrics
+-- Returns Prometheus metrics as text/plain.
+type MetricsAPI = "metrics" :> Get '[PlainText] Text
+
+metricsClient :: ClientM Text
+metricsClient = client (Proxy :: Proxy MetricsAPI)
+
+-- | Helpers using a provided ClientEnv
+kupoMetrics :: ClientEnv -> IO (Either ClientError Text)
+kupoMetrics = runClientM metricsClient
+
+-- | Convenience versions that build their own ClientEnv
+runKupoMetrics :: String -> IO (Either ClientError Text)
+runKupoMetrics baseUrlStr = do
+  baseUrl <- parseKupoBaseUrl baseUrlStr
+  manager <- newManager tlsManagerSettings
+  let env = mkClientEnv manager baseUrl
+  kupoMetrics env

@@ -1,4 +1,4 @@
-@startuml ComponentDiagram 
+@startuml ComponentDiagram
 !theme toy
 
 title "Components Diagram"
@@ -14,50 +14,93 @@ skinparam component {
     FontSize Black
 
     BackgroundColor<<3rdParty>> LightCoral
+    BackgroundColor<<Cardano>> Blue
+    FontColor<<Cardano>>  White
 }
+
 skinparam cloud {
     BackgroundColor LightBlue
 }
-skinparam node {
-    BackgroundColor Blue
+skinparam usecase {
+    BackgroundColor DarkOrange
     FontColor White
 }
 
 
 Actor User
+Actor Admin
 
-component WebBrowser {
+component WebBrowser #LightGray {
     component BrowserWallet as "Browser Wallet\neg. Eternl,Lace..." <<3rdParty>>
     component UI as "FrontEnd" <<DApp>>
 }
 
-component BackEnd #LightGray {
 
-    node CardanoNode  as "Cardano\nNode"
 
-    component WebServer <<DApp>> 
+
+
+component BackEnd  as "BackEnd Services"  #LightGray   {
+
+    component AdminCLI as "Admin CLI\n" <<DApp>>
+
+    component CardanoProvider <<Cardano>> as "Cardano\nProvider"  {
+
+        note as N
+        Can be any of:
+        ---
+        - Full Cardano Node
+        - Blockfrost
+        - Maestro
+        - Kupo + Ogmios
+        end note
+    }
+
+    component Kupo as "Kupo\nIndexer" <<Cardano>>  {
+        database KupoDB as "MATCHES:
+        --
+        Transactions
+        Metadata
+        UTXOs
+        "
+    }
+
+    component WebServer <<DApp>>
     component Interactions  <<DApp>> as "Interactions\nService" {
-        control TxBuilding as "Transaction\nBuilding"
+        usecase TxBuilding as "Transaction\nBuilding"
 
     }
-    component Lookups <<DApp>> as "Lookups\nService"
-    component ChainSync <<DApp>>  as "Chain Sync\nService"
-    database  LocalDB as "Persistance\n" {
-        collections c as "ranks\nachievements\nmemberships"
+    component Lookups <<DApp>> as "Lookups\nService" {
+        usecase Querying as "Querying"
     }
+    component ChainSync <<DApp>>  as "Chain Sync\nService"{
+        control Monitoring as "Monitors matches and\n updates projections"
+    }
+    database  LocalDB as "PROJECTIONS:
+    --
+    Profiles
+    Ranks
+    Promotions
+    Achievements
+    Memmberships
+    "
+
 
     portin webserverPort as "."
     portin interactionsPort as "."
     portin queryPort as "."
 
-    Interactions -->> CardanoNode : query
-    ChainSync -->> LocalDB : update
-    ChainSync -->> CardanoNode : monitor
-    Lookups -->> LocalDB : query
-
+    WebServer - webserverPort
     Interactions - interactionsPort
     Lookups - queryPort
-    WebServer - webserverPort
+
+    Interactions -->> CardanoProvider : query\n and \n submit signed tx
+    Lookups --> CardanoProvider : veryfy\n scripts\n availability
+
+    ChainSync -->> LocalDB : project
+    Lookups -->> LocalDB : query
+    ChainSync -->> Kupo : monitor
+
+
 
 }
 interface InteractionsAPI as "Interactions API"
@@ -66,12 +109,6 @@ interactionsPort -up- InteractionsAPI
 queryPort -up- QueryAPI
 
 
-
-'  component WebServer as "WebServer\nStatic Content"
-
-
-
- 
 
 cloud BlockchainNetwork as "Cardano Blockchain\nNetwork" {
     note as SmarContracts
@@ -90,7 +127,14 @@ UI --> QueryAPI : query
 UI -down-> BrowserWallet : "sign\n built tx"
 User -> BrowserWallet : "sign tx"
 BrowserWallet --> BlockchainNetwork : "submit\n signed tx"
- 
-CardanoNode -- BlockchainNetwork
+
+
+Kupo --- BlockchainNetwork : monitor
+
+CardanoProvider -- BlockchainNetwork
+
+AdminCLI -up- CardanoProvider
+
+Admin -up- AdminCLI : admin tasks (eg. deploy\n new contracts)
 
 @enduml
