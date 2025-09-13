@@ -192,11 +192,11 @@ library offchain-lib
     , chainsync-lib
     , deriving-aeson
     , extra
-    , servant-server
     , mtl
     , onchain-lib
     , persistent
     , persistent-sqlite
+    , servant-server
     , swagger2
     , text
     , time
@@ -341,6 +341,7 @@ executable query-api
     , servant-swagger-ui
     , swagger2
     , text
+    , time
     , wai
     , warp
 

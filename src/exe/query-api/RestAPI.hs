@@ -29,6 +29,7 @@ import WebAPI.Auth
 import WebAPI.CORS
 import WebAPI.ServiceProbe
 
+
 ------------------------------------------------------------------------------------------------
 
 --  Health API
@@ -40,8 +41,13 @@ type ServiceProbeAPI = WebAPI.ServiceProbe.ServiceProbe Text Text
 proxyServiceProbe :: Proxy ServiceProbeAPI
 proxyServiceProbe = Proxy
 
+
+handleReady :: QueryAppMonad (ServiceProbeStatus Text)
+handleReady = verifyProjectionDbConnection
+
+
 serviceProbeServer :: ServerT ServiceProbeAPI QueryAppMonad
-serviceProbeServer = alwaysHealthy "query-api" :<|> alwaysReady "query-api"
+serviceProbeServer = alwaysHealthy "query-api" :<|> handleReady
 
 ------------------------------------------------------------------------------------------------
 
