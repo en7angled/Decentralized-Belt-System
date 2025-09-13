@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  # Numele namespace‑ului în care vom crea toate resursele aplicației
-  name: bjj
-
-

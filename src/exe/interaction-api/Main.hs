@@ -21,7 +21,7 @@ import WebAPI.Utils (getPortFromEnvOrDefault)
 main :: IO ()
 main = do
   putStrLn "Writing Swagger file ..."
-  BL8.writeFile "swagger-api.json" (encodePretty apiSwagger)
+  BL8.writeFile "docs/swagger/interaction-swagger-api.json" (encodePretty apiSwagger)
 
   atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration failed") <$> decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
   deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile

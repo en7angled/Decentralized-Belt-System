@@ -23,7 +23,7 @@ defaultLookUpPath = "db/chainsync.sqlite"
 main :: IO ()
 main = do
   putStrLn "Writing Swagger file ..."
-  BL8.writeFile "swagger-api.json" (encodePretty apiSwagger)
+  BL8.writeFile "docs/swagger/query-swagger-api.json" (encodePretty apiSwagger)
 
   atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration failed") <$> decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
 
