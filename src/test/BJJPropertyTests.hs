@@ -3,8 +3,8 @@
 
 module BJJPropertyTests where
 
+import Control.Exception (SomeException, evaluate, try)
 import Control.Monad (when)
-import Control.Exception (try, evaluate, SomeException)
 import Hedgehog
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
@@ -22,36 +22,43 @@ unPOSIXTime (POSIXTime i) = i
 -- =============================================================================
 
 bjjPropertyTests :: TestTree
-bjjPropertyTests = testGroup "BJJ Property Tests"
-  [ testGroup "Belt Conversion Properties"
-    [ testProperty "beltToInt and intToBelt are bijective" prop_beltIntBijective
-    , testProperty "beltToInt preserves ordering" prop_beltIntOrdering
-    , testProperty "intToBelt handles valid ranges" prop_intToBeltValidRanges
-    , testProperty "intToBelt handles invalid ranges gracefully" prop_intToBeltInvalidRanges
+bjjPropertyTests =
+  testGroup
+    "BJJ Property Tests"
+    [ testGroup
+        "Belt Conversion Properties"
+        [ testProperty "beltToInt and intToBelt are bijective" prop_beltIntBijective,
+          testProperty "beltToInt preserves ordering" prop_beltIntOrdering,
+          testProperty "intToBelt handles valid ranges" prop_intToBeltValidRanges,
+          testProperty "intToBelt handles invalid ranges gracefully" prop_intToBeltInvalidRanges
+        ],
+      testGroup
+        "Belt Comparison Properties"
+        [ testProperty "belt comparison is transitive" prop_beltComparisonTransitive,
+          testProperty "belt comparison is antisymmetric" prop_beltComparisonAntisymmetric,
+          testProperty "belt comparison is reflexive" prop_beltComparisonReflexive,
+          testProperty "belt comparison is total" prop_beltComparisonTotal
+        ],
+      testGroup
+        "Belt Enumeration Properties"
+        [ testProperty "belt enumeration is consistent" prop_beltEnumerationConsistent,
+          testProperty "belt succ/pred are inverses" prop_beltSuccPredInverse,
+          testProperty "belt succ increases rank" prop_beltSuccIncreases,
+          testProperty "belt pred decreases rank" prop_beltPredDecreases
+        ],
+      testGroup
+        "Minimum Time Properties"
+        [ testProperty "minMonthsForBelt is non-negative" prop_minMonthsNonNegative,
+          testProperty "minMonthsForBelt has expected values" prop_minMonthsExpectedValues,
+          testProperty "monthsToPosixTime is non-negative" prop_monthsToPosixTimeNonNegative
+        ],
+      testGroup
+        "Promotion Validation Properties"
+        [ testProperty "time requirements enforced" prop_timeRequirementsEnforced,
+          testProperty "same belt promotion fails" prop_sameBeltPromotionFails,
+          testProperty "downgrade promotion fails" prop_downgradePromotionFails
+        ]
     ]
-  , testGroup "Belt Comparison Properties"
-    [ testProperty "belt comparison is transitive" prop_beltComparisonTransitive
-    , testProperty "belt comparison is antisymmetric" prop_beltComparisonAntisymmetric
-    , testProperty "belt comparison is reflexive" prop_beltComparisonReflexive
-    , testProperty "belt comparison is total" prop_beltComparisonTotal
-    ]
-  , testGroup "Belt Enumeration Properties"
-    [ testProperty "belt enumeration is consistent" prop_beltEnumerationConsistent
-    , testProperty "belt succ/pred are inverses" prop_beltSuccPredInverse
-    , testProperty "belt succ increases rank" prop_beltSuccIncreases
-    , testProperty "belt pred decreases rank" prop_beltPredDecreases
-    ]
-  , testGroup "Minimum Time Properties"
-    [ testProperty "minMonthsForBelt is non-negative" prop_minMonthsNonNegative
-    , testProperty "minMonthsForBelt has expected values" prop_minMonthsExpectedValues
-    , testProperty "monthsToPosixTime is non-negative" prop_monthsToPosixTimeNonNegative
-    ]
-  , testGroup "Promotion Validation Properties"
-    [ testProperty "time requirements enforced" prop_timeRequirementsEnforced
-    , testProperty "same belt promotion fails" prop_sameBeltPromotionFails
-    , testProperty "downgrade promotion fails" prop_downgradePromotionFails
-    ]
-  ]
 
 -- =============================================================================
 -- Belt Conversion Properties
@@ -79,7 +86,7 @@ prop_intToBeltInvalidRanges = property $ do
   invalidInt <- forAll (Gen.integral (Range.linear 15 100))
   result <- evalIO $ try (evaluate (intToBelt invalidInt)) :: PropertyT IO (Either SomeException BJJBelt)
   case result of
-    Left _  -> Hedgehog.assert True  -- Exception was thrown, as expected
+    Left _ -> Hedgehog.assert True -- Exception was thrown, as expected
     Right _ -> Hedgehog.assert False -- No exception, which is a failure
 
 -- =============================================================================
@@ -179,12 +186,10 @@ prop_monthsToPosixTimeNonNegative = property $ do
 -- Promotion Validation Properties
 -- =============================================================================
 
-
 prop_timeRequirementsEnforced :: Property
 prop_timeRequirementsEnforced = property $ do
   (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, studentNextDate) <- forAll genInvalidTimePromotion
   Hedgehog.assert $ not (validatePromotion masterBelt masterDate studentCurrentBelt studentCurrentDate studentNextBelt studentNextDate)
-
 
 prop_sameBeltPromotionFails :: Property
 prop_sameBeltPromotionFails = property $ do
@@ -210,8 +215,6 @@ genBelt = Gen.element [White, Blue, Purple, Brown, Black, Black1, Black2, Black3
 genPOSIXTime :: Gen POSIXTime
 genPOSIXTime = POSIXTime <$> Gen.integral (Range.linear 0 1000000000)
 
-
-
 -- Invalid time promotion generator
 genInvalidTimePromotion :: Gen (BJJBelt, POSIXTime, BJJBelt, POSIXTime, BJJBelt, POSIXTime)
 genInvalidTimePromotion = do
@@ -222,7 +225,5 @@ genInvalidTimePromotion = do
   studentNextBelt <- Gen.element [Blue, Purple, Brown, Black]
 
   -- Set next date before current date
-  studentNextDate <- genPOSIXTime
   let invalidNextDate = POSIXTime (unPOSIXTime studentCurrentDate - 2629800000) -- Before current date
-
   pure (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, invalidNextDate)

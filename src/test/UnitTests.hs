@@ -4,20 +4,16 @@
 module UnitTests where
 
 import Control.Monad
-import DomainTypes.Transfer.Types
+import DomainTypes.Core.Actions
+import DomainTypes.Core.Types
 import GHC.Stack
 import GeniusYield.Test.Clb
 import GeniusYield.Test.Utils
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ
-import Onchain.CIP68
 import Test.Tasty
-import TestRuns (bjjInteraction, deployBJJValidators, getProfileAndRank, logPractitionerProfileInformation)
-import TxBuilding.Interactions
-import GeniusYield.Imports (ToJSON(..))
-import DomainTypes.Core.Types
-import DomainTypes.Core.Actions
+import TestRuns (bjjInteraction, deployBJJValidators, logPractitionerProfileInformation)
 
 unitTests :: (HasCallStack) => TestTree
 unitTests =
@@ -25,6 +21,7 @@ unitTests =
     "BJJ Unit Tests"
     [promotionTests]
 
+studentProfileData :: ProfileData
 studentProfileData =
   ProfileData
     { profileDataName = "John Doe",
@@ -32,6 +29,7 @@ studentProfileData =
       profileDataImageURI = "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk"
     }
 
+masterProfileData :: ProfileData
 masterProfileData =
   ProfileData
     { profileDataName = "Master",
@@ -59,7 +57,7 @@ promotionTests =
       let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
       txBuildingContext <- deployBJJValidators (w1 testWallets)
       waitNSlots_ 1000
-      (gyTxId, masterAC) <-
+      (_gyTxId, masterAC) <-
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
@@ -68,7 +66,7 @@ promotionTests =
 
       logPractitionerProfileInformation (w1 testWallets) masterAC
 
-      (gyTxId, studentAC) <-
+      (_gyTxId, studentAC) <-
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
@@ -77,15 +75,12 @@ promotionTests =
 
       logPractitionerProfileInformation (w1 testWallets) studentAC
 
-      ((blackBeltProfile, blackBeltValue), (blackBeltRank, blackBeltRankValue)) <- getProfileAndRank (w1 testWallets) masterAC
-      ((whiteBeltProfile, whiteBeltValue), (whiteBeltRank, whiteBeltRankValue)) <- getProfileAndRank (w1 testWallets) studentAC
-
       waitNSlots_ 2
 
-      s <- slotOfCurrentBlock
-      blueBeltDate <- slotToBeginTime s
+      s' <- slotOfCurrentBlock
+      blueBeltDate <- slotToBeginTime s'
 
-      (gyTxId, blueBeltPromotionAC) <-
+      (_gyTxId, blueBeltPromotionAC) <-
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
@@ -98,7 +93,7 @@ promotionTests =
           )
           Nothing
 
-      (gyTxId, blueBeltRankAC) <-
+      void $
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
@@ -109,7 +104,7 @@ promotionTests =
 
       let purpleBeltDate = timeFromPlutus $ timeToPlutus blueBeltDate + monthsToPosixTime (minMonthsForBelt Purple)
 
-      (gyTxId, purpleBeltPromotionAC) <-
+      (_gyTxId, purpleBeltPromotionAC) <-
         bjjInteraction
           txBuildingContext
           (w1 testWallets)
@@ -122,7 +117,7 @@ promotionTests =
           )
           Nothing
 
-      (gyTxId, purpleBeltRank) <-
+      void $
         bjjInteraction
           txBuildingContext
           (w1 testWallets)

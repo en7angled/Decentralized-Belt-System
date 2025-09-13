@@ -3,7 +3,6 @@
 module KupoAtlas where
 
 import qualified Cardano.Api as C
-
 import qualified Data.Bifunctor
 import qualified Data.ByteString.Base16 as B16
 import Data.Either.Extra (maybeToEither)
@@ -13,7 +12,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import GeniusYield.Types
-
 import KupoClient
 
 -- | Product type using Atlas (GeniusYield) types where applicable.

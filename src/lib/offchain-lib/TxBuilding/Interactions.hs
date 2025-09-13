@@ -8,13 +8,13 @@ import Data.Maybe (fromMaybe)
 import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
 import Data.Swagger.Schema (SchemaOptions, fromAesonOptions)
 import Deriving.Aeson
+import DomainTypes.Core.Actions
 import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import TxBuilding.Context (DeployedScriptsContext)
 import TxBuilding.Functors
 import TxBuilding.Operations
-import DomainTypes.Core.Actions
 
 ------------------------------------------------------------------------------------------------
 

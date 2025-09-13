@@ -1,4 +1,7 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module DomainTypes.Core.Types where
+
 import Data.Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.List.Extra
@@ -7,19 +10,17 @@ import Data.Swagger.Internal.Schema ()
 import Data.Swagger.ParamSchema
 import Data.Swagger.SchemaOptions (fromAesonOptions)
 import Data.Text hiding (init, tail)
+import Database.Persist.TH
 import Deriving.Aeson
 import GHC.Generics ()
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
 import Onchain.BJJ (BJJBelt)
 import Utils
-import Database.Persist.TH
 
 type ProfileRefAC = GYAssetClass
 
 type RankAC = GYAssetClass
-
-
 
 -- | Profile type
 data ProfileType = Practitioner | Organization
@@ -27,7 +28,7 @@ data ProfileType = Practitioner | Organization
 
 derivePersistFieldJSON "ProfileType"
 
--- | Profile 
+-- | Profile
 data Profile = Profile
   { profileId :: ProfileRefAC,
     profileName :: Text,
@@ -38,8 +39,7 @@ data Profile = Profile
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "profile", CamelToSnake]] Profile
 
-derivePersistFieldJSON "Profile" 
-
+derivePersistFieldJSON "Profile"
 
 instance Show Profile where
   show :: Profile -> String
@@ -62,8 +62,6 @@ instance ToSchema Profile where
           AesonTypes.defaultOptions
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profile"
             }
-
-
 
 data Rank
   = Rank
@@ -102,8 +100,6 @@ instance Show Rank where
           "└─────────────────────────────────────────────────────────────"
         ]
 
-
-
 data Promotion
   = Promotion
   { promotionId :: RankAC,
@@ -130,8 +126,6 @@ instance Show Promotion where
           "│ Achievement Date: " <> stringFromJSON promotionAchievementDate,
           "└─────────────────────────────────────────────────────────────"
         ]
-
-
 
 instance ToSchema Promotion where
   declareNamedSchema = genericDeclareNamedSchema promotionSchemaOptions

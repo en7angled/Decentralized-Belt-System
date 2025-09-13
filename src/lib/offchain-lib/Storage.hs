@@ -11,15 +11,15 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Storage where
 
 import Control.Monad (void)
+import Control.Monad.Except (runExceptT)
 import Control.Monad.IO.Class (MonadIO (..))
-
 import Data.Text (Text)
 import Data.Time (UTCTime, getCurrentTime)
 import Database.Persist
@@ -31,7 +31,6 @@ import Ingestion
 import KupoAtlas (kupoMatchToAtlasMatch)
 import KupoClient (CreatedAt (..), KupoMatch (..))
 import Onchain.BJJ (BJJBelt)
-import Control.Monad.Except (runExceptT)
 
 derivePersistFieldJSON "BJJBelt"
 derivePersistFieldJSON "GYAssetClass"
@@ -126,7 +125,7 @@ putMatchAndProjections networkId km = do
       case ev of
         Left e -> liftIO $ putStrLn ("Projection error: " <> show e)
         Right proj -> case proj of
-          RankEvent r -> do 
+          RankEvent r -> do
             putRankProjection slotNoInt header r
             deletePromotionProjection (rankId r)
           ProfileEvent p -> putProfileProjection slotNoInt header p

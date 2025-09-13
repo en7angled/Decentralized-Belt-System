@@ -1,5 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-
 module QueryAppMonad where
 
 import Control.Exception

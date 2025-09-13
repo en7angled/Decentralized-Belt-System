@@ -5,7 +5,6 @@
 
 module Query.Projected where
 
-import QueryAppMonad
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Reader (MonadReader)
 import Control.Monad.Reader.Class
@@ -19,6 +18,7 @@ import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import Onchain.BJJ (BJJBelt)
 import qualified Query.Common as C
+import QueryAppMonad
 import Storage
 import Types
 

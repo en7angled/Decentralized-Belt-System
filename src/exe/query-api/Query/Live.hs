@@ -2,7 +2,6 @@
 
 module Query.Live where
 
-import QueryAppMonad (QueryAppContext (..))
 import Control.Monad.Reader
 import qualified Data.List as L
 import Data.MultiSet (fromList, toOccurList)
@@ -14,6 +13,7 @@ import GeniusYield.GYConfig (GYCoreConfig (..))
 import GeniusYield.Types
 import Onchain.BJJ (BJJBelt)
 import Query.Common
+import QueryAppMonad (QueryAppContext (..))
 import TxBuilding.Context
 import TxBuilding.Lookups
 import Types

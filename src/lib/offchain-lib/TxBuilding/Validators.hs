@@ -11,7 +11,6 @@ import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude
 
-
 ------------------------------------------------------------------------------------------------
 
 -- *  Define Profile Validator

@@ -74,5 +74,3 @@ decodeConfigEnvOrFile envName filePath = do
 
 stringFromJSON :: (ToJSON a) => a -> String
 stringFromJSON = init . tail . BL8.unpack . Aeson.encode
-
-

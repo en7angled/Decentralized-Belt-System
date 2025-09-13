@@ -1,7 +1,5 @@
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-{-# HLINT ignore "Use &&" #-}
 
 module Onchain.Utils where
 
@@ -69,11 +67,7 @@ hasTxOutWithInlineDatumAndValue datum value address = traceIfFalse "output with 
 {-# INLINEABLE isTxOutWithInlineDatumAndValue #-}
 isTxOutWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
 isTxOutWithInlineDatumAndValue datum value address TxOut {txOutValue, txOutAddress, txOutDatum} =
-  and
-    [ value == txOutValue,
-      address == txOutAddress,
-      isGivenInlineDatum datum txOutDatum
-    ]
+  (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
 
 {-# INLINEABLE isGivenInlineDatum #-}
 isGivenInlineDatum :: (ToData a) => a -> OutputDatum -> Bool

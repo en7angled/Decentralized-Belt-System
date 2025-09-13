@@ -1,10 +1,11 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use &&" #-}
+
 
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-optimize #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-remove-trace #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
+{-# HLINT ignore "Use &&" #-}
 
 module Onchain.RanksValidator where
 

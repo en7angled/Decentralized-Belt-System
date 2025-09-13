@@ -1,5 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-
 module WebAPI.Auth where
 
 import Data.Maybe (fromMaybe)
@@ -7,7 +5,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
 import Servant
-
 import System.Environment (lookupEnv)
 
 newtype AuthUser = AuthUser
