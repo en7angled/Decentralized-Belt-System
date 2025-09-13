@@ -37,9 +37,9 @@ services:
     command: ["/app/interaction-api"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8082/health || exit 1"]
-      interval: 15s
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 10
       start_period: 5s
 
   query-api:
@@ -61,9 +61,9 @@ services:
     command: ["/app/query-api"] 
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8083/health || exit 1"]
-      interval: 15s
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 10
       start_period: 5s
 
   nginx:
