@@ -104,5 +104,6 @@ WORKDIR /app
 COPY --from=builder /Decentralized-Belt-System/query-api /app/query-api
 COPY ./config  /app/config
 
+RUN mkdir -p /app/docs/swagger
 
 ENTRYPOINT ["/app/query-api"]

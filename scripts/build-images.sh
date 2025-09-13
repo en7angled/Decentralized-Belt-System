@@ -24,21 +24,31 @@ echo "Image prefix: ${IMAGE_PREFIX}"
 # Determine buildx flags
 PUSH="${PUSH:-false}"
 if [[ "${PUSH}" == "true" ]]; then
-  BUILDX_FLAGS=(--platform linux/amd64,linux/arm64 --push)
-  echo "Publish mode: pushing multi-arch images"
-else
-  # Load only the host architecture into the local docker daemon
-  ARCH="$(uname -m)"
-  case "${ARCH}" in
-    x86_64|amd64) NATIVE_PLATFORM="linux/amd64" ;;
-    arm64|aarch64) NATIVE_PLATFORM="linux/arm64" ;;
-    *) echo "Unsupported host arch: ${ARCH}" >&2; exit 1 ;;
-  esac
-  BUILDX_FLAGS=(--platform "${NATIVE_PLATFORM}" --load)
-  echo "Local mode: building for ${NATIVE_PLATFORM} and loading locally"
+  echo "ERROR: PUSH=true is not supported with the local shared base image 'bjj-builder'." >&2
+  echo "Please publish a multi-arch builder image and update Dockerfiles to reference it (e.g. ${IMAGE_PREFIX}/bjj-builder:9.6.6), or run with PUSH=false." >&2
+  exit 1
 fi
 
+# Load only the host architecture into the local docker daemon
+ARCH="$(uname -m)"
+case "${ARCH}" in
+  x86_64|amd64) NATIVE_PLATFORM="linux/amd64" ;;
+  arm64|aarch64) NATIVE_PLATFORM="linux/arm64" ;;
+  *) echo "Unsupported host arch: ${ARCH}" >&2; exit 1 ;;
+esac
+BUILDX_FLAGS=(--platform "${NATIVE_PLATFORM}" --load)
+echo "Local mode: building for ${NATIVE_PLATFORM} and loading locally"
+
 cd "${ROOT_DIR}"
+
+# Build shared builder base (local tag used by service Dockerfiles)
+BUILDER_VERSION="9.6.6"
+echo "Building shared builder base: bjj-builder:${BUILDER_VERSION}"
+docker buildx build \
+  "${BUILDX_FLAGS[@]}" \
+  -f Dockerfile.base \
+  -t bjj-builder:${BUILDER_VERSION} \
+  .
 
 # Interaction API
 docker buildx build \

@@ -10,11 +10,11 @@ ENV CC=musl-gcc
 ENV LD=musl-gcc
 
 
-# Copy sources and build chain-sync
+# Copy sources and build chainsync-service
 COPY src ./src
 COPY config ./config
 
-RUN cabal install chain-sync \
+RUN cabal install chainsync-service \
     --enable-executable-static \
     --overwrite-policy=always \
     --installdir=. \
@@ -102,7 +102,7 @@ RUN git clone https://github.com/supranational/blst && \
 
 # Runtime app
 WORKDIR /app
-COPY --from=builder /Decentralized-Belt-System/chain-sync /app/chain-sync
+COPY --from=builder /Decentralized-Belt-System/chainsync-service /app/chainsync-service
 COPY ./config /app/config
 
 # Defaults (overridable)
@@ -111,5 +111,5 @@ ENV KUPO_URL=http://localhost:1442 \
     BATCH_SIZE=10000000 \
     FETCH_BATCH_SIZE=10000000
 
-ENTRYPOINT ["/app/chain-sync"]
+ENTRYPOINT ["/app/chainsync-service"]
 
