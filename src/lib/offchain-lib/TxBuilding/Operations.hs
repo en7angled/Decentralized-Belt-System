@@ -1,6 +1,7 @@
 module TxBuilding.Operations where
 
 import Control.Monad.Reader.Class
+import Data.Maybe
 import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
@@ -16,12 +17,35 @@ import qualified PlutusLedgerApi.V3.Tx as V3
 import TxBuilding.Context (DeployedScriptsContext (..))
 import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue)
 import TxBuilding.Skeletons
-
 import TxBuilding.Validators
-
 
 datumLovelaces :: Integer
 datumLovelaces = 3500000
+
+------------------------------------------------------------------------------------------------
+
+-- * Verify If Deployed Scripts Are Ready
+
+------------------------------------------------------------------------------------------------
+
+verifyDeployedScriptsAreReady ::
+  (GYTxQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  m Bool
+verifyDeployedScriptsAreReady = do
+  mintingPolicyRef <- asks mintingPolicyRef
+  profilesValidatorRef <- asks profilesValidatorRef
+  ranksValidatorRef <- asks ranksValidatorRef
+
+  mintingPolicyUTxO <- utxoAtTxOutRef mintingPolicyRef
+  let mintingPolicyHasRefScript = utxoRefScript =<< mintingPolicyUTxO
+
+  profilesValidatorUTxO <- utxoAtTxOutRef profilesValidatorRef
+  let profilesValidatorHasRefScript = utxoRefScript =<< profilesValidatorUTxO
+
+  ranksValidatorUTxO <- utxoAtTxOutRef ranksValidatorRef
+  let ranksValidatorHasRefScript = utxoRefScript =<< ranksValidatorUTxO
+
+  return $ all isJust [mintingPolicyHasRefScript, profilesValidatorHasRefScript, ranksValidatorHasRefScript]
 
 ------------------------------------------------------------------------------------------------
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module InteractionAppMonad where
@@ -14,6 +15,8 @@ import Data.Text hiding (elem, reverse, take)
 import qualified Data.Text as T
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding
+import Data.Time (defaultTimeLocale, getCurrentTime)
+import Data.Time.Format (formatTime)
 import Database.Esqueleto.Experimental
 import Database.Persist (Entity (..), entityVal)
 import qualified Database.Persist as P
@@ -29,9 +32,11 @@ import Servant
 import TxBuilding.Context
 import TxBuilding.Interactions (Interaction)
 import TxBuilding.Lookups
+import TxBuilding.Operations (verifyDeployedScriptsAreReady)
 import TxBuilding.Transactions (interactionToHexEncodedCBOR, submitTx)
 import Types
 import WebAPI.Auth (AuthContext)
+import WebAPI.ServiceProbe (ServiceProbeStatus (..))
 
 ------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------
@@ -81,3 +86,33 @@ submitTxApp tx = do
         liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
         throwError err400 {errBody = BL8.pack (show e)}
       Right ok -> pure ok
+
+checkDeployedScriptsAreReady :: InteractionAppMonad (ServiceProbeStatus Text)
+checkDeployedScriptsAreReady = do
+  InteractionAppMonad $ do
+    InteractionAppContext {..} <- ask
+    let queryDeploydScripts = runReaderT verifyDeployedScriptsAreReady (deployedScriptsCtx txBuildingContext)
+    res <- liftIO $ runQuery (providerCtx txBuildingContext) queryDeploydScripts
+    now <- liftIO getCurrentTime
+    if res
+      then do
+        return $
+          ServiceProbeStatus
+            { status = "ready",
+              service = "interaction-api",
+              version = "1.0.0",
+              timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
+            }
+      else
+        throwError
+          err503
+            { errBody =
+                BL8.pack $
+                  show
+                    ServiceProbeStatus
+                      { status = "readiness timeout, deployed scripts are not found",
+                        service = "interaction-api",
+                        version = "1.0.0",
+                        timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
+                      }
+            }

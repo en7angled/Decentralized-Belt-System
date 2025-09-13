@@ -40,9 +40,10 @@ main = do
 
     let settings = setHost (fromString host :: HostPreference) $ setPort port defaultSettings
     let bjjDApp = mkBJJApp appContext
-    forkIO $ runSettings settings bjjDApp
 
     putStrLn $ "Started Query API server at " <> host <> " " <> show port
     putStrLn $ "Atlas config: " <> show atlasConfig
     putStrLn $ "Lookup path: " <> show lookupContext
     putStrLn $ "Swagger-UI available at : http://" <> host <> ":" <> show port <> "/swagger-ui"
+
+    runSettings settings bjjDApp

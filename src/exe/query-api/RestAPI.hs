@@ -1,8 +1,5 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module RestAPI where
 
@@ -40,7 +37,6 @@ import Types
 import WebAPI.Auth
 import WebAPI.CORS
 import WebAPI.ServiceProbe
-import qualified WebAPI.ServiceProbe as WebAPI.Health
 
 instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
@@ -103,11 +99,13 @@ instance FromHttpApiData RanksOrderBy where
 
 ------------------------------------------------------------------------------------------------
 
-type Health = WebAPI.Health.ServiceProbe Text Text
+type ServiceProbeAPI = WebAPI.ServiceProbe.ServiceProbe Text Text
 
-queryHealthStatus = "healthy"
+proxyServiceProbe :: Proxy ServiceProbeAPI
+proxyServiceProbe = Proxy
 
-queryReadyStatus = "ready"
+serviceProbeServer :: ServerT ServiceProbeAPI QueryAppMonad
+serviceProbeServer = alwaysHealthy "query-api" :<|> alwaysReady "query-api"
 
 ------------------------------------------------------------------------------------------------
 
@@ -151,13 +149,13 @@ type Profiles =
 -- Health handlers moved to WebAPI.Health
 
 handleGetPractitionerProfile :: ProfileRefAC -> Bool -> QueryAppMonad PractitionerProfileInformation
-handleGetPractitionerProfile profileRefAC liveProjection = do
+handleGetPractitionerProfile profileRefAC liveProjection =
   if liveProjection
     then L.getPractitionerProfile profileRefAC
     else P.getPractitionerProfile profileRefAC
 
 handleGetOrganizationProfile :: ProfileRefAC -> Bool -> QueryAppMonad OrganizationProfileInformation
-handleGetOrganizationProfile profileRefAC liveProjection = do
+handleGetOrganizationProfile profileRefAC liveProjection =
   if liveProjection
     then L.getOrganizationProfile profileRefAC
     else P.getOrganizationProfile profileRefAC
@@ -348,10 +346,28 @@ handleGetBeltsCount limit offset profiles belt achieved_by awarded_by from to li
 
 handleGetBeltsFrequency :: Bool -> QueryAppMonad [(BJJBelt, Int)]
 handleGetBeltsFrequency live =
-  (if live then L.getBeltTotals else P.getBeltTotals)
+  if live then L.getBeltTotals else P.getBeltTotals
 
 beltsServer :: ServerT Belts QueryAppMonad
 beltsServer = handleGetBelts :<|> handleGetBeltsCount :<|> handleGetBeltsFrequency
+
+------------------------------------------------------------------------------------------------
+
+--  Core Function API
+
+------------------------------------------------------------------------------------------------
+
+-- | Combined API
+type CoreFunctionAPI =
+  Profiles
+    :<|> Promotions
+    :<|> Belts
+
+proxyCoreFunctionAPI :: Proxy CoreFunctionAPI
+proxyCoreFunctionAPI = Proxy
+
+coreFunctionServer :: ServerT CoreFunctionAPI QueryAppMonad
+coreFunctionServer = profilesServer :<|> promotionsServer :<|> beltsServer
 
 ------------------------------------------------------------------------------------------------
 
@@ -359,9 +375,16 @@ beltsServer = handleGetBelts :<|> handleGetBeltsCount :<|> handleGetBeltsFrequen
 
 ------------------------------------------------------------------------------------------------
 
+type PublicAPI =
+  ServiceProbeAPI
+    :<|> CoreFunctionAPI
+
+proxyPublicAPI :: Proxy PublicAPI
+proxyPublicAPI = Proxy
+
 apiSwagger :: Swagger
 apiSwagger =
-  toSwagger proxyRestAPI
+  toSwagger proxyPublicAPI
     & info . title .~ "Decentralized Belt System Query API"
     & info . Data.Swagger.version .~ "1.0"
     & info . Data.Swagger.description ?~ "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, and belts"
@@ -378,42 +401,27 @@ swaggerServer = swaggerSchemaUIServerT apiSwagger
 
 ------------------------------------------------------------------------------------------------
 
--- | Combined API
-type RestAPI =
-  Health
-    :<|> Profiles
-    :<|> Promotions
-    :<|> Belts
-
-proxyRestAPI :: Proxy RestAPI
-proxyRestAPI = Proxy
-
-queryHealthServer :: ServerT Health QueryAppMonad
-queryHealthServer = alwaysHealthy "query-api" :<|> alwaysReady "query-api"
-
-restServer :: ServerT RestAPI QueryAppMonad
-restServer = queryHealthServer :<|> profilesServer :<|> promotionsServer :<|> beltsServer
-
--- | Adding Basic Auth to the Rest API
+-- | Adding Basic Auth
 type PrivateRestAPI =
-  BasicAuth "user-realm" AuthUser :> RestAPI
+  BasicAuth "user-realm" AuthUser :> CoreFunctionAPI
 
 proxyPrivateRestAPI :: Proxy PrivateRestAPI
 proxyPrivateRestAPI = Proxy
 
 privateRestServer :: ServerT PrivateRestAPI QueryAppMonad
-privateRestServer = const restServer
+privateRestServer = const coreFunctionServer
 
 -- | Adding Swagger UI on top of Private Rest API
 type FullAPI =
   SwaggerSchemaUI "swagger-ui" "swagger-api.json"
+    :<|> ServiceProbeAPI
     :<|> PrivateRestAPI
 
 proxyFullAPI :: Proxy FullAPI
 proxyFullAPI = Proxy
 
 fullServer :: ServerT FullAPI QueryAppMonad
-fullServer = swaggerServer :<|> privateRestServer
+fullServer = swaggerServer :<|> serviceProbeServer :<|> privateRestServer
 
 ------------------------------------------------------------------------------------------------
 
@@ -424,7 +432,7 @@ fullServer = swaggerServer :<|> privateRestServer
 mkBJJApp :: QueryAppContext -> Application
 mkBJJApp ctx =
   WebAPI.CORS.setupCors $
-    provideOptions proxyRestAPI $
+    provideOptions proxyPublicAPI $
       serveWithContext proxyFullAPI basicCtx hoistedServer
   where
     basicCtx = basicAuthServerContext (authContext ctx)

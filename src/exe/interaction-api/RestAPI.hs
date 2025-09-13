@@ -5,7 +5,7 @@
 module RestAPI where
 
 import Control.Lens hiding (Context)
-import Control.Monad.Reader (MonadIO (liftIO), ReaderT (runReaderT), asks)
+import Control.Monad.Reader (MonadIO (liftIO), MonadReader (ask), ReaderT (runReaderT), asks)
 import Data.Aeson (FromJSON, ToJSON)
 import qualified Data.List
 import Data.String (IsString (..))
@@ -14,6 +14,7 @@ import Data.Text hiding (length)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
 import Data.Time (getCurrentTime)
+import Data.Time.Format
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GHC.Generics (Generic)
@@ -29,11 +30,12 @@ import Servant
 import Servant.Swagger
 import Servant.Swagger.UI
 import TxBuilding.Interactions
+import TxBuilding.Operations
 import TxBuilding.Transactions
 import Types
 import WebAPI.Auth
 import WebAPI.CORS
-import WebAPI.ServiceProbe (alwaysHealthy, alwaysReady)
+import WebAPI.ServiceProbe (ServiceProbeStatus (..), alwaysHealthy, alwaysReady)
 import qualified WebAPI.ServiceProbe
 
 instance FromHttpApiData BJJBelt where
@@ -104,16 +106,8 @@ transactionsServer = handleBuildTx :<|> handleSubmitTx
 
 type ProbeAPI = WebAPI.ServiceProbe.ServiceProbe Text Text
 
-type HealthStatus = WebAPI.ServiceProbe.ServiceProbeStatus Text
-
-type ReadyStatus = WebAPI.ServiceProbe.ServiceProbeStatus Text
-
-interactionHealthStatus = "healthy"
-
-interactionReadyStatus = "ready"
-
 interactionProbeServer :: ServerT ProbeAPI InteractionAppMonad
-interactionProbeServer = alwaysHealthy "interaction-api" :<|> alwaysReady "interaction-api"
+interactionProbeServer = alwaysHealthy "interaction-api" :<|> checkDeployedScriptsAreReady
 
 ------------------------------------------------------------------------------------------------
 
@@ -121,9 +115,14 @@ interactionProbeServer = alwaysHealthy "interaction-api" :<|> alwaysReady "inter
 
 ------------------------------------------------------------------------------------------------
 
+type PublicAPI = ProbeAPI :<|> Transactions
+
+proxyPublicAPI :: Proxy PublicAPI
+proxyPublicAPI = Proxy
+
 apiSwagger :: Swagger
 apiSwagger =
-  toSwagger proxyRestAPI
+  toSwagger proxyPublicAPI
     & info . title .~ "Decentralized Belt System Interaction API"
     & info . Data.Swagger.version .~ "1.0"
     & info . Data.Swagger.description ?~ "This is the Interaction API for the Decentralized Belt System - handles transaction building and submission"
@@ -140,35 +139,27 @@ swaggerServer = swaggerSchemaUIServerT apiSwagger
 
 ------------------------------------------------------------------------------------------------
 
--- | Combined API
-type RestAPI = ProbeAPI :<|> Transactions
-
-proxyRestAPI :: Proxy RestAPI
-proxyRestAPI = Proxy
-
-restServer :: ServerT RestAPI InteractionAppMonad
-restServer = interactionProbeServer :<|> transactionsServer
-
 -- | Adding Basic Auth to the Rest API
-type PrivateRestAPI =
-  BasicAuth "user-realm" AuthUser :> RestAPI
+type PrivateTransactions =
+  BasicAuth "user-realm" AuthUser :> Transactions
 
-proxyPrivateRestAPI :: Proxy PrivateRestAPI
-proxyPrivateRestAPI = Proxy
+proxyPrivateTransactions :: Proxy PrivateTransactions
+proxyPrivateTransactions = Proxy
 
-privateRestServer :: ServerT PrivateRestAPI InteractionAppMonad
-privateRestServer = const restServer
+privateTransactionsServer :: ServerT PrivateTransactions InteractionAppMonad
+privateTransactionsServer = const transactionsServer
 
 -- | Adding Swagger UI on top of Private Rest API
 type FullAPI =
   SwaggerSchemaUI "swagger-ui" "swagger-api.json"
-    :<|> PrivateRestAPI
+    :<|> ProbeAPI
+    :<|> PrivateTransactions
 
 proxyFullAPI :: Proxy FullAPI
 proxyFullAPI = Proxy
 
 fullServer :: ServerT FullAPI InteractionAppMonad
-fullServer = swaggerServer :<|> privateRestServer
+fullServer = swaggerServer :<|> interactionProbeServer :<|> privateTransactionsServer
 
 ------------------------------------------------------------------------------------------------
 
@@ -179,7 +170,7 @@ fullServer = swaggerServer :<|> privateRestServer
 mkBJJApp :: InteractionAppContext -> Application
 mkBJJApp ctx =
   WebAPI.CORS.setupCors $
-    provideOptions proxyRestAPI $
+    provideOptions proxyPublicAPI $
       serveWithContext proxyFullAPI basicCtx hoistedServer
   where
     basicCtx = basicAuthServerContext (authContext ctx)

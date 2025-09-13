@@ -4,6 +4,7 @@ import Constants
   ( defaultAtlasCoreConfig,
     defaultTxBuldingContextFile,
   )
+import Control.Concurrent (forkIO)
 import Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Maybe
@@ -40,9 +41,10 @@ main = do
 
     let settings = setHost (fromString host :: HostPreference) $ setPort port defaultSettings
     let bjjDApp = mkBJJApp appContext
-    runSettings settings bjjDApp
 
     putStrLn $ "Started Interaction API server at " <> host <> " " <> show port
     putStrLn $ "Atlas config: " <> show atlasConfig
     putStrLn $ "Deployed validators config: " <> show deployedScriptsContext
     putStrLn $ "Swagger-UI available at : http://" <> host <> ":" <> show port <> "/swagger-ui"
+
+    runSettings settings bjjDApp
