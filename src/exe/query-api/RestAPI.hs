@@ -1,23 +1,23 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module RestAPI where
 
-import QueryAppMonad
 import Control.Lens hiding (Context)
 import Control.Monad.Reader (MonadIO (liftIO), ReaderT (runReaderT), asks)
+import Data.Aeson (FromJSON, ToJSON)
 import qualified Data.List
 import Data.String (IsString (..))
 import Data.Swagger
 import Data.Text hiding (length)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
-import Data.Aeson (ToJSON, FromJSON)
-import GHC.Generics (Generic)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
+import GHC.Generics (Generic)
 import GeniusYield.Imports
 import GeniusYield.Types hiding (title)
 import qualified Network.HTTP.Types as HttpTypes
@@ -25,6 +25,10 @@ import Network.HTTP.Types.Header
 import Network.Wai
 import Network.Wai.Middleware.Servant.Options (provideOptions)
 import Onchain.BJJ (BJJBelt, parseBelt)
+import qualified Query.Common as C
+import qualified Query.Live as L
+import qualified Query.Projected as P
+import QueryAppMonad
 import Servant
 import Servant.Swagger
 import Servant.Swagger.UI
@@ -33,12 +37,10 @@ import TxBuilding.Interactions
 import TxBuilding.Lookups (getOrganizationInformation, getPractiotionerInformation)
 import TxBuilding.Transactions
 import Types
-import qualified Query.Common as C
-import qualified Query.Live as L
-import qualified Query.Projected as P
 import WebAPI.Auth
-import WebAPI.Health
 import WebAPI.CORS
+import WebAPI.ServiceProbe
+import qualified WebAPI.ServiceProbe as WebAPI.Health
 
 instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
@@ -93,7 +95,6 @@ instance FromHttpApiData RanksOrderBy where
       "date" -> Right RanksOrderByDate
       _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
 
-
 -- Auth code moved to WebAPI.Auth
 
 ------------------------------------------------------------------------------------------------
@@ -102,7 +103,11 @@ instance FromHttpApiData RanksOrderBy where
 
 ------------------------------------------------------------------------------------------------
 
--- Health API moved to WebAPI.Health
+type Health = WebAPI.Health.ServiceProbe Text Text
+
+queryHealthStatus = "healthy"
+
+queryReadyStatus = "ready"
 
 ------------------------------------------------------------------------------------------------
 
@@ -172,12 +177,14 @@ handleGetProfiles limit offset profileRefs profileType orderBy sortOrder livePro
         (Just l, Nothing) -> Just (l, 0)
         (Nothing, Just o) -> Just (100, o)
         (Nothing, Nothing) -> Nothing
-  let filter = Just $ C.ProfileFilter
-        { C.profileFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs
-        , C.profileFilterType = profileType
-        , C.profileFilterName = Nothing
-        , C.profileFilterDescription = Nothing
-        }
+  let filter =
+        Just $
+          C.ProfileFilter
+            { C.profileFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs,
+              C.profileFilterType = profileType,
+              C.profileFilterName = Nothing,
+              C.profileFilterDescription = Nothing
+            }
   let order = case (orderBy, sortOrder) of
         (Just ob, Just o) -> Just (ob, o)
         (Just ob, Nothing) -> Just (ob, Asc)
@@ -209,7 +216,7 @@ type Promotions =
       :> QueryParam' '[Optional] "order_by" PromotionsOrderBy
       :> QueryParam' '[Optional] "sort_order" SortOrder
       :> QueryFlag "liveprojection"
-        :> Get '[JSON] [Promotion]
+      :> Get '[JSON] [Promotion]
   )
 
 handleGetPromotions ::
@@ -229,13 +236,15 @@ handleGetPromotions limit offset profileRefs beltRefs achievedByRefs awardedByRe
         (Just l, Nothing) -> Just (l, 0)
         (Nothing, Just o) -> Just (100, o)
         (Nothing, Nothing) -> Nothing
-  let filter = Just $ C.PromotionFilter
-        { C.promotionFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs
-        , C.promotionFilterBelt = if Prelude.null beltRefs then Nothing else Just beltRefs
-        , C.promotionFilterAchievedByProfileId = if Prelude.null achievedByRefs then Nothing else Just achievedByRefs
-        , C.promotionFilterAwardedByProfileId = if Prelude.null awardedByRefs then Nothing else Just awardedByRefs
-        , C.promotionFilterAchievementDateInterval = (Nothing, Nothing)
-        }
+  let filter =
+        Just $
+          C.PromotionFilter
+            { C.promotionFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs,
+              C.promotionFilterBelt = if Prelude.null beltRefs then Nothing else Just beltRefs,
+              C.promotionFilterAchievedByProfileId = if Prelude.null achievedByRefs then Nothing else Just achievedByRefs,
+              C.promotionFilterAwardedByProfileId = if Prelude.null awardedByRefs then Nothing else Just awardedByRefs,
+              C.promotionFilterAchievementDateInterval = (Nothing, Nothing)
+            }
   let order = case (orderBy, sortOrder) of
         (Just ob, Just o) -> Just (ob, o)
         (Just ob, Nothing) -> Just (ob, Asc)
@@ -305,13 +314,15 @@ handleGetBelts limit offset profiles belt achieved_by awarded_by from to maybeOr
         (Just l, Nothing) -> Just (l, 0)
         (Nothing, Just o) -> Just (100, o)
         (Nothing, Nothing) -> Nothing
-  let filter = Just $ C.RankFilter
-        { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles
-        , C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt
-        , C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by
-        , C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by
-        , C.rankFilterAchievementDateInterval = (from, to)
-        }
+  let filter =
+        Just $
+          C.RankFilter
+            { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
+              C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
+              C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
+              C.rankFilterAchievementDateInterval = (from, to)
+            }
   let order = case (maybeOrderBy, maybeOrder) of
         (Just ob, Just o) -> Just (ob, o)
         (Just ob, Nothing) -> Just (ob, Asc)
@@ -322,13 +333,15 @@ handleGetBelts limit offset profiles belt achieved_by awarded_by from to maybeOr
 
 handleGetBeltsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Bool -> QueryAppMonad Int
 handleGetBeltsCount limit offset profiles belt achieved_by awarded_by from to live = do
-  let filter = Just $ C.RankFilter
-        { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles
-        , C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt
-        , C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by
-        , C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by
-        , C.rankFilterAchievementDateInterval = (from, to)
-        }
+  let filter =
+        Just $
+          C.RankFilter
+            { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
+              C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
+              C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
+              C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
+              C.rankFilterAchievementDateInterval = (from, to)
+            }
   if live
     then L.getRanksCount filter
     else P.getRanksCount filter
@@ -376,7 +389,7 @@ proxyRestAPI :: Proxy RestAPI
 proxyRestAPI = Proxy
 
 queryHealthServer :: ServerT Health QueryAppMonad
-queryHealthServer = WebAPI.Health.healthServer "query-api"
+queryHealthServer = alwaysHealthy "query-api" :<|> alwaysReady "query-api"
 
 restServer :: ServerT RestAPI QueryAppMonad
 restServer = queryHealthServer :<|> profilesServer :<|> promotionsServer :<|> beltsServer
@@ -410,9 +423,9 @@ fullServer = swaggerServer :<|> privateRestServer
 
 mkBJJApp :: QueryAppContext -> Application
 mkBJJApp ctx =
-  WebAPI.CORS.setupCors
-    $ provideOptions proxyRestAPI
-    $ serveWithContext proxyFullAPI basicCtx hoistedServer
+  WebAPI.CORS.setupCors $
+    provideOptions proxyRestAPI $
+      serveWithContext proxyFullAPI basicCtx hoistedServer
   where
     basicCtx = basicAuthServerContext (authContext ctx)
     hoistedServer = hoistServerWithContext proxyFullAPI proxyBasicAuthContext (runAppMonad ctx) fullServer

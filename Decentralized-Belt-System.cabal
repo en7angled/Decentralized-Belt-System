@@ -54,12 +54,14 @@ library webapi
   default-extensions:
     DataKinds
     NamedFieldPuns
-    TypeOperators
     OverloadedStrings
+    TypeOperators
+
   exposed-modules:
     WebAPI.Auth
-    WebAPI.Health
     WebAPI.CORS
+    WebAPI.ServiceProbe
+    WebAPI.Utils
 
   build-depends:
     , aeson
@@ -71,6 +73,7 @@ library webapi
     , time
     , wai
     , wai-cors
+    , bytestring
 
 library chainsync
   import:             common-options
@@ -83,9 +86,11 @@ library chainsync
     OverloadedStrings
     TemplateHaskell
     TypeOperators
+
   exposed-modules:
-    KupoClient
     KupoAtlas
+    KupoClient
+
   build-depends:
     , aeson
     , base
@@ -105,29 +110,29 @@ library chainsync
     , text
 
   --- Cardano specific dependencies
-  build-depends:
-    , atlas-cardano
+  build-depends:      atlas-cardano
 
 library offchain
   import:             common-options, plinth-ghc-options
   default-language:   Haskell2010
   hs-source-dirs:     src/lib/offchain-lib
   default-extensions:
-    ImportQualifiedPost
+    BlockArguments
+    DataKinds
+    DeriveAnyClass
+    DeriveGeneric
     DerivingStrategies
     DerivingVia
-    DeriveGeneric
-    DeriveAnyClass
-    GeneralizedNewtypeDeriving
-    DataKinds
-    TupleSections
-    InstanceSigs
-    RecordWildCards
     FlexibleContexts
+    GeneralizedNewtypeDeriving
+    ImportQualifiedPost
+    InstanceSigs
     NamedFieldPuns
-    TypeApplications
     OverloadedStrings
-    BlockArguments
+    RecordWildCards
+    TupleSections
+    TypeApplications
+
   exposed-modules:
     Constants
     DomainTypes.Core.Actions
@@ -151,15 +156,15 @@ library offchain
     build-depends: plutus-tx-plugin
 
   build-depends:
-    , onchain
-    , chainsync
     , aeson
     , bytestring
+    , chainsync
     , containers
     , deriving-aeson
     , extra
     , lens
     , mtl
+    , onchain
     , persistent
     , persistent-sqlite
     , swagger2
@@ -249,8 +254,8 @@ executable admin
   default-language: GHC2021
   build-depends:
     , base
-    , onchain
     , offchain
+    , onchain
 
   build-depends:
     , aeson
@@ -277,8 +282,8 @@ executable interaction-api
 
   build-depends:
     , base
-    , onchain
     , offchain
+    , onchain
     , webapi
 
   build-depends:
@@ -287,12 +292,12 @@ executable interaction-api
     , base16-bytestring
     , bytestring            ^>=0.11.5
     , cardano-api
-    , containers
-    , conduit
-    , esqueleto
-    , deriving-aeson
-    , extra
     , cassava
+    , conduit
+    , containers
+    , deriving-aeson
+    , esqueleto
+    , extra
     , http-client
     , http-client-tls
     , http-types            ^>=0.12.4
@@ -302,12 +307,12 @@ executable interaction-api
     , persistent
     , persistent-sqlite
     , persistent-template
+    , servant
+    , servant-client
     , servant-conduit
     , servant-event-stream
     , servant-options
-    , servant
     , servant-server
-    , servant-client
     , servant-swagger
     , servant-swagger-ui
     , swagger2
@@ -315,35 +320,34 @@ executable interaction-api
     , time
     , transformers          ^>=0.6.1
     , utf8-string
+    , vector
     , wai
     , wai-cors
     , wai-websockets
     , warp
     , websockets
-    , vector
 
   --- Cardano specific dependencies
   build-depends:    atlas-cardano
 
 executable query-api
   main-is:          Main.hs
-  hs-source-dirs:   src/exe/query-api
-                   , src/exe/chain-sync
+  hs-source-dirs:   src/exe/query-api src/exe/chain-sync
   default-language: GHC2021
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
-    QueryAppMonad
-    RestAPI
-    Types
     Query.Common
     Query.Live
     Query.Projected
+    QueryAppMonad
+    RestAPI
+    Types
 
   build-depends:
     , base
-    , onchain
     , offchain
+    , onchain
     , webapi
 
   build-depends:
@@ -352,12 +356,12 @@ executable query-api
     , base16-bytestring
     , bytestring            ^>=0.11.5
     , cardano-api
-    , containers
-    , conduit
-    , esqueleto
-    , deriving-aeson
-    , extra
     , cassava
+    , conduit
+    , containers
+    , deriving-aeson
+    , esqueleto
+    , extra
     , http-client
     , http-client-tls
     , http-types            ^>=0.12.4
@@ -367,12 +371,12 @@ executable query-api
     , persistent
     , persistent-sqlite
     , persistent-template
+    , servant
+    , servant-client
     , servant-conduit
     , servant-event-stream
     , servant-options
-    , servant
     , servant-server
-    , servant-client
     , servant-swagger
     , servant-swagger-ui
     , swagger2
@@ -380,12 +384,12 @@ executable query-api
     , time
     , transformers          ^>=0.6.1
     , utf8-string
+    , vector
     , wai
     , wai-cors
     , wai-websockets
     , warp
     , websockets
-    , vector
 
   --- Cardano specific dependencies
   build-depends:    atlas-cardano
@@ -406,8 +410,8 @@ test-suite Decentralized-Belt-System-test
 
   build-depends:
     , base
-    , onchain
     , offchain
+    , onchain
 
   build-depends:
     , extra
@@ -432,9 +436,10 @@ executable chain-sync
   default-language: GHC2021
   build-depends:
     , base
-    , onchain
     , chainsync
     , offchain
+    , onchain
+    , webapi
 
   build-depends:
     , aeson
@@ -447,15 +452,21 @@ executable chain-sync
     , extra
     , http-client
     , http-client-tls
+    , http-types
     , persistent
     , persistent-sqlite
     , persistent-template
     , servant
     , servant-client
+    , servant-server
+    , swagger2
     , text
     , time
     , transformers
     , vector
+    , wai
+    , wai-cors
+    , warp
 
   other-modules:
 

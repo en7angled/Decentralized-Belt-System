@@ -26,3 +26,5 @@ defaultCorsPolicy req =
 
 setupCors :: Middleware
 setupCors = cors defaultCorsPolicy
+
+

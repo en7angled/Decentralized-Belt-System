@@ -1,25 +1,25 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module RestAPI where
 
-import InteractionAppMonad
 import Control.Lens hiding (Context)
 import Control.Monad.Reader (MonadIO (liftIO), ReaderT (runReaderT), asks)
+import Data.Aeson (FromJSON, ToJSON)
 import qualified Data.List
 import Data.String (IsString (..))
 import Data.Swagger
 import Data.Text hiding (length)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding
-import Data.Aeson (ToJSON, FromJSON)
-import GHC.Generics (Generic)
+import Data.Time (getCurrentTime)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
+import GHC.Generics (Generic)
 import GeniusYield.Imports
 import GeniusYield.Types hiding (title)
+import InteractionAppMonad
 import qualified Network.HTTP.Types as HttpTypes
 import Network.HTTP.Types.Header
 import Network.Wai
@@ -32,8 +32,9 @@ import TxBuilding.Interactions
 import TxBuilding.Transactions
 import Types
 import WebAPI.Auth
-import WebAPI.Health
 import WebAPI.CORS
+import WebAPI.ServiceProbe (alwaysHealthy, alwaysReady)
+import qualified WebAPI.ServiceProbe
 
 instance FromHttpApiData BJJBelt where
   parseQueryParam :: Text -> Either Text BJJBelt
@@ -56,9 +57,6 @@ instance FromHttpApiData SortOrder where
       "desc" -> Right Desc
       _ -> Left "Invalid sort order. Use 'asc' or 'desc'"
 
-
-
-
 -- Auth code moved to WebAPI.Auth
 
 ------------------------------------------------------------------------------------------------
@@ -66,8 +64,6 @@ instance FromHttpApiData SortOrder where
 --  Transactions API
 
 ------------------------------------------------------------------------------------------------
-
--- Health API moved to WebAPI.Health
 
 type Transactions =
   -- Build tx endpoint
@@ -97,11 +93,27 @@ handleSubmitTx AddWitAndSubmitParams {..} = do
   let signedTx = makeSignedTransaction awasTxWit txBody
   submitTxApp signedTx
 
-interactionHealthServer :: ServerT Health InteractionAppMonad
-interactionHealthServer = WebAPI.Health.healthServer "interaction-api"
-
 transactionsServer :: ServerT Transactions InteractionAppMonad
 transactionsServer = handleBuildTx :<|> handleSubmitTx
+
+------------------------------------------------------------------------------------------------
+
+--  Probe API
+
+------------------------------------------------------------------------------------------------
+
+type ProbeAPI = WebAPI.ServiceProbe.ServiceProbe Text Text
+
+type HealthStatus = WebAPI.ServiceProbe.ServiceProbeStatus Text
+
+type ReadyStatus = WebAPI.ServiceProbe.ServiceProbeStatus Text
+
+interactionHealthStatus = "healthy"
+
+interactionReadyStatus = "ready"
+
+interactionProbeServer :: ServerT ProbeAPI InteractionAppMonad
+interactionProbeServer = alwaysHealthy "interaction-api" :<|> alwaysReady "interaction-api"
 
 ------------------------------------------------------------------------------------------------
 
@@ -129,13 +141,13 @@ swaggerServer = swaggerSchemaUIServerT apiSwagger
 ------------------------------------------------------------------------------------------------
 
 -- | Combined API
-type RestAPI = Health :<|> Transactions
+type RestAPI = ProbeAPI :<|> Transactions
 
 proxyRestAPI :: Proxy RestAPI
 proxyRestAPI = Proxy
 
 restServer :: ServerT RestAPI InteractionAppMonad
-restServer = interactionHealthServer :<|> transactionsServer
+restServer = interactionProbeServer :<|> transactionsServer
 
 -- | Adding Basic Auth to the Rest API
 type PrivateRestAPI =
@@ -166,9 +178,9 @@ fullServer = swaggerServer :<|> privateRestServer
 
 mkBJJApp :: InteractionAppContext -> Application
 mkBJJApp ctx =
-  WebAPI.CORS.setupCors
-    $ provideOptions proxyRestAPI
-    $ serveWithContext proxyFullAPI basicCtx hoistedServer
+  WebAPI.CORS.setupCors $
+    provideOptions proxyRestAPI $
+      serveWithContext proxyFullAPI basicCtx hoistedServer
   where
     basicCtx = basicAuthServerContext (authContext ctx)
     hoistedServer = hoistServerWithContext proxyFullAPI proxyBasicAuthContext (runInteractionAppMonad ctx) fullServer

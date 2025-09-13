@@ -1,11 +1,12 @@
 module Utils where
+
 import Data.Aeson
-import System.Directory.Extra
-import System.Environment
+import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy.Char8 as BL8
+import System.Directory.Extra
+import System.Environment
 import Prelude
-import qualified Data.Aeson as Aeson
 
 greenColorString :: String -> String
 greenColorString s =
@@ -22,7 +23,6 @@ orangeColorString s =
     ++ s
     ++ "\ESC[0m"
     ++ "\n"
-
 
 yellowColorString :: String -> String
 yellowColorString s =
@@ -48,19 +48,14 @@ purpleColorString s =
     ++ "\ESC[0m"
     ++ "\n"
 
-
-
-
 decodeConfigFile :: (FromJSON a) => FilePath -> IO (Maybe a)
 decodeConfigFile path = do
   fileExist <- doesFileExist path
   if fileExist
-    then decodeFileStrict path 
+    then decodeFileStrict path
     else do
       putStrLn $ yellowColorString $ "File " <> path <> " does not exist"
       return Nothing
-    
-
 
 -- | Try to read a JSON-encoded configuration from an environment variable.
 -- If the variable is present, decode its contents; otherwise, fall back to the given file path.
@@ -73,12 +68,11 @@ decodeConfigEnvOrFile envName filePath = do
       case eitherDecodeStrict (BS8.pack raw) of
         Right a -> return (Just a)
         Left err -> error $ "Decoding env var " <> envName <> " failed: " <> err
-    Nothing -> do 
+    Nothing -> do
       putStrLn $ yellowColorString $ "Parsing config from file " <> filePath
       decodeConfigFile filePath
 
-
-
-
 stringFromJSON :: (ToJSON a) => a -> String
 stringFromJSON = init . tail . BL8.unpack . Aeson.encode
+
+
