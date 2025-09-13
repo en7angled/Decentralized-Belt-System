@@ -7,7 +7,8 @@ Acest ghid te duce de la zero până la un deployment HTTPS funcțional, explic�
 - DNS pentru `bjjbackend.cardano.vip` gestionat în GoDaddy
 - imagini Docker:
   - `mariusgeorgescu/chainsync:chainsync`
-  - `mariusgeorgescu/bjjserver:chainsync`
+  - `mariusgeorgescu/bjj-interaction-api:latest`
+  - `mariusgeorgescu/bjj-query-api:latest`
 
 Setează contextul:
 ```bash
@@ -96,7 +97,7 @@ kubectl -n kube-system logs deploy/traefik --tail=100 | grep -Ei "gateway|entryP
 
 ## 7) Deploy aplicație și Gateway API (ordine corectă)
 - 1) chainsync → creează/actualizează baza SQLite
-- 2) server → citește din baza creată de chainsync
+- 2) interaction-api și query-api → citesc din baza creată de chainsync
 - 3) certificate → cere/gestionează TLS cu cert-manager (DNS‑01 GoDaddy)
 - 4) gateway → expune HTTPS prin Traefik (Gateway API)
 ```bash
@@ -115,13 +116,13 @@ kubectl -n bjj apply -f k8s/gateway.yaml
   - PVC `lookup-pvc` (5Gi, ReadWriteOnce)
 
 - `k8s/server.yaml`
-  - Deployment `bjj-server` cu `replicas: 3`
-  - initContainer `wait-for-db` (nou): așteaptă existența `/data/chainsync.sqlite` înainte de a porni aplicația
+  - Deployment `bjj-server` cu `replicas: 3` rulează imaginea API conform configurării curente (expune port 8082). În această repo, `server.yaml` reprezintă serviciul expus extern prin Gateway; asociază‑l cu imaginea dorită (interaction sau query) sau folosește manifest separat pentru fiecare API.
+  - initContainer `wait-for-db`: așteaptă existența `/data/chainsync.sqlite` înainte de a porni aplicația
   - container `server`:
-    - port 8082, env `PORT`, `LOOKUP_PATH`, `GHCRTS`
-    - probe TCP liveness/readiness pe 8082
-    - volum `/data` write‑able (SQLite creează fișiere WAL/SHM)
-  - Service `bjj-server` pe 8082 (intern)
+    - env `PORT`, `LOOKUP_PATH`, `GHCRTS`
+    - probe pe portul API‑ului
+    - volum `/data` write‑able (SQLite creează WAL/SHM)
+  - Service `bjj-server` pe portul API‑ului (intern)
   - PodDisruptionBudget `bjj-server-pdb` (min 1 pod disponibil la întreruperi)
 
 - `k8s/certificate.yaml`
@@ -132,7 +133,7 @@ kubectl -n bjj apply -f k8s/gateway.yaml
   - `Gateway` (gatewayClassName `traefik`) cu listener pe 80 (HTTP) și 443 (HTTPS)
   - Adnotare `cert-manager.io/cluster-issuer: letsencrypt-godaddy-prod` pe `Gateway`
   - TLS pe 443 cu `certificateRefs: secret bjjbackend-tls`
-  - `HTTPRoute` cu redirect 80→443 și rutare către `Service bjj-server:8082`
+  - `HTTPRoute` cu redirect 80→443 și rutare către `Service bjj-server` pe portul configurat (implicit 8082). Dacă expui ambele API‑uri, adaugă rute separate (ex. `/interact` → interaction‑api, `/query` → query‑api) sau servicii distincte.
 
 - `k8s/gatewayclass-traefik.yaml`
   - Definește `GatewayClass` numit `traefik` cu `controllerName: traefik.io/gateway-controller` folosit de Gateway API.
