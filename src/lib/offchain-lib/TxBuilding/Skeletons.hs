@@ -14,6 +14,21 @@ import TxBuilding.Lookups (getUTxOWithNFT, getUtxoWithTokenAtAddresses)
 import TxBuilding.Utils
 import TxBuilding.Validators
 
+
+------------------------------------------------------------------------------------------------
+
+-- * Query Skeletons
+
+------------------------------------------------------------------------------------------------
+
+getRefScriptUTxO :: (GYTxQueryMonad m) => GYTxOutRef -> m GYAnyScript
+getRefScriptUTxO refScript = do
+  utxo <- utxoAtTxOutRef refScript
+  let ms = utxoRefScript =<< utxo
+  case ms of
+    Just s -> return s
+    Nothing -> throwError (GYApplicationException ScriptNotFound)
+
 ------------------------------------------------------------------------------------------------
 
 -- * CIP-68 Utils

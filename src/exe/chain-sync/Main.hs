@@ -23,11 +23,17 @@ import qualified Data.Text.Encoding as TE
 import Control.Monad.Logger (runStdoutLoggingT)
 import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool)
 import Database.Persist.Sql (runSqlPool)
-import GeniusYield.Types (mintingPolicyCurrencySymbol)
 import KupoClient (KupoCheckpoint (..))
 import Storage
 import System.Environment (lookupEnv)
-import TxBuilding.Validators (mintingPolicyGY)
+import Constants
+import Utils (decodeConfigEnvOrFile)
+import TxBuilding.Context
+import GeniusYield.GYConfig (GYCoreConfig, withCfgProviders)
+import GeniusYield.Types.Logging
+import TxBuilding.Skeletons (getRefScriptUTxO)
+import GeniusYield.Types.Script
+import Text.Printf
 
 getPortFromEnv :: IO Int
 getPortFromEnv = do
@@ -48,9 +54,18 @@ main = do
   kupoUrl <- liftIO $ fmap (fromMaybe defaultKupoUrl) (lookupEnv "KUPO_URL")
   connStr <- liftIO $ fmap (fromMaybe defaultConnStr) (lookupEnv "PG_CONN_STR")
 
-  let policyHexText =
-        let cs = mintingPolicyCurrencySymbol mintingPolicyGY
-         in T.pack $ show cs
+  atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration failed") <$> decodeConfigEnvOrFile @GYCoreConfig "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
+
+  deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
+  let mpRef = mintingPolicyRef deployedScriptsContext
+
+  cs <- withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do
+    let providersContext = ProviderCtx atlasConfig providers
+    runQuery providersContext $ getRefScriptUTxO mpRef
+
+
+  let policyHexText = T.pack $ printf "%s"  $ hashAnyScript cs
+
   let matchPattern = policyHexText <> ".*"
   putStrLn "Starting chain-sync ..."
   putStrLn ("Base URL: " <> kupoUrl)

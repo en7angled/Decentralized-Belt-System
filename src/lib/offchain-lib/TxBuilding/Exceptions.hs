@@ -21,6 +21,7 @@ data ProfileException
   | InvalidAssetClass 
   | RankNotFound
   | WrongProfileType
+  | ScriptNotFound
   | WrongRankDataType
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
 
@@ -35,4 +36,6 @@ instance Exception ProfileException where
   displayException InvalidAssetClass = "Invalid asset class"
   displayException RankNotFound = "Rank not found"
   displayException WrongRankDataType = "Wrong rank data type"
+  displayException ScriptNotFound = "Script not found"
+
 instance IsGYApiError ProfileException 
