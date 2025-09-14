@@ -21,7 +21,7 @@ import Control.Monad.Logger (runStdoutLoggingT)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-import Data.Time (getCurrentTime)
+
 import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool)
 import Database.Persist.Sql (runSqlPool)
 import KupoClient (KupoCheckpoint (..))
@@ -55,20 +55,8 @@ main = do
   pool <- runStdoutLoggingT $ createPostgresqlPool connBS 16
   runSqlPool runMigrations pool
 
-  initialTip <- getLocalTip pool
 
-  now <- getCurrentTime
-  metricsVar <-
-    newMVar
-      SyncMetrics
-        { smLocalTip = ck_slot_no initialTip,
-          smBlockchainTip = ck_slot_no initialTip,
-          smLastSyncTime = now,
-          smDbReady = False,
-          smMigrationsComplete = False,
-          smChainSyncState = UpToDate
-        }
-
+  metricsVar <-  newEmptyMVar
   -- Start probe server
   void $ forkIO $ startProbeServer port metricsVar
 
@@ -95,9 +83,8 @@ main = do
   -- Sync loop in background thread (includes initial checkpoint alignment)
 
   initLocal <- getLocalTip pool
-  firstCheckPoint <- findCheckpoint kupoUrl batch_size (ck_slot_no initLocal)
-  updateLocalTip pool firstCheckPoint
-  modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = ck_slot_no firstCheckPoint, smBlockchainTip = ck_slot_no firstCheckPoint}
+  startingCheckPoint <- findCheckpoint kupoUrl batch_size (ck_slot_no initLocal)
+  updateLocalTip pool startingCheckPoint
 
   forever $ do
     blockchainTip <- getBlockchainTip kupoUrl
@@ -111,7 +98,7 @@ main = do
         liftIO $ putStrLn "Chain is up to date"
         liftIO $ putStrLn "Sleeping for 10 seconds"
         liftIO $ threadDelay 10000000
-      Behind -> do
+      Behind _isWayBehind -> do
         liftIO $ putStrLn "Chain is behind"
         liftIO $ putStrLn "Fetching matches"
         fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
