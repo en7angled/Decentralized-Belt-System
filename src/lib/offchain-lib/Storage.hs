@@ -115,6 +115,7 @@ putCursor cur = do
 
 putMatchAndProjections :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
 putMatchAndProjections networkId km = do
+  liftIO $ putStrLn ("Putting match and projections for " <> show (slot_no (created_at km)))
   putKupoMatch km
   case kupoMatchToAtlasMatch km of
     Left convErr -> liftIO $ putStrLn ("Conversion error: " <> convErr)

@@ -97,12 +97,13 @@ component BackEnd  as "BackEnd Services"  #LightGray   {
     Interactions - interactionsPort
     Lookups - queryPort
 
-    Interactions -->> CardanoProvider : query\n and \n submit signed tx
+    Interactions -->> CardanoProvider : query\n and \n submit \nsigned tx
     Lookups --> CardanoProvider : veryfy\n scripts\n availability
 
-    ChainSync -->> Projections : uspert
-    Lookups -->> Projections : query
-    ChainSync -->> Kupo : monitor
+    ChainSync --> Kupo : monitor
+    ChainSync --> CardanoProvider : get mintingpolicy & addresses)
+    ChainSync --> Projections : uspert
+    Lookups --> Projections : query
 
 
 
@@ -133,9 +134,9 @@ User -> BrowserWallet : "sign tx"
 BrowserWallet --> BlockchainNetwork : "submit\n signed tx"
 
 
-Kupo --- BlockchainNetwork : monitor
+Kupo -down-- BlockchainNetwork : monitor
 
-CardanoProvider -- BlockchainNetwork
+CardanoProvider -down-- BlockchainNetwork
 
 AdminCLI -up- CardanoProvider
 

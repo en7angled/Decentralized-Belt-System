@@ -43,10 +43,10 @@ getPortFromEnv = do
     Just p -> return (read p)
 
 defaultConnStr :: String
-defaultConnStr = "host=postgres user=postgres password=postgres dbname=chainsync port=5432"
+defaultConnStr = "host=localhost user=postgres password=postgres dbname=chainsync port=5432"
 
 defaultKupoUrl :: String
-defaultKupoUrl = "http://localhost:1442"
+defaultKupoUrl = "https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run"
 
 main :: IO ()
 main = do
@@ -78,10 +78,10 @@ main = do
 
   batch_size <- do
     mb <- lookupEnv "BATCH_SIZE"
-    pure $ maybe (10_000_000 :: Integer) read mb
+    pure $ maybe (100_000_000 :: Integer) read mb
   fetch_batch_size <- do
     mb <- lookupEnv "FETCH_BATCH_SIZE"
-    pure $ maybe (10_000 :: Integer) read mb
+    pure $ maybe (10_000_000 :: Integer) read mb
 
   initialTip <- getLocalTip pool
 
