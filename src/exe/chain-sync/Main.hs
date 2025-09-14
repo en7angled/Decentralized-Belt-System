@@ -30,6 +30,7 @@ import System.Environment (lookupEnv)
 import Text.Printf
 import TxBuilding.Context
 import Utils (decodeConfigEnvOrFile)
+import Data.Time
 
 getPortFromEnv :: IO Int
 getPortFromEnv = do
@@ -56,7 +57,21 @@ main = do
   runSqlPool runMigrations pool
 
 
-  metricsVar <-  newEmptyMVar
+  initialTip <- getLocalTip pool
+
+  now <- getCurrentTime
+  metricsVar <-
+    newMVar
+      SyncMetrics
+        { smLocalTip = ck_slot_no initialTip,
+          smBlockchainTip = ck_slot_no initialTip,
+          smLastSyncTime = now,
+          smDbReady = False,
+          smMigrationsComplete = False,
+          smChainSyncState = Behind False
+        } 
+
+ 
   -- Start probe server
   void $ forkIO $ startProbeServer port metricsVar
 
