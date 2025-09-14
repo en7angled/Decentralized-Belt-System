@@ -114,7 +114,7 @@ fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool start end bat
         Right matches -> do
           applyMatches GYTestnetPreview pool matches
           now <- getCurrentTime
-          modifyMVar_ metricsVar $ \m -> pure m {smLastSyncTime = now}
+          modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = endInterval, smLastSyncTime = now}
 
       fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool endInterval end batch_size
 

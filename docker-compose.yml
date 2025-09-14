@@ -19,18 +19,20 @@ services:
       start_period: 10s
     restart: unless-stopped
   chainsync:
-    image: mariusgeorgescu/bjj-chainsync:a98ad3a
+    image: mariusgeorgescu/bjj-chainsync:6610538
     container_name: bjj-chainsync
     environment:
       - KUPO_URL=https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run
       - PG_CONN_STR=host=postgres user=postgres password=postgres dbname=chainsync port=5432
-      - BATCH_SIZE=1000000
-      - FETCH_BATCH_SIZE=100000
+      - BATCH_SIZE=10_000_000
+      - FETCH_BATCH_SIZE=1_000_000
     depends_on:
       postgres:
         condition: service_healthy
+    ports:
+      - "8084:8084"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8084/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8084/ready || exit 1"] # It makes more sense to use readiness check here (the chaintip shoud be uptodate or close behind)
       interval: 10s
       timeout: 5s
       retries: 12000
@@ -38,7 +40,7 @@ services:
     restart: unless-stopped
 
   interaction-api:
-    image: mariusgeorgescu/bjj-interaction-api:a98ad3a
+    image: mariusgeorgescu/bjj-interaction-api:6610538
     container_name: bjj-interaction-api
     environment:
       - PORT=8082
@@ -61,7 +63,7 @@ services:
       start_period: 10s
 
   query-api:
-    image: mariusgeorgescu/bjj-query-api:a98ad3a
+    image: mariusgeorgescu/bjj-query-api:6610538
     container_name: bjj-query-api
     environment:
       - PORT=8083
