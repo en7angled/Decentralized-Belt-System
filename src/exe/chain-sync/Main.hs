@@ -57,7 +57,7 @@ main = do
   atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration failed") <$> decodeConfigEnvOrFile @GYCoreConfig "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
 
   deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
-  let mpRef = mintingPolicyRef deployedScriptsContext
+  let mpRef = getMintingPolicyRef deployedScriptsContext
 
   cs <- withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do
     let providersContext = ProviderCtx atlasConfig providers

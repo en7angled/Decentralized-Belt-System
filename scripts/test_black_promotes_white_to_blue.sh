@@ -34,13 +34,13 @@ print_error() {
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+echo "SCRIPT_DIR: $SCRIPT_DIR"
+echo "REPO_ROOT: $REPO_ROOT"
+
 # Determine how to run the admin CLI
-if command -v admin >/dev/null 2>&1; then
-    ADMIN="admin"
-else
-    ADMIN="cabal run admin --"
-    print_warning "'admin' executable not found in PATH. Falling back to 'cabal run admin --' (will build if needed)."
-fi
+
+ADMIN="cabal run admin --"
+
 
 # Pre-flight checks for required files
 if [ ! -f "$REPO_ROOT/config/config_atlas.json" ]; then
