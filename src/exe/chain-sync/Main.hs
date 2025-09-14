@@ -22,6 +22,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 
+
 import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool)
 import Database.Persist.Sql (runSqlPool)
 import KupoClient (KupoCheckpoint (..))
@@ -31,13 +32,8 @@ import Text.Printf
 import TxBuilding.Context
 import Utils (decodeConfigEnvOrFile)
 import Data.Time
+import WebAPI.Utils
 
-getPortFromEnv :: IO Int
-getPortFromEnv = do
-  eport <- lookupEnv "PORT"
-  case eport of
-    Nothing -> return 8084
-    Just p -> return (read p)
 
 defaultConnStr :: String
 defaultConnStr = "host=localhost user=postgres password=postgres dbname=chainsync port=5432"
@@ -47,7 +43,7 @@ defaultKupoUrl = "https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.ru
 
 main :: IO ()
 main = do
-  port <- getPortFromEnv
+  port <- getPortFromEnvOrDefault 8084
 
   kupoUrl <- liftIO $ fmap (fromMaybe defaultKupoUrl) (lookupEnv "KUPO_URL")
   connStr <- liftIO $ fmap (fromMaybe defaultConnStr) (lookupEnv "PG_CONN_STR")
@@ -106,8 +102,8 @@ main = do
     localTip <- getLocalTip pool
     let chainSyncState = evaluateChainSyncState localTip blockchainTip
     modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = ck_slot_no localTip, smBlockchainTip = ck_slot_no blockchainTip, smChainSyncState = chainSyncState}
-    liftIO $ putStrLn ("Local tip      : " <> show localTip)
-    liftIO $ putStrLn ("Blockchain tip : " <> show blockchainTip)
+    liftIO $ putStrLn ("Local tip      : " <> show (ck_slot_no localTip))
+    liftIO $ putStrLn ("Blockchain tip : " <> show (ck_slot_no blockchainTip))
     case chainSyncState of
       UpToDate -> do
         liftIO $ putStrLn "Chain is up to date"

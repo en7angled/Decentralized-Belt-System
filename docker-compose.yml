@@ -19,13 +19,13 @@ services:
       start_period: 10s
     restart: unless-stopped
   chainsync:
-    image: mariusgeorgescu/bjj-chainsync:6610538
+    image: mariusgeorgescu/bjj-chainsync:0842663
     container_name: bjj-chainsync
     environment:
       - KUPO_URL=https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run
       - PG_CONN_STR=host=postgres user=postgres password=postgres dbname=chainsync port=5432
-      - BATCH_SIZE=10_000_000
-      - FETCH_BATCH_SIZE=1_000_000
+      - BATCH_SIZE=10000000
+      - FETCH_BATCH_SIZE=1000000
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
 
   interaction-api:
-    image: mariusgeorgescu/bjj-interaction-api:6610538
+    image: mariusgeorgescu/bjj-interaction-api:0842663
     container_name: bjj-interaction-api
     environment:
       - PORT=8082
@@ -63,7 +63,7 @@ services:
       start_period: 10s
 
   query-api:
-    image: mariusgeorgescu/bjj-query-api:6610538
+    image: mariusgeorgescu/bjj-query-api:0842663
     container_name: bjj-query-api
     environment:
       - PORT=8083
