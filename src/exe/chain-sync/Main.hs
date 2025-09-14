@@ -68,7 +68,7 @@ main = do
           smLastSyncTime = now,
           smDbReady = False,
           smMigrationsComplete = False,
-          smChainSyncState = Behind False
+          smChainSyncState = Behind True -- by default we are way behind
         } 
 
  
