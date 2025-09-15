@@ -1,0 +1,115 @@
+# syntax=docker/dockerfile:1.4
+
+### STAGE 1: Build ###
+FROM --platform=$TARGETPLATFORM bjj-builder:9.6.6 AS builder
+
+WORKDIR /Decentralized-Belt-System
+
+ENV PATH="/root/.cabal/bin:$PATH"
+ENV CC=musl-gcc
+ENV LD=musl-gcc
+
+
+# Copy sources and build chainsync-service
+COPY src ./src
+COPY config ./config
+
+RUN cabal install chainsync-service \
+    --enable-executable-static \
+    --overwrite-policy=always \
+    --installdir=. \
+    --install-method=copy \
+    --ghc-options="-optl=-static -optl=-pthread -optc=-static"
+
+
+### STAGE 2: Runtime ###
+FROM --platform=$TARGETPLATFORM alpine:3.20 AS runtime
+
+# Base libs
+RUN apk add  bash curl ca-certificates git pkgconfig build-base \
+    automake autoconf libtool gmp-dev zlib-dev musl-dev musl-utils
+
+# Cardano deps (align with server runtime)
+RUN apk add  \
+    curl \
+    ca-certificates \
+    automake \
+    build-base \
+    pkgconfig \
+    libffi-dev \
+    gmp-dev \
+    lmdb-dev \
+    numactl-dev \
+    openssl-dev \
+    ncurses-dev \
+    llvm-dev \
+    zlib-dev \
+    postgresql-dev \
+    xz-dev \
+    xz-libs \
+    sqlite-dev \
+    m4 \
+    git \
+    jq \
+    wget \
+    tmux \
+    g++ \
+    make \
+    autoconf \
+    libtool
+
+RUN apk add  \
+    postgresql-libs \
+    ncurses-libs \
+    libsodium \
+    libsecp256k1 \
+    libstdc++ \
+    gmp \
+    libgcc
+
+RUN apk add  postgresql-client postgresql-dev
+
+# libsodium
+RUN curl -LO https://download.libsodium.org/libsodium/releases/libsodium-1.0.19.tar.gz && \
+    tar xvf libsodium-1.0.19.tar.gz && \
+    cd libsodium-stable && \
+    ./configure --prefix=/usr --enable-shared --disable-static && \
+    make && make install
+
+# secp256k1
+RUN git clone --depth 1 --branch 'v0.3.2' https://github.com/bitcoin-core/secp256k1 && \
+    cd secp256k1 && \
+    ./autogen.sh && \
+    ./configure --enable-module-schnorrsig --enable-experimental && \
+    make && \
+    make check && \
+    make install
+
+# ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+
+# BLST
+ARG BLST_REF=v0.3.15
+COPY libblst.pc /usr/lib/pkgconfig/
+RUN git clone https://github.com/supranational/blst && \
+    cd blst && \
+    git checkout ${BLST_REF} && \
+    ./build.sh && \
+    cp bindings/blst_aux.h bindings/blst.h bindings/blst.hpp  /usr/include/ && \
+    cp libblst.a /usr/lib/ && \
+    chmod u=rw,go=r /usr/lib/pkgconfig/libblst.pc \
+    /usr/include/blst_aux.h /usr/include/blst.h /usr/include/blst.hpp \
+    /usr/lib/libblst.a
+
+# Runtime app
+WORKDIR /app
+COPY --from=builder /Decentralized-Belt-System/chainsync-service /app/chainsync-service
+COPY ./config /app/config
+
+# Defaults (overridable)
+ENV KUPO_URL=http://localhost:1442 \
+    PG_CONN_STR="host=postgres user=postgres password=postgres dbname=chainsync port=5432" \
+    BATCH_SIZE=10000000 \
+    FETCH_BATCH_SIZE=10000000
+
+ENTRYPOINT ["/app/chainsync-service"]
+

@@ -7,12 +7,11 @@ import Control.Monad.Reader
 import Data.Foldable.Extra
 import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
-import DomainTypes.Transfer.Types
 import GHC.Stack
 import GeniusYield.Test.Clb (sendSkeleton')
 import GeniusYield.Test.Utils
 import GeniusYield.TxBuilder hiding (userAddresses)
-import qualified GeniusYield.TxBuilder.User as User
+import GeniusYield.TxBuilder.User qualified as User
 import GeniusYield.Types
 import Onchain.CIP68
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
@@ -75,9 +74,8 @@ logPractitionerProfileInformation user profileRefAC = asUser user $ do
   gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ greenColorString $ "PRACTITIONER PROFILE INFORMATION: \n" <> show profileInformation
   return ()
 
-
-getProfileAndRank :: (GYTxGameMonad m, HasCallStack) => User -> GYAssetClass -> m ((CIP68Datum OnchainProfile, Value), (OnchainRank, Value))
-getProfileAndRank user profileRefAC = do
+getProfileAndRank :: (GYTxGameMonad m, HasCallStack) => GYAssetClass -> m ((CIP68Datum OnchainProfile, Value), (OnchainRank, Value))
+getProfileAndRank profileRefAC = do
   (profile, profileValue) <- getProfileStateDataAndValue profileRefAC
   rankRefAC <- assetClassFromPlutus' $ getCurrentRankId $ extra profile
   (rank, rankValue) <- getRankStateDataAndValue rankRefAC

@@ -1,0 +1,117 @@
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bjj-projections
+    environment:
+      - POSTGRES_DB=chainsync
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chainsync || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+  chainsync:
+    image: mariusgeorgescu/bjj-chainsync:dc4b130
+    container_name: bjj-chainsync
+    environment:
+      - KUPO_URL=https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run
+      - PG_CONN_STR=host=postgres user=postgres password=postgres dbname=chainsync port=5432
+      - BATCH_SIZE=1000000
+      - FETCH_BATCH_SIZE=100000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8084/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  interaction-api:
+    image: mariusgeorgescu/bjj-interaction-api:dc4b130
+    container_name: bjj-interaction-api
+    environment:
+      - PORT=8082
+      # - BASIC_USER=cardano
+      # - BASIC_PASS=lovelace
+    ports:
+      - "8082:8082"
+    depends_on:
+      chainsync:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["/app/interaction-api"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8082/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  query-api:
+    image: mariusgeorgescu/bjj-query-api:dc4b130
+    container_name: bjj-query-api
+    environment:
+      - PORT=8083
+      - PG_CONN_STR=host=postgres user=postgres password=postgres dbname=chainsync port=5432
+      # - BASIC_USER=cardano
+      # - BASIC_PASS=lovelace
+    ports:
+      - "8083:8083"
+    depends_on:
+      chainsync:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["/app/query-api"] 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: bjj-nginx
+    depends_on:
+      interaction-api:
+        condition: service_healthy
+      query-api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot-www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: bjj-certbot
+    entrypoint: sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;"
+    volumes:
+      - certbot-www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  certbot-www:
+  letsencrypt:
+

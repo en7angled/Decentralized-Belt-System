@@ -1,6 +1,27 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.2.2.0 -- 2024-12-21
+
+### API Architecture Split
+
+**Service Separation for Better Scalability**
+
+#### API Split Implementation
+- **Interaction API Service**: Dedicated service for transaction building and submission (`build-tx`, `submit-tx`)
+- **Query API Service**: Dedicated service for data queries (profiles, promotions, belts)
+- **Independent Deployment**: Each service can be deployed and scaled independently
+- **Docker Support**: Separate Dockerfiles for each service (`Dockerfile.interaction-api`, `Dockerfile.query-api`)
+
+#### Infrastructure Updates
+- **Nginx Configuration**: Updated routing to direct requests to appropriate services
+- **Docker Compose**: Updated to orchestrate both services independently
+- **Build Scripts**: Updated to build and deploy both services separately
+
+#### Documentation Updates
+- **Architecture Documentation**: Updated to reflect split service architecture
+- **API Documentation**: Service-specific Swagger documentation for each API
+
 ## 0.2.1.0 -- 2024-12-20
 
 ### Milestone 2 Enhancements & Feedback Response
@@ -72,7 +93,8 @@ src/
 │   └── DomainTypes/  # Domain type definitions
 ├── exe/              # Executable applications
 │   ├── admin/        # Command-line admin tool
-│   └── server/       # REST API server
+│   ├── interaction-api/  # Transaction building and submission API
+│   └── query-api/    # Data querying API
 └── test/             # Comprehensive testing suite
 docs/                 # Complete documentation
 puml/                 # Visual documentation diagrams

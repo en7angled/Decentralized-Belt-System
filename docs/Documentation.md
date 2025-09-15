@@ -116,10 +116,17 @@ The system seeks to:
 >   - **BJJ-DApp Frontend**: The web interface for practitioners, masters, and organizations.  
 >   - **3rd Party Browser Wallet** (e.g., Eternl, Lace): For signing transactions.
 > - **Backend**  
->   - **Interactions Service**: Builds transactions for promotions, achievements, membership.  
->   - **Chain Sync Service**: Monitors the Cardano blockchain for updates.  
->   - **Lookups Service**: Provides quick queries for ranks, achievements, etc.  
+>   - **Interaction API Service**: Builds and submits transactions for promotions, achievements, membership. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth).  
+>   - **Query API Service**: Provides queries for profiles, promotions, and belts. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth). Supports `?liveprojection=true` to read directly from chain vs projected DB.  
+>   - **Chain Sync Service** : Monitors the Cardano blockchain and projects data into SQLite.  
+>     - Exposes a probe API: `GET /health`, `GET /ready` (default port 8084)
+>     - Health returns sync metrics including `chain_sync_state`
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
+> - **Libraries**  
+>   - **onchain**: Plutus smart contracts and blockchain logic
+>   - **webapi**: Web infrastructure (Auth, Health, CORS)
+>   - **chainsync**: Generic chain synchronization utilities  
+>   - **offchain**: Domain logic and supporting infrastructure
 > - **Persistence** : A database or index for quick lookups of ranks, achievements, memberships (off-chain).
 
 

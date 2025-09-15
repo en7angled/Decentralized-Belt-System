@@ -1,4 +1,4 @@
-import BJJPropertyTests  
+import BJJPropertyTests
 -- import ValidatorPropertyTests
 import Test.Tasty (defaultMain, testGroup)
 import UnitTests (unitTests)

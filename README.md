@@ -38,9 +38,9 @@ The **Decentralized Belt System** aims to bring **transparency** and **trust** t
 >   - **BJJ-DApp Frontend**: The web interface for practitioners, masters, and organizations.  
 >   - **3rd Party Browser Wallet** (e.g., Eternl, Lace): For signing transactions.
 > - **Backend**  
->   - **Interactions Service**: Builds transactions for promotions, achievements, membership.  
+>   - **Interaction API Service**: Builds and submits transactions for promotions, achievements, membership.  
+>   - **Query API Service**: Provides quick queries for ranks, achievements, profiles, etc.  
 >   - **Chain Sync Service**: Monitors the Cardano blockchain for updates.  
->   - **Lookups Service**: Provides quick queries for ranks, achievements, etc.  
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
 > - **Persistence** : A database or index for quick lookups of ranks, achievements, memberships (off-chain).
 
@@ -56,23 +56,57 @@ For more details, see :
 ```plaintext
 .
 ├── src/
-│   ├── lib/              # Core library modules
-│   │   ├── DomainTypes/  # Domain-specific types and DTOs
-│   │   ├── Onchain/      # Cardano smart contracts (validators and minting policies)
-│   │   ├── TxBuilding/   # Transaction building utilities
-│   │   └── Utils.hs      # Common utilities
-│   ├── exe/              # Executable applications
-│   │   ├── admin/        # Command-line admin tool
-│   │   └── server/       # REST API server
-│   └── test/             # Test suites
-│       ├── TestRuns.hs   # Integration tests
-│       ├── UnitTests.hs  # Unit tests
-│       └── BJJPropertyTests.hs # Property-based tests
-├── docs/                 # Documentation, specifications, diagrams
-├── puml/                 # Plantuml diagrams
-├── out/                  # Images of plantuml diagrams
-└── README.md             # This file
+│   ├── lib/                          # 📁 All libraries organized here
+│   │   ├── onchain-lib/             # 🔗 Onchain logic (Plutus smart contracts)
+│   │   │   └── Onchain/             # Validators, minting policies, protocols
+│   │   ├── webapi-lib/              # 🌐 Web infrastructure
+│   │   │   └── WebAPI/              # Auth, Health, CORS modules
+│   │   ├── chainsync-lib/           # ⛓️ Generic chain sync utilities
+│   │   │   ├── KupoClient.hs        # Kupo API client
+│   │   │   └── KupoAtlas.hs         # Data conversion utilities
+│   │   └── offchain-lib/            # 🏛️ Domain + infrastructure
+│   │       ├── DomainTypes/         # Domain-specific types and DTOs
+│   │       ├── TxBuilding/          # Transaction building utilities
+│   │       ├── Storage.hs           # Database operations
+│   │       ├── Ingestion.hs         # Event projection
+│   │       ├── Constants.hs         # Configuration constants
+│   │       └── Utils.hs             # Common utilities
+│   ├── exe/                         # 📁 Executable applications
+│   │   ├── admin/                   # Command-line admin tool
+│   │   ├── chain-sync/              # Blockchain synchronization service
+│   │   ├── interaction-api/         # Transaction building and submission API
+│   │   └── query-api/               # Data querying API
+│   └── test/                        # Test suites
+│       ├── TestRuns.hs              # Integration tests
+│       ├── UnitTests.hs             # Unit tests
+│       └── BJJPropertyTests.hs      # Property-based tests
+├── docs/                            # Documentation, specifications, diagrams
+├── puml/                            # Plantuml diagrams
+├── out/                             # Images of plantuml diagrams
+└── README.md                        # This file
 ```
+
+### 4.1 Library Architecture
+
+The project is organized into **4 distinct libraries** with clear separation of concerns:
+
+- **📦 onchain** - Plutus smart contracts and blockchain logic
+- **📦 webapi** - Web infrastructure (Auth, Health, CORS)  
+- **📦 chainsync** - Generic chain synchronization utilities
+- **📦 offchain** - Domain logic and supporting infrastructure
+
+**Dependency Flow:**
+```
+chainsync → offchain → webapi
+    ↓         ↓         ↓
+   onchain ← onchain ← onchain
+```
+
+This architecture ensures:
+- **🔧 Maximum Reusability**: Generic components can be used by other projects
+- **🏗️ Clean Separation**: Domain logic is separate from infrastructure
+- **📈 Scalability**: Each library can evolve independently
+- **🧪 Testability**: Components can be tested in isolation
 
 ## 5. Installation & Setup
 
@@ -98,9 +132,9 @@ cd Decentralized-Belt-System
  direnv allow
 ``` 
 
- * Install:
+ * Build:
 ```bash
- cabal install
+cabal build all
 ``` 
 
  * The test suite for operations (transactions) can be run with the following command:
@@ -144,6 +178,8 @@ admin deploy-reference-scripts
 
 ## 6. Usage
 
+### 6.1 Command Line Interface
+
 ```bash
 admin --help
 ```
@@ -171,11 +207,60 @@ Available commands:
   create-profile-with-rank Create a profile with initial rank
 ```
 
+### 6.2 API Services
+
+The system provides two independent API services:
+
+#### **Interaction API** (Port 8082)
+- **Build Transaction**: `POST /build-tx` - Builds transaction for interactions
+- **Submit Transaction**: `POST /submit-tx` - Submits signed transactions
+- **Swagger UI**: `http://localhost:8082/swagger-ui/`
+- **Authentication**: All endpoints require HTTP Basic Auth. Defaults: `BASIC_USER=cardano`, `BASIC_PASS=lovelace` (override via env).
+
+#### **Query API** (Port 8083)  
+- **Profiles**: `GET /practitioner/{id}`, `GET /organization/{id}`, `GET /profiles`
+- **Promotions**: `GET /promotions` - Query pending promotions
+- **Belts**: `GET /belts`, `GET /belts/count`, `GET /belts/frequency`
+- **Swagger UI**: `http://localhost:8083/swagger-ui/`
+- **Authentication**: All endpoints require HTTP Basic Auth (same defaults). Swagger UI is public.
+- **Projection mode**: add `?liveprojection=true` to query live data; otherwise the projected SQLite DB is used. Standard `limit`, `offset`, filter params are available per Swagger.
+
+### 6.3 Executables & Local Run
+
+Executables produced by the build:
+
+- `admin` — CLI for deploying scripts and managing actions
+- `interaction-api` — HTTP API for building and submitting transactions (port 8082)
+- `query-api` — HTTP API for reading data and statistics (port 8083)
+- `chainsync-service` — Chain sync and probe service (port 8084)
+
+Run locally:
+
+```bash
+# Start interaction API (uses ATLAS_CORE_CONFIG, DEPLOYED_VALIDATORS_CONFIG)
+cabal run interaction-api
+
+# Start query API (uses ATLAS_CORE_CONFIG, LOOKUP_PATH)
+cabal run query-api
+
+# Start chain-sync service (uses KUPO_URL, LOOKUP_PATH)
+cabal run chainsync-service
+```
+
+Environment variables:
+
+- Interaction API: `ATLAS_CORE_CONFIG` (JSON or default file `config/config_atlas.json`), `DEPLOYED_VALIDATORS_CONFIG` (JSON or default file `config/config_bjj_validators.json`), `BASIC_USER`, `BASIC_PASS`, `PORT` (default 8082)
+- Query API: `ATLAS_CORE_CONFIG`, `LOOKUP_PATH` (default `db/chainsync.sqlite`), `BASIC_USER`, `BASIC_PASS`, `PORT` (default 8083)
+- Chain Sync: `KUPO_URL` (default `http://localhost:1442`), `LOOKUP_PATH` (default `db/chainsync.sqlite`), `BATCH_SIZE`, `FETCH_BATCH_SIZE`, `PORT` (default 8084)
+
+#### **Chain Sync Probe** (Port 8084)
+- **Health**: `GET /health` - Returns service health and current sync metrics
+- **Readiness**: `GET /ready` - Indicates readiness (DB/migrations complete)
 
 
 ## 7. License
-This project is licensed under the GNU GENERAL PUBLIC LICENSE v3.   
-See the [LICENSE](https://www.gnu.org/licenses/gpl-3.0.html) file for details.
+This project is licensed under the MIT License.  
+See the `LICENSE` file for details.
 
 
 ## 8. Contributions, Feedback and Support

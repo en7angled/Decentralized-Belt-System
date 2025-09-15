@@ -1,0 +1,13 @@
+{
+    "action": {
+        "AcceptPromotionAction": {
+            "promotion_id": "b831e9c236a1068f969db151a96b92004e8b1eb0ea3f82d6f373eccc.edc21b93bce64a28f632500c7a12416777dfb7a0b80286a81adf64ac"
+        }
+    },
+    "userAddresses": {
+        "usedAddresses": [
+            "00595af62ef1c4767fde290dcfb2abb076f66a1870d542281c4ae307806a099518d9af489d3f7041f178a396cd1b0676aa032487cba64b3d11"
+        ],
+        "changeAddress": "00595af62ef1c4767fde290dcfb2abb076f66a1870d542281c4ae307806a099518d9af489d3f7041f178a396cd1b0676aa032487cba64b3d11"
+    }
+}
