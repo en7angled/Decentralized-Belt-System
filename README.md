@@ -34,6 +34,7 @@ The **Decentralized Belt System** aims to bring **transparency** and **trust** t
 
 ![ComponentDiagram](/out/puml/ComponentDiagram/ComponentDiagram.png)
 
+
 > - **Web Browser**  
 >   - **BJJ-DApp Frontend**: The web interface for practitioners, masters, and organizations.  
 >   - **3rd Party Browser Wallet** (e.g., Eternl, Lace): For signing transactions.
