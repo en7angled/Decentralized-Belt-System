@@ -91,3 +91,6 @@ COPY *.cabal cabal.project ./
 RUN cabal update
 RUN cabal build --only-dependencies
 
+# Copy sources and build chainsync-service
+COPY src ./src
+COPY config ./config

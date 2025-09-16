@@ -12,7 +12,6 @@ ENV CC=musl-gcc
 ENV LD=musl-gcc
 
 
-COPY src ./src
 
 
 RUN cabal install interaction-api --enable-executable-static --overwrite-policy=always --installdir=.  --install-method=copy --ghc-options="-optl=-static -optl=-pthread -optc=-static"
