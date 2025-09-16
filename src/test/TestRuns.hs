@@ -28,8 +28,10 @@ import Utils
 
 ------------------------------------------------------------------------------------------------
 
-deployReferenceScriptRun :: (GYTxGameMonad m, HasCallStack) => GYScript PlutusV3 -> User -> User -> m GYTxOutRef
-deployReferenceScriptRun validator fromWallet toWallet = asUser fromWallet $ addRefScript (userChangeAddress toWallet) (validatorToScript validator)
+deployReferenceScriptRun :: (GYTxGameMonad m, HasCallStack) => GYScript PlutusV3 -> User -> User -> m (GYScriptHash, GYTxOutRef)
+deployReferenceScriptRun validator fromWallet toWallet = asUser fromWallet $ do
+  ref <- addRefScript (userChangeAddress toWallet) (validatorToScript validator)
+  return (scriptHash validator, ref)
 
 ------------------------------------------------------------------------------------------------
 
@@ -39,14 +41,14 @@ deployReferenceScriptRun validator fromWallet toWallet = asUser fromWallet $ add
 
 deployBJJValidators :: (GYTxGameMonad m, HasCallStack) => User -> m DeployedScriptsContext
 deployBJJValidators w = do
-  refProfilesValidator <- deployReferenceScriptRun profilesValidatorGY w w
-  refRanksValidator <- deployReferenceScriptRun ranksValidatorGY w w
-  refMintingPolicy <- deployReferenceScriptRun mintingPolicyGY w w
+  (pVhash, refProfilesValidator) <- deployReferenceScriptRun profilesValidatorGY w w
+  (rVhash, refRanksValidator) <- deployReferenceScriptRun ranksValidatorGY w w
+  (mphash, refMintingPolicy) <- deployReferenceScriptRun mintingPolicyGY w w
   return
     DeployedScriptsContext
-      { profilesValidatorRef = refProfilesValidator,
-        ranksValidatorRef = refRanksValidator,
-        mintingPolicyRef = refMintingPolicy
+      { profilesValidatorHashAndRef = (pVhash, refProfilesValidator),
+        ranksValidatorHashAndRef = (rVhash, refRanksValidator),
+        mintingPolicyHashAndRef = (mphash, refMintingPolicy)
       }
 
 bjjInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> ProfileActionType -> Maybe GYAddress -> m (GYTxId, GYAssetClass)

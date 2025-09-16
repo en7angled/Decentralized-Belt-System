@@ -9,7 +9,8 @@ import Onchain.Protocol
 import Onchain.RanksValidator qualified as RanksValidator (ranksCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
-import PlutusTx.Prelude
+import PlutusTx.Prelude hiding (($))
+import qualified Constants
 
 ------------------------------------------------------------------------------------------------
 
@@ -70,3 +71,25 @@ mintingPolicyGY = validatorFromPlutus mintingPolicyPlutus
 
 mintingPolicyHashGY :: GYScriptHash
 mintingPolicyHashGY = validatorHash mintingPolicyGY
+
+------------------------------------------------------------------------------------------------
+
+-- *  Export Validators
+
+------------------------------------------------------------------------------------------------
+
+exportProfilesValidator :: IO ()
+exportProfilesValidator = writeScript @'PlutusV3 Constants.defaultProfilesValidatorFile $ validatorToScript profilesValidatorGY
+
+exportRanksValidator :: IO ()
+exportRanksValidator = writeScript @'PlutusV3 Constants.defaultRanksValidatorFile $ validatorToScript ranksValidatorGY
+
+exportMintingPolicy :: IO ()
+exportMintingPolicy = writeScript @'PlutusV3 Constants.defaultMintingPolicyFile $ mintingPolicyToScript mintingPolicyGY
+
+
+exportValidators :: IO ()
+exportValidators = do
+  exportProfilesValidator
+  exportRanksValidator
+  exportMintingPolicy

@@ -87,7 +87,7 @@ runBJJActionWithPK txBuildingCtx@TxBuildingContext {..} skey action optionalReci
   txId <- submitTxAndWaitForConfirmation True (ctxProviders providerCtx) txSigned
   return (txId, assetClass)
 
-deployReferenceScript :: ProviderCtx -> GYScript 'PlutusV3 -> GYExtendedPaymentSigningKey -> IO GYTxOutRef
+deployReferenceScript :: ProviderCtx -> GYScript 'PlutusV3 -> GYExtendedPaymentSigningKey -> IO (GYScriptHash, GYTxOutRef)
 deployReferenceScript providerCtx script skey = do
   let my_addr = addressFromSkey providerCtx skey
   putStrLn $ yellowColorString $ "Deploying reference script"
@@ -97,17 +97,17 @@ deployReferenceScript providerCtx script skey = do
   let txSigned = signGYTxBody txBody [skey]
   putStrLn $ yellowColorString ("Built and signed by: \n\t" <> Data.Text.unpack (addressToText my_addr))
   gyTxId <- submitTxAndWaitForConfirmation True (ctxProviders providerCtx) txSigned
-  return $ txOutRefFromTuple (gyTxId, 0)
+  return ( scriptHash script, txOutRefFromTuple (gyTxId, 0))
 
 deployReferenceScripts :: ProviderCtx -> GYExtendedPaymentSigningKey -> IO DeployedScriptsContext
 deployReferenceScripts providerCtx skey = do
-  refMintingPolicy <- deployReferenceScript providerCtx mintingPolicyGY skey
-  refProfilesValidator <- deployReferenceScript providerCtx profilesValidatorGY skey
-  refRanksValidator <- deployReferenceScript providerCtx ranksValidatorGY skey
+  mp <- deployReferenceScript providerCtx mintingPolicyGY skey
+  pv <- deployReferenceScript providerCtx profilesValidatorGY skey
+  rv <- deployReferenceScript providerCtx ranksValidatorGY skey
   return
     DeployedScriptsContext
-      { profilesValidatorRef = refProfilesValidator,
-        ranksValidatorRef = refRanksValidator,
-        mintingPolicyRef = refMintingPolicy
+      { mintingPolicyHashAndRef = mp,
+        profilesValidatorHashAndRef = pv,
+        ranksValidatorHashAndRef = rv
       }
 
