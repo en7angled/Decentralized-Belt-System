@@ -19,7 +19,7 @@ services:
       start_period: 10s
     restart: unless-stopped
   chainsync:
-    image: mariusgeorgescu/bjj-chainsync:0f82d7d
+    image: mariusgeorgescu/bjj-chainsync:develop
     container_name: bjj-chainsync
     environment:
       - KUPO_URL=https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run
@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
 
   interaction-api:
-    image: mariusgeorgescu/bjj-interaction-api:0f82d7d
+    image: mariusgeorgescu/bjj-interaction-api:develop
     container_name: bjj-interaction-api
     environment:
       - PORT=8082
@@ -63,7 +63,7 @@ services:
       start_period: 10s
 
   query-api:
-    image: mariusgeorgescu/bjj-query-api:0f82d7d
+    image: mariusgeorgescu/bjj-query-api:develop
     container_name: bjj-query-api
     environment:
       - PORT=8083
