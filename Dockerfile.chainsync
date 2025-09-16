@@ -109,4 +109,3 @@ ENV KUPO_URL=http://localhost:1442 \
     FETCH_BATCH_SIZE=10000000
 
 ENTRYPOINT ["/app/chainsync-service"]
-

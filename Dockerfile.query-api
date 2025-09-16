@@ -3,7 +3,6 @@
 ### STAGE 1: Build ###
 FROM --platform=$TARGETPLATFORM bjj-builder:9.6.6 AS builder
 
-
 # Building My Project 
 WORKDIR /Decentralized-Belt-System
 
@@ -11,7 +10,6 @@ ENV PATH="/root/.cabal/bin:$PATH"
 
 ENV CC=musl-gcc
 ENV LD=musl-gcc
-
 
 
 RUN cabal install query-api --enable-executable-static --overwrite-policy=always --installdir=.  --install-method=copy --ghc-options="-optl=-static -optl=-pthread -optc=-static"
