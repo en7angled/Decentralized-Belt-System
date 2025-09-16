@@ -87,7 +87,7 @@ ENV CC=musl-gcc
 ENV LD=musl-gcc
 
 # Prime cabal
-COPY *.cabal cabal.project ./
+COPY *.cabal cabal.project cabal.project.freeze ./
 RUN cabal update
 RUN cabal build --only-dependencies
 
