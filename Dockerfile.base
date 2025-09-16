@@ -89,7 +89,7 @@ ENV LD=musl-gcc
 # Prime cabal
 COPY *.cabal cabal.project cabal.project.freeze ./
 RUN cabal update
-RUN cabal build --only-dependencies
+RUN cabal build --only-dependencies --enable-tests 
 
 # Copy sources and build chainsync-service
 COPY src ./src
