@@ -26,24 +26,29 @@ evaluateChainSyncState :: KupoCheckpoint -> KupoCheckpoint -> ChainSyncState
 evaluateChainSyncState localTip@(KupoCheckpoint localSlot localHeader) blockchainTip@(KupoCheckpoint blockchainSlot blockchainHeader)
   | localTip == blockchainTip = UpToDate
   | localSlot == blockchainSlot && localHeader /= blockchainHeader = UpToDateButDifferentBlockHash
-  | localSlot < blockchainSlot = Behind
+  | localSlot < blockchainSlot = Behind (blockchainSlot - localSlot > 1200) -- if the difference is more than 1200 slots, we consider it way behind
   | localSlot > blockchainSlot = Ahead
   | otherwise = error "Impossible state in evaluateChainSyncState"
 
 updateLocalTip :: ConnectionPool -> KupoCheckpoint -> IO ()
 updateLocalTip pool tip = do
-  runSqlPool (do
-    putCursor (ChainCursor True (ck_slot_no tip) (ck_header_hash tip) Nothing Nothing)
-    ) pool
+  runSqlPool
+    ( do
+        putCursor (ChainCursor True (ck_slot_no tip) (ck_header_hash tip) Nothing Nothing)
+    )
+    pool
+  putStrLn $ "Local tip updated to: " <> show tip
 
 getLocalTip :: ConnectionPool -> IO KupoCheckpoint
 getLocalTip pool = do
-  runSqlPool (do
-    mCur <- getCursorValue
-    case mCur of
-      Just cur -> return (KupoCheckpoint (chainCursorSlotNo cur) (chainCursorHeaderHash cur))
-      Nothing -> return (KupoCheckpoint 0 "")
-    ) pool
+  runSqlPool
+    ( do
+        mCur <- getCursorValue
+        case mCur of
+          Just cur -> return (KupoCheckpoint (chainCursorSlotNo cur) (chainCursorHeaderHash cur))
+          Nothing -> return (KupoCheckpoint 0 "")
+    )
+    pool
 
 findCheckpoint :: String -> Integer -> Integer -> IO KupoCheckpoint
 findCheckpoint kupoUrl stepSize curSlot = do
@@ -109,14 +114,14 @@ fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool start end bat
         Right matches -> do
           applyMatches GYTestnetPreview pool matches
           now <- getCurrentTime
-          modifyMVar_ metricsVar $ \m -> pure m {smLastSyncTime = now}
+          modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = endInterval, smLastSyncTime = now}
 
       fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool endInterval end batch_size
 
 applyMatches :: GYNetworkId -> ConnectionPool -> [KupoMatch] -> IO ()
 applyMatches _networkId _pool [] = return ()
-applyMatches networkId pool matches =
-  runSqlPool (do
-    liftIO $ putStrLn ("-----------------------------------------> Applying matches: " <> show (length matches))
-    forM_ matches (putMatchAndProjections networkId)
-    ) pool
+applyMatches networkId pool matches = do
+  liftIO $ putStrLn ("-----------------------------------------> Applying matches: " <> show (length matches))
+  runSqlPool
+    (forM_ matches (putMatchAndProjections networkId))
+    pool

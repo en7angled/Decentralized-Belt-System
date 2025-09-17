@@ -1,0 +1,112 @@
+name: Interaction API CI/CD
+
+on:
+  push:
+    branches: [develop, main]
+    tags:
+      - 'v*.*.*'
+    paths:
+      - 'Dockerfile.base'
+      - 'Dockerfile.interaction-api'
+      - 'src/**'
+      - 'config/**'
+      - 'Decentralized-Belt-System.cabal'
+      - '.github/workflows/interaction-api.yml'
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'Dockerfile.base'
+      - 'Dockerfile.interaction-api'
+      - 'src/**'
+      - 'config/**'
+      - 'Decentralized-Belt-System.cabal'
+      - '.github/workflows/interaction-api.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: interaction-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build base builder image
+        run: docker build -t bjj-builder:9.6.6 -f Dockerfile.base .
+
+      - name: Cabal build and test
+        run: |
+          docker run --rm \
+            -v $PWD:/Decentralized-Belt-System \
+            -w /Decentralized-Belt-System \
+            bjj-builder:9.6.6 \
+            bash -lc "cabal update && cabal build all && cabal test --test-show-details=direct"
+
+  build-and-push:
+    runs-on: self-hosted
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        shell: bash
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            IMAGE="local/bjj-interaction-api-ci"
+            TAGS="$IMAGE:$SHORT_SHA"
+          else
+            IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/bjj-interaction-api"
+            TAGS="$IMAGE:$SHORT_SHA"
+            if [[ "${GITHUB_REF}" == "refs/heads/develop" ]]; then
+              TAGS="$TAGS $IMAGE:develop"
+            fi
+            if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+              TAGS="$TAGS $IMAGE:latest"
+            fi
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              TAGS="$TAGS $IMAGE:${GITHUB_REF_NAME}"
+            fi
+          fi
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build base builder image
+        run: docker build -t bjj-builder:9.6.6 -f Dockerfile.base .
+
+      - name: Build service image
+        shell: bash
+        run: |
+          docker build -t ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.short_sha }} -f Dockerfile.interaction-api .
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            if [[ "$tag" != "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.short_sha }}" ]]; then
+              docker tag ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.short_sha }} "$tag"
+            fi
+          done
+
+      - name: Push images
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: bash
+        run: |
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            docker push "$tag"
+          done
+
+

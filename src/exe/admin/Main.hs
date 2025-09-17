@@ -315,15 +315,18 @@ executeCommand :: Either ProviderCtx TxBuildingContext -> GYExtendedPaymentSigni
 executeCommand (Left pCtx) signKey cmd = case cmd of
   DeployReferenceScripts -> do
     printYellow "Deploying reference scripts..."
-    txBuildingCtx <- deployReferenceScripts pCtx signKey
-    B.writeFile txBuldingContextFile (encode . toJSON $ txBuildingCtx)
+    deployedScriptsCtx <- deployReferenceScripts pCtx signKey
+    B.writeFile txBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
     printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> txBuldingContextFile
   _ -> do
     printYellow "No transaction building context found."
     printYellow "Please run 'deploy-reference-scripts' first to set up the system."
 executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
   DeployReferenceScripts -> do
-    printYellow "Transaction building context already exists, skipping deployment."
+    printYellow "Deploying reference scripts..."
+    deployedScriptsCtx <- deployReferenceScripts (providerCtx txBuildingCtx) signKey
+    B.writeFile txBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
+    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> txBuldingContextFile
   InitProfile args -> do
     printYellow "Initializing profile..."
     let actionType = initProfileToActionType args

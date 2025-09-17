@@ -101,7 +101,6 @@ component BackEnd  as "BackEnd Services"  #LightGray   {
     Lookups --> CardanoProvider : veryfy\n scripts\n availability
 
     ChainSync --> Kupo : monitor
-    ChainSync --> CardanoProvider : get mintingpolicy & addresses)
     ChainSync --> Projections : uspert
     Lookups --> Projections : query
 

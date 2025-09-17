@@ -15,12 +15,21 @@ import Prelude
 
 -- | Context for deployed scripts transaction building operations
 data DeployedScriptsContext = DeployedScriptsContext
-  { mintingPolicyRef :: GYTxOutRef,
-    profilesValidatorRef :: GYTxOutRef,
-    ranksValidatorRef :: GYTxOutRef
+  { mintingPolicyHashAndRef :: (GYScriptHash, GYTxOutRef),
+    profilesValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
+    ranksValidatorHashAndRef :: (GYScriptHash, GYTxOutRef)
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (ToJSON, FromJSON)
+
+getMintingPolicyRef :: DeployedScriptsContext -> GYTxOutRef
+getMintingPolicyRef ctx = snd $ mintingPolicyHashAndRef ctx
+
+getProfilesValidatorRef :: DeployedScriptsContext -> GYTxOutRef
+getProfilesValidatorRef ctx = snd $ profilesValidatorHashAndRef ctx
+
+getRanksValidatorRef :: DeployedScriptsContext -> GYTxOutRef
+getRanksValidatorRef ctx = snd $ ranksValidatorHashAndRef ctx
 
 ------------------------------------------------------------------------------------------------
 

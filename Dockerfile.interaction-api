@@ -2,7 +2,6 @@
 
 FROM --platform=$TARGETPLATFORM bjj-builder:9.6.6 AS builder
 
-
 # Building My Project 
 
 WORKDIR /Decentralized-Belt-System
@@ -10,10 +9,6 @@ WORKDIR /Decentralized-Belt-System
 ENV PATH="/root/.cabal/bin:$PATH"
 ENV CC=musl-gcc
 ENV LD=musl-gcc
-
-
-COPY src ./src
-
 
 RUN cabal install interaction-api --enable-executable-static --overwrite-policy=always --installdir=.  --install-method=copy --ghc-options="-optl=-static -optl=-pthread -optc=-static"
 
@@ -25,7 +20,6 @@ FROM --platform=$TARGETPLATFORM alpine:3.20 AS runtime
 # Install common dependencies
 RUN apk add  bash curl ca-certificates git pkgconfig build-base \
     automake autoconf libtool gmp-dev zlib-dev musl-dev musl-utils
-
 
 # Cardano Dependencies - Alpine equivalent
 RUN apk add  \

@@ -17,7 +17,7 @@ import Servant
 import WebAPI.CORS qualified
 import WebAPI.ServiceProbe
 
-data ChainSyncState = UpToDate | UpToDateButDifferentBlockHash | Behind | Ahead
+data ChainSyncState = UpToDate | UpToDateButDifferentBlockHash | Behind {isWayBehind :: Bool}| Ahead
   deriving (Show, Eq, Generic, ToJSON, FromJSON, ToSchema)
 
 data SyncMetrics = SyncMetrics
@@ -67,6 +67,7 @@ serviceProbeServer metricsVar = handleHealth' :<|> handleReady'
 
       case chainsyncState of
         UpToDate -> pure probeStatus
+        Behind False -> pure probeStatus
         _ ->
           throwError
             err503

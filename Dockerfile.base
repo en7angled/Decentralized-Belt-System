@@ -78,7 +78,6 @@ RUN git clone https://github.com/supranational/blst && \
 
 
 ## Stage 1 base toolchain and crypto libs are provided by bjj-builder
-
 # Build workspace
 WORKDIR /Decentralized-Belt-System
 
@@ -87,7 +86,10 @@ ENV CC=musl-gcc
 ENV LD=musl-gcc
 
 # Prime cabal
-COPY *.cabal cabal.project ./
+COPY *.cabal cabal.project cabal.project.freeze ./
 RUN cabal update
-RUN cabal build --only-dependencies
+RUN cabal build --only-dependencies --enable-tests 
 
+# Copy sources and build chainsync-service
+COPY src ./src
+COPY config ./config

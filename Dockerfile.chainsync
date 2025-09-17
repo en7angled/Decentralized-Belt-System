@@ -10,9 +10,6 @@ ENV CC=musl-gcc
 ENV LD=musl-gcc
 
 
-# Copy sources and build chainsync-service
-COPY src ./src
-COPY config ./config
 
 RUN cabal install chainsync-service \
     --enable-executable-static \
@@ -112,4 +109,3 @@ ENV KUPO_URL=http://localhost:1442 \
     FETCH_BATCH_SIZE=10000000
 
 ENTRYPOINT ["/app/chainsync-service"]
-
