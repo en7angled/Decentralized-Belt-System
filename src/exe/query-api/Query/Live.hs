@@ -160,3 +160,17 @@ getBeltTotals = do
   let allBelts = Prelude.map rankBelt allRanks
   let beltTotals = toOccurList . fromList $ allBelts
   return beltTotals
+
+getProfileTypeTotals :: (MonadReader QueryAppContext m, MonadIO m) => m [(ProfileType, Int)]
+getProfileTypeTotals = do
+  allProfiles <- getProfiles Nothing Nothing Nothing
+  let allTypes = Prelude.map profileType allProfiles
+  let typeTotals = toOccurList . fromList $ allTypes
+  return typeTotals
+
+getPromotionBeltTotals :: (MonadReader QueryAppContext m, MonadIO m) => m [(BJJBelt, Int)]
+getPromotionBeltTotals = do
+  allPromotions <- getPromotions Nothing Nothing Nothing
+  let allBelts = Prelude.map promotionBelt allPromotions
+  let beltTotals = toOccurList . fromList $ allBelts
+  return beltTotals

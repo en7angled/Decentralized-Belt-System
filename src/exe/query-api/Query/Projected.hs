@@ -273,3 +273,25 @@ getBeltTotals = do
     let belts = Prelude.map unValue rows
     pure (toOccurList . fromList $ belts)
     ) pool
+
+getProfileTypeTotals :: (MonadIO m, MonadReader QueryAppContext m) => m [(ProfileType, Int)]
+getProfileTypeTotals = do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
+    rows <- select $ do
+      pp <- from $ table @ProfileProjection
+      pure (pp ^. ProfileProjectionProfileType)
+    let profileTypes = Prelude.map unValue rows
+    pure (toOccurList . fromList $ profileTypes)
+    ) pool
+
+getPromotionBeltTotals :: (MonadIO m, MonadReader QueryAppContext m) => m [(BJJBelt, Int)]
+getPromotionBeltTotals = do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
+    rows <- select $ do
+      pr <- from $ table @PromotionProjection
+      pure (pr ^. PromotionProjectionPromotionBelt)
+    let belts = Prelude.map unValue rows
+    pure (toOccurList . fromList $ belts)
+    ) pool

@@ -87,6 +87,25 @@ type Profiles =
         :> QueryFlag "liveprojection"
         :> Get '[JSON] [Profile]
     )
+    :<|>
+    -- Get profiles count endpoint
+    ( Summary "Get Profiles Count"
+        :> Description "Get Profiles Count"
+        :> "profiles"
+        :> "count"
+        :> QueryParam' '[Optional] "profile_type" ProfileType
+        :> QueryFlag "liveprojection"
+        :> Get '[JSON] Int
+    )
+    :<|>
+    -- Get profiles frequency endpoint
+    ( Summary "Get Profiles Frequency"
+        :> Description "Get Profiles Frequency by Type"
+        :> "profiles"
+        :> QueryFlag "liveprojection"
+        :> "frequency"
+        :> Get '[JSON] [(ProfileType, Int)]
+    )
 
 -- Health handlers moved to WebAPI.Health
 
@@ -133,8 +152,23 @@ handleGetProfiles limit offset profileRefs profileType orderBy sortOrder livePro
     then L.getProfiles limitOffset profileFilter order
     else P.getProfiles limitOffset profileFilter order
 
+handleGetProfilesCount :: Maybe ProfileType -> Bool -> QueryAppMonad Int
+handleGetProfilesCount profileType liveProjection =
+  if liveProjection
+    then L.getProfilesCount profileType
+    else P.getProfilesCount profileType
+
+handleGetProfilesFrequency :: Bool -> QueryAppMonad [(ProfileType, Int)]
+handleGetProfilesFrequency liveProjection =
+  if liveProjection then L.getProfileTypeTotals else P.getProfileTypeTotals
+
 profilesServer :: ServerT Profiles QueryAppMonad
-profilesServer = handleGetPractitionerProfile :<|> handleGetOrganizationProfile :<|> handleGetProfiles
+profilesServer =
+  handleGetPractitionerProfile
+    :<|> handleGetOrganizationProfile
+    :<|> handleGetProfiles
+    :<|> handleGetProfilesCount
+    :<|> handleGetProfilesFrequency
 
 ------------------------------------------------------------------------------------------------
 
@@ -158,6 +192,28 @@ type Promotions =
       :> QueryFlag "liveprojection"
       :> Get '[JSON] [Promotion]
   )
+    :<|>
+    -- Get promotions count endpoint
+    ( Summary "Get Promotions Count"
+        :> Description "Get Promotions Count"
+        :> "promotions"
+        :> "count"
+        :> QueryParams "profile" ProfileRefAC
+        :> QueryParams "belt" BJJBelt
+        :> QueryParams "achieved_by" ProfileRefAC
+        :> QueryParams "awarded_by" ProfileRefAC
+        :> QueryFlag "liveprojection"
+        :> Get '[JSON] Int
+    )
+    :<|>
+    -- Get promotions frequency endpoint
+    ( Summary "Get Promotions Frequency"
+        :> Description "Get Promotions Frequency by Belt"
+        :> "promotions"
+        :> QueryFlag "liveprojection"
+        :> "frequency"
+        :> Get '[JSON] [(BJJBelt, Int)]
+    )
 
 handleGetPromotions ::
   Maybe Int ->
@@ -193,8 +249,36 @@ handleGetPromotions limit offset profileRefs beltRefs achievedByRefs awardedByRe
     then L.getPromotions limitOffset promotionsFilter order
     else P.getPromotions limitOffset promotionsFilter order
 
+handleGetPromotionsCount ::
+  [ProfileRefAC] ->
+  [BJJBelt] ->
+  [ProfileRefAC] ->
+  [ProfileRefAC] ->
+  Bool ->
+  QueryAppMonad Int
+handleGetPromotionsCount profileRefs beltRefs achievedByRefs awardedByRefs liveProjection = do
+  let promotionsFilter =
+        Just $
+          C.PromotionFilter
+            { C.promotionFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs,
+              C.promotionFilterBelt = if Prelude.null beltRefs then Nothing else Just beltRefs,
+              C.promotionFilterAchievedByProfileId = if Prelude.null achievedByRefs then Nothing else Just achievedByRefs,
+              C.promotionFilterAwardedByProfileId = if Prelude.null awardedByRefs then Nothing else Just awardedByRefs,
+              C.promotionFilterAchievementDateInterval = (Nothing, Nothing)
+            }
+  if liveProjection
+    then L.getPromotionsCount promotionsFilter
+    else P.getPromotionsCount promotionsFilter
+
+handleGetPromotionsFrequency :: Bool -> QueryAppMonad [(BJJBelt, Int)]
+handleGetPromotionsFrequency liveProjection =
+  if liveProjection then L.getPromotionBeltTotals else P.getPromotionBeltTotals
+
 promotionsServer :: ServerT Promotions QueryAppMonad
-promotionsServer = handleGetPromotions
+promotionsServer =
+  handleGetPromotions
+    :<|> handleGetPromotionsCount
+    :<|> handleGetPromotionsFrequency
 
 ------------------------------------------------------------------------------------------------
 
