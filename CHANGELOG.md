@@ -1,6 +1,26 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.2.3.0 -- 2025-01-06
+
+### Query API Enhancements
+
+**Extended Profiles and Promotions APIs with Count and Frequency Endpoints**
+
+#### Profiles API Extensions
+- **GET /profiles/count**: Get total count of profiles with optional `profile_type` filter
+- **GET /profiles/frequency**: Get profile counts grouped by type (`Practitioner`, `Organization`)
+
+#### Promotions API Extensions  
+- **GET /promotions/count**: Get total count of promotions with optional filters (`profile`, `belt`, `achieved_by`, `awarded_by`)
+- **GET /promotions/frequency**: Get promotion counts grouped by belt type
+
+#### Implementation Details
+- Added `getProfileTypeTotals` to `Query/Projected.hs` and `Query/Live.hs`
+- Added `getPromotionBeltTotals` to `Query/Projected.hs` and `Query/Live.hs`
+- All new endpoints support `liveprojection` query flag for live blockchain vs projected database queries
+- Follows the same pattern as existing Belts API Count and Frequency endpoints
+
 ## 0.2.2.0 -- 2024-12-21
 
 ### API Architecture Split
