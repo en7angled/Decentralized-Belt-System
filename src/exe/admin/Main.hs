@@ -37,11 +37,12 @@ printGreen :: String -> IO ()
 printGreen = putStrLn . greenColorString
 
 -- Command data types
+-- NOTE: DeleteProfile command was intentionally removed to preserve lineage integrity.
+-- BJJ belt records are permanent historical facts that should not be erasable.
 data Command
   = DeployReferenceScripts
   | InitProfile InitProfileArgs
   | UpdateProfileImage UpdateProfileImageArgs
-  | DeleteProfile DeleteProfileArgs
   | PromoteProfile PromoteProfileArgs
   | AcceptPromotion AcceptPromotionArgs
   | CreateProfileWithRank CreateProfileWithRankArgs
@@ -59,11 +60,6 @@ data UpdateProfileImageArgs = UpdateProfileImageArgs
   { upiaProfileId :: GYAssetClass,
     upiaImageURI :: T.Text,
     upiaOutputId :: Bool
-  }
-  deriving (Show)
-
-newtype DeleteProfileArgs = DeleteProfileArgs
-  { dpaProfileId :: GYAssetClass
   }
   deriving (Show)
 
@@ -238,14 +234,6 @@ commandParser =
               )
           )
         <> command
-          "delete-profile"
-          ( info
-              ( DeleteProfile . DeleteProfileArgs <$> assetClassParser
-              )
-              ( progDesc "Delete a profile"
-              )
-          )
-        <> command
           "promote-profile"
           ( info
               ( PromoteProfile
@@ -294,10 +282,6 @@ updateProfileImageToActionType :: UpdateProfileImageArgs -> ActionType
 updateProfileImageToActionType UpdateProfileImageArgs {upiaProfileId, upiaImageURI} =
   ProfileAction $ UpdateProfileImageAction upiaProfileId upiaImageURI
 
-deleteProfileToActionType :: DeleteProfileArgs -> ActionType
-deleteProfileToActionType DeleteProfileArgs {dpaProfileId} =
-  ProfileAction $ DeleteProfileAction dpaProfileId
-
 promoteProfileToActionType :: PromoteProfileArgs -> ActionType
 promoteProfileToActionType PromoteProfileArgs {ppaPromotedProfileId, ppaPromotedByProfileId, ppaAchievementDate, ppaPromotedBelt} =
   ProfileAction $ PromoteProfileAction ppaPromotedProfileId ppaPromotedByProfileId ppaAchievementDate ppaPromotedBelt
@@ -343,12 +327,6 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     if upiaOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
       else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
-  DeleteProfile args -> do
-    printYellow "Deleting profile..."
-    let actionType = deleteProfileToActionType args
-    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
-    printGreen "Profile deleted successfully!"
-    printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
   PromoteProfile args -> do
     printYellow "Promoting profile..."
     let actionType = promoteProfileToActionType args

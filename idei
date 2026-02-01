@@ -1,4 +1,79 @@
+PractitionerMembership
+ - startDate
+ - endDate
+ - orgID
+ - previousMembershipId
+
+
+Un practitioner poate avea una sau mai multe memberships pentru fiecare organizatie
+
+
+Pentru o singura organizatie un practitioner poate avea un singur membership activ
+
+
+
+practitionerMemberships: LinkedList (Org, LinkList Memberships) 
+
+ 
+ 
+OrganizationMembership
+ - startDate
+ - endDate
+ - practitionerId
+ - previousMembershipId
+
+
+
+memberships :  LinkList OrganizationMembership
+
+Pentru o singura organizatie un practitioner poate avea un singur membership activ
+
+
+
+P: RequestMembership
+
+O: AcceptMembership
+
+O: GrantMembershiP
+
+P: AcceptMembership
+
+OP: EndMembership
+
+
+
+PendingMembership
+
+
+Membership
+
+
+
+
+
+Memberships blocate la membershipsvalidator
+
+
 Membership
  - startDate
  - endDate
+ - practitionerId
+ - organizationId
+ - previousMembershipId
 
+
+Un practitioner poate avea una sau mai multe memberships pentru fiecare organizatie
+
+
+Pentru o singura organizatie un practitioner poate avea un singur membership activ
+
+
+orderedLinkedList (OP, unOrderedLinkedList Membership)
+
+new memberships to a new organization
+ insert in orderedLinkedList 
+   - se verifica unicitate
+
+new membership to an existing organization
+ insert in unOrderedLinkedList 
+   

@@ -42,6 +42,39 @@ data MetadataFields
 
 makeIsDataSchemaIndexed ''MetadataFields [('Metadata222, 0)]
 
+-- | Maximum allowed sizes for metadata fields (in bytes)
+maxNameLength :: Integer
+maxNameLength = 128
+{-# INLINEABLE maxNameLength #-}
+
+maxDescriptionLength :: Integer
+maxDescriptionLength = 1024
+{-# INLINEABLE maxDescriptionLength #-}
+
+maxImageURILength :: Integer
+maxImageURILength = 256
+{-# INLINEABLE maxImageURILength #-}
+
+-- | Validate metadata field sizes to prevent oversized datums
+{-# INLINEABLE validateMetadataFields #-}
+validateMetadataFields :: MetadataFields -> Bool
+validateMetadataFields Metadata222 {..} =
+  and
+    [ traceIfFalse "Name too long (max 128 bytes)"
+        $ lengthOfByteString metadataName <= maxNameLength,
+      traceIfFalse "Description too long (max 1024 bytes)"
+        $ lengthOfByteString metadataDescription <= maxDescriptionLength,
+      traceIfFalse "Image URI too long (max 256 bytes)"
+        $ lengthOfByteString metadataImageURI <= maxImageURILength
+    ]
+
+-- | Validate image URI size only (for updates)
+{-# INLINEABLE validateImageURI #-}
+validateImageURI :: BuiltinByteString -> Bool
+validateImageURI uri =
+  traceIfFalse "Image URI too long (max 256 bytes)"
+    $ lengthOfByteString uri <= maxImageURILength
+
 -- All UTF-8 encoded keys and values need to be converted into their respective byte's representation when creating the datum on-chain.
 mkCIP68Datum :: a -> MetadataFields -> CIP68Datum a
 mkCIP68Datum extraData Metadata222 {..} =

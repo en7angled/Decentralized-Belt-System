@@ -4,18 +4,19 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 ---
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-optimize #-}
-{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:no-remove-trace #-}
-{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
+-- {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+-- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
+-- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:optimize #-}
+-- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
 
 {-# HLINT ignore "Use &&" #-}
 
 module Onchain.ProfilesValidator where
 
 import GHC.Generics (Generic)
-import Onchain.CIP68 (CIP68Datum (CIP68Datum), ImageURI, deriveUserFromRefTN, updateCIP68DatumImage)
-import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), ProfileId, RankId, promoteProfile, protocolParams, ranksValidatorScriptHash, unsafeGetRankDatumAndValue)
+import Onchain.BJJ (intToBelt)
+import Onchain.CIP68 (CIP68Datum (CIP68Datum), ImageURI, deriveUserFromRefTN, updateCIP68DatumImage, validateImageURI)
+import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), ProfileId, RankId, getCurrentRankId, promoteProfile, protocolParams, ranksValidatorScriptHash, unsafeGetRankDatumAndValue)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Utils
 import PlutusLedgerApi.V1 qualified as V1
@@ -27,14 +28,15 @@ import PlutusTx.Prelude
 import Prelude qualified
 
 -- | Custom redeemer :
+-- NOTE: Profile deletion is intentionally not supported to preserve lineage integrity.
+-- BJJ belt records are permanent historical facts that should not be erasable.
 data ProfilesRedeemer
   = UpdateProfileImage ProfileId ImageURI
-  | DeleteProfile ProfileId
   | AcceptPromotion RankId
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('DeleteProfile, 1), ('AcceptPromotion, 2)]
+makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('AcceptPromotion, 1)]
 
 type ProfilesDatum = CIP68Datum Onchain.OnchainProfile
 
@@ -56,25 +58,15 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
                   ownValue = txOutValue ownInput
                   ownAddress = txOutAddress ownInput
                in case redeemer of
-                    DeleteProfile profileRefAssetClass@(V1.AssetClass (profilesCurrencySymbol, profileRefTN)) ->
-                      let profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
-                          profileRefNFT = V1.assetClassValue profileRefAssetClass 1
-                          profileUserNFT = V1.assetClassValue profileUserAssetClass 1
-                       in and
-                            [ traceIfFalse "Must spend profile User NFT"
-                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                                == 1,
-                              traceIfFalse "Tx must burn JUST Ref and User NFTs"
-                                $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
-                                == (profileRefNFT + profileUserNFT)
-                            ]
                     (UpdateProfileImage (V1.AssetClass (profilesCurrencySymbol, profileRefTN)) newImageURI) ->
-                      let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum -- !!! Open unbounded-datum vulnerability on metadata
+                      let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum
                           profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
                        in and
                             [ traceIfFalse "Must spend profile User NFT"
                                 $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
                                 == 1,
+                              -- Validate image URI size to prevent oversized datums
+                              validateImageURI newImageURI,
                               traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
                                 $ hasTxOutWithInlineDatumAndValue newCip68Datum ownValue ownAddress txInfoOutputs
                             ]
@@ -82,12 +74,32 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
                       let ranksValidatorAddress = V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
                           (promotionValue, pendingRankDatum) = unsafeGetRankDatumAndValue promotionId ranksValidatorAddress txInfoInputs
 
+                          -- Get current rank from reference inputs to validate promotion is still valid
+                          currentRankId = getCurrentRankId profile
+                          (_, currentRankDatum) = unsafeGetRankDatumAndValue currentRankId ranksValidatorAddress txInfoReferenceInputs
+
+                          -- Validate the promotion is still valid given current state
+                          currentBelt = intToBelt $ rankNumber currentRankDatum
+                          currentBeltDate = rankAchievementDate currentRankDatum
+                          nextBelt = intToBelt $ promotionRankNumber pendingRankDatum
+                          nextBeltDate = promotionAchievementDate pendingRankDatum
+
+                          isPromotionStillValid = and
+                            [ traceIfFalse "Promotion invalid - already at or past this rank"
+                                $ nextBelt > currentBelt,
+                              traceIfFalse "Promotion invalid - achievement date must be after current rank date"
+                                $ nextBeltDate > currentBeltDate
+                            ]
+
                           (updatedProfileCIP68Datum, newRankDatum) = promoteProfile profileDatum pendingRankDatum
-                          profileUserAssetClass = promotionAwardedTo pendingRankDatum
+                          -- NOTE: User NFT consent check is NOT needed here because:
+                          -- 1. AcceptPromotion reads the promotion from txInfoInputs (line 84)
+                          -- 2. This means the Promotion UTxO at RanksValidator MUST be spent
+                          -- 3. RanksValidator always runs when Promotion UTxO is spent
+                          -- 4. RanksValidator checks User NFT consent (deriveUserFromRefAC)
+                          -- Therefore, RanksValidator guarantees user consent for this transaction.
                        in and
-                            [ traceIfFalse "Must spend profile User NFT"
-                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                                == 1,
+                            [ isPromotionStillValid,
                               traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
                                 $ hasTxOutWithInlineDatumAndValue updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs,
                               traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"

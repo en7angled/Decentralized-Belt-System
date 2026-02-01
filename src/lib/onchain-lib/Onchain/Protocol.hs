@@ -10,19 +10,21 @@ module Onchain.Protocol where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68 (CIP68Datum (CIP68Datum, extra))
-import Onchain.Utils
+import Onchain.Utils (nameFromTxOutRef, unsafeGetCurrentStateDatumAndValue)
 import PlutusLedgerApi.V1.Value (AssetClass (..))
 import PlutusLedgerApi.V3
   ( Address,
+    CurrencySymbol,
     POSIXTime,
     ScriptHash,
     TokenName (TokenName),
     TxInInfo,
+    TxOutRef,
     Value,
   )
 import PlutusTx
 import PlutusTx.Blueprint
-import PlutusTx.Builtins (serialiseData)
+import PlutusTx.Builtins
 import PlutusTx.Prelude
 import Prelude qualified
 
@@ -108,10 +110,10 @@ makeIsDataSchemaIndexed ''OnchainRank [('Rank, 0), ('Promotion, 1)]
 
 -------------------------------------------------------------------------------
 
-mkPendingRank :: ProfileId -> ProfileId -> POSIXTime -> Integer -> ProtocolParams -> OnchainRank
-mkPendingRank awardedTo awardedBy achievementDate rankNumber protocolParams =
+mkPendingRank :: TxOutRef -> CurrencySymbol -> ProfileId -> ProfileId -> POSIXTime -> Integer -> ProtocolParams -> OnchainRank
+mkPendingRank seedTxOutRef currencySymbol awardedTo awardedBy achievementDate rankNumber protocolParams =
   Promotion
-    { promotionId = generateRankId awardedTo rankNumber,
+    { promotionId = generatePromotionRankId seedTxOutRef currencySymbol,
       promotionAwardedTo = awardedTo,
       promotionAwardedBy = awardedBy,
       promotionAchievementDate = achievementDate,
@@ -186,9 +188,13 @@ getCurrentRankId _ = traceError "OnchainProfile has no rank"
 
 {-# INLINEABLE generateRankId #-}
 generateRankId :: ProfileId -> Integer -> RankId
-generateRankId (AssetClass (cs, TokenName bs)) i = AssetClass (cs, TokenName (takeByteString 28 $ blake2b_256 (bs <> (serialiseData . toBuiltinData) i)))
+generateRankId (AssetClass (cs, TokenName bs)) i = AssetClass (cs, TokenName ( blake2b_224 (bs <> integerToByteString BigEndian 0 i) ))  -- takeByteString 28 $ blake2b_256 (bs <> (serialiseData . toBuiltinData) i))
 
---  TODO : Replace with builtins
+-- | Generate a unique promotion rank ID from a seed TxOutRef
+-- The seed ensures uniqueness since each TxOutRef can only be spent once
+{-# INLINEABLE generatePromotionRankId #-}
+generatePromotionRankId :: TxOutRef -> CurrencySymbol -> RankId
+generatePromotionRankId seed cs = AssetClass (cs, TokenName (nameFromTxOutRef seed))
 
 -------------------------------------------------------------------------------
 

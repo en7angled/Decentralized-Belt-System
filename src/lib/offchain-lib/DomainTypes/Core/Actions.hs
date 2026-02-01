@@ -42,6 +42,8 @@ instance ToSchema ProfileData where
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "profileData"
             }
 
+-- NOTE: DeleteProfileAction is intentionally not supported to preserve lineage integrity.
+-- BJJ belt records are permanent historical facts that should not be erasable.
 data ProfileActionType
   = InitProfileAction
       { profile_data :: ProfileData,
@@ -51,9 +53,6 @@ data ProfileActionType
   | UpdateProfileImageAction
       { profile_id :: ProfileRefAC,
         image_uri :: Text
-      }
-  | DeleteProfileAction
-      { profile_id :: ProfileRefAC
       }
   | PromoteProfileAction
       { promoted_profile_id :: ProfileRefAC,

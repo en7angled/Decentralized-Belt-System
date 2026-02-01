@@ -9,7 +9,7 @@ import Onchain.BJJ (BJJBelt (White), beltToInt)
 import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.MintingPolicy
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Protocol (OnchainRank (..), generateRankId, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, promoteProfile)
+import Onchain.Protocol (OnchainRank (..), generatePromotionRankId, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, promoteProfile)
 import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
@@ -157,36 +157,10 @@ updateProfileTX gyProfileRefAC newImageURI ownAddrs = do
         isLockingUpdatedProfileState
       ]
 
--- | Delete OnChainProfile Transaction Skeleton
-deleteProfileTX ::
-  (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
-  GYAssetClass ->
-  GYAddress ->
-  [GYAddress] ->
-  m (GYTxSkeleton 'PlutusV3)
-deleteProfileTX gyProfileRefAC recipient ownAddrs = do
-  pvRef <- asks getProfilesValidatorRef
-  mpRef <- asks getMintingPolicyRef
-  (_plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyProfileRefAC
-  let gySpendProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ DeleteProfile (assetClassToPlutus gyProfileRefAC)
-  let gyBurnProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ BurnProfileId
-  spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyProfileRefAC gySpendProfileRedeemer profilesValidatorGY
-  gyProfileValue <- valueFromPlutus' plutusProfileValue
-  isGettingProfileValue <- txIsPayingValueToAddress recipient gyProfileValue
+-- NOTE: deleteProfileTX is intentionally not implemented to preserve lineage integrity.
+-- BJJ belt records are permanent historical facts that should not be erasable.
 
-  gyProfileUserAC <- gyDeriveUserFromRefAC gyProfileRefAC
-  spendsProfileUserNFT <- txMustSpendFromAddress gyProfileUserAC ownAddrs
-
-  isBurningProfileRefAndUserNFTs <- txMustBurnCIP68UserAndRef mpRef mintingPolicyGY gyBurnProfileRedeemer gyProfileRefAC
-  return $
-    mconcat
-      [ spendsProfileRefNFT,
-        isGettingProfileValue,
-        spendsProfileUserNFT,
-        isBurningProfileRefAndUserNFTs
-      ]
-
--- Promote ProfileId ProfileId POSIXTime Integer
+-- Promote TxOutRef ProfileId ProfileId POSIXTime Integer
 
 promoteProfileTX ::
   (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
@@ -199,30 +173,62 @@ promoteProfileTX ::
 promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt ownAddrs = do
   mpRef <- asks getMintingPolicyRef
 
+  -- Get a seed TxOutRef for uniqueness (similar to profile creation)
+  seedTxOutRef <- someUTxOWithoutRefScript
+  let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
+  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
+  let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
+
   gyMasterUserAC <- gyDeriveUserFromRefAC gyPromotedByProfileId
   spendsMasterProfileUserNFT <- txMustSpendFromAddress gyMasterUserAC ownAddrs
 
-  let redeemer = Promote (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt)
+  -- Look up student and master profiles to get their current rank IDs
+  (plutusStudentProfileDatum, _) <- getProfileStateDataAndValue gyPromotedProfileId
+  let plutusStudentProfile = extra plutusStudentProfileDatum
+  let studentCurrentRankId = Onchain.getCurrentRankId plutusStudentProfile
+  gyStudentCurrentRankAC <- assetClassFromPlutus' studentCurrentRankId
+
+  (plutusMasterProfileDatum, _) <- getProfileStateDataAndValue gyPromotedByProfileId
+  let plutusMasterProfile = extra plutusMasterProfileDatum
+  let masterCurrentRankId = Onchain.getCurrentRankId plutusMasterProfile
+  gyMasterCurrentRankAC <- assetClassFromPlutus' masterCurrentRankId
+
+  let redeemer = Promote seedTxOutRefPlutus (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt)
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
-  gyPromotionRankAC <- assetClassFromPlutus' $ generateRankId (assetClassToPlutus gyPromotedProfileId) (beltToInt belt)
+  gyPromotionRankAC <- assetClassFromPlutus' $ generatePromotionRankId seedTxOutRefPlutus (mintingPolicyCurrencySymbol mintingPolicyGY)
   isMintingPromotionRank <- txMustMintWithMintRef True mpRef mintingPolicyGY gyRedeemer gyPromotionRankAC
 
-  let pendingRankDatum = mkPendingRank (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt) defaultProtocolParams
+  let pendingRankDatum = mkPendingRank seedTxOutRefPlutus (mintingPolicyCurrencySymbol mintingPolicyGY) (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt) defaultProtocolParams
   isLockingPendingRankState <-
     txMustLockStateWithInlineDatumAndValue
       ranksValidatorGY
       pendingRankDatum
       (valueSingleton gyPromotionRankAC 1 <> valueFromLovelace datumLovelaces)
 
+  -- Add reference inputs for student and master profiles and their current ranks
+  referencesProfilesAndRanks <- txMustHaveUTxOsAsRefInputs
+    [ gyPromotedProfileId
+    , gyPromotedByProfileId
+    , gyStudentCurrentRankAC
+    , gyMasterCurrentRankAC
+    ]
+
   return
     ( mconcat
-        [ spendsMasterProfileUserNFT,
+        [ isSpendingSeedUTxO,
+          spendsMasterProfileUserNFT,
           isMintingPromotionRank,
-          isLockingPendingRankState
+          isLockingPendingRankState,
+          referencesProfilesAndRanks
         ],
       gyPromotionRankAC
     )
 
+-- | Accept a pending promotion
+-- The ProfilesValidator validates:
+-- 1. Student consents (spends their user NFT)
+-- 2. Promotion is still valid (nextBelt > currentBelt, dates in order)
+-- 3. Profile and rank outputs are correct
 acceptPromotionTX ::
   (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
   GYAssetClass ->
@@ -236,8 +242,6 @@ acceptPromotionTX gyPromotionId ownAddrs = do
 
   let studentProfileRefAC = promotionAwardedTo plutusPromotionRankDatum
   gyStudentProfileRefAC <- assetClassFromPlutus' studentProfileRefAC
-  let masterProfileRefAC = promotionAwardedBy plutusPromotionRankDatum
-  gyMasterProfileRefAC <- assetClassFromPlutus' masterProfileRefAC
 
   gyStudentProfileUserAC <- gyDeriveUserFromRefAC gyStudentProfileRefAC
   spendsStudentProfileUserNFT <- txMustSpendFromAddress gyStudentProfileUserAC ownAddrs
@@ -249,11 +253,6 @@ acceptPromotionTX gyPromotionId ownAddrs = do
   let studentCurrentRankId = Onchain.getCurrentRankId plutusStudentProfile
   gyStudentCurrentRankAC <- assetClassFromPlutus' studentCurrentRankId
 
-  (plutusMasterProfileDatum, _plutusMasterProfileValue) <- getProfileStateDataAndValue gyMasterProfileRefAC
-  let plutusMasterProfile = extra plutusMasterProfileDatum
-  let masterCurrentRankId = Onchain.getCurrentRankId plutusMasterProfile
-  gyMasterCurrentRankAC <- assetClassFromPlutus' masterCurrentRankId
-
   let (plutusStudentUpdatedProfileDatum, plutuStudentUpdatedRankDatum) = promoteProfile plutusProfileDatum plutusPromotionRankDatum
 
   gyProfileValue <- valueFromPlutus' plutusProfileValue
@@ -264,7 +263,8 @@ acceptPromotionTX gyPromotionId ownAddrs = do
 
   spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer rvRef gyPromotionId unitRedeemer ranksValidatorGY
 
-  referencesMasterAndStudentProfilesAndRanks <- txMustHaveUTxOsAsRefInputs [gyMasterProfileRefAC, gyStudentProfileRefAC, gyStudentCurrentRankAC, gyMasterCurrentRankAC]
+  -- Reference the student's current rank for acceptance-time validation
+  referencesCurrentRank <- txMustHaveUTxOsAsRefInputs [gyStudentCurrentRankAC]
 
   gyRankAC <- assetClassFromPlutus' $ rankId plutuStudentUpdatedRankDatum
 
@@ -277,7 +277,7 @@ acceptPromotionTX gyPromotionId ownAddrs = do
           isLockingUpdatedStudentProfile,
           spendsPromotionRank,
           isLockingUpdatedRank,
-          referencesMasterAndStudentProfilesAndRanks
+          referencesCurrentRank
         ],
       gyRankAC
     )

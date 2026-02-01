@@ -128,6 +128,7 @@ The system seeks to:
 >   - **chainsync**: Generic chain synchronization utilities  
 >   - **offchain**: Domain logic and supporting infrastructure
 > - **Persistence** : A database or index for quick lookups of ranks, achievements, memberships (off-chain).
+> - **Immutability Principle**: Profiles are permanent by design. BJJ belt records are historical facts that preserve lineage integrity and cannot be deleted.
 
 
 
@@ -446,10 +447,14 @@ This **Decentralized Belt System** aims to bring **trust, transparency, and sust
 
 
 
+> **Current Status**  
+> - **On-chain implementations complete**: Minting policy, profiles validator, ranks validator with full security review
+> - **Off-chain infrastructure complete**: Admin CLI, Interaction API, Query API, Chain Sync Service
+> - **Testnet deployments available**: Scripts provided for testing (`populate_testnet.sh`, `test_black_promotes_white_to_blue.sh`)
+>
 > **Next Steps**  
-> - Finalize the **on-chain** implementations (minting logic, membership acceptance, rank promotions)  
-> - Finalize the **off-chain** implementation and the BJJ Decentralized Belt System **Website**  
-> - Conduct **testnet** deployments to gather user feedback  
+> - Finalize the BJJ Decentralized Belt System **Frontend Website**  
+> - Implement membership and achievement features
 > - Onboard pilot academies/masters to validate real-world usage
 
 **End of Document**

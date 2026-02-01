@@ -8,11 +8,11 @@
 module Onchain.MintingPolicy where
 
 import GHC.Generics (Generic)
-import Onchain.CIP68 (CIP68Datum, MetadataFields, deriveUserFromRefAC, generateRefAndUserTN, mkCIP68Datum)
-import Onchain.Protocol (OnChainProfileType (..), OnchainProfile (..), OnchainRank (..), ProfileId, ProtocolParams, generateRankId, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, profilesValidatorScriptHash, ranksValidatorScriptHash)
+import Onchain.BJJ (intToBelt, validatePromotion)
+import Onchain.CIP68 (CIP68Datum, MetadataFields, deriveUserFromRefAC, generateRefAndUserTN, mkCIP68Datum, validateMetadataFields)
+import Onchain.Protocol (OnChainProfileType (..), OnchainProfile (..), OnchainRank (..), ProfileId, ProtocolParams, generatePromotionRankId, getCurrentRankId, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, profilesValidatorScriptHash, ranksValidatorScriptHash, unsafeGetProfileDatumAndValue, unsafeGetRankDatumAndValue)
 import Onchain.Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
-import PlutusLedgerApi.V1 (isZero)
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Interval (before)
 import PlutusLedgerApi.V3
@@ -23,14 +23,16 @@ import PlutusTx.Prelude
 import Prelude qualified
 
 -- | Custom redeemer :
+-- NOTE: Profile deletion (burning) is intentionally not supported to preserve lineage integrity.
+-- BJJ belt records are permanent historical facts that should not be erasable.
 data MintingRedeemer
   = CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer
-  | Promote ProfileId ProfileId POSIXTime Integer
-  | BurnProfileId
+  | Promote TxOutRef ProfileId ProfileId POSIXTime Integer
+  -- ^ Promote seedTxOutRef promotedProfileId promoterProfileId achievementDate rankNumber
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''MintingRedeemer [('CreateProfile, 0), ('Promote, 1), ('BurnProfileId, 2)]
+makeIsDataSchemaIndexed ''MintingRedeemer [('CreateProfile, 0), ('Promote, 1)]
 
 type ProfilesDatum = CIP68Datum OnchainProfile
 
@@ -48,7 +50,7 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
           let profilesValidatorAddress = V1.scriptHashAddress (profilesValidatorScriptHash protocolParams)
            in case redeemer of
                 CreateProfile seedTxOutRef metadata profileType creationDate rankNumber ->
-                  --- TODO: add restriction on rankNumber > 0c
+                  -- NOTE: rankNumber validation handled by intToBelt (fails for values outside 0-14)
                   let (profileRefTN, profileUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRef
                       profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)
                       profileUserAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileUserTN)
@@ -59,12 +61,14 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                             $ creationDate
                             `before` txInfoValidRange,
                           traceIfFalse "Must spend seed TxOutRef"
-                            $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs
+                            $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs,
+                          -- Validate metadata field sizes to prevent oversized datums
+                          validateMetadataFields metadata
                         ]
                         && case profileType of
                           Practitioner ->
                             let (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate protocolParams rankNumber
-                                profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
+                                profileDatum = mkCIP68Datum profile metadata
                                 rankAssetClass = rankId rankDatum
                                 rankNFT = V1.assetClassValue rankAssetClass 1
                                 ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
@@ -80,7 +84,7 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                                   ]
                           Organization ->
                             let profile = mkOrganizationProfile profileRefAssetClass protocolParams
-                                profileDatum = mkCIP68Datum profile metadata -- !!! Open unbounded-datum vulnerability on metadata
+                                profileDatum = mkCIP68Datum profile metadata
                              in and
                                   [ traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
                                       $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
@@ -89,24 +93,49 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                                       -- protection against other-token-name attack vector
                                       == (profileRefNFT + profileUserNFT)
                                   ]
-                (Promote profileId awardedByRef achievementDate rankNumber) ->
+                (Promote seedTxOutRef studentProfileId masterProfileId achievementDate nextRankNum) ->
                   let ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
-                      pendingRankAssetClass = generateRankId profileId rankNumber
+
+                      -- Generate unique promotion rank ID from seed
+                      pendingRankAssetClass = generatePromotionRankId seedTxOutRef mintingPolicyCurrencySymbol
                       pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
-                      pendingRankDatum = mkPendingRank profileId awardedByRef achievementDate rankNumber protocolParams
-                      awardedByUser = deriveUserFromRefAC awardedByRef
+                      pendingRankDatum = mkPendingRank seedTxOutRef mintingPolicyCurrencySymbol studentProfileId masterProfileId achievementDate nextRankNum protocolParams
+
+                      -- Master must spend their user NFT to authorize promotion
+                      masterUserAC = deriveUserFromRefAC masterProfileId
+
+                      -- Get student and master profiles from reference inputs
+                      (_, studentProfile) = unsafeGetProfileDatumAndValue studentProfileId profilesValidatorAddress txInfoReferenceInputs
+                      (_, masterProfile) = unsafeGetProfileDatumAndValue masterProfileId profilesValidatorAddress txInfoReferenceInputs
+
+                      -- Get current ranks from reference inputs
+                      studentCurrentRankId = getCurrentRankId studentProfile
+                      masterCurrentRankId = getCurrentRankId masterProfile
+                      (_, studentCurrentRank) = unsafeGetRankDatumAndValue studentCurrentRankId ranksValidatorAddress txInfoReferenceInputs
+                      (_, masterRank) = unsafeGetRankDatumAndValue masterCurrentRankId ranksValidatorAddress txInfoReferenceInputs
+
+                      -- Validate the promotion using BJJ rules
+                      masterBelt = intToBelt $ rankNumber masterRank
+                      masterBeltDate = rankAchievementDate masterRank
+                      studentCurrentBelt = intToBelt $ rankNumber studentCurrentRank
+                      studentCurrentBeltDate = rankAchievementDate studentCurrentRank
+                      studentNextBelt = intToBelt nextRankNum
+                      studentNextBeltDate = achievementDate
+
+                      isPromotionValid = validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBeltDate studentNextBelt studentNextBeltDate
                    in and
-                        [ traceIfFalse "Must spend user NFT of the profile who awards the promotion"
-                            $ V1.assetClassValueOf (valueSpent txInfo) awardedByUser
+                        [ traceIfFalse "Must spend seed TxOutRef for uniqueness"
+                            $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs,
+                          traceIfFalse "Must spend user NFT of the profile who awards the promotion"
+                            $ V1.assetClassValueOf (valueSpent txInfo) masterUserAC
                             == 1,
+                          traceIfFalse "Tx must mint JUST the pending rank NFT"
+                            $ mintValueMinted txInfoMint
+                            == pendingRankNFT,
                           traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address"
-                            $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs
+                            $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs,
+                          isPromotionValid
                         ]
-                BurnProfileId ->
-                  -- Anyone is free to burn
-                  traceIfFalse "Tx must not mint any other tokens"
-                    $ isZero -- protection against other mints -- protection against other mints
-                    $ mintValueMinted txInfoMint
         _ -> traceError "Invalid purpose"
 
 -- | Lose the types

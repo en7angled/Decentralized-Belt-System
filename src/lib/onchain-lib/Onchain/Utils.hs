@@ -5,7 +5,7 @@ module Onchain.Utils where
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import PlutusTx.Builtins (serialiseData)
+import PlutusTx.Builtins (serialiseData, integerToByteString, ByteOrder(BigEndian, LittleEndian))
 import PlutusTx.List qualified
 import PlutusTx.Prelude
 
@@ -35,7 +35,7 @@ tokenNameFromTxOutRef toref = TokenName (nameFromTxOutRef toref)
 
 {-# INLINEABLE nameFromTxOutRef #-}
 nameFromTxOutRef :: TxOutRef -> BuiltinByteString
-nameFromTxOutRef (TxOutRef (TxId txIdbs) txIdx) = takeByteString 28 $ blake2b_256 (txIdbs <> (serialiseData . toBuiltinData) txIdx)
+nameFromTxOutRef (TxOutRef (TxId txIdbs) txIdx) =blake2b_224 (txIdbs <> integerToByteString BigEndian 0 txIdx)
 
 ------------------------
 

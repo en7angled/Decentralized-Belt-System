@@ -95,9 +95,6 @@ interactionToTxSkeleton Interaction {..} = do
               profileRefAC
               (textToBuiltinByteString imgURI)
               usedAddrs
-        DeleteProfileAction profileRefAC -> do
-          (,profileRefAC)
-            <$> deleteProfileTX profileRefAC receiveAddr usedAddrs
         PromoteProfileAction promotedProfileId promotedByProfileId achievementDate belt ->
           promoteProfileTX promotedProfileId promotedByProfileId (timeToPlutus achievementDate) belt usedAddrs
         AcceptPromotionAction promotionId ->
