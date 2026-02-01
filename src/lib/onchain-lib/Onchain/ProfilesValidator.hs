@@ -18,7 +18,8 @@ import Onchain.BJJ (intToBelt)
 import Onchain.CIP68 (CIP68Datum (CIP68Datum), ImageURI, deriveUserFromRefTN, updateCIP68DatumImage, validateImageURI)
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), ProfileId, RankId, getCurrentRankId, promoteProfile, protocolParams, ranksValidatorScriptHash, unsafeGetRankDatumAndValue)
 import Onchain.Protocol qualified as Onchain
-import Onchain.Utils
+import Onchain.Utils hiding (hasTxOutWithInlineDatumAndValue)
+import Onchain.Utils qualified as Utils
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Contexts
@@ -30,9 +31,12 @@ import Prelude qualified
 -- | Custom redeemer :
 -- NOTE: Profile deletion is intentionally not supported to preserve lineage integrity.
 -- BJJ belt records are permanent historical facts that should not be erasable.
+-- Output indices are passed in the redeemer for efficient O(1) lookup instead of O(n) search.
 data ProfilesRedeemer
-  = UpdateProfileImage ProfileId ImageURI
-  | AcceptPromotion RankId
+  = UpdateProfileImage ProfileId ImageURI Integer
+  -- ^ UpdateProfileImage profileId newImageURI profileOutputIdx
+  | AcceptPromotion RankId Integer Integer
+  -- ^ AcceptPromotion rankId profileOutputIdx rankOutputIdx
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
@@ -58,7 +62,7 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
                   ownValue = txOutValue ownInput
                   ownAddress = txOutAddress ownInput
                in case redeemer of
-                    (UpdateProfileImage (V1.AssetClass (profilesCurrencySymbol, profileRefTN)) newImageURI) ->
+                    (UpdateProfileImage (V1.AssetClass (profilesCurrencySymbol, profileRefTN)) newImageURI profileOutputIdx) ->
                       let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum
                           profileUserAssetClass = V1.AssetClass (profilesCurrencySymbol, deriveUserFromRefTN profileRefTN)
                        in and
@@ -67,10 +71,10 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
                                 == 1,
                               -- Validate image URI size to prevent oversized datums
                               validateImageURI newImageURI,
-                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
-                                $ hasTxOutWithInlineDatumAndValue newCip68Datum ownValue ownAddress txInfoOutputs
+                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
+                                $ Utils.checkTxOutAtIndex profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs
                             ]
-                    (AcceptPromotion promotionId) ->
+                    (AcceptPromotion promotionId profileOutputIdx rankOutputIdx) ->
                       let ranksValidatorAddress = V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
                           (promotionValue, pendingRankDatum) = unsafeGetRankDatumAndValue promotionId ranksValidatorAddress txInfoInputs
 
@@ -100,10 +104,10 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
                           -- Therefore, RanksValidator guarantees user consent for this transaction.
                        in and
                             [ isPromotionStillValid,
-                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address"
-                                $ hasTxOutWithInlineDatumAndValue updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs,
-                              traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
-                                $ hasTxOutWithInlineDatumAndValue newRankDatum promotionValue ranksValidatorAddress txInfoOutputs
+                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
+                                $ Utils.checkTxOutAtIndex profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs,
+                              traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address (output idx)"
+                                $ Utils.checkTxOutAtIndex rankOutputIdx newRankDatum promotionValue ranksValidatorAddress txInfoOutputs
                             ]
         _ -> traceError "Invalid purpose"
 

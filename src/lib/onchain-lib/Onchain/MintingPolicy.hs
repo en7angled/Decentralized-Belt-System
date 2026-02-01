@@ -11,7 +11,8 @@ import GHC.Generics (Generic)
 import Onchain.BJJ (intToBelt, validatePromotion)
 import Onchain.CIP68 (CIP68Datum, MetadataFields, deriveUserFromRefAC, generateRefAndUserTN, mkCIP68Datum, validateMetadataFields)
 import Onchain.Protocol (OnChainProfileType (..), OnchainProfile (..), OnchainRank (..), ProfileId, ProtocolParams, generatePromotionRankId, getCurrentRankId, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, profilesValidatorScriptHash, ranksValidatorScriptHash, unsafeGetProfileDatumAndValue, unsafeGetRankDatumAndValue)
-import Onchain.Utils
+import Onchain.Utils hiding (hasTxOutWithInlineDatumAndValue)
+import Onchain.Utils qualified as Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Interval (before)
@@ -25,10 +26,13 @@ import Prelude qualified
 -- | Custom redeemer :
 -- NOTE: Profile deletion (burning) is intentionally not supported to preserve lineage integrity.
 -- BJJ belt records are permanent historical facts that should not be erasable.
+-- Output indices are passed in the redeemer for efficient O(1) lookup instead of O(n) search.
 data MintingRedeemer
-  = CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer
-  | Promote TxOutRef ProfileId ProfileId POSIXTime Integer
-  -- ^ Promote seedTxOutRef promotedProfileId promoterProfileId achievementDate rankNumber
+  = CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer Integer Integer
+  -- ^ CreateProfile seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOutputIdx
+  -- For Organization profiles, rankOutputIdx is ignored (can be set to -1 or any value)
+  | Promote TxOutRef ProfileId ProfileId POSIXTime Integer Integer
+  -- ^ Promote seedTxOutRef promotedProfileId promoterProfileId achievementDate rankNumber pendingRankOutputIdx
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
@@ -49,7 +53,7 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
         (MintingScript mintingPolicyCurrencySymbol) ->
           let profilesValidatorAddress = V1.scriptHashAddress (profilesValidatorScriptHash protocolParams)
            in case redeemer of
-                CreateProfile seedTxOutRef metadata profileType creationDate rankNumber ->
+                CreateProfile seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOutputIdx ->
                   -- NOTE: rankNumber validation handled by intToBelt (fails for values outside 0-14)
                   let (profileRefTN, profileUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRef
                       profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)
@@ -73,27 +77,25 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                                 rankNFT = V1.assetClassValue rankAssetClass 1
                                 ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
                              in and
-                                  [ traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
-                                      $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
-                                    traceIfFalse "Tx must mint JUST  OnchainProfile Ref and User NFTs and Rank NFT"
-                                      $ mintValueMinted txInfoMint -- protection against other-token-name attack vector  -- protection against other-token-name attack vector
-                                      -- protection against other-token-name attack vector
+                                  [ traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address (output idx)"
+                                      $ Utils.checkTxOutAtIndex profileOutputIdx profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
+                                    traceIfFalse "Tx must mint JUST OnchainProfile Ref and User NFTs and Rank NFT"
+                                      $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
                                       == (profileRefNFT + profileUserNFT + rankNFT),
-                                    traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address"
-                                      $ hasTxOutWithInlineDatumAndValue rankDatum (rankNFT + minValue) ranksValidatorAddress txInfoOutputs
+                                    traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address (output idx)"
+                                      $ Utils.checkTxOutAtIndex rankOutputIdx rankDatum (rankNFT + minValue) ranksValidatorAddress txInfoOutputs
                                   ]
                           Organization ->
                             let profile = mkOrganizationProfile profileRefAssetClass protocolParams
                                 profileDatum = mkCIP68Datum profile metadata
                              in and
-                                  [ traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address"
-                                      $ hasTxOutWithInlineDatumAndValue profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
+                                  [ traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address (output idx)"
+                                      $ Utils.checkTxOutAtIndex profileOutputIdx profileDatum (profileRefNFT + minValue) profilesValidatorAddress txInfoOutputs,
                                     traceIfFalse "Tx must mint JUST Ref and User NFTs"
-                                      $ mintValueMinted txInfoMint -- protection against other-token-name attack vector  -- protection against other-token-name attack vector
-                                      -- protection against other-token-name attack vector
+                                      $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
                                       == (profileRefNFT + profileUserNFT)
                                   ]
-                (Promote seedTxOutRef studentProfileId masterProfileId achievementDate nextRankNum) ->
+                (Promote seedTxOutRef studentProfileId masterProfileId achievementDate nextRankNum pendingRankOutputIdx) ->
                   let ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
 
                       -- Generate unique promotion rank ID from seed
@@ -132,8 +134,8 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                           traceIfFalse "Tx must mint JUST the pending rank NFT"
                             $ mintValueMinted txInfoMint
                             == pendingRankNFT,
-                          traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address"
-                            $ hasTxOutWithInlineDatumAndValue pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs,
+                          traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address (output idx)"
+                            $ Utils.checkTxOutAtIndex pendingRankOutputIdx pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs,
                           isPromotionValid
                         ]
         _ -> traceError "Invalid purpose"

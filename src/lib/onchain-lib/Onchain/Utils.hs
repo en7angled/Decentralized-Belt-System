@@ -66,6 +66,13 @@ isTxOutWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> TxOut -
 isTxOutWithInlineDatumAndValue datum value address TxOut {txOutValue, txOutAddress, txOutDatum} =
   (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
 
+-- | Check that the output at a specific index has the expected datum, value, and address.
+-- This is more efficient than searching through all outputs with hasTxOutWithInlineDatumAndValue.
+{-# INLINEABLE checkTxOutAtIndex #-}
+checkTxOutAtIndex :: (ToData a) => Integer -> a -> Value -> Address -> [TxOut] -> Bool
+checkTxOutAtIndex idx datum value address outputs =
+  isTxOutWithInlineDatumAndValue datum value address (outputs !! idx)
+
 {-# INLINEABLE isGivenInlineDatum #-}
 isGivenInlineDatum :: (ToData a) => a -> OutputDatum -> Bool
 isGivenInlineDatum datum outdat = case outdat of

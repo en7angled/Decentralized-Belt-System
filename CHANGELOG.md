@@ -1,6 +1,65 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.2.7.0 -- 2026-02-01
+
+### Output Index Optimization
+
+#### Performance Improvement
+
+Implemented O(1) output validation by passing output indices in redeemers instead of O(n) search through all transaction outputs.
+
+**Changed Functions**:
+- `checkTxOutAtIndex` added to `Onchain.Utils` - validates output at specific index
+- All validators now use indexed lookup instead of `hasTxOutWithInlineDatumAndValue`
+
+**Before** (O(n) search):
+```haskell
+hasTxOutWithInlineDatumAndValue datum value address txInfoOutputs
+```
+
+**After** (O(1) indexed lookup):
+```haskell
+checkTxOutAtIndex outputIdx datum value address txInfoOutputs
+```
+
+#### Redeemer Changes (Breaking)
+
+**MintingRedeemer**:
+- `CreateProfile`: Added `profileOutputIdx` and `rankOutputIdx` parameters
+- `Promote`: Added `pendingRankOutputIdx` parameter
+
+**ProfilesRedeemer**:
+- `UpdateProfileImage`: Added `profileOutputIdx` parameter
+- `AcceptPromotion`: Added `profileOutputIdx` and `rankOutputIdx` parameters
+
+#### Off-chain Updates
+
+Transaction builders in `Operations.hs` now:
+- Track output indices with clear comments
+- Include indices in redeemers
+- Document expected output order in skeleton construction
+
+**Output Index Conventions**:
+| Transaction | Output 0 | Output 1 | Output 2 |
+|-------------|----------|----------|----------|
+| CreateProfile (Practitioner) | Profile state | User NFT | Rank state |
+| CreateProfile (Organization) | Profile state | User NFT | - |
+| UpdateProfile | Updated profile | - | - |
+| Promote | Pending rank | - | - |
+| AcceptPromotion | Updated profile | Updated rank | - |
+
+#### Benefits
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| Time complexity | O(n) per output check | O(1) per output check |
+| Execution units | Higher | Lower |
+
+**Note**: This is a **breaking change** for redeemer structure. Existing on-chain scripts need redeployment to use the new optimized validation.
+
+---
+
 ## 0.2.6.0 -- 2026-02-01
 
 ### PlutusV3 Optimizations

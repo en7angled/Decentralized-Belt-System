@@ -137,7 +137,13 @@ maliciousAcceptPromotionTX gyPromotionId = do
   --   gyStudentProfileUserAC <- gyDeriveUserFromRefAC gyStudentProfileRefAC
   --   spendsStudentProfileUserNFT <- txMustSpendFromAddress gyStudentProfileUserAC ownAddrs
 
-  let gySpendProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ AcceptPromotion (assetClassToPlutus gyPromotionId)
+  -- Output index tracking (order must match skeleton mconcat order)
+  -- Output 0: Updated profile state locked at profilesValidator
+  -- Output 1: Updated rank state locked at ranksValidator
+  let profileOutputIdx = 0 :: Integer
+  let rankOutputIdx = 1 :: Integer
+
+  let gySpendProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ AcceptPromotion (assetClassToPlutus gyPromotionId) profileOutputIdx rankOutputIdx
   spendsStudentProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyStudentProfileRefAC gySpendProfileRedeemer profilesValidatorGY
 
   (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyStudentProfileRefAC
@@ -148,9 +154,11 @@ maliciousAcceptPromotionTX gyPromotionId = do
   let (plutusStudentUpdatedProfileDatum, plutuStudentUpdatedRankDatum) = promoteProfile plutusProfileDatum plutusPromotionRankDatum
 
   gyProfileValue <- valueFromPlutus' plutusProfileValue
+  -- Output 0: Updated profile state
   isLockingUpdatedStudentProfile <- txMustLockStateWithInlineDatumAndValue profilesValidatorGY plutusStudentUpdatedProfileDatum gyProfileValue
 
   gyRankValue <- valueFromPlutus' plutusPromotionRankValue
+  -- Output 1: Updated rank state
   isLockingUpdatedRank <- txMustLockStateWithInlineDatumAndValue ranksValidatorGY plutuStudentUpdatedRankDatum gyRankValue
 
   spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer rvRef gyPromotionId unitRedeemer ranksValidatorGY
@@ -167,11 +175,11 @@ maliciousAcceptPromotionTX gyPromotionId = do
   return
     ( mconcat
         [ -- NOTICE: No spendsStudentProfileUserNFT here! This is the attack!
-          spendsStudentProfileRefNFT,
-          isLockingUpdatedStudentProfile,
-          spendsPromotionRank,
-          isLockingUpdatedRank,
-          referencesCurrentRank
+          spendsStudentProfileRefNFT,           -- Input (no output index)
+          isLockingUpdatedStudentProfile,       -- Output 0: Updated profile state
+          spendsPromotionRank,                  -- Input (no output index)
+          isLockingUpdatedRank,                 -- Output 1: Updated rank state
+          referencesCurrentRank                 -- Reference input (no output index)
         ],
       gyRankAC
     )

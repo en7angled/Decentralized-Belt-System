@@ -118,8 +118,8 @@ Governs the rules for issuing new profiles, ranks, and promotions. It is **param
 Note: Profile deletion is intentionally NOT supported to preserve lineage integrity.
 
 **Redeemers**:
-- `CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer` - Create a new profile
-- `Promote TxOutRef ProfileId ProfileId POSIXTime Integer` - Create a promotion (seedTxOutRef, studentProfileId, masterProfileId, achievementDate, rankNumber)
+- `CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer Integer Integer` - Create a new profile (seedTxOutRef, metadata, profileType, creationDate, rankNumber, profileOutputIdx, rankOutputIdx). For Organization profiles, rankOutputIdx is ignored.
+- `Promote TxOutRef ProfileId ProfileId POSIXTime Integer Integer` - Create a promotion (seedTxOutRef, studentProfileId, masterProfileId, achievementDate, rankNumber, pendingRankOutputIdx)
 
 **Parameterization**:
 ```haskell
@@ -177,8 +177,8 @@ Governs the rules for profile updates and promotion acceptance. It handles:
 Note: Profile deletion is intentionally NOT supported to preserve lineage integrity.
 
 **Redeemers**:
-- `UpdateProfileImage ProfileId ImageURI` - Update the profile's image URI
-- `AcceptPromotion RankId` - Accept a pending promotion
+- `UpdateProfileImage ProfileId ImageURI Integer` - Update the profile's image URI (profileId, newImageURI, profileOutputIdx)
+- `AcceptPromotion RankId Integer Integer` - Accept a pending promotion (rankId, profileOutputIdx, rankOutputIdx)
 
 **Cross-Validator Communication**:
 The ProfilesValidator is **not parameterized**. Instead, it retrieves the RanksValidator address from the profile datum's embedded `protocolParams`:
@@ -333,6 +333,54 @@ Organizations (`profileType = Organization`) have `currentRank = Nothing`. They:
 - Cannot receive promotions (no rank to promote from)
 - Cannot be promoted by the system (getCurrentRankId fails for them)
 - This is enforced by the MintingPolicy's reference input lookup failing
+
+
+## Output Index Optimization
+
+All validators use an **output index optimization** for efficient O(1) output validation instead of O(n) search.
+
+### How It Works
+
+Instead of searching through all transaction outputs to find a specific output (via `hasTxOutWithInlineDatumAndValue`), validators receive the expected output index directly in the redeemer and verify the output at that specific index (via `checkTxOutAtIndex`).
+
+**Before** (O(n) search):
+```haskell
+hasTxOutWithInlineDatumAndValue datum value address txInfoOutputs
+-- Searches all outputs until match found
+```
+
+**After** (O(1) indexed lookup):
+```haskell
+checkTxOutAtIndex outputIdx datum value address txInfoOutputs
+-- Directly accesses output at specified index
+```
+
+### Output Index Conventions
+
+Off-chain transaction builders track output indices and include them in redeemers. The order in the skeleton `mconcat` determines the output indices:
+
+| Transaction | Output 0 | Output 1 | Output 2 |
+|-------------|----------|----------|----------|
+| CreateProfile (Practitioner) | Profile state | User NFT | Rank state |
+| CreateProfile (Organization) | Profile state | User NFT | - |
+| UpdateProfile | Updated profile | - | - |
+| Promote | Pending rank | - | - |
+| AcceptPromotion | Updated profile | Updated rank | - |
+
+### Benefits
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| Time complexity | O(n) per output check | O(1) per output check |
+| Execution units | Higher (iteration overhead) | Lower (direct access) |
+| Script size | Slightly smaller | Slightly larger (index params) |
+
+### Security
+
+The output index is provided by the off-chain code but validated on-chain:
+- If an incorrect index is provided, the output at that index won't match the expected datum/value/address
+- The transaction will fail with a clear error message
+- There's no security risk from malicious indices - they just cause validation failure
 
 
 ## Security Model
