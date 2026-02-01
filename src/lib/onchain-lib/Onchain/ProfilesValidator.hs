@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 ---
 {-# LANGUAGE NoImplicitPrelude #-}
--- {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:optimize #-}
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
