@@ -354,7 +354,7 @@ addMembershipIntervalToHistory currentHistory lastInterval startDate maybeEndDat
           traceIfFalse "last interval is not closed" lastIntervalIsClosed,
           traceIfFalse "last interval is not accepted" lastIntervalIsAccepted
         ]
-    validLastInterval = membershipHistoryIntervalsHeadId currentHistory == membershipIntervalId lastInterval -- TODO: tbc if this check is required considering the validator logic
+    validLastInterval = membershipHistoryIntervalsHeadId currentHistory == membershipIntervalId lastInterval -- Required: prevents head-bypass attacks (see OnchainSecurityAudit.md)
     lastIntervalIsAccepted = membershipIntervalIsAck lastInterval
     lastIntervalIsClosed = case membershipIntervalEndDate lastInterval of
       Just lastIntervalEndDate -> startDate >= lastIntervalEndDate
