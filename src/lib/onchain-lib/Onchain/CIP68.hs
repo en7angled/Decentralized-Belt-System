@@ -1,16 +1,20 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use &&" #-}
+
 module Onchain.CIP68 where
 
 import GHC.Generics (Generic)
-import Onchain.Utils (integerToBs24)
+import PlutusTx.Builtins 
 import PlutusLedgerApi.V1.Value
-import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.AssocMap qualified
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
+
+
 
 type ImageURI = BuiltinByteString
 
@@ -109,12 +113,16 @@ updateCIP68DatumImage newImageURI oldDatum =
         }
 
 refTokenPrefixBS :: BuiltinByteString
-refTokenPrefixBS = integerToBs24 (0x000643b0 :: Integer) -- TODO update with new builtins
+refTokenPrefixBS = integerToByteString BigEndian 4 (0x000643b0 :: Integer)  -- 4 bytes for the prefix according to CIP-67
 {-# INLINEABLE refTokenPrefixBS #-}
 
+
 userTokenPrefixBS :: BuiltinByteString
-userTokenPrefixBS = integerToBs24 (0x000de140 :: Integer) -- TODO update with new builtins
+userTokenPrefixBS = integerToByteString BigEndian 4 (0x000de140 :: Integer)  -- 4 bytes for the prefix according to CIP-67
 {-# INLINEABLE userTokenPrefixBS #-}
+
+
+
 
 generateRefAndUserTN :: BuiltinByteString -> (TokenName, TokenName)
 generateRefAndUserTN bs = (TokenName (refTokenPrefixBS <> bs), TokenName (userTokenPrefixBS <> bs))

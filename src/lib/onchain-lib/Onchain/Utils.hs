@@ -5,7 +5,7 @@ module Onchain.Utils where
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import PlutusTx.Builtins  
+import PlutusTx.Builtins
 import PlutusTx.List qualified
 import PlutusTx.Prelude
 
@@ -24,18 +24,13 @@ mkUntypedLambda f c = check $ f (parseData c "Invalid context")
       _ -> traceError message
 {-# INLINEABLE mkUntypedLambda #-}
 
--- TODO update with new builtins
-{-# INLINEABLE integerToBs24 #-}
-integerToBs24 :: Integer -> BuiltinByteString
-integerToBs24 = dropByteString 1 . serialiseData . toBuiltinData -- Removing First Byte  (works for value > 24)
-
 {-# INLINEABLE tokenNameFromTxOutRef #-}
 tokenNameFromTxOutRef :: TxOutRef -> TokenName
 tokenNameFromTxOutRef toref = TokenName (nameFromTxOutRef toref)
 
 {-# INLINEABLE nameFromTxOutRef #-}
 nameFromTxOutRef :: TxOutRef -> BuiltinByteString
-nameFromTxOutRef (TxOutRef (TxId txIdbs) txIdx) =blake2b_224 (txIdbs <> integerToByteString BigEndian 0 txIdx)
+nameFromTxOutRef (TxOutRef (TxId txIdbs) txIdx) = blake2b_224 (txIdbs `appendByteString` integerToByteString BigEndian 0 txIdx)
 
 ------------------------
 
@@ -51,27 +46,47 @@ isMintingNFT ac txInfoMint = V1.assetClassValueOf (mintValueMinted txInfoMint) a
 isBurningNFT :: V1.AssetClass -> MintValue -> Bool
 isBurningNFT ac txInfoMint = V1.assetClassValueOf (mintValueBurned txInfoMint) ac == 1
 
+-------------------------------------------------------------------------------
+
+-- ** Output Helper Functions
+
+-------------------------------------------------------------------------------
+
+{-# INLINEABLE checkTxOutAtIndexWithValueAndAddress #-}
+checkTxOutAtIndexWithValueAndAddress :: Integer -> Value -> Address -> [TxOut] -> Bool
+checkTxOutAtIndexWithValueAndAddress idx value address outputs =
+  isTxOutAtIndexWithValueAndAddress value address (outputs !! idx)
+
+{-# INLINEABLE isTxOutAtIndexWithValueAndAddress #-}
+isTxOutAtIndexWithValueAndAddress :: Value -> Address -> TxOut -> Bool
+isTxOutAtIndexWithValueAndAddress value address TxOut {txOutValue, txOutAddress} =
+  (value == txOutValue) && (address == txOutAddress)
+
 ------------------------
 
 -- ** Datum Helper Functions
 
 ------------------------
 
-{-# INLINEABLE hasTxOutWithInlineDatumAndValue #-}
-hasTxOutWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> [TxOut] -> Bool
-hasTxOutWithInlineDatumAndValue datum value address = traceIfFalse "output with datum and value not found" . any (isTxOutWithInlineDatumAndValue datum value address)
-
-{-# INLINEABLE isTxOutWithInlineDatumAndValue #-}
-isTxOutWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
-isTxOutWithInlineDatumAndValue datum value address TxOut {txOutValue, txOutAddress, txOutDatum} =
-  (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
-
 -- | Check that the output at a specific index has the expected datum, value, and address.
 -- This is more efficient than searching through all outputs with hasTxOutWithInlineDatumAndValue.
-{-# INLINEABLE checkTxOutAtIndex #-}
-checkTxOutAtIndex :: (ToData a) => Integer -> a -> Value -> Address -> [TxOut] -> Bool
-checkTxOutAtIndex idx datum value address outputs =
-  isTxOutWithInlineDatumAndValue datum value address (outputs !! idx)
+{-# INLINEABLE checkTxOutAtIndexWithDatumValueAndAddress #-}
+checkTxOutAtIndexWithDatumValueAndAddress :: (ToData a) => Integer -> a -> Value -> Address -> [TxOut] -> Bool
+checkTxOutAtIndexWithDatumValueAndAddress idx datum value address outputs =
+  isTxOutAtIndexWithDatumValueAndAddress datum value address (outputs !! idx)
+
+{-# INLINEABLE isTxOutAtIndexWithDatumValueAndAddress #-}
+isTxOutAtIndexWithDatumValueAndAddress :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
+isTxOutAtIndexWithDatumValueAndAddress datum value address TxOut {txOutValue, txOutAddress, txOutDatum} =
+  (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
+
+{-# INLINEABLE hasTxInWithInlineDatumAndValue #-}
+hasTxInWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> [TxInInfo] -> Bool
+hasTxInWithInlineDatumAndValue datum value address = any (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress, txOutDatum})) -> (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum)
+
+{-# INLINEABLE hasTxInAtAddressWithNFT #-}
+hasTxInAtAddressWithNFT :: AssetClass -> Address -> [TxInInfo] -> Bool
+hasTxInAtAddressWithNFT ac address = any (\(TxInInfo _inOutRef (TxOut {txOutAddress, txOutValue})) -> (address == txOutAddress) && (V1.assetClassValueOf txOutValue ac == 1))
 
 {-# INLINEABLE isGivenInlineDatum #-}
 isGivenInlineDatum :: (ToData a) => a -> OutputDatum -> Bool
@@ -89,19 +104,19 @@ unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs =
 
 ------------------------
 
--- ** Unsafe Datum Helper Functions
+-- **  Validate and Get - Datum and Value Helper Functions
 
 ------------------------
 
-unsafeGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, BuiltinData)
-unsafeGetCurrentStateDatumAndValue stateToken addr outs =
+checkAndGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, BuiltinData)
+checkAndGetCurrentStateDatumAndValue stateToken addr outs =
   case filter (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress})) -> (txOutValue `geq` V1.assetClassValue stateToken 1) && (addr == txOutAddress)) outs of
-    [TxInInfo _inOutRef out] -> (txOutValue out, unsafeGetInlineDatum out)
+    [TxInInfo _inOutRef out] -> (txOutValue out, checkAndGetInlineDatum out)
     _ -> traceError "state nft not found"
-{-# INLINEABLE unsafeGetCurrentStateDatumAndValue #-}
+{-# INLINEABLE checkAndGetCurrentStateDatumAndValue #-}
 
-unsafeGetInlineDatum :: TxOut -> BuiltinData
-unsafeGetInlineDatum out = case txOutDatum out of
+checkAndGetInlineDatum :: TxOut -> BuiltinData
+checkAndGetInlineDatum out = case txOutDatum out of
   OutputDatum da -> getDatum da
   _ -> traceError "No inline datum"
-{-# INLINEABLE unsafeGetInlineDatum #-}
+{-# INLINEABLE checkAndGetInlineDatum #-}

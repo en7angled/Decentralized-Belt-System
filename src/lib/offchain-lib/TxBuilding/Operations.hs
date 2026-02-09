@@ -9,7 +9,7 @@ import Onchain.BJJ (BJJBelt (White), beltToInt)
 import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.MintingPolicy
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Protocol (OnchainRank (..), generatePromotionRankId, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, promoteProfile)
+import Onchain.Protocol (OnchainRank (..), deriveMembershipHistoriesListId, generatePromotionRankId, initEmptyMembershipHistoriesList, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, promoteProfile)
 import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
@@ -18,6 +18,7 @@ import TxBuilding.Context (DeployedScriptsContext (..), getMintingPolicyRef, get
 import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue)
 import TxBuilding.Skeletons
 import TxBuilding.Validators
+import Onchain.RanksValidator (RanksRedeemer(..))
 
 datumLovelaces :: Integer
 datumLovelaces = 3500000
@@ -100,11 +101,8 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   -- Output 1: User NFT payment to recipient
   -- Output 2: Rank state locked at ranksValidator (Practitioner only)
   let profileOutputIdx = 0 :: Integer
-  let rankOutputIdx = case profileType of
-        Onchain.Practitioner -> 2 :: Integer  -- Rank output comes after profile and user NFT
-        Onchain.Organization -> (-1) :: Integer  -- Not used for Organization
-
-  let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate (beltToInt belt) profileOutputIdx rankOutputIdx
+  let rankOrMembershipHistoriesRootOutputIdx = 2 :: Integer
+  let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate (beltToInt belt) profileOutputIdx rankOrMembershipHistoriesRootOutputIdx
   let gyCreateProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
 
   isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mpRef mintingPolicyGY gyCreateProfileRedeemer gyProfileRefAC
@@ -119,9 +117,23 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   -- Output 1: User NFT payment
   isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton gyProfileUserAC 1)
 
-  -- Output 2: Rank state (Practitioner only)
-  ifPractitionerMintAndLockFirstRankState <- case profileType of
-    Onchain.Organization -> return mempty
+  -- Output 2: Rank state (Practitioner only) or Membership Histories Root NFT (Organization only)
+
+  isLockingRankOrMembershipHistoriesRootState <- case profileType of
+    Onchain.Organization -> do
+      let membershipHistoriesRootDatum = initEmptyMembershipHistoriesList profileRefAC
+      gyMembershipHistoriesRootAC <- assetClassFromPlutus' $ deriveMembershipHistoriesListId profileRefAC
+      isMintingMembershipHistoriesRoot <- txMustMintWithMintRef True mpRef mintingPolicyGY gyCreateProfileRedeemer gyMembershipHistoriesRootAC
+      isLockingMembershipHistoriesRootState <-
+        txMustLockStateWithInlineDatumAndValue
+          membershipsValidatorGY
+          membershipHistoriesRootDatum
+          (valueSingleton gyMembershipHistoriesRootAC 1 <> valueFromLovelace datumLovelaces)
+      return $
+        mconcat
+          [ isMintingMembershipHistoriesRoot,
+            isLockingMembershipHistoriesRootState -- Output 2: Membership Histories Root NFT
+          ]
     Onchain.Practitioner -> do
       let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams (beltToInt belt)
       gyRankAC <- assetClassFromPlutus' $ rankId rankData
@@ -134,17 +146,17 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
       return $
         mconcat
           [ isMintingRank,
-            isLockingRankState  -- Output 2
+            isLockingRankState -- Output 2
           ]
 
   return
     ( mconcat
-        [ isSpendingSeedUTxO,           -- Input (no output index)
-          isInvalidBeforeNow,           -- Validity (no output index)
-          isMintingProfileCIP68UserAndRef,  -- Mint (no output index)
-          isLockingProfileState,        -- Output 0: Profile state
-          isPayingProfileUserNFT,       -- Output 1: User NFT payment
-          ifPractitionerMintAndLockFirstRankState  -- Output 2: Rank state (if Practitioner)
+        [ isSpendingSeedUTxO, -- Input (no output index)
+          isInvalidBeforeNow, -- Validity (no output index)
+          isMintingProfileCIP68UserAndRef, -- Mint (no output index)
+          isLockingProfileState, -- Output 0: Profile state
+          isPayingProfileUserNFT, -- Output 1: User NFT payment
+          isLockingRankOrMembershipHistoriesRootState -- Output 2: Rank state (if Practitioner) or Membership Histories Root NFT (if Organization)
         ],
       gyProfileRefAC
     )
@@ -167,7 +179,7 @@ updateProfileTX gyProfileRefAC newImageURI ownAddrs = do
   let profileOutputIdx = 0 :: Integer
 
   (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyProfileRefAC
-  let updateRedeemer = UpdateProfileImage (assetClassToPlutus gyProfileRefAC) newImageURI profileOutputIdx
+  let updateRedeemer = UpdateProfileImage newImageURI profileOutputIdx
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ updateRedeemer
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyProfileRefAC gyRedeemer profilesValidatorGY
   gyProfileUserAC <- gyDeriveUserFromRefAC gyProfileRefAC
@@ -179,9 +191,9 @@ updateProfileTX gyProfileRefAC newImageURI ownAddrs = do
   isLockingUpdatedProfileState <- txMustLockStateWithInlineDatumAndValue profilesValidatorGY newCip68Datum gyProfileValue
   return $
     mconcat
-      [ spendsProfileUserNFT,           -- Input (no output index)
-        spendsProfileRefNFT,            -- Input (no output index)
-        isLockingUpdatedProfileState    -- Output 0: Updated profile state
+      [ spendsProfileUserNFT, -- Input (no output index)
+        spendsProfileRefNFT, -- Input (no output index)
+        isLockingUpdatedProfileState -- Output 0: Updated profile state
       ]
 
 -- NOTE: deleteProfileTX is intentionally not implemented to preserve lineage integrity.
@@ -233,7 +245,14 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
   gyPromotionRankAC <- assetClassFromPlutus' $ generatePromotionRankId seedTxOutRefPlutus (mintingPolicyCurrencySymbol mintingPolicyGY)
   isMintingPromotionRank <- txMustMintWithMintRef True mpRef mintingPolicyGY gyRedeemer gyPromotionRankAC
 
-  let pendingRankDatum = mkPendingRank seedTxOutRefPlutus (mintingPolicyCurrencySymbol mintingPolicyGY) (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt) defaultProtocolParams
+  let pendingRankDatum =
+        mkPendingRank
+          (assetClassToPlutus gyPromotionRankAC)
+          (assetClassToPlutus gyPromotedProfileId)
+          (assetClassToPlutus gyPromotedByProfileId)
+          achievementDate
+          (beltToInt belt)
+          defaultProtocolParams
 
   -- Output 0: Pending rank state
   isLockingPendingRankState <-
@@ -243,20 +262,21 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
       (valueSingleton gyPromotionRankAC 1 <> valueFromLovelace datumLovelaces)
 
   -- Add reference inputs for student and master profiles and their current ranks
-  referencesProfilesAndRanks <- txMustHaveUTxOsAsRefInputs
-    [ gyPromotedProfileId
-    , gyPromotedByProfileId
-    , gyStudentCurrentRankAC
-    , gyMasterCurrentRankAC
-    ]
+  referencesProfilesAndRanks <-
+    txMustHaveUTxOsAsRefInputs
+      [ gyPromotedProfileId,
+        gyPromotedByProfileId,
+        gyStudentCurrentRankAC,
+        gyMasterCurrentRankAC
+      ]
 
   return
     ( mconcat
-        [ isSpendingSeedUTxO,           -- Input (no output index)
-          spendsMasterProfileUserNFT,   -- Input (no output index)
-          isMintingPromotionRank,       -- Mint (no output index)
-          isLockingPendingRankState,    -- Output 0: Pending rank state
-          referencesProfilesAndRanks    -- Reference inputs (no output index)
+        [ isSpendingSeedUTxO, -- Input (no output index)
+          spendsMasterProfileUserNFT, -- Input (no output index)
+          isMintingPromotionRank, -- Mint (no output index)
+          isLockingPendingRankState, -- Output 0: Pending rank state
+          referencesProfilesAndRanks -- Reference inputs (no output index)
         ],
       gyPromotionRankAC
     )
@@ -310,7 +330,8 @@ acceptPromotionTX gyPromotionId ownAddrs = do
   -- Output 1: Updated rank state
   isLockingUpdatedRank <- txMustLockStateWithInlineDatumAndValue ranksValidatorGY plutuStudentUpdatedRankDatum gyRankValue
 
-  spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer rvRef gyPromotionId unitRedeemer ranksValidatorGY
+  let gySpendPromotionRedeemer = redeemerFromPlutus' . toBuiltinData $ PromotionAcceptance profileOutputIdx rankOutputIdx
+  spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer rvRef gyPromotionId gySpendPromotionRedeemer ranksValidatorGY
 
   -- Reference the student's current rank for acceptance-time validation
   referencesCurrentRank <- txMustHaveUTxOsAsRefInputs [gyStudentCurrentRankAC]
@@ -321,12 +342,12 @@ acceptPromotionTX gyPromotionId ownAddrs = do
   gyLogInfo' "plutuStudentUpdatedRankDatum" $ "plutuStudentUpdatedRankDatum" <> show plutuStudentUpdatedRankDatum
   return
     ( mconcat
-        [ spendsStudentProfileUserNFT,      -- Input (no output index)
-          spendsStudentProfileRefNFT,       -- Input (no output index)
-          isLockingUpdatedStudentProfile,   -- Output 0: Updated profile state
-          spendsPromotionRank,              -- Input (no output index)
-          isLockingUpdatedRank,             -- Output 1: Updated rank state
-          referencesCurrentRank             -- Reference input (no output index)
+        [ spendsStudentProfileUserNFT, -- Input (no output index)
+          spendsStudentProfileRefNFT, -- Input (no output index)
+          isLockingUpdatedStudentProfile, -- Output 0: Updated profile state
+          spendsPromotionRank, -- Input (no output index)
+          isLockingUpdatedRank, -- Output 1: Updated rank state
+          referencesCurrentRank -- Reference input (no output index)
         ],
       gyRankAC
     )

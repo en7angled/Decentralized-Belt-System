@@ -7,6 +7,7 @@ import Onchain.MintingPolicy qualified as MintingPolicy (mintingPolicyCompile)
 import Onchain.ProfilesValidator qualified as ProfilesValidator (profilesCompile)
 import Onchain.Protocol
 import Onchain.RanksValidator qualified as RanksValidator (ranksCompile)
+import Onchain.MembershipsValidator qualified as MembershipsValidator (membershipsCompile)
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude hiding (($))
@@ -30,9 +31,10 @@ profilesValidatorHashGY = validatorHash profilesValidatorGY
 profilesValidatorHashPlutus :: ScriptHash
 profilesValidatorHashPlutus = validatorHashToPlutus profilesValidatorHashGY
 
+
 ------------------------------------------------------------------------------------------------
 
--- *  Define Profile Validator
+-- *  Define Ranks Validator
 
 ------------------------------------------------------------------------------------------------
 
@@ -48,6 +50,27 @@ ranksValidatorHashGY = validatorHash ranksValidatorGY
 ranksValidatorHashPlutus :: ScriptHash
 ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
 
+
+------------------------------------------------------------------------------------------------
+
+-- *  Define Memberships Validator
+
+------------------------------------------------------------------------------------------------
+
+membershipsValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
+membershipsValidatorPlutus = MembershipsValidator.membershipsCompile
+
+membershipsValidatorGY :: GYScript 'PlutusV3
+membershipsValidatorGY = validatorFromPlutus membershipsValidatorPlutus
+
+membershipsValidatorHashGY :: GYScriptHash
+membershipsValidatorHashGY = validatorHash membershipsValidatorGY
+
+membershipsValidatorHashPlutus :: ScriptHash
+membershipsValidatorHashPlutus = validatorHashToPlutus membershipsValidatorHashGY
+
+
+
 ------------------------------------------------------------------------------------------------
 
 -- *  Protocol Parameters
@@ -55,7 +78,7 @@ ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
 ------------------------------------------------------------------------------------------------
 
 defaultProtocolParams :: ProtocolParams
-defaultProtocolParams = ProtocolParams (ranksValidatorHashPlutus, profilesValidatorHashPlutus)
+defaultProtocolParams = ProtocolParams (ranksValidatorHashPlutus, profilesValidatorHashPlutus, membershipsValidatorHashPlutus)
 
 ------------------------------------------------------------------------------------------------
 

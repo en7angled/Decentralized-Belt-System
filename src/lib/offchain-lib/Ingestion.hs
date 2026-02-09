@@ -44,4 +44,4 @@ projectChainEvent nid am@AtlasMatch {..} =
             return $ ProfileEvent profile
       _ -> return $ NoEvent am
 
---- TODO: Delete profile projections when the profile is deleted (use spentAt and redeemer)
+--- No need to delete profile projections since the profile  cannot be deleted onchain;

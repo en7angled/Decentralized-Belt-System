@@ -1,5 +1,8 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+-- Required for `makeLift`:
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:optimize #-}
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.1.0 #-}
@@ -9,40 +12,72 @@
 module Onchain.RanksValidator where
 
 import Onchain.CIP68 (deriveUserFromRefAC)
-import Onchain.Protocol (OnchainRank (..))
+import Onchain.Protocol (OnchainRank (..), profilesValidatorScriptHash, promoteProfile, unsafeGetProfileDatumAndValue)
 import Onchain.Utils (mkUntypedLambda)
+import Onchain.Utils qualified as Utils
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Contexts
+import PlutusPrelude (Generic)
 import PlutusTx
+import PlutusTx.Blueprint
 import PlutusTx.Prelude
+import Prelude qualified
 
 -----------------------------------------------------------------------------
 -- Ranks Validator
 --
 -- This validator is simplified because promotion validation now happens
--- at mint time in the MintingPolicy. The RanksValidator only needs to
--- verify that the student consents to accepting the promotion by
--- spending their user NFT.
+-- at mint time in the MintingPolicy.
 -----------------------------------------------------------------------------
+
+data RanksRedeemer
+  = -- | AcceptPromotion profileOutputIdx rankOutputIdx
+    PromotionAcceptance Integer Integer
+  deriving stock (Generic, Prelude.Show)
+
+makeIsDataSchemaIndexed ''RanksRedeemer [('PromotionAcceptance, 0)]
 
 {-# INLINEABLE ranksLambda #-}
 ranksLambda :: ScriptContext -> Bool
-ranksLambda (ScriptContext txInfo (Redeemer _) scriptInfo) =
-  case scriptInfo of
-    (SpendingScript _spendingTxOutRef mdatum) -> case mdatum of
-      Nothing -> traceError "No datum"
-      Just (Datum bdatum) -> case fromBuiltinData bdatum of
-        Nothing -> traceError "Invalid datum"
-        Just (promotionRank :: OnchainRank) ->
-          -- The promotion was already validated at mint time.
-          -- We only need to verify the student consents by spending their user NFT.
-          let studentProfileId = promotionAwardedTo promotionRank
-              profileUserAssetClass = deriveUserFromRefAC studentProfileId
-           in traceIfFalse "Must spend profile User NFT to accept promotion"
-                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                == 1
-    _ -> traceError "Invalid purpose"
+ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
+  let redeemer = unsafeFromBuiltinData @RanksRedeemer bredeemer
+   in case scriptInfo of
+        (SpendingScript spendingTxOutRef mdatum) -> case mdatum of
+          Nothing -> traceError "No datum"
+          Just (Datum bdatum) -> case fromBuiltinData bdatum of
+            Nothing -> traceError "Invalid datum"
+            Just (promotionRankDatum :: OnchainRank) ->
+              case redeemer of
+                (PromotionAcceptance profileOutputIdx rankOutputIdx) ->
+                  -- The promotion was already validated at mint time.
+                  -- Ranks cannot be spent
+                  -- We only need to verify the student consents by spending their user NFT.
+                  let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+                      ownValue = txOutValue ownInput
+                      ownAddress = txOutAddress ownInput
+
+                      -- Getting profiles based on the ids in the rank promotion datum
+                      (studentProfileValue, studentProfileDatum) = unsafeGetProfileDatumAndValue studentProfileId profilesValidatorAddress txInfoInputs
+                      (updatedProfileCIP68Datum, newRank) = promoteProfile studentProfileDatum promotionRankDatum
+
+                      profilesValidatorAddress = V1.scriptHashAddress $ profilesValidatorScriptHash $ promotionProtocolParams promotionRankDatum
+                      studentProfileId = promotionAwardedTo promotionRankDatum -- Fails if trying to spend a rank instead of a promotion
+                      profileUserAssetClass = deriveUserFromRefAC studentProfileId
+                      profileRefAssetClass = studentProfileId
+                   in and
+                        [ traceIfFalse "Must spend profile User NFT to accept promotion"
+                            $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
+                            == 1,
+                          traceIfFalse "Student Profile value must contain profile Ref NFT"
+                            $ V1.assetClassValueOf studentProfileValue profileRefAssetClass
+                            == 1,
+                          traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
+                            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs,
+                          traceIfFalse "Must lock updated rank with inline datum at ranksValidator address (output idx)" -- Guarantees that tokens never leaves the validator.
+                            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs
+                        ]
+        _ -> traceError "Invalid script info"
 
 -- | Lose the types
 ranksUntyped :: BuiltinData -> BuiltinUnit

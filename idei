@@ -1,79 +1,92 @@
-PractitionerMembership
- - startDate
- - endDate
- - orgID
- - previousMembershipId
+
+--- Cerințe
+-------------------
+- Un practitioner poate avea una sau mai multe "membership histories" (câte una per organizație).
+- La o singură organizație un participant poate avea maxim un "membership history".
+- În cadrul unui "membership history", un participant poate avea mai multe "membership intervals" (istoric), dar maxim un singur "membership interval" activ (cel mai recent daca end date este in viitor ).
+- Intervalele anterioare sunt închise (au end date); reprezintă istoricul (ex.: membru 01.01.2022–01.02.2022, apoi 01.03.2022–01.04.2022).
+- O organizație poate avea mai multe "membership histories", unul per participant cu care a avut vreodată membership.
 
 
-Un practitioner poate avea una sau mai multe memberships pentru fiecare organizatie
+--- Soluție
+-------------------
+
+-- | Fiecare organizație are propria listă înlănțuită (linked list) de MembershipHistories, ordonată după participantId.
+
+type MembershipHistories = NodeDatum MembershipHistory AssetClass (src/lib/onchain-lib/Onchain/LinkedList.hs)
+-- Root: nodeKey = Nothing. Listă goală: root cu nextNodeKey = Nothing.
 
 
-Pentru o singura organizatie un practitioner poate avea un singur membership activ
+-- | Un nod din lista organizației: membership history pentru un participant.
+
+MembershipHistory {
+    mhId             :: AssetClass,
+    mhPractitionerId :: AssetClass,   -- ^ Practitioner ProfileId
+    mhOrganizationId :: AssetClass,   -- ^ Organization ProfileId
+    mhIntervalsHeadId:: Maybe AssetClass  -- ^ ID-ul head-ului listei de intervale (prepend-only); Nothing = listă goală
+}
+
+-- | Un interval de membership (nod în lista de intervale a unui MembershipHistory; listă prepend-only).
+-- | Doar head-ul listei poate fi "activ" (miEndDate Nothing sau setat în viitor).
+-- | Intervalele anterioare trebuie închise (miEndDate Just, în trecut).
+-- | Intervalele nu se suprapun; la adăugare interval nou, head-ul curent trebuie fie închis sau în trecut față de noul start.
+-- | Variantă A Accept: același NFT de interval; acceptarea = update datum (miIsAck False → True), fără burn/mint.
+MembershipIntervalNode {
+    miId        :: AssetClass,
+    miStartDate :: POSIXTime,
+    miEndDate   :: Maybe POSIXTime,   -- ^ Nothing = activ (fără end); Just t = închis sau programat. La setare (Close), doar valori în viitor (>= current time).
+    miIsAck     :: Bool,              -- ^ True = acceptat de participant ( același token, datum actualizat)
+    miPrevId    :: Maybe AssetClass    -- ^ Nodul anterior în listă (Nothing pentru primul interval)
+}
+
+-- Lista de intervale nu folosește NodeDatum/LinkedList; e un lanț de MembershipIntervalNode (miPrevId).
+-- Adăugare și validări: addMembershipInterval.
+
+Prin initializarea listei doar la crearea profilului de organizatie se impune unicitatea listelor
+
+--- Creare profil organizație
+-------------------
+- Mint profil (Ref + User) și lock la ProfilesValidator.                    -- MP CreateProfile
+- Mint membership root (listă goală de MembershipHistories) și lock la MembershipsValidator.  -- MP CreateProfile  
 
 
-
-practitionerMemberships: LinkedList (Org, LinkList Memberships) 
-
- 
- 
-OrganizationMembership
- - startDate
- - endDate
- - practitionerId
- - previousMembershipId
+--- Inscriere membri
+-------------------
+Două cazuri: membru nou (nicio membership history la acea org) sau membru existent (are deja un membership history la acea org).
 
 
+=== New Membership – Membru nou === 
 
-memberships :  LinkList OrganizationMembership
+Organizația creează un membership history pentru participant și adaugă primul interval (miIsAck = False).
 
-Pentru o singura organizatie un practitioner poate avea un singur membership activ
+1. Organizația inițializează Membership History
+   - mint membership history NFT                                    -- MP InitMembershipHistory
+   - mint primul membership interval NFT (miIsAck = False)            -- MP InitMembershipHistory
+   - insert nod MembershipHistory în lista org (LinkedList)          -- MV InitMembershipHistory
 
-
-
-P: RequestMembership
-
-O: AcceptMembership
-
-O: GrantMembershiP
-
-P: AcceptMembership
-
-OP: EndMembership
+2. Practitioner acceptă membership (Varianta A)
+   - practitioner spend User NFT (autorizare)
+   - spend UTxO-ul cu intervalul (la MembershipsValidator)           -- MV AcceptMembershipInterval
+   - output: același interval NFT, același datum cu miIsAck = True  -- (fără burn, fără mint nou; doar update datum)
 
 
+=== New Membership – Membru existent ===
 
-PendingMembership
+Organizația adaugă un interval nou în membership history-ul existent (prepend). Permis doar dacă intervalul anterior (head) e închis sau în trecut față de noul start.
 
+1. Organizația oferă interval nou
+   - mint membership interval NFT (miIsAck = False)                 -- MP AddToMembershipHistory
+   - update nod MembershipHistory: prepend noul interval în listă   -- MV AddToMembershipHistory
 
-Membership
-
-
-
-
-
-Memberships blocate la membershipsvalidator
-
-
-Membership
- - startDate
- - endDate
- - practitionerId
- - organizationId
- - previousMembershipId
+2. Practitioner acceptă membership (Varianta A)
+   - la fel ca la membru nou: spend interval UTxO + User NFT; output cu miIsAck = True  -- MV AcceptMembershipInterval
 
 
-Un practitioner poate avea una sau mai multe memberships pentru fiecare organizatie
+--- Update Membership Endate
+-------------------
+Permite atât organizației cât și participantului să seteze "end date" pentru intervalul activ.
 
+- End date pentru intervalul activ: opțional. Când este setat (Close), valoarea este doar în viitor (>= current time).
+- Un singur interval activ per membership history; la Close se actualizează head-ul listei de intervale (miEndDate = Just endDate, cu endDate >= current time).
 
-Pentru o singura organizatie un practitioner poate avea un singur membership activ
-
-
-orderedLinkedList (OP, unOrderedLinkedList Membership)
-
-new memberships to a new organization
- insert in orderedLinkedList 
-   - se verifica unicitate
-
-new membership to an existing organization
- insert in unOrderedLinkedList 
-   
+1. Org sau practitioner actualizează intervalul activ (setează miEndDate în viitor)   -- MV UpdateEndDate

@@ -55,6 +55,8 @@ library onchain-lib
     Onchain.BJJ
     Onchain.Blueprint
     Onchain.CIP68
+    Onchain.LinkedList
+    Onchain.MembershipsValidator
     Onchain.MintingPolicy
     Onchain.ProfilesValidator
     Onchain.Protocol

@@ -1,6 +1,86 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.2.8.0 -- 2026-02-09
+
+### Memberships System & Security Audit
+
+#### New: Membership Management (Onchain)
+
+Implemented the complete onchain membership system for tracking practitioner-organization relationships over time.
+
+**New Modules**:
+- `Onchain.LinkedList` — Generic sorted linked list for on-chain state
+- `Onchain.MembershipsValidator` — Validator for membership histories, intervals, and acceptance
+
+**New Data Types** (in `Protocol.hs`):
+- `OnchainMembershipHistory` — Tracks a practitioner's membership at an organization
+- `OnchainMembershipInterval` — Individual time-bounded membership period
+- `MembershipHistoriesListNode` — Linked list node wrapper with organization scoping
+- `MembershipDatum` — Sum type (`ListNodeDatum` | `IntervalDatum`) for the MembershipsValidator
+
+**New MintingPolicy Redeemers**:
+- `NewMembershipHistory` — Creates a new membership history (linked list node + first interval)
+- `NewMembershipInterval` — Adds a new interval to an existing membership history
+
+**New MembershipsValidator Redeemers**:
+- `InsertNodeToMHList` — Inserts a membership history node into the sorted linked list
+- `UpdateNodeInMHList` — Updates a membership history node (adds new interval to chain)
+- `AcceptInterval` — Practitioner accepts/acknowledges a membership interval
+
+**Transaction Flows**:
+| Flow | Authorization | What Happens |
+|------|--------------|--------------|
+| InitMembershipHistory | Org User NFT | Root created atomically with org profile; new history node inserted into list |
+| AddToMembershipHistory | Org User NFT | New interval prepended to existing history |
+| AcceptMembershipInterval | Practitioner User NFT | Practitioner acknowledges the interval |
+
+#### Security Audit
+
+Comprehensive security audit documented in `docs/OnchainSecurityAudit.md`.
+
+**Issues Found and Resolved**:
+
+| Severity | Issue | Status |
+|----------|-------|--------|
+| HIGH | Cross-Organization Membership Manipulation — Org A could modify Org B's membership data | **Fixed** (MV now independently checks Org User NFT from on-chain datum) |
+| MEDIUM | Missing CurrencySymbol validation for `practitionerId` in `NewMembershipHistory` | **Fixed** |
+| MEDIUM | No `startDate` validation against transaction validity range | **Fixed** |
+
+**Remaining LOW items**: `UpdateEndDate` time validation (not yet implemented), `endDate` validation on creation, dust/griefing mitigation (admin cleanup TODO), MV redeemer data integrity.
+
+#### Cross-Validator Redundancy Analysis
+
+Analyzed 7 cross-validator redundancies. 3 safely removed, 4 essential and retained.
+
+**Removed (execution cost savings)**:
+- **R2**: ProfilesValidator rank output check in `AcceptPromotion` — delegated to RanksValidator (only one redeemer, always validates)
+- **R3**: RanksValidator profile Ref NFT `== 1` check — already guaranteed by `checkAndGetCurrentStateDatumAndValue` `geq` filter
+- **R7**: MintingPolicy `isCorrectOrganization` in `NewMembershipInterval` — MV's `orgUserAC` check is strictly stronger
+
+**Essential (must keep)**:
+- **R1**: RanksValidator profile output check — prevents "wasted promotion" attack via `UpdateProfileImage` redeemer
+- **R4**: MembershipsValidator exact mint checks — prevents rogue MintingPolicy bypass
+- **R5**: `addMembershipIntervalToHistory` in both MP and MV — each script needs different parts of the result
+- **R6**: `validLastInterval` — prevents validation against arbitrary historical intervals
+
+#### Redeemer Changes (Breaking)
+
+**ProfilesRedeemer**:
+- `AcceptPromotion`: Removed `rankOutputIdx` parameter (R2 — rank output delegated to RV)
+
+**New MintingRedeemer constructors**:
+- `NewMembershipHistory organizationProfileId practitionerId startDate endDate leftNodeId firstIntervalOutputIdx`
+- `NewMembershipInterval organizationProfileId membershipNodeId startDate endDate intervalOutputIdx`
+
+#### Other Changes
+- Updated `OnchainArchitecture.md` with membership system design
+- Updated `CIP68.hs` with new derivation functions
+- Updated `Utils.hs` with new helper functions (`hasTxInAtAddressWithNFT`, `mintValueMinted`)
+- Updated `.cabal` file with new modules
+
+---
+
 ## 0.2.7.0 -- 2026-02-01
 
 ### Output Index Optimization
