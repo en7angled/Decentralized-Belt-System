@@ -43,31 +43,6 @@ makeIsDataIndexed ''NodeDatum [('NodeDatum, 0)]
 
 -- * Operations Functions
 
--- | Initialize an empty node datum with the given data
-{-# INLINEABLE initEmptyNodeDatum #-}
-initEmptyNodeDatum ::
-  (Monoid plutusData) =>
-  NodeDatum plutusData
-initEmptyNodeDatum =
-  NodeDatum
-    { nodeKey = Nothing,
-      nextNodeKey = Nothing,
-      nodeData = mempty
-    }
-
--- append
--- prepend
--- insert
--- delete
--- search
--- update
-
-{-# INLINEABLE unsafeGetNodeKeyAssetClass #-}
-unsafeGetNodeKeyAssetClass :: NodeDatum plutusData -> AssetClass
-unsafeGetNodeKeyAssetClass node = case nodeKey node of
-  Nothing -> traceError "Root node has no key"
-  Just key -> key
-
 -- | If not root or last it should have same currency symbol for the key and next key
 {-# INLINEABLE checkIfValidNodeDatum #-}
 checkIfValidNodeDatum :: NodeDatum plutusData -> Bool

@@ -231,8 +231,8 @@ Governs the rules for profile updates and promotion acceptance. It handles:
 Note: Profile deletion is intentionally NOT supported to preserve lineage integrity.
 
 **Redeemers**:
-- `UpdateProfileImage ProfileId ImageURI Integer` - Update the profile's image URI (profileId, newImageURI, profileOutputIdx)
-- `AcceptPromotion RankId Integer Integer` - Accept a pending promotion (rankId, profileOutputIdx, rankOutputIdx)
+- `UpdateProfileImage ImageURI Integer` - Update the profile's image URI (newImageURI, profileOutputIdx). The profile identity is derived from the spent UTxO's datum, not passed as a redeemer parameter.
+- `AcceptPromotion RankId Integer` - Accept a pending promotion (rankId, profileOutputIdx). Rank output validation is delegated to RanksValidator (R2 redundancy removed — see OnchainSecurityAudit.md).
 
 **Cross-Validator Communication**:
 The ProfilesValidator is **not parameterized**. Instead, it retrieves the RanksValidator address from the profile datum's embedded `protocolParams`:
@@ -266,7 +266,7 @@ This design means the validator dynamically resolves addresses based on datum co
 3. Validates promotion is still valid:
    - `nextBelt > currentBelt` - Prevents double-acceptance
    - `nextBeltDate > currentBeltDate` - Prevents out-of-order acceptance
-4. Outputs correctly formed updated profile and rank datums
+4. Outputs correctly formed updated profile datum (rank output validation is delegated to RanksValidator — R2)
 
 Note: User NFT consent is NOT checked here because RanksValidator always runs (Promotion UTxO must be spent) and guarantees consent. This avoids redundant validation.
 
@@ -299,7 +299,7 @@ let studentProfileId = promotionAwardedTo promotionRank
 **Validation Logic**:
 1. Student must spend their Profile User NFT (consent via `deriveUserFromRefAC`)
 2. Student's profile is spent from `txInfoInputs` and must contain the Profile Ref NFT
-3. `promoteProfile` transforms the Promotion into a Rank and updates the profile's `currentRank`
+3. `promoteProfile` transforms the Promotion into a Rank and updates the profile's `currentRank` (RV uses the combined function since it validates both outputs; PV uses the lightweight `promoteProfileDatum` which only computes the updated profile — see R4 optimization)
 4. Updated profile datum must be locked at ProfilesValidator address (output idx check)
 5. New rank datum must be locked at RanksValidator address (output idx check)
 

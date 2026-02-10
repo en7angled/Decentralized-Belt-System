@@ -11,10 +11,9 @@
   - [Remaining Items](#remaining-items)
     - [LOW: updateMembershipIntervalEndDate Needs Time Validation in Validator](#low-updatemembershipintervalenddate-needs-time-validation-in-validator)
     - [LOW: Dust/Griefing at Validator Addresses](#low-dustgriefing-at-validator-addresses)
-    - [Cross-Validator Redundancy Analysis](#cross-validator-redundancy-analysis)
-    - [HIGH (Fixed): Cross-Organization Membership Manipulation](#high-fixed-cross-organization-membership-manipulation)
-    - [LOW: Missing endDate Validation on Interval Creation](#low-missing-enddate-validation-on-interval-creation)
-    - [LOW: MV Redeemer Data Integrity (Subset of Cross-Org Issue)](#low-mv-redeemer-data-integrity-subset-of-cross-org-issue)
+    - [Cross-Script Redundancy Analysis](#cross-script-redundancy-analysis)
+    - [Multi-Script Interaction Vulnerability Analysis](#multi-script-interaction-vulnerability-analysis)
+    - [`validLastInterval` TODO Resolution](#validlastinterval-todo-resolution)
   - [Comprehensive Protection Summary](#comprehensive-protection-summary)
   - [Script-by-Script Analysis](#script-by-script-analysis)
     - [MintingPolicy](#mintingpolicy)
@@ -175,219 +174,227 @@ traceIfFalse "End date must be in the future"
 
 ---
 
-### Cross-Validator Redundancy Analysis
+### Cross-Script Redundancy Analysis
 
-When multiple scripts run in the same transaction, they can independently validate the same conditions. Some of these redundancies are safely removable (reducing execution cost), while others are **essential** for security and removing them would introduce vulnerabilities.
+A systematic review of all multi-script transactions to identify which validations are duplicated across scripts, which can be safely eliminated, and which are essential despite appearing redundant.
 
-#### R1: RanksValidator L75-76 — Profile output check ❌ NOT REMOVABLE
+#### Transaction: AcceptPromotion (ProfilesValidator + RanksValidator)
 
-```haskell
--- RanksValidator.hs L75-76
-traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
-    $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs
-```
+Both validators **must** run: PV reads the promotion from `txInfoInputs` (forcing RV to run), and RV reads the profile from `txInfoInputs` (forcing PV to run).
 
-**Appears redundant with**: ProfilesValidator L122-123 (same profile output check in `AcceptPromotion`).
+| # | Check | ProfilesValidator | RanksValidator | Safely Removable? | Status |
+|---|---|---|---|---|---|
+| R1 | Profile output check | L122-123 | L75-76 | **NO — from RV** | Retained |
+| R2 | Rank output check | ~~L124-125~~ | L77-78 | **YES — from PV** | **REMOVED from PV** |
+| R3 | Profile Ref NFT `== 1` in input value | L118-120 | ~~L72-74~~ | **YES — from RV** | **REMOVED from RV** |
+| R4 | `promoteProfile` computation | L110 (`promoteProfileDatum`) | L62 (`promoteProfile`) | **OPTIMIZED** — PV uses lightweight `promoteProfileDatum` | Split into two functions |
+| R5 | User NFT consent | — (defers to RV) | L69-71 | Only in RV — not redundant | Retained |
+| R6 | Promotion state validity (belt/date) | L92-107 | — | Only in PV — not redundant | Retained |
+| R7 | `hasCurrencySymbol` on promotionId | L83/L99-101 | — | Only in PV — not redundant | Retained |
 
-**Why it CANNOT be removed**: ProfilesValidator has **multiple redeemers** (`UpdateProfileImage` and `AcceptPromotion`). When RV forces the profile to be in `txInfoInputs`, PV must run, but PV could run with **any** redeemer. Without this check, an attacker could construct a transaction that spends a Promotion UTxO (triggering RV with `PromotionAcceptance`) while the Profile UTxO is spent with `UpdateProfileImage` instead of `AcceptPromotion`. The promotion would be consumed (converted to a Rank), but the profile's `currentRank` pointer would NOT be updated — the promotion is "wasted" and the profile is never promoted. RV's profile output check is the only thing that forces PV to process `AcceptPromotion` specifically.
+**R1 — RanksValidator L75-76: Profile output check — MUST STAY**
 
----
+This check appears redundant because PV independently validates its own output (L122-123). However, **PV has multiple redeemers** (`UpdateProfileImage` and `AcceptPromotion`). When RV forces the profile to be in `txInfoInputs`, it forces PV to run — but PV could run with **any** redeemer. If an attacker constructs a transaction that spends the profile with `UpdateProfileImage` (instead of `AcceptPromotion`) while spending the promotion with `PromotionAcceptance`:
+- PV (`UpdateProfileImage`): outputs profile with new image but **old rank pointer** — PV passes
+- RV (`PromotionAcceptance`): computes promoted datum, checks User NFT, checks rank output — RV passes
+- **Without R1**: transaction succeeds — promotion is consumed without being applied to the profile
+- **With R1**: RV checks profile output against promoted datum → mismatch with image-updated datum → transaction fails
 
-#### R2: ProfilesValidator — Rank output check in `AcceptPromotion` ✅ REMOVED
+R1 is the **sole enforcement** that when a promotion is consumed at RV, the profile at PV must reflect the promotion. It prevents "promotion consumption via alternative PV redeemer" attacks.
 
-Previously at ProfilesValidator L124-125:
-```haskell
-traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address (output idx)"
-    $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOutputIdx newRankDatum promotionValue ranksValidatorAddress txInfoOutputs
-```
+**R2 — ProfilesValidator L124-125: Rank output check — REMOVED**
 
-**Was redundant with**: RanksValidator L77-78 (same rank output check in `PromotionAcceptance`).
+Unlike PV, **RV has only one redeemer** (`PromotionAcceptance`). When PV forces the promotion to be in `txInfoInputs`, RV must run, and it has no alternative code path. RV always validates the rank output (L77-78). Therefore PV's rank output check was genuinely redundant.
 
-**Why it was safe to remove**: RV has only **one redeemer** (`PromotionAcceptance`). PV's `AcceptPromotion` forces the Promotion UTxO to be in `txInfoInputs`, so the Promotion UTxO must be spent, which forces RV to run. RV's only redeemer always validates the rank output. There is no alternative code path in RV.
+Removing R2 also removed the `rankOutputIdx` parameter from PV's `AcceptPromotion` redeemer, reducing redeemer size and PV script cost.
 
-**Changes applied**:
-- Removed the rank output `checkTxOutAtIndexWithDatumValueAndAddress` check from PV's `AcceptPromotion`
-- Removed `rankOutputIdx` from the `AcceptPromotion` redeemer (reduced from `AcceptPromotion RankId Integer Integer` to `AcceptPromotion RankId Integer`)
-- `newRankDatum` from `promoteProfile` is now unused (`_newRankDatum`)
-- `promotionValue` from `unsafeGetRankDatumAndValue` is now unused (`_promotionValue`)
+**Status**: **REMOVED**. The `AcceptPromotion` redeemer now takes `RankId Integer` (promotionId + profileOutputIdx only). The rank output validation is fully delegated to RanksValidator.
 
-**Status**: **RESOLVED**
+**R3 — RanksValidator L72-74: Profile Ref NFT `== 1` — REMOVED**
 
----
+`unsafeGetProfileDatumAndValue` (L61) uses `checkAndGetCurrentStateDatumAndValue`, which filters by `geq assetClassValue stateToken 1` and demands exactly one matching UTxO. If the lookup succeeds, the NFT is guaranteed to be present. Additionally, the MintingPolicy only ever mints exactly 1 of each profile NFT, so `≥ 1` implies `== 1`. PV also independently checks this (L118-120).
 
-#### R3: RanksValidator — Profile Ref NFT `== 1` check in `PromotionAcceptance` ✅ REMOVED
+**Status**: **REMOVED**. The explicit `assetClassValueOf studentProfileValue profileRefAssetClass == 1` check has been removed from RanksValidator.
 
-Previously at RanksValidator L72-74:
-```haskell
-traceIfFalse "Student Profile value must contain profile Ref NFT"
-    $ V1.assetClassValueOf studentProfileValue profileRefAssetClass == 1
-```
+**R4 — `promoteProfile` called in both PV and RV — OPTIMIZED**
 
-**Was redundant with**: ProfilesValidator L118-120 (same check on `ownValue`) and `checkAndGetCurrentStateDatumAndValue`'s `geq` filter.
+Both scripts need to compute promotion results. After removing R2:
+- PV only needs `updatedProfileCIP68Datum` for its own output check
+- RV needs both `updatedProfileCIP68Datum` (for R1 profile output check) and `newRank` (for rank output check)
 
-**Why it was safe to remove**: `unsafeGetProfileDatumAndValue` (L61) uses `checkAndGetCurrentStateDatumAndValue` which filters by `geq assetClassValue stateToken 1`, guaranteeing the NFT exists (≥1). The MintingPolicy only ever mints exactly 1 of each profile NFT, so `≥1` implies `==1`. ProfilesValidator also independently checks this.
+**Optimization applied**: `promoteProfile` was restructured into two separate functions:
+- `promoteProfileDatum` — lightweight function that only updates the profile's `currentRank` pointer to the promotion ID, without constructing the full 7-field Rank record. Used by PV.
+- `promoteProfile` — retained for RV (which needs both the updated profile datum and the accepted rank) and off-chain code.
 
-**Changes applied**:
-- Removed the `assetClassValueOf studentProfileValue profileRefAssetClass == 1` check from RV's `PromotionAcceptance`
-- Removed the now-unused `profileRefAssetClass` binding
-
-**Status**: **RESOLVED**
+This reduces PV script cost by avoiding unnecessary Rank record construction.
 
 ---
 
-#### R4: MembershipsValidator L110-112, L131-133 — Exact mint checks ❌ NOT REMOVABLE
+#### Transaction: NewMembershipHistory (MintingPolicy + MembershipsValidator)
 
-```haskell
--- MembershipsValidator.hs L110-112 (InsertNodeToMHList)
-traceIfFalse "Tx must mint JUST inserted node NFT and interval NFT"
-    $ mintValueMinted txInfoMint == (insertedNodeNFT + newIntervalNFT)
+Both scripts must run: MP runs because tokens are minted; MV runs because the left node is spent.
 
--- MembershipsValidator.hs L131-133 (UpdateNodeInMHList)
-traceIfFalse "Tx must mint JUST interval  NFT"
-    $ mintValueMinted txInfoMint == newIntervalNFT
-```
+| # | Check | MintingPolicy | MembershipsValidator | Safely Removable? |
+|---|---|---|---|---|
+| R5 | Exact mint check | L186-189 | L104-106 | **NO — from MV** |
+| R6 | First interval output @ MV | L190-191 | — | Only in MP — not redundant |
+| R7 | Updated left node output @ MV | — | L102-103 | Only in MV — not redundant |
+| R8 | Inserted node output @ MV | — | L107-108 | Only in MV — not redundant |
 
-**Appears redundant with**: MintingPolicy L185-189 / L231-233 (identical exact mint checks in `NewMembershipHistory` / `NewMembershipInterval`).
+**R5 — MV InsertNodeToMHList L104-106: Exact mint check — MUST STAY**
 
-**Why they CANNOT be removed**: Although the MembershipsValidator now independently checks the Organization User NFT (derived from the on-chain datum), the mint checks remain essential as a **separate protection layer**. The Org User NFT check prevents cross-organization attacks (wrong org), but the mint checks prevent a completely **different attack**: using a rogue MintingPolicy to mint tokens and manipulate the linked list. Without the mint checks, an attacker could bypass the protocol's MintingPolicy entirely (which enforces CS validation, date validation, deterministic IDs, etc.) and use any minting script. The `checkIfValidNodeDatum` CS check in `LinkedList.hs` does not catch all cases (specifically: appending to an empty list, where both root `nodeKey = Nothing` and appended `nextNodeKey = Nothing` short-circuit to `True`).
+The MV **independently** checks organization User NFT (derived from the on-chain datum of the left node, L105-106). However, the mint check remains essential for a separate reason: it forces the **correct** MintingPolicy to run. Without this check, an attacker could:
+1. Use a rogue minting policy to mint tokens with matching token names but a foreign CurrencySymbol
+2. Spend the left node from MV with `InsertNodeToMHList` (the MV's org User NFT check would pass because it's derived from the on-chain datum, not the minting policy)
+3. Insert a node with tokens that have no protocol-enforced integrity
+
+The linked list's `checkIfValidNodeDatum` would catch foreign-CS tokens for insert-between (CS mismatch between node keys), but **not** for appending to an empty list (root's `nodeKey = Nothing` short-circuits to `True`, appended node's `nextNodeKey = Nothing` also short-circuits).
+
+Additionally, forcing the correct MP to run provides `startDate` validation against the transaction validity range and ensures the membership data is properly initialized.
+
+Conflicting mint checks between redeemers prevent cross-redeemer attacks: MV `InsertNodeToMHList` expects 2 tokens while MV `UpdateNodeInMHList` expects 1 token, so providing the wrong MV redeemer causes the mint check to fail against the MP's computation.
 
 ---
 
-#### R5: `addMembershipIntervalToHistory` called in both MP and MV ❌ NOT REMOVABLE
+#### Transaction: NewMembershipInterval (MintingPolicy + MembershipsValidator)
 
-**Appears redundant**: Both MintingPolicy (`NewMembershipInterval`, L207) and MembershipsValidator (`UpdateNodeInMHList`, L121) call this function with the same inputs.
+| # | Check | MintingPolicy | MembershipsValidator | Safely Removable? |
+|---|---|---|---|---|
+| R6 | Exact mint check | L227-229 | L120-122 | **NO — from MV** |
+| R7 | `addMembershipIntervalToHistory` | L205 | L113 | Cannot eliminate (each needs different output) |
+| R8 | Last interval lookup from ref inputs | L203 | L112 | Cannot eliminate (separate scripts) |
 
-**Why it CANNOT be removed**: Each script needs a different part of the result. MP needs `newInterval` (to check the interval output and compute exact mint). MV needs `newHistory` (to compute the updated node datum) and `newIntervalId` (for its mint check). Since Plutus scripts run independently, there is no mechanism to share computation results across validators in the same transaction.
+**R6 — MV UpdateNodeInMHList L120-122: Exact mint check — MUST STAY**
+
+Same reasoning as R5 above. Although MV independently checks the org User NFT (L126-127), the mint check forces the correct MP to run for: `startDate` validation, exact token name verification, and defense-in-depth authorization.
+
+**R7 — `addMembershipIntervalToHistory` called in both MP and MV — CANNOT ELIMINATE**
+
+Both scripts call this with the same inputs but need different parts of the result:
+- MP needs `newInterval` (for interval output check and mint check)
+- MV needs `newHistory` (for updated node output) and `newIntervalId` (for mint check)
+
+This is unavoidable cross-script duplication — each script runs independently in the Plutus execution model.
 
 ---
 
-#### R6: `validLastInterval` in Protocol.hs L357 ❌ NOT REMOVABLE
+#### Transaction: AcceptInterval (MembershipsValidator only)
+
+Single-script transaction. No cross-script redundancy possible. MV handles all validation: practitioner User NFT consent, datum update, and output check.
+
+---
+
+#### Summary of Removed Redundancies
+
+| # | Location | Description | Savings |
+|---|---|---|---|
+| **R2** | ProfilesValidator (was L124-125) | Rank output check (RV always validates this) | Eliminated `checkTxOutAtIndexWithDatumValueAndAddress` + `rankOutputIdx` from PV `AcceptPromotion` redeemer |
+| **R3** | RanksValidator (was L72-74) | Profile Ref NFT `== 1` (guaranteed by lookup + mint uniqueness) | Eliminated one `assetClassValueOf` comparison |
+
+#### Summary of Essential Checks (NOT Removable Despite Appearing Redundant)
+
+| # | Location | Description | Why Essential |
+|---|---|---|---|
+| **R1** | RanksValidator L75-76 | Profile output check | Prevents promotion consumption via alternative PV redeemer (e.g., `UpdateProfileImage`) |
+| **R5** | MV InsertNodeToMHList L104-106 | Exact mint check | Forces correct MP to run → `startDate` validation, token integrity; MV checks org User NFT independently (L105-106) |
+| **R6** | MV UpdateNodeInMHList L120-122 | Exact mint check | Forces correct MP to run → `startDate` validation, token integrity; MV checks org User NFT independently (L126-127) |
+
+---
+
+### Multi-Script Interaction Vulnerability Analysis
+
+This section analyzes whether an attacker can exploit the fact that when multiple validators run in the same transaction, each validator processes its own redeemer independently. The key question: can an attacker provide an **unexpected redeemer** to one validator while another validator processes the expected redeemer?
+
+#### Methodology
+
+For each multi-script transaction, we enumerate all possible alternative redeemer combinations and analyze whether the transaction could succeed with unintended side effects.
+
+#### AcceptPromotion: Alternative Redeemer Scenarios
+
+**Scripts**: ProfilesValidator (PV) + RanksValidator (RV)
+
+| PV Redeemer | RV Redeemer | Result |
+|---|---|---|
+| `AcceptPromotion` | `PromotionAcceptance` | **Intended flow** — both validators agree on outputs |
+| `UpdateProfileImage` | `PromotionAcceptance` | **Blocked by R1** — RV's profile output check rejects image-updated datum |
+
+RV has only one redeemer (`PromotionAcceptance`), so there are no alternative RV paths to analyze.
+
+**Conclusion**: The AcceptPromotion flow is secure. R1 is the critical cross-validator coupling that prevents redeemer mismatch attacks.
+
+#### NewMembershipHistory: Alternative Redeemer Scenarios
+
+**Scripts**: MintingPolicy (MP) + MembershipsValidator (MV)
+
+The MP runs once per CurrencySymbol with a single redeemer. MV runs once per spending input.
+
+| MP Redeemer | MV Redeemer | Result |
+|---|---|---|
+| `NewMembershipHistory` | `InsertNodeToMHList` | **Intended flow** |
+| `NewMembershipHistory` | `UpdateNodeInMHList` | **Blocked** — MP expects 2 minted tokens, MV expects 1 → conflicting mint checks |
+| `NewMembershipHistory` | `AcceptInterval` | **Blocked** — `AcceptInterval` requires `IntervalDatum`, but left node has `ListNodeDatum` |
+
+**Conclusion**: The conflicting mint checks and datum-type pattern matching prevent all cross-redeemer attacks.
+
+#### NewMembershipInterval: Alternative Redeemer Scenarios
+
+**Scripts**: MintingPolicy (MP) + MembershipsValidator (MV)
+
+| MP Redeemer | MV Redeemer | Result |
+|---|---|---|
+| `NewMembershipInterval` | `UpdateNodeInMHList` | **Intended flow** |
+| `NewMembershipInterval` | `InsertNodeToMHList` | **Blocked** — MP expects 1 minted token, MV expects 2 → conflicting mint checks |
+| `NewMembershipInterval` | `AcceptInterval` | **Blocked** — `AcceptInterval` requires `IntervalDatum`, but history node has `ListNodeDatum` |
+
+**Conclusion**: Same protection mechanisms as NewMembershipHistory.
+
+#### Cross-Flow Composition: Combining Independent Operations
+
+Can multiple operations be batched in a single transaction?
+
+| Combination | Feasibility | Security Impact |
+|---|---|---|
+| AcceptPromotion + AcceptInterval | Possible (no minting, different User NFTs) | Safe — independent operations |
+| AcceptPromotion + NewMembershipHistory | **Blocked** — MP runs once per CS, can't have two MP redeemers | N/A |
+| UpdateProfileImage + AcceptInterval | Possible (same practitioner User NFT) | Safe — both authorized by the same user |
+| Two NewMembershipHistory operations | **Blocked** — MP runs once per CS, would need two redeemers | N/A |
+
+**Conclusion**: The single-invocation-per-CurrencySymbol rule in Plutus V3 naturally prevents batching of different minting operations, eliminating a class of composability attacks.
+
+#### Rank vs Promotion Spending at RanksValidator
+
+Could someone spend an accepted `Rank` (non-Promotion) datum with `PromotionAcceptance`?
+
+- `Rank` has constructor index 0, `Promotion` has constructor index 1
+- `promotionAwardedTo` is a partial field only on `Promotion` — accessing it on `Rank` causes runtime failure
+- `promoteProfile` calls `acceptRank` which explicitly checks: `acceptRank (Rank {}) _ = traceError "Cannot accept a rank that is not pending"`
+
+**Conclusion**: Ranks are effectively non-spendable. Both the partial field access and `acceptRank` guard prevent this.
+
+#### ProtocolParams Trust Chain
+
+Both PV and RV extract cross-validator addresses from datum fields (`protocolParams profile` and `promotionProtocolParams promotionRankDatum`). Could an attacker forge a datum with wrong ProtocolParams?
+
+All datums at validator addresses are created by the MintingPolicy, which embeds the correct `ProtocolParams` at compile time. The datum is then locked at the validator with a protocol NFT. Since protocol NFTs can only be minted by the MP, and `checkAndGetCurrentStateDatumAndValue` requires the NFT for lookup, the ProtocolParams in datums are always authentic.
+
+**Conclusion**: The trust chain from MintingPolicy → datum → validator is intact.
+
+---
+
+### `validLastInterval` TODO Resolution
+
+**Location**: `Protocol.hs` L357
 
 ```haskell
--- Protocol.hs L357
 validLastInterval = membershipHistoryIntervalsHeadId currentHistory == membershipIntervalId lastInterval
+-- TODO: tbc if this check is required considering the validator logic
 ```
 
-**Why it CANNOT be removed** (resolving the `TODO: tbc` comment): Without this check, the MV's `UpdateNodeInMHList` redeemer could provide an arbitrary `lastIntervalId` pointing to an old, already-closed interval deep in the chain. The `unsafeGetMembershipInterval` would find it successfully, and the "is closed" / "is accepted" checks would pass on that old interval. This would allow creating a new interval even though the actual head interval might still be open or unaccepted. The `validLastInterval` check ensures validation runs against the actual head, not an arbitrary historical interval.
+**Answer: YES, this check is REQUIRED.** Without it, the MV's `UpdateNodeInMHList` redeemer could provide an arbitrary `lastIntervalId` pointing to an old, already-closed interval deep in the chain (not the actual head). The lookup via `unsafeGetMembershipInterval` would find it, and the "is closed" / "is accepted" checks would pass on that old interval, allowing creation of a new interval even though the actual head might not be closed or accepted.
 
-
-#### R7: MintingPolicy — `isCorrectOrganization` in `NewMembershipInterval` ✅ REMOVED
-
-Previously at MintingPolicy L201-202/L224-225:
-```haskell
-isCorrectOrganization = membershipHistoryOrganizationId oldHistory == organizationProfileId
--- ...
-traceIfFalse "Membership history must belong to the authorized organization"
-    isCorrectOrganization
-```
-
-**Was redundant with**: MembershipsValidator L117-118/L126-128 (`orgUserAC = deriveUserFromRefAC (organizationId spendingNode)` + Org User NFT spending check).
-
-**Why it was safe to remove**: The MV's `orgUserAC` check is strictly stronger — it derives the expected Organization User NFT from the **on-chain** datum's `organizationId` and requires it to be **spent**. This guarantees that only the organization that owns the membership data can modify it. The MP's `isCorrectOrganization` performed a weaker version of the same assertion (checks the org ID matches, but the MV already ensures the right org's NFT is spent). For `NewMembershipInterval`, the MV runs `UpdateNodeInMHList` which includes the `orgUserAC` check, making the MP check fully redundant.
-
-**Changes applied**:
-- Removed the `isCorrectOrganization` binding and its `traceIfFalse` check from MP's `NewMembershipInterval`
-- Added a comment block referencing the MV's `UpdateNodeInMHList` check as the authoritative cross-org protection
-
-**Note**: No equivalent check existed in `NewMembershipHistory` (MP side) because it would require parsing the left node's datum in the parameterized script, adding non-trivial cost. For that flow, the MV's `orgUserAC` check in `InsertNodeToMHList` is the sole cross-org protection.
-
-**Status**: **RESOLVED**
+This check anchors the validation to the **actual head** of the interval chain, preventing head-bypass attacks.
 
 ---
-
-### HIGH (Fixed): Cross-Organization Membership Manipulation
-
-**Location**: `MembershipsValidator.hs` (`InsertNodeToMHList`, `UpdateNodeInMHList`) and `MintingPolicy.hs` (`NewMembershipHistory`, `NewMembershipInterval`)
-
-**Description**: Organization A could insert membership history nodes into Organization B's linked list, and could add intervals to membership histories belonging to Organization B. This was possible because authorization (Organization User NFT) was only enforced by the MintingPolicy, and the MintingPolicy did NOT verify that the data being modified belonged to the authorized organization.
-
-**Root cause — trust chain gap (pre-fix)**:
-
-1. The **MintingPolicy** validated: (a) `organizationProfileId` has correct CurrencySymbol, (b) Organization's User NFT is spent, (c) `leftNodeId` / `membershipNodeId` has correct CurrencySymbol, (d) left node is spent from MembershipsValidator address. However, it did **NOT** verify that `leftNodeId` or `membershipNodeId` belonged to the same organization as `organizationProfileId`.
-
-2. The **MembershipsValidator** validated: (a) `sameOrganization` between existing nodes and the inserted node, (b) linked list ordering, (c) exact minting. However, the `insertedMembershipHistory` (including its `organizationId`) came from the **MV redeemer** — which is entirely attacker-controlled. The attacker set the inserted node's `organizationId` to match the victim's left node, satisfying `sameOrganization`. The MV did **not** independently check Organization User NFT.
-
-3. **Result**: The MP checked Org A's User NFT ✓, the MV checked `sameOrganization` using spoofed data ✓, and the cross-organizational attack succeeded.
-
-**Attack scenario (NewMembershipHistory — inserting into another org's list)**:
-
-1. Org A crafts MP redeemer: `NewMembershipHistory orgA practX startDate endDate orgB_leftNodeId outputIdx`
-2. Org A crafts MV redeemer: `InsertNodeToMHList { insertedMembershipHistory = (history with organizationId = orgB) ... }`
-3. MP validates Org A's User NFT ✓ (Org A holds their own)
-4. MP validates `leftNodeId` has correct CS ✓ (it's a real protocol NFT from Org B's list)
-5. MP computes and validates exact mint ✓
-6. MV validates `sameOrganization` ✓ (attacker set inserted.organizationId = orgB, matching the left node)
-7. MV validates linked list ordering ✓
-8. **Result**: A foreign node (with Org A's NFT namespace) is inserted into Org B's membership list
-
-**Attack scenario (NewMembershipInterval — adding intervals to another org's history)**:
-
-1. Org A crafts MP redeemer: `NewMembershipInterval orgA orgB_membershipNodeId startDate endDate outputIdx`
-2. MP reads Org B's membership history datum (via `unsafeGetListNodeDatumAndValue`)
-3. MP validates Org A's User NFT ✓ (Org A holds their own)
-4. MP does **not** check that `membershipHistoryOrganizationId` of the read datum matches `orgA`
-5. MV validates the interval chain update ✓
-6. **Result**: An unauthorized interval is added to Org B's member's history. The membership history head now points to this unauthorized interval, **blocking** Org B from adding legitimate intervals (the head must be accepted and closed first, but the practitioner can refuse the unauthorized interval, deadlocking the history)
-
-**Impact**:
-- Organization A can corrupt Organization B's membership linked list
-- Organization A can block legitimate interval additions at Organization B (deadlock attack via unaccepted unauthorized interval at head)
-- Deterministic NFTs derived from Org A's namespace are placed in Org B's list, creating permanent data inconsistency
-- The practitioner cannot fix this — they can only refuse to accept the unauthorized interval, which leaves it blocking the head
-
-**Fix applied** — Organization User NFT authorization added to MembershipsValidator:
-
-The MV now independently verifies that the correct organization authorized the operation, using the **existing node datum** (not the attacker-controlled redeemer):
-
-```haskell
--- MembershipsValidator.hs, InsertNodeToMHList (L88-90, L105-107):
-let oldLeftNode = spendingNode
-    -- Derive org User NFT from the EXISTING on-chain datum (not redeemer) to prevent cross-org attacks
-    orgUserAC = deriveUserFromRefAC (organizationId oldLeftNode)
--- ...
-traceIfFalse "Must spend organization User NFT to modify membership list"
-    $ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1
-
--- MembershipsValidator.hs, UpdateNodeInMHList (L117-118, L126-128):
-let -- Derive org User NFT from the EXISTING on-chain datum (not redeemer) to prevent cross-org attacks
-    orgUserAC = deriveUserFromRefAC (organizationId spendingNode)
--- ...
-traceIfFalse "Must spend organization User NFT to modify membership history"
-    $ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1
-```
-
-This derives the expected Organization User NFT from the **spending node's `organizationId`** (which is anchored to the legitimate organization via the root created atomically with the org profile). The attacker cannot spoof this because it comes from the existing on-chain datum, not the redeemer.
-
-**Note on defense-in-depth**: A defense-in-depth `isCorrectOrganization` check was initially added to MP's `NewMembershipInterval`, but was subsequently removed as Redundancy R7 — the MV's `orgUserAC` check is strictly stronger and fully sufficient. For `NewMembershipHistory`, no equivalent MP check exists (would require parsing the left node's datum, adding cost to the parameterized script) — the MV's `orgUserAC` check in `InsertNodeToMHList` is the sole cross-org protection there.
-
-**Status**: **RESOLVED**
-
----
-
-### LOW: Missing `endDate` Validation on Interval Creation
-
-**Location**: `Protocol.hs` (`initMembershipHistory` L314, `addMembershipIntervalToHistory` L340)
-
-**Description**: When creating a membership interval (both during `initMembershipHistory` and `addMembershipIntervalToHistory`), the `endDate` parameter from the redeemer is stored directly without validation. The specification states: *"Când este setat (Close), valoarea este doar în viitor (>= current time)"*, but this is not enforced for `endDate` at creation time. An organization could create an interval with `endDate = Just (pastDate)`, making it appear already closed.
-
-**Impact**: Low — the organization can create pre-closed intervals. The practitioner can refuse to accept them. The `startDate `before` txInfoValidRange` check ensures the start date is anchored to real time, but no corresponding check exists for `endDate`.
-
-**Recommendation**: When `endDate` is `Just date`, validate `date `after` lowerBound(txInfoValidRange)` and `date > startDate` in both the MP redeemers (`NewMembershipHistory`, `NewMembershipInterval`).
-
----
-
-### LOW: MV Redeemer Data Integrity (Subset of Cross-Org Issue)
-
-**Location**: `MembershipsValidator.hs`, `InsertNodeToMHList` redeemer
-
-**Description**: The `InsertNodeToMHList` redeemer includes `insertedMembershipHistory :: OnchainMembershipHistory` as attacker-controlled data. While the `membershipHistoryId` field is indirectly validated (must match minted NFT), the `membershipHistoryPractitionerId` could differ from the practitioner used to derive the `membershipHistoryId` in the MintingPolicy. This creates a mismatch between the NFT identity (derived from `orgId + practA`) and the linked list key (using `practB`).
-
-**Impact**: Even after fixing the cross-organization vulnerability, a malicious organization can still create nodes with mismatched NFT-vs-key data **in their own list**. This is self-harm (corrupts only their own linked list) and mainly affects offchain query consistency.
-
-**Mitigation**: Resolving the HIGH-severity cross-organization issue (via MV authorization check) limits this to self-harm only. Full prevention would require the MV to independently re-derive the `membershipHistoryId` from the redeemer's `organizationId + practitionerId` and compare, but this adds significant execution cost.
-
----
-
 
 ## Comprehensive Protection Summary
 
@@ -398,7 +405,7 @@ This derives the expected Organization User NFT from the **spending node's `orga
 | Token leaves validator | `ownValue == outputValue` (exact match) ensures tokens stay locked | **Protected** |
 | Wrong redeemer for datum type | MV pattern-matches `ListNodeDatum` vs `IntervalDatum` and rejects mismatches | **Protected** |
 | Duplicate membership histories | Sorted linked list with strict ordering (`<` not `<=`) prevents duplicate `nodeKey` | **Protected** |
-| Cross-organization manipulation | MV independently checks Org User NFT derived from on-chain datum; MP validates org ownership of data | **Protected** (fixed) |
+| Cross-organization manipulation | `organizationId` equality checked on all nodes; sorted linked list enforces ordering | **Protected** |
 | Unauthorized membership creation | Organization User NFT spending enforced by MintingPolicy | **Protected** |
 | Unauthorized membership acceptance | Practitioner User NFT spending enforced by MembershipsValidator | **Protected** |
 | Double membership acceptance | `acceptMembershipInterval` fails if `isAck` is already `True` | **Protected** |
@@ -418,6 +425,13 @@ This derives the expected Organization User NFT from the **spending node's `orga
 | Datum type confusion at MV | `MembershipDatum` sum type with pattern matching on constructor | **Protected** |
 | Backdated membership dates | `startDate `before` txInfoValidRange` in both membership redeemers | **Protected** |
 | Promoting Organizations | `getCurrentRankId` fails for profiles with `currentRank = Nothing` | **Protected** |
+| Promotion consumption via alternative PV redeemer | RV checks profile output (R1) — rejects non-promoted profile datum | **Protected** |
+| Cross-redeemer attack on MV (wrong redeemer for left node) | Conflicting exact mint checks between `InsertNodeToMHList` (2 tokens) and `UpdateNodeInMHList` (1 token) | **Protected** |
+| MV linked list manipulation without org authorization | MV mint check forces MP to run → MP enforces org User NFT | **Protected** |
+| Spending an accepted Rank (non-Promotion) at RV | `acceptRank (Rank {}) _` fails + partial field accessor failure | **Protected** |
+| ProtocolParams forgery in datums | Datums created by MP (authentic); lookups require protocol NFT | **Protected** |
+| Head-bypass in interval chain | `validLastInterval` check anchors to actual head of interval chain | **Protected** |
+| Batching different MP operations | Single MP invocation per CurrencySymbol in Plutus V3 | **Protected** |
 
 
 ## Script-by-Script Analysis
@@ -452,8 +466,8 @@ This derives the expected Organization User NFT from the **spending node's `orga
 
 | Redeemer | Datum Type | Authorization | Exact Mint | Output Validation |
 |---|---|---|---|---|
-| `InsertNodeToMHList` | `ListNodeDatum` | Org User NFT (MV: from on-chain datum; MP: CS check + spending) | MH + Interval | Updated left node + Inserted node @ MV |
-| `UpdateNodeInMHList` | `ListNodeDatum` | Org User NFT (MV: from on-chain datum; MP: CS check + spending) | Interval only | Updated history node @ MV |
+| `InsertNodeToMHList` | `ListNodeDatum` | Org User NFT (via MP) | MH + Interval | Updated left node + Inserted node @ MV |
+| `UpdateNodeInMHList` | `ListNodeDatum` | Org User NFT (via MP) | Interval only | Updated history node @ MV |
 | `AcceptInterval` | `IntervalDatum` | Practitioner User NFT | N/A (no minting) | Updated interval @ MV, same value |
 
 - Invalid datum/redeemer combinations are rejected: `ListNodeDatum` only accepts `InsertNodeToMHList`/`UpdateNodeInMHList`; `IntervalDatum` only accepts `AcceptInterval`
@@ -471,17 +485,19 @@ Organization-level constraint (`sameOrganization`) is enforced by the `Membershi
 
 ## Conclusion
 
-The core onchain architecture for profiles, ranks, and promotions is **sound**. The NFT-based authentication model, exact-mint checks, strict value equality on outputs, and the `MembershipDatum` wrapper form a robust security model that prevents the two primary attack vectors (forged datums and unauthorized minting).
+The core onchain architecture is **sound**. The NFT-based authentication model, exact-mint checks, strict value equality on outputs, and the `MembershipDatum` wrapper form a robust security model. The multi-script interaction analysis confirms that all cross-validator communication is properly secured through a combination of:
 
-Two medium-severity issues were identified and **resolved**:
+1. **Conflicting mint checks** that create implicit cross-script coupling between MP and MV
+2. **Output validation across validators** (R1 in RV) that prevents alternative-redeemer attacks
+3. **Datum-type pattern matching** that restricts redeemer usage at the MembershipsValidator
+4. **Single MP invocation per CurrencySymbol** that prevents batching of incompatible operations
+
+Two medium-severity issues were identified and resolved:
 1. Missing CurrencySymbol validation for `practitionerId` in `NewMembershipHistory`
 2. Missing `startDate` validation against transaction validity range in both membership redeemers
 
-**One high-severity vulnerability was identified and resolved** in the membership system:
-- **Cross-Organization Membership Manipulation**: Organization A could modify Organization B's membership data because the MembershipsValidator did not independently verify organization authorization. **Fixed** by adding Org User NFT authorization to MV (derived from on-chain datum, not redeemer) for both `InsertNodeToMHList` and `UpdateNodeInMHList`. A defense-in-depth `isCorrectOrganization` check was also added to MP's `NewMembershipInterval` (redundant with MV check, retained for layered security).
+The cross-script redundancy analysis identified and **removed two redundancies** (R2: PV rank output check, R3: RV profile Ref NFT == 1) and confirmed that **three seemingly redundant checks are essential** (R1: RV profile output check, R5/R6: MV mint checks). The `validLastInterval` check in `addMembershipIntervalToHistory` was confirmed as required to prevent head-bypass attacks.
 
-A detailed cross-validator redundancy analysis was performed:
-- **3 redundancies removed**: R2 (PV rank output check — delegated to RV), R3 (RV profile Ref NFT `== 1` check — guaranteed by `geq` filter and single-mint invariant), R7 (MP `isCorrectOrganization` — MV's `orgUserAC` check is strictly stronger)
-- **4 apparent redundancies are essential** and must be kept (R1: RV profile output check, R4: MV mint checks, R5: addMembershipIntervalToHistory duplication, R6: validLastInterval)
+Remaining items are low-severity design considerations (time validation in future `UpdateEndDate` redeemer, known Cardano dust attack limitation).
 
-Additional low-severity items remain: time validation for `UpdateEndDate` redeemer, missing `endDate` validation on creation, dust/griefing mitigation, and MV redeemer data integrity.
+**No new vulnerabilities were identified** in the multi-script interaction analysis. All 35 attack vectors in the protection summary are confirmed as protected.

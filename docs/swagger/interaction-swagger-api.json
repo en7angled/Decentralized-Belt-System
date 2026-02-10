@@ -120,17 +120,6 @@
                     ],
                     "type": "object"
                 },
-                "DeleteProfileAction": {
-                    "properties": {
-                        "profile_id": {
-                            "$ref": "#/definitions/GYAssetClass"
-                        }
-                    },
-                    "required": [
-                        "profile_id"
-                    ],
-                    "type": "object"
-                },
                 "InitProfileAction": {
                     "properties": {
                         "creation_date": {

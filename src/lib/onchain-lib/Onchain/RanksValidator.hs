@@ -35,6 +35,7 @@ data RanksRedeemer
   = -- | AcceptPromotion profileOutputIdx rankOutputIdx
     PromotionAcceptance Integer Integer
   deriving stock (Generic, Prelude.Show)
+  deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''RanksRedeemer [('PromotionAcceptance, 0)]
 
@@ -64,13 +65,16 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
                       profilesValidatorAddress = V1.scriptHashAddress $ profilesValidatorScriptHash $ promotionProtocolParams promotionRankDatum
                       studentProfileId = promotionAwardedTo promotionRankDatum -- Fails if trying to spend a rank instead of a promotion
                       profileUserAssetClass = deriveUserFromRefAC studentProfileId
-                      profileRefAssetClass = studentProfileId
-                   in and
+                   in -- NOTE (R3 redundancy removed — see OnchainSecurityAudit.md):
+                      -- The "Profile Ref NFT == 1" check was removed because
+                      -- unsafeGetProfileDatumAndValue uses checkAndGetCurrentStateDatumAndValue,
+                      -- which filters by `geq assetClassValue stateToken 1` and demands exactly
+                      -- one matching UTxO. If the lookup succeeds, the NFT is guaranteed present.
+                      -- Additionally, the MintingPolicy only ever mints exactly 1 of each profile
+                      -- NFT, so >= 1 implies == 1. PV also independently checks this.
+                      and
                         [ traceIfFalse "Must spend profile User NFT to accept promotion"
                             $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                            == 1,
-                          traceIfFalse "Student Profile value must contain profile Ref NFT"
-                            $ V1.assetClassValueOf studentProfileValue profileRefAssetClass
                             == 1,
                           traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
                             $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs,

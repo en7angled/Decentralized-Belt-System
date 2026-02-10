@@ -128,7 +128,7 @@ membershipsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bsredeemer) script
                                   == 1,
                                 traceIfFalse "Must lock updated node with inline datum at membershipsValidator address (output idx)"
                                   $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- Guarantees that tokens never leaves the validator.
-                                traceIfFalse "Tx must mint JUST interval  NFT"
+                                traceIfFalse "Tx must mint JUST interval NFT"
                                   $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
                                   == newIntervalNFT
                               ]

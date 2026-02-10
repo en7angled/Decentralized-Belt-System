@@ -24,43 +24,9 @@ mkUntypedLambda f c = check $ f (parseData c "Invalid context")
       _ -> traceError message
 {-# INLINEABLE mkUntypedLambda #-}
 
-{-# INLINEABLE tokenNameFromTxOutRef #-}
-tokenNameFromTxOutRef :: TxOutRef -> TokenName
-tokenNameFromTxOutRef toref = TokenName (nameFromTxOutRef toref)
-
 {-# INLINEABLE nameFromTxOutRef #-}
 nameFromTxOutRef :: TxOutRef -> BuiltinByteString
 nameFromTxOutRef (TxOutRef (TxId txIdbs) txIdx) = blake2b_224 (txIdbs `appendByteString` integerToByteString BigEndian 0 txIdx)
-
-------------------------
-
--- ** Value Helper Functions
-
-------------------------
-
-{-# INLINEABLE isMintingNFT #-}
-isMintingNFT :: V1.AssetClass -> MintValue -> Bool
-isMintingNFT ac txInfoMint = V1.assetClassValueOf (mintValueMinted txInfoMint) ac == 1
-
-{-# INLINEABLE isBurningNFT #-}
-isBurningNFT :: V1.AssetClass -> MintValue -> Bool
-isBurningNFT ac txInfoMint = V1.assetClassValueOf (mintValueBurned txInfoMint) ac == 1
-
--------------------------------------------------------------------------------
-
--- ** Output Helper Functions
-
--------------------------------------------------------------------------------
-
-{-# INLINEABLE checkTxOutAtIndexWithValueAndAddress #-}
-checkTxOutAtIndexWithValueAndAddress :: Integer -> Value -> Address -> [TxOut] -> Bool
-checkTxOutAtIndexWithValueAndAddress idx value address outputs =
-  isTxOutAtIndexWithValueAndAddress value address (outputs !! idx)
-
-{-# INLINEABLE isTxOutAtIndexWithValueAndAddress #-}
-isTxOutAtIndexWithValueAndAddress :: Value -> Address -> TxOut -> Bool
-isTxOutAtIndexWithValueAndAddress value address TxOut {txOutValue, txOutAddress} =
-  (value == txOutValue) && (address == txOutAddress)
 
 ------------------------
 
@@ -79,10 +45,6 @@ checkTxOutAtIndexWithDatumValueAndAddress idx datum value address outputs =
 isTxOutAtIndexWithDatumValueAndAddress :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
 isTxOutAtIndexWithDatumValueAndAddress datum value address TxOut {txOutValue, txOutAddress, txOutDatum} =
   (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
-
-{-# INLINEABLE hasTxInWithInlineDatumAndValue #-}
-hasTxInWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> [TxInInfo] -> Bool
-hasTxInWithInlineDatumAndValue datum value address = any (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress, txOutDatum})) -> (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum)
 
 {-# INLINEABLE hasTxInAtAddressWithNFT #-}
 hasTxInAtAddressWithNFT :: AssetClass -> Address -> [TxInInfo] -> Bool

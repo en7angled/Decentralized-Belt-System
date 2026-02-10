@@ -9,8 +9,8 @@ module Onchain.MintingPolicy where
 
 import GHC.Generics (Generic)
 import Onchain.BJJ (intToBelt, validatePromotion)
-import Onchain.CIP68 (CIP68Datum, MetadataFields, deriveUserFromRefAC, generateRefAndUserTN, mkCIP68Datum, validateMetadataFields)
-import Onchain.Protocol (MembershipDatum (..), MembershipHistoriesListNodeId, OnChainProfileType (..), OnchainMembershipHistory (..), OnchainProfile (..), OnchainRank (..), ProfileId, ProtocolParams, addMembershipIntervalToHistory, deriveMembershipHistoriesListId, generatePromotionRankId, getCurrentRankId, hasCurrencySymbol, initEmptyMembershipHistoriesList, initMembershipHistory, membershipIntervalId, membershipsValidatorScriptHash, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, profilesValidatorScriptHash, ranksValidatorScriptHash, unsafeGetListNodeDatumAndValue, unsafeGetMembershipHistory, unsafeGetMembershipInterval, unsafeGetProfile, unsafeGetRank)
+import Onchain.CIP68 (MetadataFields, deriveUserFromRefAC, generateRefAndUserTN, mkCIP68Datum, validateMetadataFields)
+import Onchain.Protocol (MembershipDatum (..), MembershipHistoriesListNodeId, OnChainProfileType (..), OnchainMembershipHistory (..), OnchainRank (..), ProfileId, ProtocolParams, addMembershipIntervalToHistory, deriveMembershipHistoriesListId, generatePromotionRankId, getCurrentRankId, hasCurrencySymbol, initEmptyMembershipHistoriesList, initMembershipHistory, membershipIntervalId, membershipsValidatorScriptHash, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, profilesValidatorScriptHash, ranksValidatorScriptHash, unsafeGetListNodeDatumAndValue, unsafeGetMembershipHistory, unsafeGetMembershipInterval, unsafeGetProfile, unsafeGetRank)
 import Onchain.Utils qualified as Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
 import PlutusLedgerApi.V1 qualified as V1
@@ -27,8 +27,9 @@ import Prelude qualified
 -- BJJ belt records are permanent historical facts that should not be erasable.
 -- Output indices are passed in the redeemer for efficient O(1) lookup instead of O(n) search.
 data MintingRedeemer
-  = -- | CreateProfile seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOutputIdx
-    -- For Organization profiles, rankOutputIdx is ignored (can be set to -1 or any value)
+  = -- | CreateProfile seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOrMembershipRootOutputIdx
+    -- For Practitioner profiles, the last index points to the rank output.
+    -- For Organization profiles, the last index points to the membership histories root output.
     CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer Integer Integer
   | -- | Promote seedTxOutRef promotedProfileId promoterProfileId achievementDate rankNumber pendingRankOutputIdx
     Promote TxOutRef ProfileId ProfileId POSIXTime Integer Integer
@@ -39,7 +40,7 @@ data MintingRedeemer
 
 makeIsDataSchemaIndexed ''MintingRedeemer [('CreateProfile, 0), ('Promote, 1), ('NewMembershipHistory, 2), ('NewMembershipInterval, 3)]
 
-type ProfilesDatum = CIP68Datum OnchainProfile
+
 
 --------------------------------------
 -- Minting Policy
@@ -150,7 +151,7 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                           traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address (output idx)"
                             $ Utils.checkTxOutAtIndexWithDatumValueAndAddress pendingRankOutputIdx pendingRankDatum (pendingRankNFT + minValue) ranksValidatorAddress txInfoOutputs,
                           traceIfFalse
-                            "Must promotion validation rules "
+                            "Must pass promotion validation rules"
                             isPromotionValid
                         ]
                 NewMembershipHistory organizationProfileId practitionerId startDate endDate leftNodeId firstIntervalOutputIdx ->
@@ -224,7 +225,7 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                             == 1,
                           traceIfFalse "Must spend the UTxO of the updated membership history (with IntervalDatum) from membershipsValidator address"
                             $ Utils.hasTxInAtAddressWithNFT membershipNodeId membershipsValidatorAddress txInfoInputs,
-                          traceIfFalse "Tx must mint JUST interval  NFT"
+                          traceIfFalse "Tx must mint JUST interval NFT"
                             $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
                             == newIntervalNFT,
                           traceIfFalse "Must lock interval with inline datum at membershipsValidator address (output idx)"

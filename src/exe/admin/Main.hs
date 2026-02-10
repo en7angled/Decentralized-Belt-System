@@ -1,5 +1,6 @@
 module Main where
 
+import Constants qualified
 import Data.Aeson (encode)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Char8 qualified as LSB8
@@ -12,6 +13,7 @@ import GeniusYield.GYConfig
 import GeniusYield.Imports
 import GeniusYield.Types
 import Onchain.BJJ (BJJBelt (..), parseBelt)
+import Onchain.Blueprint (contractBlueprint)
 import Options.Applicative
 import PlutusLedgerApi.V3
 import Text.Read qualified as Text
@@ -19,6 +21,7 @@ import TxBuilding.Context
 import TxBuilding.Interactions
 import TxBuilding.Transactions
 import TxBuilding.Utils
+import TxBuilding.Validators (defaultProtocolParams)
 import Utils
 
 atlasCoreConfig :: FilePath
@@ -41,6 +44,7 @@ printGreen = putStrLn . greenColorString
 -- BJJ belt records are permanent historical facts that should not be erasable.
 data Command
   = DeployReferenceScripts
+  | WriteBlueprint FilePath
   | InitProfile InitProfileArgs
   | UpdateProfileImage UpdateProfileImageArgs
   | PromoteProfile PromoteProfileArgs
@@ -207,6 +211,22 @@ commandParser =
             )
         )
         <> command
+          "write-blueprint"
+          ( info
+              ( WriteBlueprint
+                  <$> strOption
+                    ( long "output"
+                        <> short 'o'
+                        <> metavar "FILE"
+                        <> value Constants.defaultBlueprintFile
+                        <> showDefault
+                        <> help "Output file path for the CIP-57 contract blueprint JSON"
+                    )
+              )
+              ( progDesc "Write the CIP-57 contract blueprint JSON to a file"
+              )
+          )
+        <> command
           "init-profile"
           ( info
               ( InitProfile
@@ -297,6 +317,7 @@ createProfileWithRankToActionType CreateProfileWithRankArgs {cpwraProfileData, c
 -- Execute command function
 executeCommand :: Either ProviderCtx TxBuildingContext -> GYExtendedPaymentSigningKey -> Command -> IO ()
 executeCommand (Left pCtx) signKey cmd = case cmd of
+  WriteBlueprint _ -> pure () -- Handled in main before provider loading
   DeployReferenceScripts -> do
     printYellow "Deploying reference scripts..."
     deployedScriptsCtx <- deployReferenceScripts pCtx signKey
@@ -306,6 +327,7 @@ executeCommand (Left pCtx) signKey cmd = case cmd of
     printYellow "No transaction building context found."
     printYellow "Please run 'deploy-reference-scripts' first to set up the system."
 executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
+  WriteBlueprint _ -> pure () -- Handled in main before provider loading
   DeployReferenceScripts -> do
     printYellow "Deploying reference scripts..."
     deployedScriptsCtx <- deployReferenceScripts (providerCtx txBuildingCtx) signKey
@@ -354,23 +376,33 @@ main :: IO ()
 main = do
   printGreen "BJJ Belt System - Decentralized Belt Management"
 
-  mTxBuildingContext <- decodeConfigFile @DeployedScriptsContext txBuldingContextFile
-  case mTxBuildingContext of
-    Nothing -> do
-      printYellow "No transaction building context found, please run deploy-reference-scripts first"
-      printYellow "Please run deploy-reference-scripts first to set up the system"
-    Just _txBuildingContext -> do
-      printYellow "Transaction building context found, executing command"
-
   -- Parse command line arguments
   cmd <-
     execParser $
       info
         (commandParser <**> helper)
         ( fullDesc
-            <> progDesc "A command-line tool for managing Brazilian Jiu Jitsu profiles, belt promotions, and achievements on the Cardano blockchain. Supports deploying reference scripts, initializing and updating profiles, handling promotions, and more."
+            <> progDesc "A command-line tool for managing Brazilian Jiu Jitsu profiles, belt promotions, and achievements on the Cardano blockchain. Supports deploying reference scripts, writing CIP-57 blueprints, initializing and updating profiles, handling promotions, and more."
             <> header "BJJ Belt System - Decentralized Belt Management"
         )
+
+  -- Handle commands that don't require blockchain providers
+  case cmd of
+    WriteBlueprint outputPath -> do
+      printYellow $ "Writing CIP-57 contract blueprint to " <> outputPath <> " ..."
+      B.writeFile outputPath (encode $ contractBlueprint defaultProtocolParams)
+      printGreen $ "Blueprint written successfully to " <> outputPath
+    _ -> executeOnchainCommand cmd
+
+-- | Execute commands that require blockchain providers and signing keys
+executeOnchainCommand :: Command -> IO ()
+executeOnchainCommand cmd = do
+  mTxBuildingContext <- decodeConfigFile @DeployedScriptsContext txBuldingContextFile
+  case mTxBuildingContext of
+    Nothing -> do
+      printYellow "No transaction building context found, please run deploy-reference-scripts first"
+    Just _txBuildingContext -> do
+      printYellow "Transaction building context found, executing command"
 
   printYellow $ "Reading signing key file from " <> mnemonicFilePath
   signKey <- readMnemonicFile mnemonicFilePath

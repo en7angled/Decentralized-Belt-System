@@ -196,14 +196,15 @@ Usage: admin COMMAND
 
   A command-line tool for managing Brazilian Jiu Jitsu profiles, belt
   promotions, and achievements on the Cardano blockchain. Supports deploying
-  reference scripts, initializing and updating profiles, handling promotions,
-  and more.
+  reference scripts, writing CIP-57 blueprints, initializing and updating
+  profiles, handling promotions, and more.
 
 Available options:
   -h,--help                Show this help text
 
 Available commands:
   deploy-reference-scripts Deploy reference scripts for the BJJ belt system
+  write-blueprint          Write the CIP-57 contract blueprint JSON to a file
   init-profile             Initialize a new profile (White belt)
   update-profile-image     Update profile image
   promote-profile          Promote a profile to a new belt

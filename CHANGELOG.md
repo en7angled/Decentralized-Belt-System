@@ -1,6 +1,38 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.2.8.1 -- 2026-02-10
+
+### Code Quality, Blueprint CLI & Documentation Fixes
+
+#### Admin CLI: `write-blueprint` Command
+- **Added** `write-blueprint` command to the admin CLI for generating the CIP-57 contract blueprint JSON
+- Outputs to `docs/bjj-belt-system-blueprint.json` by default; customizable via `--output`/`-o` flag
+- Does not require blockchain providers or signing keys — runs purely locally
+- Refactored `main` to separate offline commands (`write-blueprint`) from provider-dependent commands
+
+#### Blueprint.hs Overhaul
+- **Added** `MembershipsValidator` blueprint (was entirely missing from CIP-57 contract blueprint)
+- **Added** `RanksRedeemer` and `MembershipsRedeemer` to `contractDefinitions` type list
+- **Added** `MembershipDatum` to `contractDefinitions` type list
+- **Fixed** `RanksRedeemer` now derives `HasBlueprintDefinition`; blueprint uses `definitionRef @RanksRedeemer` instead of `definitionRef @()`
+- **Fixed** stale descriptions: removed references to deleted features (`BurnProfileId`, `DeleteProfile`), updated preamble to mention four validators, corrected all validator descriptions to reflect current architecture
+
+#### Bug Fixes
+- **Fixed** `unsafeGetProfileDatumAndValue` in `Protocol.hs`: first parameter type annotation changed from `RankId` to `ProfileId` (semantic type mismatch — both are `AssetClass` so no runtime impact, but the type was misleading)
+- **Fixed** typo in `MintingPolicy.hs`: `"Must promotion validation rules "` → `"Must pass promotion validation rules"`
+- **Fixed** double-space typo in `MintingPolicy.hs`: `"Tx must mint JUST interval  NFT"` → `"Tx must mint JUST interval NFT"`
+- **Fixed** double-space typo in `MembershipsValidator.hs`: same `"interval  NFT"` pattern
+
+#### Documentation Fix
+- **Corrected** `OnchainSecurityAudit.md` R5 analysis: MV **does** independently check organization User NFT (derived from on-chain datum, L105-106 and L126-127), contrary to previous claim that it did not. Updated R5, R6 explanations and summary table to accurately describe the mint check's purpose: forcing the correct MP to run for `startDate` validation and token integrity, not org authorization
+
+#### Dead Code Removed
+- **Removed** `deriveRefFromUserTN` and `deriveRefFromUserAC` from `CIP68.hs` (unused anywhere in codebase)
+- **Removed** `initEmptyNodeDatum` from `LinkedList.hs` (unused anywhere in codebase)
+
+---
+
 ## 0.2.8.0 -- 2026-02-09
 
 ### Memberships System & Security Audit
@@ -54,8 +86,8 @@ Comprehensive security audit documented in `docs/OnchainSecurityAudit.md`.
 Analyzed 7 cross-validator redundancies. 3 safely removed, 4 essential and retained.
 
 **Removed (execution cost savings)**:
-- **R2**: ProfilesValidator rank output check in `AcceptPromotion` — delegated to RanksValidator (only one redeemer, always validates)
-- **R3**: RanksValidator profile Ref NFT `== 1` check — already guaranteed by `checkAndGetCurrentStateDatumAndValue` `geq` filter
+- **R2**: ProfilesValidator rank output check in `AcceptPromotion` — delegated to RanksValidator (only one redeemer, always validates). Also removed `rankOutputIdx` from PV's `AcceptPromotion` redeemer.
+- **R3**: RanksValidator profile Ref NFT `== 1` check — already guaranteed by `checkAndGetCurrentStateDatumAndValue` `geq` filter + mint uniqueness
 - **R7**: MintingPolicy `isCorrectOrganization` in `NewMembershipInterval` — MV's `orgUserAC` check is strictly stronger
 
 **Essential (must keep)**:
@@ -72,6 +104,14 @@ Analyzed 7 cross-validator redundancies. 3 safely removed, 4 essential and retai
 **New MintingRedeemer constructors**:
 - `NewMembershipHistory organizationProfileId practitionerId startDate endDate leftNodeId firstIntervalOutputIdx`
 - `NewMembershipInterval organizationProfileId membershipNodeId startDate endDate intervalOutputIdx`
+
+#### R4 Optimization: `promoteProfile` Restructured
+
+Restructured `promoteProfile` into two separate functions to reduce ProfilesValidator script cost:
+- **`promoteProfileDatum`** (new) — lightweight function that only updates the profile's `currentRank` pointer without constructing the full 7-field Rank record. Used by ProfilesValidator.
+- **`promoteProfile`** (retained) — combined function returning both updated profile datum and accepted rank. Used by RanksValidator and off-chain code.
+
+This avoids unnecessary Rank record construction in PV, which only needs the updated profile datum (rank output validation is handled by RV — see R2).
 
 #### Other Changes
 - Updated `OnchainArchitecture.md` with membership system design

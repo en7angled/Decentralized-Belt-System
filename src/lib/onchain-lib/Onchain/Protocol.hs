@@ -406,7 +406,25 @@ acceptRank Promotion {..} previousRankId =
       rankProtocolParams = promotionProtocolParams
     }
 
+{-# INLINEABLE promoteProfileDatum #-}
+
+-- | Compute only the updated profile datum for a promotion.
+-- Unlike 'promoteProfile', this does NOT construct the full Rank record —
+-- it only updates the profile's @currentRank@ pointer to the promotion's ID.
+-- This is the lightweight alternative for validators that only need the
+-- updated profile datum (e.g., ProfilesValidator — see R4 optimization in OnchainSecurityAudit.md).
+promoteProfileDatum :: CIP68Datum OnchainProfile -> OnchainRank -> CIP68Datum OnchainProfile
+promoteProfileDatum (CIP68Datum metadata version profile@OnchainProfile {..}) Promotion {..} = case currentRank of
+  Just _currentRankId ->
+    CIP68Datum metadata version (profile {currentRank = Just promotionId})
+  Nothing -> traceError "OnchainProfile has no rank"
+promoteProfileDatum _ _ = traceError "Cannot accept a rank that is not pending"
+
 {-# INLINEABLE promoteProfile #-}
+
+-- | Compute both the updated profile datum and the accepted rank.
+-- For on-chain code that only needs the profile datum, prefer 'promoteProfileDatum'
+-- which avoids constructing the full 7-field Rank record (R4 optimization).
 promoteProfile :: CIP68Datum OnchainProfile -> OnchainRank -> (CIP68Datum OnchainProfile, OnchainRank)
 promoteProfile (CIP68Datum metadata version profile@OnchainProfile {..}) promotion = case currentRank of
   Just currentRankId ->
@@ -472,6 +490,7 @@ hasCurrencySymbol (AssetClass (cs, _)) cs' = cs == cs'
 -- * Protocol Onchain Helpers
 
 -------------------------------------------------------------------------------
+{-# INLINEABLE unsafeGetRank #-}
 unsafeGetRank :: RankId -> Address -> [TxInInfo] -> OnchainRank
 unsafeGetRank ac addr txins =
   let (_, b) = checkAndGetCurrentStateDatumAndValue ac addr txins
@@ -484,13 +503,13 @@ unsafeGetRankDatumAndValue ac addr txins =
    in (v, unsafeFromBuiltinData b)
 
 {-# INLINEABLE unsafeGetProfile #-}
-unsafeGetProfile :: RankId -> Address -> [TxInInfo] -> OnchainProfile
+unsafeGetProfile :: ProfileId -> Address -> [TxInInfo] -> OnchainProfile
 unsafeGetProfile ac addr txins =
   let (_, b) = checkAndGetCurrentStateDatumAndValue ac addr txins
    in extra (unsafeFromBuiltinData b :: CIP68Datum OnchainProfile)
 
 {-# INLINEABLE unsafeGetProfileDatumAndValue #-}
-unsafeGetProfileDatumAndValue :: RankId -> Address -> [TxInInfo] -> (Value, CIP68Datum OnchainProfile)
+unsafeGetProfileDatumAndValue :: ProfileId -> Address -> [TxInInfo] -> (Value, CIP68Datum OnchainProfile)
 unsafeGetProfileDatumAndValue ac addr txins =
   let (v, b) = checkAndGetCurrentStateDatumAndValue ac addr txins
    in (v, unsafeFromBuiltinData b :: CIP68Datum OnchainProfile)

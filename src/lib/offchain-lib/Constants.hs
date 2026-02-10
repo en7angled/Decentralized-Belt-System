@@ -14,3 +14,6 @@ defaultRanksValidatorFile = "docs/validators/ranks_validator.plutus"
 
 defaultMintingPolicyFile :: FilePath
 defaultMintingPolicyFile = "docs/validators/minting_policy.plutus"
+
+defaultBlueprintFile :: FilePath
+defaultBlueprintFile = "docs/bjj-belt-system-blueprint.json"
