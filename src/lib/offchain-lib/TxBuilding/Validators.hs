@@ -2,6 +2,7 @@
 
 module TxBuilding.Validators where
 
+import Data.ByteString.Short qualified as SBS
 import GeniusYield.Types
 import Onchain.MintingPolicy qualified as MintingPolicy (mintingPolicyCompile)
 import Onchain.ProfilesValidator qualified as ProfilesValidator (profilesCompile)
@@ -94,6 +95,28 @@ mintingPolicyGY = validatorFromPlutus mintingPolicyPlutus
 
 mintingPolicyHashGY :: GYScriptHash
 mintingPolicyHashGY = validatorHash mintingPolicyGY
+
+------------------------------------------------------------------------------------------------
+
+-- *  Script Sizes (flat-encoded bytes)
+
+------------------------------------------------------------------------------------------------
+
+-- | Size of a compiled script in bytes (flat-encoded, as deployed on-chain)
+compiledCodeSize :: CompiledCode a -> Int
+compiledCodeSize cc = SBS.length (serialiseCompiledCode cc)
+
+mintingPolicySize :: Int
+mintingPolicySize = compiledCodeSize mintingPolicyPlutus
+
+profilesValidatorSize :: Int
+profilesValidatorSize = compiledCodeSize profilesValidatorPlutus
+
+ranksValidatorSize :: Int
+ranksValidatorSize = compiledCodeSize ranksValidatorPlutus
+
+membershipsValidatorSize :: Int
+membershipsValidatorSize = compiledCodeSize membershipsValidatorPlutus
 
 ------------------------------------------------------------------------------------------------
 

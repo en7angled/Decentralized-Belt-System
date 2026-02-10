@@ -1,6 +1,14 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.2.8.2 -- 2026-02-10
+
+### Script Size Reporting in Test Output
+
+- **Added** `compiledCodeSize` helper and per-validator size constants (`mintingPolicySize`, `profilesValidatorSize`, `ranksValidatorSize`, `membershipsValidatorSize`) to `Validators.hs` using `SBS.length . serialiseCompiledCode` for flat-encoded byte counts
+- **Added** `SCRIPT_SIZES` logging in `TestRuns.hs` `deployBJJValidators` so script sizes appear in `cabal test` output
+- **Updated** `scripts/test_exunits.sh` to parse `SCRIPT_SIZES` from test output and display a color-coded table with absolute size (bytes) and percentage of the 16 KB max transaction size limit
+
 ## 0.2.8.1 -- 2026-02-10
 
 ### Code Quality, Blueprint CLI & Documentation Fixes

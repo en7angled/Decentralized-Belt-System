@@ -25,9 +25,66 @@ else
     fi
 fi
 
-# Create a temp file to store parsed data
+# Format numbers with thousand separators
+format_number() {
+    printf "%'d" "$1" 2>/dev/null || echo "$1"
+}
+
+# Create temp files to store parsed data
 TEMP_FILE=$(mktemp)
-trap "rm -f $TEMP_FILE" EXIT
+SIZE_FILE=$(mktemp)
+trap "rm -f $TEMP_FILE $SIZE_FILE" EXIT
+
+# ── Script Sizes ──────────────────────────────────────────────────────────────
+# Parse SCRIPT_SIZES block from test output
+# Maximum reference script size: 16,384 bytes (Cardano max transaction size)
+MAX_SCRIPT_SIZE=16384
+
+echo "$TEST_OUTPUT" | perl -e '
+use strict;
+use warnings;
+local $/;
+my $text = <STDIN>;
+$text =~ s/\e\[[0-9;]*m//g;  # Remove ANSI codes
+
+while ($text =~ /SCRIPT_SIZES:\s*(.*?)(?=\n\S|\z)/sg) {
+    my $block = $1;
+    while ($block =~ /^\s*(\w+):\s*(\d+)\s*bytes/mg) {
+        print "$1|$2\n";
+    }
+}
+' | sort -u > "$SIZE_FILE"
+
+if [ -s "$SIZE_FILE" ]; then
+    echo -e "${BOLD}${CYAN}Deployed Script Sizes:${NC}"
+    echo -e "${YELLOW}╔══════════════════════════╤══════════════╤══════════════════╗${NC}"
+    echo -e "${YELLOW}║${NC} ${CYAN}Script${NC}                   ${YELLOW}│${NC}  ${CYAN}Size (bytes)${NC} ${YELLOW}│${NC} ${CYAN}% of Max (16 KB)${NC} ${YELLOW}║${NC}"
+    echo -e "${YELLOW}╠══════════════════════════╪══════════════╪══════════════════╣${NC}"
+
+    TOTAL_SIZE=0
+    while IFS='|' read -r name size; do
+        size_formatted=$(format_number "$size")
+        pct=$(awk "BEGIN {printf \"%.1f\", ($size / $MAX_SCRIPT_SIZE) * 100}")
+        TOTAL_SIZE=$((TOTAL_SIZE + size))
+
+        # Color code based on size percentage
+        if (( $(echo "$pct > 80" | bc -l) )); then
+            pct_color="${RED}"
+        elif (( $(echo "$pct > 50" | bc -l) )); then
+            pct_color="${YELLOW}"
+        else
+            pct_color="${GREEN}"
+        fi
+
+        printf "${YELLOW}║${NC} %-24s ${YELLOW}│${NC} %12s ${YELLOW}│${NC} ${pct_color}%14s%%${NC} ${YELLOW}║${NC}\n" "$name" "$size_formatted" "$pct"
+    done < "$SIZE_FILE"
+
+    echo -e "${YELLOW}╠══════════════════════════╪══════════════╪══════════════════╣${NC}"
+    total_formatted=$(format_number "$TOTAL_SIZE")
+    printf "${YELLOW}║${NC} ${GREEN}%-24s${NC} ${YELLOW}│${NC} %12s ${YELLOW}│${NC} %15s ${YELLOW}║${NC}\n" "TOTAL" "$total_formatted" ""
+    echo -e "${YELLOW}╚══════════════════════════╧══════════════╧══════════════════╝${NC}"
+    echo ""
+fi
 
 # Parse the output to extract interactions and their exUnits
 # Use perl for robust multi-line regex matching
@@ -107,11 +164,6 @@ foreach my $block (@blocks) {
 
 print "TOTAL||$total_mem|$total_steps||$total_fee\n";
 ' > "$TEMP_FILE"
-
-# Format numbers with thousand separators
-format_number() {
-    printf "%'d" "$1" 2>/dev/null || echo "$1"
-}
 
 # Mainnet limits: 14,000,000 memory units, 10,000,000,000 CPU steps per transaction
 MAX_MEM=14000000
@@ -214,8 +266,9 @@ echo ""
 echo -e "${CYAN}Budget limits per transaction:${NC}"
 echo -e "  Memory: $(format_number $MAX_MEM) units"
 echo -e "  Steps:  $(format_number $MAX_STEPS) units"
+echo -e "  Script: $(format_number $MAX_SCRIPT_SIZE) bytes (max tx size)"
 echo ""
-echo -e "${CYAN}Legend:${NC} % of Tx Limit = Memory%/Steps%"
+echo -e "${CYAN}Legend:${NC} % of Limit = Memory%/Steps% (exUnits) or Size% (scripts)"
 echo -e "  ${GREEN}Green${NC}  = Under 50% of limit"
 echo -e "  ${YELLOW}Yellow${NC} = 50-80% of limit"
 echo -e "  ${RED}Red${NC}    = Over 80% of limit"

@@ -47,6 +47,15 @@ deployBJJValidators w = do
   (pVhash, refProfilesValidator) <- deployReferenceScriptRun profilesValidatorGY w w
   (rVhash, refRanksValidator) <- deployReferenceScriptRun ranksValidatorGY w w
   (mphash, refMintingPolicy) <- deployReferenceScriptRun mintingPolicyGY w w
+
+  -- Log deployed script sizes for reporting
+  gyLogInfo' ("SCRIPTSIZE" :: GYLogNamespace) $ cyanColorString $
+    "SCRIPT_SIZES:\n" <>
+    "  MintingPolicy: " <> show mintingPolicySize <> " bytes\n" <>
+    "  ProfilesValidator: " <> show profilesValidatorSize <> " bytes\n" <>
+    "  RanksValidator: " <> show ranksValidatorSize <> " bytes\n" <>
+    "  MembershipsValidator: " <> show membershipsValidatorSize <> " bytes"
+
   return
     DeployedScriptsContext
       { profilesValidatorHashAndRef = (pVhash, refProfilesValidator),
