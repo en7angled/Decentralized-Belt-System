@@ -6,6 +6,7 @@
 ### Codebase Consistency & Cleanup
 
 - Relaxed monad constraints on `txMustLockStateWithInlineDatumAndValue`, `txIsPayingValueToAddress`, and `txIsPayingValueToAddressWithInlineDatum` from `GYTxUserQueryMonad` to `GYTxQueryMonad` (they only use `scriptAddress`/`return`/`mustHaveOutput`)
+- Extracted `txOutRefToV3Plutus` into `TxBuilding.Utils` and replaced all 5 inline V1-to-V3 TxOutRef conversions across Operations, Skeletons, Transactions, and TestRuns
 
 
 ## 0.3.0.0 -- 2026-02-15

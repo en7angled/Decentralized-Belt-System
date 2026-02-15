@@ -14,12 +14,11 @@ import Onchain.Protocol (OnchainRank (..), deriveMembershipHistoriesListId, deri
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import Onchain.RanksValidator (RanksRedeemer (..))
-import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
-import PlutusLedgerApi.V3.Tx qualified as V3
 import TxBuilding.Context (DeployedScriptsContext (..), getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
 import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue, queryOracleParams)
 import TxBuilding.Skeletons
+import TxBuilding.Utils (txOutRefToV3Plutus)
 import TxBuilding.Validators
 
 -- | Get the compiled minting policy from the oracle NFT in context.
@@ -131,8 +130,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   mpRef <- asks getMintingPolicyRef
   seedTxOutRef <- someUTxOWithoutRefScript
   let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
-  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
-  let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
+  let seedTxOutRefPlutus = txOutRefToV3Plutus seedTxOutRef
 
   (gyProfileRefAC, gyProfileUserAC) <- gyGenerateRefAndUserAC mpGY seedTxOutRef
   gyLogDebug' "gyProfileRefAC: " $ show gyProfileRefAC
@@ -279,8 +277,7 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
   -- Get a seed TxOutRef for uniqueness (similar to profile creation)
   seedTxOutRef <- someUTxOWithoutRefScript
   let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
-  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
-  let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
+  let seedTxOutRefPlutus = txOutRefToV3Plutus seedTxOutRef
 
   gyMasterUserAC <- gyDeriveUserFromRefAC gyPromotedByProfileId
   spendsMasterProfileUserNFT <- txMustSpendFromAddress gyMasterUserAC ownAddrs

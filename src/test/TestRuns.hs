@@ -30,13 +30,12 @@ import Onchain.ProfilesValidator (ProfilesRedeemer (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId, promoteProfile)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types (OracleParams (..))
-import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
-import PlutusLedgerApi.V3.Tx qualified as V3
 import TxBuilding.Context
 import TxBuilding.Interactions
 import TxBuilding.Lookups
 import TxBuilding.Skeletons
+import TxBuilding.Utils (txOutRefToV3Plutus)
 import TxBuilding.Validators
 import Utils
 
@@ -87,12 +86,6 @@ deployBJJValidators w = do
         oracleValidatorHashAndRef = (ovHash, refOracleValidator),
         oracleNFTAssetClass = oracleNFTAC
       }
-
--- | Helper to convert GYTxOutRef to Plutus V3 TxOutRef (same as in Transactions.hs).
-txOutRefToV3Plutus :: GYTxOutRef -> V3.TxOutRef
-txOutRefToV3Plutus gyRef =
-  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus gyRef
-   in V3.TxOutRef (V3.TxId bs) i
 
 -- | Derive the Plutus PubKeyHash from a GeniusYield User's change address.
 userPlutusPkh :: User -> PubKeyHash

@@ -11,8 +11,6 @@ import GeniusYield.GYConfig
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.Protocol.Types (OracleParams (..))
-import PlutusLedgerApi.V1.Tx qualified as V1
-import PlutusLedgerApi.V3.Tx qualified as V3
 import Text.Printf (printf)
 import Text.Printf qualified as Printf
 import TxBuilding.Context
@@ -210,11 +208,5 @@ mintOracleNFTAndLockDatum providerCtx skey adminPKH = do
 
   putStrLn $ yellowColorString $ "Oracle NFT AssetClass: " <> show oracleNFTAC
   return oracleNFTAC
-
--- | Helper to convert GYTxOutRef to Plutus V3 TxOutRef.
-txOutRefToV3Plutus :: GYTxOutRef -> V3.TxOutRef
-txOutRefToV3Plutus gyRef =
-  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus gyRef
-   in V3.TxOutRef (V3.TxId bs) i
 
 

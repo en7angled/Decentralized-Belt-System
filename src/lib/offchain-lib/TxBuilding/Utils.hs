@@ -7,7 +7,7 @@ import Data.Text.IO qualified
 import GeniusYield.TxBuilder.Class (enclosingSlotFromTime', slotToBeginTime)
 import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import GeniusYield.TxBuilder.Query.Class (GYTxQueryMonad)
-import GeniusYield.Types (Ada, GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYSlot, GYTokenName, GYUTxO, GYUTxOs, GYValue, foldMapUTxOs, fromValue, paymentKeyHash, utxoOutDatum, utxoValue, valueToPlutus)
+import GeniusYield.Types (Ada, GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYSlot, GYTokenName, GYTxOutRef, GYUTxO, GYUTxOs, GYValue, foldMapUTxOs, fromValue, paymentKeyHash, txOutRefToPlutus, utxoOutDatum, utxoValue, valueToPlutus)
 import GeniusYield.Types.Address (addressFromPaymentKeyHash)
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
@@ -16,8 +16,10 @@ import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
 import GeniusYield.Types.Wallet
 import Onchain.CIP68 (CIP68Datum)
 import Onchain.Protocol qualified as Onchain
+import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
+import PlutusLedgerApi.V3.Tx qualified as V3
 import System.Directory.Extra
 import TxBuilding.Exceptions (ProfileException (..))
 import Utils
@@ -51,6 +53,12 @@ pPOSIXTimeFromGYSlot = (timeToPlutus <$>) . slotToBeginTime
 gySlotFromPOSIXTime :: (GYTxQueryMonad m) => POSIXTime -> m GYSlot
 gySlotFromPOSIXTime ptime = do
   enclosingSlotFromTime' (timeFromPlutus ptime)
+
+-- | Convert a GY TxOutRef to a Plutus V3 TxOutRef.
+txOutRefToV3Plutus :: GYTxOutRef -> V3.TxOutRef
+txOutRefToV3Plutus gyRef =
+  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus gyRef
+   in V3.TxOutRef (V3.TxId bs) i
 
 ------------------------------------------------------------------------------------------------
 

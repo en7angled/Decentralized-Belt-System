@@ -5,10 +5,8 @@ import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.CIP68 (deriveUserFromRefTN, generateRefAndUserTN)
 import Onchain.Utils (nameFromTxOutRef)
-import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import PlutusLedgerApi.V3 qualified as V3
 import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Lookups (getUTxOWithNFT, getUtxoWithTokenAtAddresses)
 import TxBuilding.Utils
@@ -36,8 +34,7 @@ getRefScriptUTxO refScript = do
 
 gyGenerateRefAndUserAC :: (GYTxUserQueryMonad m) => GYScript 'PlutusV3 -> GYTxOutRef -> m (GYAssetClass, GYAssetClass)
 gyGenerateRefAndUserAC mpScript seedTxOutRef = do
-  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
-  let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
+  let seedTxOutRefPlutus = txOutRefToV3Plutus seedTxOutRef
   let (pRefTN, pUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRefPlutus
   let refAC = AssetClass (mintingPolicyCurrencySymbol mpScript, pRefTN)
   let userAC = AssetClass (mintingPolicyCurrencySymbol mpScript, pUserTN)
