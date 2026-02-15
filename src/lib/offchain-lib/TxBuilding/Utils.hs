@@ -16,6 +16,7 @@ import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
 import GeniusYield.Types.Wallet
 import Onchain.CIP68 (CIP68Datum)
 import Onchain.Protocol qualified as Onchain
+import Onchain.Protocol.Types (MembershipDatum)
 import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
@@ -128,3 +129,11 @@ rankFromGYOutDatum _ = Nothing
 profileFromGYOutDatum :: GYOutDatum -> Maybe (CIP68Datum Onchain.OnchainProfile)
 profileFromGYOutDatum (GYOutDatumInline gyDatum) = profileDatumFromDatum gyDatum
 profileFromGYOutDatum _ = Nothing
+
+membershipDatumFromDatum :: GYDatum -> Maybe MembershipDatum
+membershipDatumFromDatum gyDatum =
+  fromBuiltinData (datumToPlutus' gyDatum)
+
+membershipDatumFromGYOutDatum :: GYOutDatum -> Maybe MembershipDatum
+membershipDatumFromGYOutDatum (GYOutDatumInline gyDatum) = membershipDatumFromDatum gyDatum
+membershipDatumFromGYOutDatum _ = Nothing

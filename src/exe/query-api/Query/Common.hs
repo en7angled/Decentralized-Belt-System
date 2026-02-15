@@ -39,6 +39,15 @@ data RankFilter = RankFilter
     rankFilterAchievementDateInterval :: (Maybe GYTime, Maybe GYTime)
   }
 
+data MembershipHistoryFilter = MembershipHistoryFilter
+  { membershipHistoryFilterOrganizationProfileId :: Maybe [ProfileRefAC],
+    membershipHistoryFilterPractitionerProfileId :: Maybe [ProfileRefAC]
+  }
+
+data MembershipIntervalFilter = MembershipIntervalFilter
+  { membershipIntervalFilterPractitionerProfileId :: Maybe [ProfileRefAC]
+  }
+
 -- Abstraction for retrieving the projection DB connection info from an environment
 class HasProjectionDB r where
   getProjectionDbPath :: r -> Text

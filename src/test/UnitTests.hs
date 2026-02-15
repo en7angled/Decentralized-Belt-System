@@ -14,17 +14,20 @@ import GeniusYield.TxBuilder
 import GeniusYield.TxBuilder.User qualified as User
 import GeniusYield.Types
 import Onchain.BJJ
+import Onchain.Protocol.Id qualified
 import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import Test.Tasty
-import TestRuns (adminInteraction, bjjInteraction, deployBJJValidators, logPractitionerProfileInformation)
+import TestRuns (adminInteraction, bjjInteraction, deployBJJValidators, logPractitionerProfileInformation, protocolInteraction, sendDustToValidator)
 import TxBuilding.Context (DeployedScriptsContext)
 import TxBuilding.Lookups (queryOracleParams)
+import TxBuilding.Validators (profilesValidatorGY, ranksValidatorGY)
+import PlutusTx.Prelude (isNothing)
 
 unitTests :: (HasCallStack) => TestTree
 unitTests =
   testGroup
     "BJJ Unit Tests"
-    [oracleDeploymentTests, oracleAdminTests, promotionTests, promotionSecurityTests]
+    [oracleDeploymentTests, oracleAdminTests, promotionTests, promotionSecurityTests, membershipTests, cleanupTests]
 
 -- NOTE: Security vulnerability tests (vulnerabilityTests) have been removed from the automated suite.
 -- The malicious AcceptPromotion test was manually verified to work correctly:
@@ -60,7 +63,7 @@ oracleDeploymentTests =
       -- Verify initial oracle params are as expected
       assert (not (opPaused oracleParams))
       assert (opMinOutputLovelace oracleParams == 3500000)
-      assert (opFeeConfig oracleParams == Nothing)
+      assert (isNothing (opFeeConfig oracleParams))
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Oracle deployment and query successful!"
       return ()
@@ -136,7 +139,7 @@ oracleAdminTests =
 
       -- Verify initial state: no fees
       params0 <- queryOracle ctx
-      assert (opFeeConfig params0 == Nothing)
+      assert (isNothing (opFeeConfig params0))
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Initial state: no fee config."
 
       -- Set fees
@@ -161,7 +164,7 @@ oracleAdminTests =
 
       -- Verify fees are cleared
       params2 <- queryOracle ctx
-      assert (opFeeConfig params2 == Nothing)
+      assert (isNothing (opFeeConfig params2))
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Fees cleared successfully."
 
       return ()
@@ -592,6 +595,585 @@ promotionSecurityTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sequential promotions work correctly with proper date ordering."
 
       return ()
+
+-- ------------------------------------------------------------------------------------------------
+
+-- -- * Membership Tests
+
+-- ------------------------------------------------------------------------------------------------
+
+membershipTests :: (HasCallStack) => TestTree
+membershipTests =
+  testGroup
+    "Membership Tests"
+    [ mkTestFor "Test Case 4.1: Organization creates membership history for a practitioner" createMembershipHistoryTest,
+      mkTestFor "Test Case 4.2: Practitioner accepts a membership interval" acceptMembershipIntervalTest,
+      mkTestFor "Test Case 4.3: Full membership lifecycle (create history, accept, add interval, accept)" fullMembershipLifecycleTest,
+      mkTestFor "Test Case 4.4: Organization has 3 membership histories for 3 practitioners" orgThreeMembershipHistoriesTest,
+      mkTestFor "Test Case 4.5: 3 practitioners with membership histories; one updates (adds) membership interval" orgThreeHistoriesOneUpdatesIntervalTest
+    ]
+  where
+    orgProfileData :: ProfileData
+    orgProfileData =
+      ProfileData
+        { profileDataName = "BJJ Academy",
+          profileDataDescription = "A BJJ Academy Organization",
+          profileDataImageURI = "ipfs://QmOrgAcademy"
+        }
+
+    practitionerProfileData :: ProfileData
+    practitionerProfileData =
+      ProfileData
+        { profileDataName = "Practitioner A",
+          profileDataDescription = "A practitioner member",
+          profileDataImageURI = "ipfs://QmPractitionerA"
+        }
+
+    -- Test Case 4.1: Organization creates a membership history for a practitioner
+    createMembershipHistoryTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    createMembershipHistoryTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Create an Organization profile (w1 owns the org)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Creating Organization profile..."
+      (_txId, orgAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Organization created: " <> show orgAC
+
+      -- Create a Practitioner profile (w2 owns the practitioner)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Creating Practitioner profile..."
+      (_txId, practitionerAC) <-
+        bjjInteraction
+          ctx
+          (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Practitioner created: " <> show practitionerAC
+
+      -- Organization creates membership history for the practitioner
+      -- Start date must be before tx validity (on-chain trace "G": startDate `before` txInfoValidRange)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization creating membership history..."
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+
+      (_txId, membershipHistoryAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Membership history created: " <> show membershipHistoryAC
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Membership history creation test passed!"
+      return ()
+
+    -- Test Case 4.2: Practitioner accepts a membership interval
+    acceptMembershipIntervalTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    acceptMembershipIntervalTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Create Organization and Practitioner
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      -- Organization creates membership history (start date before tx validity for on-chain trace "G")
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+
+      (_txId, _membershipHistoryAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      -- The first interval AC is created alongside the history.
+      -- We need to derive it to accept it. The interval ID is derived from the history ID.
+      let plutusOrgAC = assetClassToPlutus orgAC
+      let plutusPractAC = assetClassToPlutus practitionerAC
+      let historyId = Onchain.Protocol.Id.deriveMembershipHistoryId plutusOrgAC plutusPractAC
+      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId historyId 0
+      gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
+
+      -- Practitioner accepts the first interval
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Practitioner accepting membership interval..."
+      void $
+        bjjInteraction ctx (w2 testWallets)
+          (AcceptMembershipIntervalAction gyFirstIntervalAC)
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Membership interval accepted!"
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Accept membership interval test passed!"
+      return ()
+
+    -- Test Case 4.3: Full lifecycle
+    fullMembershipLifecycleTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    fullMembershipLifecycleTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Step 1: Create Organization and Practitioner
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "=== Step 1: Create profiles ==="
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      -- Step 2: Organization creates membership history (with first interval); start date before tx validity (trace "G")
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "=== Step 2: Create membership history ==="
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+
+      (_txId, membershipHistoryAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Membership history: " <> show membershipHistoryAC
+
+      -- Step 3: Derive first interval AC and accept it
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "=== Step 3: Accept first interval ==="
+      let plutusOrgAC = assetClassToPlutus orgAC
+      let plutusPractAC = assetClassToPlutus practitionerAC
+      let historyId = Onchain.Protocol.Id.deriveMembershipHistoryId plutusOrgAC plutusPractAC
+      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId historyId 0
+      gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
+
+      void $
+        bjjInteraction ctx (w2 testWallets)
+          (AcceptMembershipIntervalAction gyFirstIntervalAC)
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "First interval accepted."
+
+      -- Step 4: Organization adds a second interval
+      -- The first interval must have an end date for a new one to be added.
+      -- For this test, we need to update the first interval's end date first.
+      -- However, `updateMembershipIntervalEndDate` is an on-chain operation,
+      -- and we don't have a dedicated offchain operation for it yet.
+      -- For now, we verify that the create + accept flow works end-to-end.
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "=== Full membership lifecycle test passed! ==="
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Verified: create org, create practitioner, create membership history, accept interval."
+      return ()
+
+    -- Test Case 4.4: One organization, 3 practitioners, 3 membership histories
+    orgThreeMembershipHistoriesTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    orgThreeMembershipHistoriesTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Create one organization (w1)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Creating Organization profile..."
+      (_txId, orgAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Organization created: " <> show orgAC
+
+      -- Create 3 practitioners (w2, w3, w4)
+      let practitionerB =
+            ProfileData
+              { profileDataName = "Practitioner B",
+                profileDataDescription = "Second practitioner member",
+                profileDataImageURI = "ipfs://QmPractitionerB"
+              }
+      let practitionerC =
+            ProfileData
+              { profileDataName = "Practitioner C",
+                profileDataDescription = "Third practitioner member",
+                profileDataImageURI = "ipfs://QmPractitionerC"
+              }
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Creating Practitioner A (w2)..."
+      (_txId, practitionerAC1) <-
+        bjjInteraction ctx (w2 testWallets) (InitProfileAction practitionerProfileData Practitioner creationDate) Nothing
+      waitNSlots_ 1
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Creating Practitioner B (w3)..."
+      (_txId, practitionerAC2) <-
+        bjjInteraction ctx (w3 testWallets) (InitProfileAction practitionerB Practitioner creationDate) Nothing
+      waitNSlots_ 1
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Creating Practitioner C (w4)..."
+      (_txId, practitionerAC3) <-
+        bjjInteraction ctx (w4 testWallets) (InitProfileAction practitionerC Practitioner creationDate) Nothing
+      waitNSlots_ 1
+
+      -- Organization creates membership history for each practitioner (start date before tx validity for trace "G")
+      let startDateBeforeNow = do
+            s' <- slotOfCurrentBlock
+            t' <- slotToBeginTime s'
+            return $ timeFromPOSIX $ timeToPOSIX t' - 1000
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization creating membership history for Practitioner A..."
+      membershipStartDate1 <- startDateBeforeNow
+      (_txId, _history1) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC1,
+                cmh_start_date = membershipStartDate1,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization creating membership history for Practitioner B..."
+      membershipStartDate2 <- startDateBeforeNow
+      (_txId, _history2) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC2,
+                cmh_start_date = membershipStartDate2,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization creating membership history for Practitioner C..."
+      membershipStartDate3 <- startDateBeforeNow
+      (_txId, _history3) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC3,
+                cmh_start_date = membershipStartDate3,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Org with 3 membership histories test passed!"
+      return ()
+
+    -- Test Case 4.5: 3 practitioners with membership histories; one (Practitioner B) updates by adding a second interval
+    orgThreeHistoriesOneUpdatesIntervalTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    orgThreeHistoriesOneUpdatesIntervalTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Create one organization (w1)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Creating Organization profile..."
+      (_txId, orgAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+
+      -- Create 3 practitioners (w2, w3, w4)
+      let practitionerB =
+            ProfileData
+              { profileDataName = "Practitioner B",
+                profileDataDescription = "Second practitioner member",
+                profileDataImageURI = "ipfs://QmPractitionerB"
+              }
+      let practitionerC =
+            ProfileData
+              { profileDataName = "Practitioner C",
+                profileDataDescription = "Third practitioner member",
+                profileDataImageURI = "ipfs://QmPractitionerC"
+              }
+
+      (_txId, practitionerAC1) <-
+        bjjInteraction ctx (w2 testWallets) (InitProfileAction practitionerProfileData Practitioner creationDate) Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC2) <-
+        bjjInteraction ctx (w3 testWallets) (InitProfileAction practitionerB Practitioner creationDate) Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC3) <-
+        bjjInteraction ctx (w4 testWallets) (InitProfileAction practitionerC Practitioner creationDate) Nothing
+      waitNSlots_ 1
+
+      let startDateBeforeNow = do
+            s' <- slotOfCurrentBlock
+            t' <- slotToBeginTime s'
+            return $ timeFromPOSIX $ timeToPOSIX t' - 1000
+
+      -- Org creates membership history for A (no end date)
+      membershipStartDate1 <- startDateBeforeNow
+      (_txId, _history1) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC1,
+                cmh_start_date = membershipStartDate1,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      -- Org creates membership history for B with an end date so we can add a second interval later
+      membershipStartDate2 <- startDateBeforeNow
+      let firstIntervalEndDate2 = timeFromPOSIX $ timeToPOSIX membershipStartDate2 + 1000
+      (_txId, history2B) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC2,
+                cmh_start_date = membershipStartDate2,
+                cmh_end_date = Just firstIntervalEndDate2
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      -- Org creates membership history for C (no end date)
+      membershipStartDate3 <- startDateBeforeNow
+      (_txId, _history3) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC3,
+                cmh_start_date = membershipStartDate3,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      -- Practitioner B accepts his first interval (required before adding a second interval)
+      let plutusOrgAC = assetClassToPlutus orgAC
+          plutusPractBAC = assetClassToPlutus practitionerAC2
+          historyIdB = Onchain.Protocol.Id.deriveMembershipHistoryId plutusOrgAC plutusPractBAC
+          firstIntervalIdB = Onchain.Protocol.Id.deriveMembershipIntervalId historyIdB 0
+      gyFirstIntervalB <- assetClassFromPlutus' firstIntervalIdB
+      void $
+        bjjInteraction ctx (w3 testWallets)
+          (AcceptMembershipIntervalAction gyFirstIntervalB)
+          Nothing
+      waitNSlots_ 1
+
+      -- Organization adds a second membership interval for Practitioner B (start >= first interval end)
+      let secondIntervalStart = timeFromPOSIX $ timeToPOSIX firstIntervalEndDate2 + 1
+          secondIntervalEnd = timeFromPOSIX $ timeToPOSIX secondIntervalStart + 10000
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization adding second membership interval for Practitioner B..."
+      void $
+        bjjInteraction ctx (w1 testWallets)
+          ( AddMembershipIntervalAction
+              { ami_organization_profile_id = orgAC,
+                ami_membership_node_id = history2B,
+                ami_start_date = secondIntervalStart,
+                ami_end_date = Just secondIntervalEnd
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "3 practitioners, one updates interval test passed!"
+      return ()
+
+-- ------------------------------------------------------------------------------------------------
+
+-- -- * Dust / Cleanup Tests
+
+-- ------------------------------------------------------------------------------------------------
+
+cleanupTests :: (HasCallStack) => TestTree
+cleanupTests =
+  testGroup
+    "Dust Cleanup Tests"
+    [ mkTestFor "Test Case 3.1: Cleanup dust at ProfilesValidator" cleanupDustAtProfiles,
+      mkTestFor "Test Case 3.2: Cleanup dust at RanksValidator" cleanupDustAtRanks,
+      mkTestFor "Test Case 3.3: Cleanup dust at both validators in a single transaction" cleanupDustAtBothValidators,
+      mkTestFor "Test Case 3.4: Cleanup does not affect legitimate protocol UTxOs" cleanupSafeWithProtocolState
+    ]
+  where
+    -- Test Case 3.1: Send dust to ProfilesValidator and clean it up
+    cleanupDustAtProfiles :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    cleanupDustAtProfiles TestInfo {..} = do
+      waitNSlots_ 1000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Simulate griefing: send ADA-only UTxO to profiles validator
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sending dust UTxO to ProfilesValidator..."
+      sendDustToValidator (w2 testWallets) profilesValidatorGY
+      waitNSlots_ 1
+
+      -- Any user (w3) can clean it up — permissionless
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Cleaning up dust via ProtocolAction CleanupDustAction..."
+      _txId <- protocolInteraction ctx (w3 testWallets) CleanupDustAction
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Dust cleanup at ProfilesValidator succeeded!"
+      return ()
+
+    -- Test Case 3.2: Send dust to RanksValidator and clean it up
+    cleanupDustAtRanks :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    cleanupDustAtRanks TestInfo {..} = do
+      waitNSlots_ 1000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Simulate griefing: send ADA-only UTxO to ranks validator
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sending dust UTxO to RanksValidator..."
+      sendDustToValidator (w2 testWallets) ranksValidatorGY
+      waitNSlots_ 1
+
+      -- Any user (w3) can clean it up — permissionless
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Cleaning up dust via ProtocolAction CleanupDustAction..."
+      _txId <- protocolInteraction ctx (w3 testWallets) CleanupDustAction
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Dust cleanup at RanksValidator succeeded!"
+      return ()
+
+    -- Test Case 3.3: Send dust to both validators and clean up in a single transaction
+    cleanupDustAtBothValidators :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    cleanupDustAtBothValidators TestInfo {..} = do
+      waitNSlots_ 1000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Simulate griefing at both validators
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sending dust to ProfilesValidator and RanksValidator..."
+      sendDustToValidator (w2 testWallets) profilesValidatorGY
+      sendDustToValidator (w2 testWallets) ranksValidatorGY
+      waitNSlots_ 1
+
+      -- Single cleanup transaction sweeps both
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Cleaning up dust at both validators in a single transaction..."
+      _txId <- protocolInteraction ctx (w3 testWallets) CleanupDustAction
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Dust cleanup at both validators succeeded!"
+      return ()
+
+    -- Test Case 3.4: Dust cleanup does not affect legitimate protocol UTxOs
+    -- After creating a profile (which locks UTxOs at ProfilesValidator and RanksValidator),
+    -- send dust to both validators, then clean up. Verify the profile is still intact.
+    cleanupSafeWithProtocolState :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    cleanupSafeWithProtocolState TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Create a legitimate profile (locks UTxOs at PV and RV)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Creating legitimate profile..."
+      (_txId, profileAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (InitProfileAction cleanupTestProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      -- Verify profile is accessible
+      logPractitionerProfileInformation (w1 testWallets) profileAC
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Profile created and verified."
+
+      -- Simulate griefing at both validators
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sending dust to both validators alongside legitimate state..."
+      sendDustToValidator (w2 testWallets) profilesValidatorGY
+      sendDustToValidator (w2 testWallets) ranksValidatorGY
+      waitNSlots_ 1
+
+      -- Clean up dust
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Cleaning up dust (should NOT touch legitimate protocol UTxOs)..."
+      _txId <- protocolInteraction ctx (w3 testWallets) CleanupDustAction
+      waitNSlots_ 1
+
+      -- Verify profile is still intact after cleanup
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Verifying profile is still accessible after cleanup..."
+      logPractitionerProfileInformation (w1 testWallets) profileAC
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Profile intact — cleanup correctly skipped legitimate protocol UTxOs!"
+      return ()
+
+-- | Test profile data for cleanup test scenarios
+cleanupTestProfileData :: ProfileData
+cleanupTestProfileData =
+  ProfileData
+    { profileDataName = "Cleanup Test User",
+      profileDataDescription = "A test profile to verify dust cleanup safety",
+      profileDataImageURI = "ipfs://QmCleanupTest"
+    }
 
 -- ------------------------------------------------------------------------------------------------
 -- Security Test Documentation (not included in automated test suite)

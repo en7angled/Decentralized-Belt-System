@@ -10,15 +10,20 @@ import GeniusYield.Types
 import Onchain.BJJ (BJJBelt (White), beltToInt)
 import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.MintingPolicy
-import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Protocol (OnchainRank (..), deriveMembershipHistoriesListId, derivePromotionRankId, initEmptyMembershipHistoriesList, mkOrganizationProfile, mkPromotion, mkPractitionerProfile, promoteProfile)
+import Onchain.MembershipsValidator (MembershipsRedeemer (..))
+
+import Onchain.ProfilesValidator (ProfilesRedeemer (UpdateProfileImage, AcceptPromotion))
+import Onchain.ProfilesValidator qualified (ProfilesRedeemer (Cleanup))
+import Onchain.Protocol (OnchainRank (..), deriveMembershipHistoriesListId, derivePromotionRankId, initEmptyMembershipHistoriesList, insertMembershipHistoryInBetween, mkMembershipHistoriesListNode, mkOrganizationProfile, mkPromotion, mkPractitionerProfile, promoteProfile, appendMembershipHistory, updateNodeMembershipHistory, initMembershipHistory, addMembershipIntervalToHistory, acceptMembershipInterval)
 import Onchain.Protocol qualified as Onchain
-import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
-import Onchain.RanksValidator (RanksRedeemer (..))
+import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..), MembershipDatum (..), MembershipHistoriesListNode (..), OnchainMembershipHistory (..), OnchainMembershipInterval (..))
+import Onchain.LinkedList (NodeDatum (..))
+import Onchain.RanksValidator (RanksRedeemer (PromotionAcceptance))
+import Onchain.RanksValidator qualified (RanksRedeemer (Cleanup))
 import PlutusLedgerApi.V3
-import TxBuilding.Context (DeployedScriptsContext (..), getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
+import TxBuilding.Context (DeployedScriptsContext (..), getMembershipsValidatorRef, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
 import TxBuilding.Exceptions (TxBuildingException (..))
-import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue, queryOracleParams)
+import TxBuilding.Lookups (findInsertPointForNewMembership, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDataAndValue, getRankStateDataAndValue, queryOracleParams)
 import TxBuilding.Skeletons
 import TxBuilding.Utils (txOutRefToV3Plutus)
 import TxBuilding.Validators
@@ -72,6 +77,7 @@ verifyDeployedScriptsAreReady = do
   mpRef <- asks getMintingPolicyRef
   pvRef <- asks getProfilesValidatorRef
   rvRef <- asks getRanksValidatorRef
+  mvRef <- asks getMembershipsValidatorRef
   ovRef <- asks getOracleValidatorRef
 
   mintingPolicyUTxO <- utxoAtTxOutRef mpRef
@@ -83,10 +89,13 @@ verifyDeployedScriptsAreReady = do
   ranksValidatorUTxO <- utxoAtTxOutRef rvRef
   let ranksValidatorHasRefScript = utxoRefScript =<< ranksValidatorUTxO
 
+  membershipsValidatorUTxO <- utxoAtTxOutRef mvRef
+  let membershipsValidatorHasRefScript = utxoRefScript =<< membershipsValidatorUTxO
+
   oracleValidatorUTxO <- utxoAtTxOutRef ovRef
   let oracleValidatorHasRefScript = utxoRefScript =<< oracleValidatorUTxO
 
-  return $ all isJust [mintingPolicyHasRefScript, profilesValidatorHasRefScript, ranksValidatorHasRefScript, oracleValidatorHasRefScript]
+  return $ all isJust [mintingPolicyHasRefScript, profilesValidatorHasRefScript, ranksValidatorHasRefScript, membershipsValidatorHasRefScript, oracleValidatorHasRefScript]
 
 -- | Like 'verifyDeployedScriptsAreReady' but throws 'DeployedScriptsNotReady' when scripts are not ready.
 ensureDeployedScriptsAreReady ::
@@ -182,7 +191,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
       isLockingMembershipHistoriesRootState <-
         txMustLockStateWithInlineDatumAndValue
           membershipsValidatorGY
-          membershipHistoriesRootDatum
+          (ListNodeDatum membershipHistoriesRootDatum)  -- Must wrap in MembershipDatum for on-chain validation
           (valueSingleton gyMembershipHistoriesRootAC 1 <> valueFromLovelace minLv)
       return $
         mconcat
@@ -421,6 +430,296 @@ acceptPromotionTX gyPromotionId ownAddrs = do
 
 ------------------------------------------------------------------------------------------------
 
+-- * Membership Operations
+
+------------------------------------------------------------------------------------------------
+
+-- | Create a new membership history for a practitioner at an organization.
+-- This appends a new node to the organization's membership histories linked list.
+-- Corresponds to 'NewMembershipHistory' minting + 'InsertNodeToMHList' spending.
+--
+-- Output index layout:
+--   Output 0: Updated left node (membership histories list node)
+--   Output 1: Inserted new node (membership histories list node)
+--   Output 2 (from minting policy): First interval locked at memberships validator
+--   Output 3 (optional): Fee payment
+createMembershipHistoryTX ::
+  (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  GYAssetClass ->  -- ^ Organization profile Ref AC
+  GYAssetClass ->  -- ^ Practitioner profile Ref AC
+  POSIXTime ->     -- ^ Start date
+  Maybe POSIXTime -> -- ^ Optional end date
+  [GYAddress] ->   -- ^ Organization's wallet addresses (to spend User NFT)
+  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
+createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate mEndDate ownAddrs = do
+  mpGY <- asks getMintingPolicyFromCtx
+  mpRef <- asks getMintingPolicyRef
+  mvRef <- asks getMembershipsValidatorRef
+  now <- slotOfCurrentBlock
+  let isInvalidBeforeNow = isInvalidBefore now
+
+  -- Oracle reference input + params (for minLovelace and fee)
+  (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
+  let minLv = opMinOutputLovelace oracleParams
+  feeSkeleton <- getFeeSkeleton oracleParams fcMembershipFee
+
+  -- Spend organization User NFT
+  gyOrgUserAC <- gyDeriveUserFromRefAC gyOrgProfileRefAC
+  spendsOrgUserNFT <- txMustSpendFromAddress gyOrgUserAC ownAddrs
+
+  -- List is sorted by node key (practitioner id). Find insert point: (left node to spend, optional right node to reference).
+  let plutusOrgRefAC = assetClassToPlutus gyOrgProfileRefAC
+  let plutusPractitionerRefAC = assetClassToPlutus gyPractitionerProfileRefAC
+  (leftNodeAC, maybeRightNodeAC) <- findInsertPointForNewMembership gyOrgProfileRefAC gyPractitionerProfileRefAC
+  (leftNode, leftNodeValue) <- getMembershipListNodeDatumAndValue leftNodeAC
+
+  -- Create the new membership history and first interval
+  let (newHistory, fstInterval) = initMembershipHistory plutusPractitionerRefAC plutusOrgRefAC startDate mEndDate
+
+  -- Build newNode and updatedLeftNode, and redeemer fields for append vs insert
+  (newNode, updatedLeftNode, maybeRightNodeIdPlutus) <- case maybeRightNodeAC of
+    Nothing -> do
+      -- Append: new node is last; left's next becomes the new node's key
+      let newNode' = mkMembershipHistoriesListNode newHistory Nothing
+      let updatedLeftNode' = appendMembershipHistory (leftNode, newNode')
+      return (newNode', updatedLeftNode', Nothing)
+    Just rightNodeAC -> do
+      -- Insert: new node goes between left and right; new node's next = right's key
+      (rightNode, _) <- getMembershipListNodeDatumAndValue rightNodeAC
+      let rightKey = nodeKey (nodeInfo rightNode)
+      let newNode' = mkMembershipHistoriesListNode newHistory rightKey
+      let updatedLeftNode' = insertMembershipHistoryInBetween (leftNode, rightNode, newNode')
+      return (newNode', updatedLeftNode', Just (assetClassToPlutus rightNodeAC))
+
+  -- Derive GY asset classes for the newly created tokens
+  gyMembershipHistoryAC <- assetClassFromPlutus' $ membershipHistoryId newHistory
+  gyFirstIntervalAC <- assetClassFromPlutus' $ Onchain.Protocol.Types.membershipIntervalId fstInterval
+
+  let updatedLeftNodeTxOutIdx = 0 :: Integer
+  let insertedNodeTxOutIdx = 1 :: Integer
+  let firstIntervalOutputIdx = 2 :: Integer
+
+  let mvRedeemer = redeemerFromPlutusData $ InsertNodeToMHList
+        { maybeRightNodeId = maybeRightNodeIdPlutus
+        , insertedMembershipHistory = newHistory
+        , updatedLeftNodeTxOutIdx = updatedLeftNodeTxOutIdx
+        , insertedNodeTxOutIdx = insertedNodeTxOutIdx
+        }
+
+  let mintRedeemer = redeemerFromPlutusData $
+        NewMembershipHistory plutusOrgRefAC plutusPractitionerRefAC startDate mEndDate (assetClassToPlutus leftNodeAC) firstIntervalOutputIdx
+
+  spendsLeftNode <- txMustSpendStateFromRefScriptWithRedeemer mvRef leftNodeAC mvRedeemer membershipsValidatorGY
+
+  -- When inserting, the right node must be a reference input (validator reads it)
+  refRightNodeSkeleton <- case maybeRightNodeAC of
+    Nothing -> return mempty
+    Just rightAC -> txMustHaveUTxOsAsRefInputs [rightAC]
+
+  isMintingHistoryNFT <- txMustMintWithMintRef True mpRef mpGY mintRedeemer gyMembershipHistoryAC
+  isMintingIntervalNFT <- txMustMintWithMintRef True mpRef mpGY mintRedeemer gyFirstIntervalAC
+
+  gyLeftNodeValue <- valueFromPlutus' leftNodeValue
+  isLockingUpdatedLeftNode <-
+    txMustLockStateWithInlineDatumAndValue
+      membershipsValidatorGY
+      (ListNodeDatum updatedLeftNode)
+      gyLeftNodeValue
+
+  isLockingInsertedNode <-
+    txMustLockStateWithInlineDatumAndValue
+      membershipsValidatorGY
+      (ListNodeDatum newNode)
+      (valueSingleton gyMembershipHistoryAC 1 <> valueFromLovelace minLv)
+
+  isLockingFirstInterval <-
+    txMustLockStateWithInlineDatumAndValue
+      membershipsValidatorGY
+      (IntervalDatum fstInterval)
+      (valueSingleton gyFirstIntervalAC 1 <> valueFromLovelace minLv)
+
+  return
+    ( mconcat
+        [ spendsOrgUserNFT
+        , spendsLeftNode
+        , isInvalidBeforeNow
+        , oracleRefSkeleton
+        , refRightNodeSkeleton
+        , isMintingHistoryNFT
+        , isMintingIntervalNFT
+        , isLockingUpdatedLeftNode
+        , isLockingInsertedNode
+        , isLockingFirstInterval
+        , feeSkeleton
+        ],
+      gyMembershipHistoryAC
+    )
+
+-- | Add a new membership interval to an existing membership history.
+-- Corresponds to 'NewMembershipInterval' minting + 'UpdateNodeInMHList' spending.
+--
+-- Output index layout:
+--   Output 0: Updated membership history node
+--   Output 1 (from minting policy): New interval locked at memberships validator
+--   Output 2 (optional): Fee payment
+addMembershipIntervalTX ::
+  (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  GYAssetClass ->  -- ^ Organization profile Ref AC
+  GYAssetClass ->  -- ^ Membership history node NFT AC
+  POSIXTime ->     -- ^ Start date
+  Maybe POSIXTime -> -- ^ Optional end date
+  [GYAddress] ->   -- ^ Organization's wallet addresses (to spend User NFT)
+  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
+addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate ownAddrs = do
+  mpGY <- asks getMintingPolicyFromCtx
+  mpRef <- asks getMintingPolicyRef
+  mvRef <- asks getMembershipsValidatorRef
+  now <- slotOfCurrentBlock
+  let isInvalidBeforeNow = isInvalidBefore now
+
+  -- Oracle reference input + params (for minLovelace and fee)
+  (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
+  let minLv = opMinOutputLovelace oracleParams
+  feeSkeleton <- getFeeSkeleton oracleParams fcMembershipFee
+
+  -- Spend organization User NFT
+  gyOrgUserAC <- gyDeriveUserFromRefAC gyOrgProfileRefAC
+  spendsOrgUserNFT <- txMustSpendFromAddress gyOrgUserAC ownAddrs
+
+  -- Look up the membership history node
+  (historyNode, historyNodeValue) <- getMembershipListNodeDatumAndValue gyMembershipNodeAC
+  let currentHistory = case nodeData (nodeInfo historyNode) of
+        Just h -> h
+        Nothing -> error "addMembershipIntervalTX: root node has no history"
+
+  -- Look up the last interval (head of intervals chain) for reference input
+  let lastIntervalAC = membershipHistoryIntervalsHeadId currentHistory
+  gyLastIntervalAC <- assetClassFromPlutus' lastIntervalAC
+  (lastInterval, _lastIntervalValue) <- getMembershipIntervalDatumAndValue gyLastIntervalAC
+
+  -- Compute updated history and new interval using Protocol functions
+  let (updatedHistory, newInterval) = addMembershipIntervalToHistory currentHistory lastInterval startDate mEndDate
+  let updatedHistoryNode = updateNodeMembershipHistory historyNode updatedHistory
+
+  -- Derive GY asset class for the new interval
+  gyNewIntervalAC <- assetClassFromPlutus' $ Onchain.Protocol.Types.membershipIntervalId newInterval
+
+  -- ============================================================
+  -- Output index tracking (order must match skeleton mconcat order)
+  -- ============================================================
+  -- Output 0: Updated membership history node
+  -- Output 1 (from minting policy): New interval
+  let updatedNodeTxOutIdx = 0 :: Integer
+  let intervalOutputIdx = 1 :: Integer
+
+  -- Build MembershipsValidator redeemer for spending the history node
+  let mvRedeemer = redeemerFromPlutusData $ UpdateNodeInMHList
+        { lastIntervalId = lastIntervalAC
+        , startDate = startDate
+        , endDate = mEndDate
+        , updatedNodeTxOutIdx = updatedNodeTxOutIdx
+        }
+
+  -- Build MintingPolicy redeemer
+  let plutusOrgRefAC = assetClassToPlutus gyOrgProfileRefAC
+  let mintRedeemer = redeemerFromPlutusData $
+        NewMembershipInterval plutusOrgRefAC (assetClassToPlutus gyMembershipNodeAC) startDate mEndDate intervalOutputIdx
+
+  -- Spend the membership history node from memberships validator
+  spendsHistoryNode <- txMustSpendStateFromRefScriptWithRedeemer mvRef gyMembershipNodeAC mvRedeemer membershipsValidatorGY
+
+  -- Add last interval as reference input (for validation)
+  referencesLastInterval <- txMustHaveUTxOsAsRefInputs [gyLastIntervalAC]
+
+  -- Mint new interval NFT
+  isMintingIntervalNFT <- txMustMintWithMintRef True mpRef mpGY mintRedeemer gyNewIntervalAC
+
+  gyHistoryNodeValue <- valueFromPlutus' historyNodeValue
+  -- Output 0: Updated membership history node
+  isLockingUpdatedHistoryNode <-
+    txMustLockStateWithInlineDatumAndValue
+      membershipsValidatorGY
+      (ListNodeDatum updatedHistoryNode)
+      gyHistoryNodeValue
+
+  -- Output 1: New interval
+  isLockingNewInterval <-
+    txMustLockStateWithInlineDatumAndValue
+      membershipsValidatorGY
+      (IntervalDatum newInterval)
+      (valueSingleton gyNewIntervalAC 1 <> valueFromLovelace minLv)
+
+  return
+    ( mconcat
+        [ spendsOrgUserNFT,           -- Input (no output index)
+        spendsHistoryNode,           -- Input (no output index)
+        isInvalidBeforeNow,          -- Validity (no output index)
+        oracleRefSkeleton,           -- Reference input: oracle UTxO
+        referencesLastInterval,      -- Reference input: last interval
+        isMintingIntervalNFT,        -- Mint (no output index)
+        isLockingUpdatedHistoryNode, -- Output 0: Updated history node
+        isLockingNewInterval,        -- Output 1: New interval
+        feeSkeleton                  -- Output 2 (optional): Fee payment
+        ],
+      gyNewIntervalAC
+    )
+
+-- | Accept a membership interval (practitioner acknowledges the membership).
+-- Corresponds to 'AcceptInterval' spending (no minting).
+--
+-- Output index layout:
+--   Output 0: Updated interval with isAck = True
+acceptMembershipIntervalTX ::
+  (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  GYAssetClass ->  -- ^ Interval NFT AC
+  [GYAddress] ->   -- ^ Practitioner's wallet addresses (to spend User NFT)
+  m (GYTxSkeleton 'PlutusV3)
+acceptMembershipIntervalTX gyIntervalAC ownAddrs = do
+  mvRef <- asks getMembershipsValidatorRef
+
+  -- Look up the interval
+  (interval, intervalValue) <- getMembershipIntervalDatumAndValue gyIntervalAC
+
+  -- Spend practitioner User NFT
+  let practitionerProfileRefAC = membershipIntervalPractitionerId interval
+  gyPractitionerProfileRefAC <- assetClassFromPlutus' practitionerProfileRefAC
+  gyPractitionerUserAC <- gyDeriveUserFromRefAC gyPractitionerProfileRefAC
+  spendsPractitionerUserNFT <- txMustSpendFromAddress gyPractitionerUserAC ownAddrs
+
+  -- Compute updated interval using Protocol functions
+  let updatedInterval = acceptMembershipInterval interval
+
+  -- ============================================================
+  -- Output index tracking (order must match skeleton mconcat order)
+  -- ============================================================
+  -- Output 0: Updated interval
+  let updatedIntervalTxOutIdx = 0 :: Integer
+
+  -- Build MembershipsValidator redeemer
+  let mvRedeemer = redeemerFromPlutusData $ AcceptInterval
+        { updatedIntervalTxOutIdx = updatedIntervalTxOutIdx
+        }
+
+  -- Spend the interval from memberships validator
+  spendsInterval <- txMustSpendStateFromRefScriptWithRedeemer mvRef gyIntervalAC mvRedeemer membershipsValidatorGY
+
+  gyIntervalValue <- valueFromPlutus' intervalValue
+  -- Output 0: Updated interval
+  isLockingUpdatedInterval <-
+    txMustLockStateWithInlineDatumAndValue
+      membershipsValidatorGY
+      (IntervalDatum updatedInterval)
+      gyIntervalValue
+
+  return $
+    mconcat
+      [ spendsPractitionerUserNFT,   -- Input (no output index)
+        spendsInterval,              -- Input (no output index)
+        isLockingUpdatedInterval     -- Output 0: Updated interval
+      ]
+
+------------------------------------------------------------------------------------------------
+
 -- * Oracle Management Operations
 
 ------------------------------------------------------------------------------------------------
@@ -460,3 +759,50 @@ applyAdminAction PauseProtocolAction params = params {opPaused = True}
 applyAdminAction UnpauseProtocolAction params = params {opPaused = False}
 applyAdminAction (SetFeesAction mFeeConfig) params = params {opFeeConfig = mFeeConfig}
 applyAdminAction (SetMinLovelaceAction minLv) params = params {opMinOutputLovelace = minLv}
+
+------------------------------------------------------------------------------------------------
+
+-- * Dust / Cleanup Operations
+
+------------------------------------------------------------------------------------------------
+
+-- | Sweep dust UTxOs from all deployed validator addresses.
+-- Returns the number of dust UTxOs found and the transaction skeleton.
+-- Anyone can call this — the on-chain 'Cleanup' redeemer is permissionless.
+-- The ADA locked in the dust UTxOs is returned to the caller.
+cleanupDustTX ::
+  (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  m (GYTxSkeleton 'PlutusV3, Int)
+cleanupDustTX = do
+  ctx <- ask
+  let mpGY = getMintingPolicyFromCtx ctx
+      protocolCS = mintingPolicyCurrencySymbol mpGY
+
+  pvRef <- asks getProfilesValidatorRef
+  rvRef <- asks getRanksValidatorRef
+  mvRef <- asks getMembershipsValidatorRef
+
+  pvAddr <- scriptAddress profilesValidatorGY
+  rvAddr <- scriptAddress ranksValidatorGY
+  mvAddr <- scriptAddress membershipsValidatorGY
+
+  -- Find dust UTxOs at each validator address
+  profilesDust <- getDustUTxOs pvAddr protocolCS
+  ranksDust <- getDustUTxOs rvAddr protocolCS
+  membershipsDust <- getDustUTxOs mvAddr protocolCS
+
+  let dustCount = length profilesDust + length ranksDust + length membershipsDust
+
+  when (dustCount == 0) $
+    throwError (GYApplicationException NoDustFound)
+
+  -- Build spend skeletons for each dust UTxO using the Cleanup redeemer
+  let pvCleanupRedeemer = redeemerFromPlutusData Onchain.ProfilesValidator.Cleanup
+      rvCleanupRedeemer = redeemerFromPlutusData Onchain.RanksValidator.Cleanup
+      mvCleanupRedeemer = redeemerFromPlutusData Onchain.MembershipsValidator.Cleanup
+
+  let profileSpends = map (\utxo -> txMustSpendUTxOFromRefScript pvRef utxo pvCleanupRedeemer profilesValidatorGY) profilesDust
+      rankSpends = map (\utxo -> txMustSpendUTxOFromRefScript rvRef utxo rvCleanupRedeemer ranksValidatorGY) ranksDust
+      membershipsSpends = map (\utxo -> txMustSpendUTxOFromRefScript mvRef utxo mvCleanupRedeemer membershipsValidatorGY) membershipsDust
+
+  return (mconcat (profileSpends ++ rankSpends ++ membershipsSpends), dustCount)

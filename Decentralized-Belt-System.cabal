@@ -43,8 +43,10 @@ common plinth-ghc-options
   -- set target plutus-core version
   ghc-options:        -fplugin-opt PlutusTx.Plugin:target-version=1.1.0
 
-  -- Compiler flags (defaults)
-  ghc-options:        -fplugin-opt PlutusTx.Plugin:remove-trace
+  -- Compiler flags (defaults): no-remove-trace keeps traces; preserve-logging
+  -- prevents optimization from removing trace messages (see Plutus troubleshooting).
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:no-remove-trace
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:preserve-logging
   ghc-options:        -fplugin-opt PlutusTx.Plugin:optimize
 
 library onchain-lib
@@ -171,10 +173,10 @@ library offchain-lib
   exposed-modules:
     Constants
     DomainTypes.Core.Actions
+    DomainTypes.Core.BJJ
     DomainTypes.Core.Types
     DomainTypes.Transfer.Types
     Ingestion
-    DomainTypes.Core.BJJ
     Storage
     TxBuilding.Context
     TxBuilding.Exceptions

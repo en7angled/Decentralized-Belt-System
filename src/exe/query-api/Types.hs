@@ -162,3 +162,81 @@ instance FromHttpApiData RanksOrderBy where
       "awarded_by" -> Right RanksOrderByAwardedBy
       "date" -> Right RanksOrderByDate
       _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
+
+data MembershipHistoriesOrderBy
+  = MembershipHistoriesOrderById
+  | MembershipHistoriesOrderByCreatedAt
+  | MembershipHistoriesOrderByPractitioner
+  | MembershipHistoriesOrderByOrganization
+  deriving (Show, Generic, Eq)
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripPrefix "MembershipHistoriesOrderBy", CamelToSnake]] MembershipHistoriesOrderBy
+
+instance ToSchema MembershipHistoriesOrderBy where
+  declareNamedSchema = genericDeclareNamedSchema membershipHistoriesOrderBySchemaOptions
+    where
+      membershipHistoriesOrderBySchemaOptions :: SchemaOptions
+      membershipHistoriesOrderBySchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.constructorTagModifier = camelTo2 '_' . dropPrefix "MembershipHistoriesOrderBy"
+            }
+
+instance ToParamSchema MembershipHistoriesOrderBy where
+  toParamSchema _ =
+    mempty
+      & type_
+        ?~ SwaggerString
+      & enum_
+        ?~ [ Aeson.String (T.pack "id"),
+             Aeson.String (T.pack "created_at"),
+             Aeson.String (T.pack "practitioner"),
+             Aeson.String (T.pack "organization")
+           ]
+
+instance FromHttpApiData MembershipHistoriesOrderBy where
+  parseQueryParam t =
+    case T.toLower t of
+      "id" -> Right MembershipHistoriesOrderById
+      "created_at" -> Right MembershipHistoriesOrderByCreatedAt
+      "practitioner" -> Right MembershipHistoriesOrderByPractitioner
+      "organization" -> Right MembershipHistoriesOrderByOrganization
+      _ -> Left "Invalid order by. Use 'id', 'created_at', 'practitioner', or 'organization'"
+
+data MembershipIntervalsOrderBy
+  = MembershipIntervalsOrderById
+  | MembershipIntervalsOrderByStartDate
+  | MembershipIntervalsOrderByIntervalNumber
+  | MembershipIntervalsOrderByPractitioner
+  deriving (Show, Generic, Eq)
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripPrefix "MembershipIntervalsOrderBy", CamelToSnake]] MembershipIntervalsOrderBy
+
+instance ToSchema MembershipIntervalsOrderBy where
+  declareNamedSchema = genericDeclareNamedSchema membershipIntervalsOrderBySchemaOptions
+    where
+      membershipIntervalsOrderBySchemaOptions :: SchemaOptions
+      membershipIntervalsOrderBySchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.constructorTagModifier = camelTo2 '_' . dropPrefix "MembershipIntervalsOrderBy"
+            }
+
+instance ToParamSchema MembershipIntervalsOrderBy where
+  toParamSchema _ =
+    mempty
+      & type_
+        ?~ SwaggerString
+      & enum_
+        ?~ [ Aeson.String (T.pack "id"),
+             Aeson.String (T.pack "start_date"),
+             Aeson.String (T.pack "interval_number"),
+             Aeson.String (T.pack "practitioner")
+           ]
+
+instance FromHttpApiData MembershipIntervalsOrderBy where
+  parseQueryParam t =
+    case T.toLower t of
+      "id" -> Right MembershipIntervalsOrderById
+      "start_date" -> Right MembershipIntervalsOrderByStartDate
+      "interval_number" -> Right MembershipIntervalsOrderByIntervalNumber
+      "practitioner" -> Right MembershipIntervalsOrderByPractitioner
+      _ -> Left "Invalid order by. Use 'id', 'start_date', 'interval_number', or 'practitioner'"

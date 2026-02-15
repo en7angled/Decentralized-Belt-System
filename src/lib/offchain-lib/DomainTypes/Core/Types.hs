@@ -24,6 +24,10 @@ type ProfileRefAC = GYAssetClass
 
 type RankAC = GYAssetClass
 
+type MembershipHistoryAC = GYAssetClass
+
+type MembershipIntervalAC = GYAssetClass
+
 -- | Profile type
 data ProfileType = Practitioner | Organization
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema, Eq, Ord)
@@ -146,4 +150,76 @@ instance ToSchema Promotion where
         fromAesonOptions $
           AesonTypes.defaultOptions
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "promotion"
+            }
+
+-- | A practitioner's membership history with an organization.
+data MembershipHistory = MembershipHistory
+  { membershipHistoryId :: MembershipHistoryAC,
+    membershipHistoryPractitionerId :: ProfileRefAC,
+    membershipHistoryOrganizationId :: ProfileRefAC
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "membershipHistory", CamelToSnake]] MembershipHistory
+
+derivePersistFieldJSON "MembershipHistory"
+
+instance Show MembershipHistory where
+  show :: MembershipHistory -> String
+  show (MembershipHistory {..}) =
+    Prelude.init $
+      Prelude.unlines
+        [ "┌─────────────────────────────────────────────────────────────",
+          "│ MembershipHistory ID: " <> stringFromJSON membershipHistoryId,
+          "│ Practitioner: " <> stringFromJSON membershipHistoryPractitionerId,
+          "│ Organization: " <> stringFromJSON membershipHistoryOrganizationId,
+          "└─────────────────────────────────────────────────────────────"
+        ]
+
+instance ToSchema MembershipHistory where
+  declareNamedSchema = genericDeclareNamedSchema membershipHistorySchemaOptions
+    where
+      membershipHistorySchemaOptions :: SchemaOptions
+      membershipHistorySchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "membershipHistory"
+            }
+
+-- | A time-bounded membership interval within a membership history.
+data MembershipInterval = MembershipInterval
+  { membershipIntervalId :: MembershipIntervalAC,
+    membershipIntervalStartDate :: GYTime,
+    membershipIntervalEndDate :: Maybe GYTime,
+    membershipIntervalIsAccepted :: Bool,
+    membershipIntervalPractitionerId :: ProfileRefAC,
+    membershipIntervalNumber :: Integer
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "membershipInterval", CamelToSnake]] MembershipInterval
+
+derivePersistFieldJSON "MembershipInterval"
+
+instance Show MembershipInterval where
+  show :: MembershipInterval -> String
+  show (MembershipInterval {..}) =
+    Prelude.init $
+      Prelude.unlines
+        [ "┌─────────────────────────────────────────────────────────────",
+          "│ MembershipInterval ID: " <> stringFromJSON membershipIntervalId,
+          "│ Start Date: " <> stringFromJSON membershipIntervalStartDate,
+          "│ End Date: " <> stringFromJSON membershipIntervalEndDate,
+          "│ Accepted: " <> show membershipIntervalIsAccepted,
+          "│ Practitioner: " <> stringFromJSON membershipIntervalPractitionerId,
+          "│ Interval #: " <> show membershipIntervalNumber,
+          "└─────────────────────────────────────────────────────────────"
+        ]
+
+instance ToSchema MembershipInterval where
+  declareNamedSchema = genericDeclareNamedSchema membershipIntervalSchemaOptions
+    where
+      membershipIntervalSchemaOptions :: SchemaOptions
+      membershipIntervalSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "membershipInterval"
             }

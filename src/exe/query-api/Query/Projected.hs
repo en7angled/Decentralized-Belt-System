@@ -295,3 +295,104 @@ getPromotionBeltTotals = do
     let belts = Prelude.map unValue rows
     pure (toOccurList . fromList $ belts)
     ) pool
+
+getMembershipHistories :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.MembershipHistoryFilter -> Maybe (MembershipHistoriesOrderBy, SortOrder) -> m [MembershipHistory]
+getMembershipHistories maybeLimitOffset maybeFilter maybeOrder = do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
+    rows <- select $ do
+      mhp <- from $ table @MembershipHistoryProjection
+      case maybeFilter of
+        Nothing -> pure ()
+        Just C.MembershipHistoryFilter {..} -> do
+          for_ membershipHistoryFilterOrganizationProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionOrganizationProfileId `in_` valList ids))
+          for_ membershipHistoryFilterPractitionerProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionPractitionerProfileId `in_` valList ids))
+      case maybeOrder of
+        Nothing -> pure ()
+        Just (ob, so) ->
+          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
+           in case ob of
+                MembershipHistoriesOrderById -> orderBy [dir (mhp ^. MembershipHistoryProjectionMembershipHistoryId)]
+                MembershipHistoriesOrderByCreatedAt -> orderBy [dir (mhp ^. MembershipHistoryProjectionCreatedAtSlot)]
+                MembershipHistoriesOrderByPractitioner -> orderBy [dir (mhp ^. MembershipHistoryProjectionPractitionerProfileId)]
+                MembershipHistoriesOrderByOrganization -> orderBy [dir (mhp ^. MembershipHistoryProjectionOrganizationProfileId)]
+      case maybeLimitOffset of
+        Nothing -> pure ()
+        Just (l, o) -> do
+          offset (fromIntegral o)
+          limit (fromIntegral l)
+      pure mhp
+    let toMembershipHistory mhp =
+          MembershipHistory
+            { membershipHistoryId = membershipHistoryProjectionMembershipHistoryId mhp,
+              membershipHistoryPractitionerId = membershipHistoryProjectionPractitionerProfileId mhp,
+              membershipHistoryOrganizationId = membershipHistoryProjectionOrganizationProfileId mhp
+            }
+    pure (Prelude.map (toMembershipHistory . entityVal) rows)
+    ) pool
+
+getMembershipHistoriesCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.MembershipHistoryFilter -> m Int
+getMembershipHistoriesCount maybeFilter = do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
+    cnt <- selectOne $ do
+      mhp <- from $ table @MembershipHistoryProjection
+      case maybeFilter of
+        Nothing -> pure countRows
+        Just C.MembershipHistoryFilter {..} -> do
+          for_ membershipHistoryFilterOrganizationProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionOrganizationProfileId `in_` valList ids))
+          for_ membershipHistoryFilterPractitionerProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionPractitionerProfileId `in_` valList ids))
+          pure countRows
+    pure (maybe 0 unValue cnt)
+    ) pool
+
+getMembershipIntervals :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.MembershipIntervalFilter -> Maybe (MembershipIntervalsOrderBy, SortOrder) -> m [MembershipInterval]
+getMembershipIntervals maybeLimitOffset maybeFilter maybeOrder = do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
+    rows <- select $ do
+      mip <- from $ table @MembershipIntervalProjection
+      case maybeFilter of
+        Nothing -> pure ()
+        Just C.MembershipIntervalFilter {..} -> do
+          for_ membershipIntervalFilterPractitionerProfileId (\ids -> where_ (mip ^. MembershipIntervalProjectionPractitionerProfileId `in_` valList ids))
+      case maybeOrder of
+        Nothing -> pure ()
+        Just (ob, so) ->
+          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
+           in case ob of
+                MembershipIntervalsOrderById -> orderBy [dir (mip ^. MembershipIntervalProjectionMembershipIntervalId)]
+                MembershipIntervalsOrderByStartDate -> orderBy [dir (mip ^. MembershipIntervalProjectionStartDate)]
+                MembershipIntervalsOrderByIntervalNumber -> orderBy [dir (mip ^. MembershipIntervalProjectionIntervalNumber)]
+                MembershipIntervalsOrderByPractitioner -> orderBy [dir (mip ^. MembershipIntervalProjectionPractitionerProfileId)]
+      case maybeLimitOffset of
+        Nothing -> pure ()
+        Just (l, o) -> do
+          offset (fromIntegral o)
+          limit (fromIntegral l)
+      pure mip
+    let toMembershipInterval mip =
+          MembershipInterval
+            { membershipIntervalId = membershipIntervalProjectionMembershipIntervalId mip,
+              membershipIntervalStartDate = membershipIntervalProjectionStartDate mip,
+              membershipIntervalEndDate = membershipIntervalProjectionEndDate mip,
+              membershipIntervalIsAccepted = membershipIntervalProjectionIsAccepted mip,
+              membershipIntervalPractitionerId = membershipIntervalProjectionPractitionerProfileId mip,
+              membershipIntervalNumber = membershipIntervalProjectionIntervalNumber mip
+            }
+    pure (Prelude.map (toMembershipInterval . entityVal) rows)
+    ) pool
+
+getMembershipIntervalsCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.MembershipIntervalFilter -> m Int
+getMembershipIntervalsCount maybeFilter = do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
+    cnt <- selectOne $ do
+      mip <- from $ table @MembershipIntervalProjection
+      case maybeFilter of
+        Nothing -> pure countRows
+        Just C.MembershipIntervalFilter {..} -> do
+          for_ membershipIntervalFilterPractitionerProfileId (\ids -> where_ (mip ^. MembershipIntervalProjectionPractitionerProfileId `in_` valList ids))
+          pure countRows
+    pure (maybe 0 unValue cnt)
+    ) pool

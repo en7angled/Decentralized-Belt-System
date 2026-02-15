@@ -58,10 +58,14 @@ data ProfilesRedeemer
     -- RanksValidator has only one redeemer (PromotionAcceptance) and always validates
     -- the rank output, so PV's rank output check was genuinely redundant.
     AcceptPromotion RankId Integer
+  | -- | Permissionless dust/griefing cleanup. Anyone can spend a UTxO at the
+    -- validator address if its datum is absent or does not parse as a valid
+    -- protocol datum. Legitimate protocol UTxOs (with valid datums) are rejected.
+    Cleanup
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('AcceptPromotion, 1)]
+makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('AcceptPromotion, 1), ('Cleanup, 2)]
 
 type ProfilesDatum = CIP68Datum Onchain.OnchainProfile
 
@@ -76,22 +80,29 @@ profilesLambda :: ScriptContext -> Bool
 profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
   let redeemer = unsafeFromBuiltinData @ProfilesRedeemer bredeemer
    in case scriptInfo of
-        (SpendingScript spendingTxOutRef mdatum) -> case mdatum of
-          Nothing -> traceError "No datum"
-          Just (Datum bdatum) -> case fromBuiltinData bdatum of
-            Nothing -> traceError "Invalid datum"
-            Just profileDatum@(CIP68Datum _metadata _version (profile :: OnchainProfile)) ->
-              let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
-                  ownValue = txOutValue ownInput
-                  ownAddress = txOutAddress ownInput
-                  profileRefAssetClass@(V1.AssetClass (mintingPolicyCurrencySymbol, _)) = profileId profile --  as in datum.
-                  -- It is important to validate that the value of this UTxO contains an NFT of this asset class.
-               in case redeemer of
-                    (UpdateProfileImage newImageURI profileOutputIdx) ->
-                      handleUpdateProfileImage txInfo ownValue ownAddress profileRefAssetClass profileDatum newImageURI profileOutputIdx
-                    (AcceptPromotion promotionId profileOutputIdx) ->
-                      handleAcceptPromotion txInfo ownValue ownAddress profileRefAssetClass mintingPolicyCurrencySymbol profile profileDatum promotionId profileOutputIdx
-        _ -> traceError "Invalid purpose"
+        (SpendingScript spendingTxOutRef mdatum) -> case redeemer of
+          -- Permissionless cleanup: allow spending if datum is absent or unparseable.
+          Cleanup -> case mdatum of
+            Nothing -> True
+            Just (Datum bd) -> case fromBuiltinData @(CIP68Datum OnchainProfile) bd of
+              Nothing -> True
+              Just _ -> traceError "3" -- Cannot cleanup valid datum
+          _ -> case mdatum of
+            Nothing -> traceError "4" -- No datum
+            Just (Datum bdatum) -> case fromBuiltinData bdatum of
+              Nothing -> traceError "5" -- Invalid datum
+              Just profileDatum@(CIP68Datum _metadata _version (profile :: OnchainProfile)) ->
+                let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+                    ownValue = txOutValue ownInput
+                    ownAddress = txOutAddress ownInput
+                    profileRefAssetClass@(V1.AssetClass (mintingPolicyCurrencySymbol, _)) = profileId profile --  as in datum.
+                    -- It is important to validate that the value of this UTxO contains an NFT of this asset class.
+                 in case redeemer of
+                      (UpdateProfileImage newImageURI profileOutputIdx) ->
+                        handleUpdateProfileImage txInfo ownValue ownAddress profileRefAssetClass profileDatum newImageURI profileOutputIdx
+                      (AcceptPromotion promotionId profileOutputIdx) ->
+                        handleAcceptPromotion txInfo ownValue ownAddress profileRefAssetClass mintingPolicyCurrencySymbol profile profileDatum promotionId profileOutputIdx
+        _ -> traceError "6" -- Invalid purpose
 
 -------------------------------------------------------------------------------
 
@@ -113,16 +124,10 @@ handleUpdateProfileImage txInfo@TxInfo {..} ownValue ownAddress profileRefAssetC
   let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum
       profileUserAssetClass = deriveUserFromRefAC profileRefAssetClass
    in and
-        [ traceIfFalse "Own value must contain profile Ref NFT"
-            $ V1.assetClassValueOf ownValue profileRefAssetClass
-            == 1,
-          traceIfFalse "Must spend profile User NFT"
-            $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-            == 1,
-          -- Validate image URI size to prevent oversized datums
+        [ traceIfFalse "7" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT
+          traceIfFalse "8" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT
           validateImageURI newImageURI,
-          traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
-            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Guarantees that tokens never leaves the validator.
+          traceIfFalse "9" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile
         ]
 
 {-# INLINEABLE handleAcceptPromotion #-}
@@ -154,15 +159,9 @@ handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass minti
 
       isPromotionStillValid =
         and
-          [ traceIfFalse
-              "Promotion invalid - promotion ID must have correct currency symbol"
-              isValidPromotionId,
-            traceIfFalse "Promotion invalid - already at or past this rank"
-              $ nextBelt
-              > currentBelt,
-            traceIfFalse "Promotion invalid - achievement date must be after current rank date"
-              $ nextBeltDate
-              > currentBeltDate
+          [ traceIfFalse "A" isValidPromotionId, -- Promotion ID CS check
+            traceIfFalse "B" $ nextBelt > currentBelt, -- Already at or past this rank
+            traceIfFalse "C" $ nextBeltDate > currentBeltDate -- Date must be after current
           ]
 
       -- R4 optimization: use promoteProfileDatum instead of promoteProfile
@@ -183,12 +182,9 @@ handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass minti
       -- and it has no alternative code path. Removing this also eliminates
       -- the rankOutputIdx parameter from the AcceptPromotion redeemer.
       and
-        [ traceIfFalse "Own value must contain profile Ref NFT"
-            $ V1.assetClassValueOf ownValue profileRefAssetClass
-            == 1,
+        [ traceIfFalse "D" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT
           isPromotionStillValid,
-          traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
-            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs -- Guarantees that tokens never leaves the validator.
+          traceIfFalse "E" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile
         ]
 
 -------------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use &&" #-}
 
 -- | Oracle validator for the BJJ Belt protocol.
 -- Holds mutable operational parameters ('OracleParams') in its datum.
@@ -36,22 +38,16 @@ oracleLambda (ScriptContext TxInfo {..} _ scriptInfo) =
   case scriptInfo of
     SpendingScript spendingRef (Just (Datum bdatum)) ->
       case fromBuiltinData @OracleParams bdatum of
-        Nothing -> traceError "Invalid oracle datum"
+        Nothing -> traceError "0" -- Invalid oracle datum
         Just currentParams ->
           let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingRef txInfoInputs
               ownValue = txOutValue ownInput
               ownAddr = txOutAddress ownInput
            in and
-                [ traceIfFalse "Must be signed by current admin"
-                    $ elem (opAdminPkh currentParams) txInfoSignatories,
-                  traceIfFalse "Must return oracle UTxO to same address with same value"
-                    $ any
-                      ( \TxOut {txOutValue = v, txOutAddress = a} ->
-                          a == ownAddr && v == ownValue
-                      )
-                      txInfoOutputs
+                [ traceIfFalse "1" $ elem (opAdminPkh currentParams) txInfoSignatories, -- Must be signed by admin
+                  traceIfFalse "2" $ any (\TxOut {txOutValue = v, txOutAddress = a} -> a == ownAddr && v == ownValue) txInfoOutputs -- Must return oracle UTxO
                 ]
-    _ -> traceError "Invalid script purpose"
+    _ -> traceError "3" -- Invalid script purpose
 
 -------------------------------------------------------------------------------
 

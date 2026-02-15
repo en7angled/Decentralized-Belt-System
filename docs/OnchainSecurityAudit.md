@@ -10,7 +10,7 @@
     - [MEDIUM (Fixed): No startDate Validation Against Transaction Validity Range](#medium-fixed-no-startdate-validation-against-transaction-validity-range)
   - [Remaining Items](#remaining-items)
     - [LOW: updateMembershipIntervalEndDate Needs Time Validation in Validator](#low-updatemembershipintervalenddate-needs-time-validation-in-validator)
-    - [LOW: Dust/Griefing at Validator Addresses](#low-dustgriefing-at-validator-addresses)
+    - [LOW (Resolved): Dust/Griefing at Validator Addresses](#low-resolved-dustgriefing-at-validator-addresses)
     - [Cross-Script Redundancy Analysis](#cross-script-redundancy-analysis)
     - [Multi-Script Interaction Vulnerability Analysis](#multi-script-interaction-vulnerability-analysis)
     - [`validLastInterval` TODO Resolution](#validlastinterval-todo-resolution)
@@ -156,21 +156,36 @@ traceIfFalse "End date must be in the future"
 
 ---
 
-### LOW: Dust/Griefing at Validator Addresses
+### LOW (Resolved): Dust/Griefing at Validator Addresses
 
-**Description**: Anyone can send UTxOs with invalid datums to any validator address. The MembershipsValidator fails with `traceError "Invalid datum"` for unparseable datums, making these UTxOs **permanently locked** and unspendable.
+**Description**: Anyone can send UTxOs with invalid datums to any validator address. Previously, these UTxOs were **permanently locked** and unspendable because validators failed with `traceError "Invalid datum"` for unparseable datums.
 
-**Impact**: Nuisance only. Does not affect protocol functionality — all lookups use NFT-based filtering and ignore UTxOs without valid protocol NFTs. Creates unspendable UTxOs at the script address that accumulate over time and can never be reclaimed.
+**Impact**: Nuisance only. Does not affect protocol functionality — all lookups use NFT-based filtering and ignore UTxOs without valid protocol NFTs.
 
-**Mitigation (offchain)**: Offchain code should filter UTxOs by protocol CurrencySymbol before processing.
+**Mitigation (offchain)**: Offchain code filters UTxOs by protocol CurrencySymbol before processing.
 
-**Mitigation (onchain — TODO)**: Add an admin `PubKeyHash` to `ProtocolParams`. Each validator should accept a dedicated `AdminCleanup` redeemer that allows the admin key to spend any UTxO that does not contain a valid protocol NFT. This enables the protocol administrator to reclaim ADA locked in dust/griefing UTxOs without affecting legitimate protocol state. Implementation steps:
-1. Extend `ProtocolParams` with an `adminPubKeyHash :: PubKeyHash` field
-2. Add an `AdminCleanup` redeemer to `ProfilesValidator`, `RanksValidator`, and `MembershipsValidator`
-3. The `AdminCleanup` validation logic should:
-   - Verify the transaction is signed by `adminPubKeyHash` (via `txInfoSignatories`)
-   - Verify that the spent UTxO does **not** contain any token with the protocol's CurrencySymbol (to prevent the admin from spending legitimate protocol UTxOs)
-4. Update deployment order and documentation to reflect the new `ProtocolParams` structure
+**Mitigation (onchain — RESOLVED)**: A permissionless `Cleanup` redeemer was added to `ProfilesValidator`, `RanksValidator`, and `MembershipsValidator`. The redeemer allows **anyone** to spend a UTxO at a validator address if its datum is absent or does not parse as the expected protocol datum type. Legitimate protocol UTxOs (with valid datums) are always rejected by the `Cleanup` redeemer.
+
+**Design choice**: The original proposal required an admin signature and a CurrencySymbol-based check. Instead, a datum-validity-based permissionless approach was adopted because:
+1. The validators are **unparameterized** — they do not have the protocol CurrencySymbol baked in, so an on-chain CS check is not feasible without architectural changes.
+2. All legitimate protocol UTxOs always have valid, parseable inline datums (created by MintingPolicy/validators), so checking datum parseability is a sound guard.
+3. Permissionless cleanup creates a **built-in bounty** — anyone can reclaim the dust ADA, making griefing self-defeating (attacker loses funds, cleaner profits).
+4. No oracle reference input or admin signature is needed, keeping the redeemer minimal and cheap.
+
+**Implementation**:
+- `ProfilesRedeemer.Cleanup` (index 2): checks `fromBuiltinData @(CIP68Datum OnchainProfile)`
+- `RanksRedeemer.Cleanup` (index 1): checks `fromBuiltinData @OnchainRank`
+- `MembershipsRedeemer.Cleanup` (index 3): checks `fromBuiltinData @MembershipDatum`
+- Off-chain: `cleanupDustTX` operation + `ProtocolAction CleanupDustAction` in the interaction API + `cleanup-dust` admin CLI command
+- Tests (`UnitTests.hs`):
+  - 3.1: Dust at ProfilesValidator — send ADA-only UTxO, cleanup by a third party
+  - 3.2: Dust at RanksValidator — same pattern
+  - 3.3: Dust at both validators — single cleanup transaction sweeps both
+  - 3.4: Safety test — create legitimate profile, add dust, cleanup, verify profile intact
+
+**Edge case**: A UTxO with a coincidentally valid datum but no protocol NFT would be rejected by `Cleanup` (datum parses) and also rejected by legitimate redeemers (NFT checks fail). This is no worse than the previous situation and requires the attacker to craft valid Plutus Data, which is non-trivial.
+
+**Status**: **RESOLVED**
 
 ---
 
@@ -498,6 +513,6 @@ Two medium-severity issues were identified and resolved:
 
 The cross-script redundancy analysis identified and **removed two redundancies** (R2: PV rank output check, R3: RV profile Ref NFT == 1) and confirmed that **three seemingly redundant checks are essential** (R1: RV profile output check, R5/R6: MV mint checks). The `validLastInterval` check in `addMembershipIntervalToHistory` was confirmed as required to prevent head-bypass attacks.
 
-Remaining items are low-severity design considerations (time validation in future `UpdateEndDate` redeemer, known Cardano dust attack limitation).
+Remaining items are low-severity design considerations (time validation in future `UpdateEndDate` redeemer). The dust/griefing attack vector has been mitigated with a permissionless `Cleanup` redeemer on all three validators.
 
 **No new vulnerabilities were identified** in the multi-script interaction analysis. All 35 attack vectors in the protection summary are confirmed as protected.

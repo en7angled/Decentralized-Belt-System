@@ -47,10 +47,14 @@ import Prelude qualified
 data RanksRedeemer
   = -- | AcceptPromotion profileOutputIdx rankOutputIdx
     PromotionAcceptance Integer Integer
+  | -- | Permissionless dust/griefing cleanup. Anyone can spend a UTxO at the
+    -- validator address if its datum is absent or does not parse as a valid
+    -- protocol datum. Legitimate protocol UTxOs (with valid datums) are rejected.
+    Cleanup
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''RanksRedeemer [('PromotionAcceptance, 0)]
+makeIsDataSchemaIndexed ''RanksRedeemer [('PromotionAcceptance, 0), ('Cleanup, 1)]
 
 -------------------------------------------------------------------------------
 
@@ -63,44 +67,47 @@ ranksLambda :: ScriptContext -> Bool
 ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
   let redeemer = unsafeFromBuiltinData @RanksRedeemer bredeemer
    in case scriptInfo of
-        (SpendingScript spendingTxOutRef mdatum) -> case mdatum of
-          Nothing -> traceError "No datum"
-          Just (Datum bdatum) -> case fromBuiltinData bdatum of
-            Nothing -> traceError "Invalid datum"
-            Just (promotionRankDatum :: OnchainRank) ->
-              case redeemer of
-                (PromotionAcceptance profileOutputIdx rankOutputIdx) ->
-                  -- The promotion was already validated at mint time.
-                  -- Ranks cannot be spent
-                  -- We only need to verify the student consents by spending their user NFT.
-                  let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
-                      ownValue = txOutValue ownInput
-                      ownAddress = txOutAddress ownInput
+        (SpendingScript spendingTxOutRef mdatum) -> case redeemer of
+          -- Permissionless cleanup: allow spending if datum is absent or unparseable.
+          Cleanup -> case mdatum of
+            Nothing -> True
+            Just (Datum bd) -> case fromBuiltinData @OnchainRank bd of
+              Nothing -> True
+              Just _ -> traceError "3" -- Cannot cleanup valid datum
+          _ -> case mdatum of
+            Nothing -> traceError "4" -- No datum
+            Just (Datum bdatum) -> case fromBuiltinData bdatum of
+              Nothing -> traceError "5" -- Invalid datum
+              Just (promotionRankDatum :: OnchainRank) ->
+                case redeemer of
+                  (PromotionAcceptance profileOutputIdx rankOutputIdx) ->
+                    -- The promotion was already validated at mint time.
+                    -- Ranks cannot be spent
+                    -- We only need to verify the student consents by spending their user NFT.
+                    let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+                        ownValue = txOutValue ownInput
+                        ownAddress = txOutAddress ownInput
 
-                      -- Getting profiles based on the ids in the rank promotion datum
-                      (studentProfileValue, studentProfileDatum) = unsafeGetProfileDatumAndValue studentProfileId profilesValidatorAddress txInfoInputs
-                      (updatedProfileCIP68Datum, newRank) = promoteProfile studentProfileDatum promotionRankDatum
+                        -- Getting profiles based on the ids in the rank promotion datum
+                        (studentProfileValue, studentProfileDatum) = unsafeGetProfileDatumAndValue studentProfileId profilesValidatorAddress txInfoInputs
+                        (updatedProfileCIP68Datum, newRank) = promoteProfile studentProfileDatum promotionRankDatum
 
-                      profilesValidatorAddress = V1.scriptHashAddress $ profilesValidatorScriptHash $ promotionProtocolParams promotionRankDatum
-                      studentProfileId = promotionAwardedTo promotionRankDatum -- Fails if trying to spend a rank instead of a promotion
-                      profileUserAssetClass = deriveUserFromRefAC studentProfileId
-                   in -- NOTE (R3 redundancy removed — see OnchainSecurityAudit.md):
-                      -- The "Profile Ref NFT == 1" check was removed because
-                      -- unsafeGetProfileDatumAndValue uses checkAndGetCurrentStateDatumAndValue,
-                      -- which filters by `geq assetClassValue stateToken 1` and demands exactly
-                      -- one matching UTxO. If the lookup succeeds, the NFT is guaranteed present.
-                      -- Additionally, the MintingPolicy only ever mints exactly 1 of each profile
-                      -- NFT, so >= 1 implies == 1. PV also independently checks this.
-                      and
-                        [ traceIfFalse "Must spend profile User NFT to accept promotion"
-                            $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                            == 1,
-                          traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
-                            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs,
-                          traceIfFalse "Must lock updated rank with inline datum at ranksValidator address (output idx)" -- Guarantees that tokens never leaves the validator.
-                            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs
-                        ]
-        _ -> traceError "Invalid script info"
+                        profilesValidatorAddress = V1.scriptHashAddress $ profilesValidatorScriptHash $ promotionProtocolParams promotionRankDatum
+                        studentProfileId = promotionAwardedTo promotionRankDatum -- Fails if trying to spend a rank instead of a promotion
+                        profileUserAssetClass = deriveUserFromRefAC studentProfileId
+                     in -- NOTE (R3 redundancy removed — see OnchainSecurityAudit.md):
+                        -- The "Profile Ref NFT == 1" check was removed because
+                        -- unsafeGetProfileDatumAndValue uses checkAndGetCurrentStateDatumAndValue,
+                        -- which filters by `geq assetClassValue stateToken 1` and demands exactly
+                        -- one matching UTxO. If the lookup succeeds, the NFT is guaranteed present.
+                        -- Additionally, the MintingPolicy only ever mints exactly 1 of each profile
+                        -- NFT, so >= 1 implies == 1. PV also independently checks this.
+                        and
+                          [ traceIfFalse "7" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT
+                            traceIfFalse "8" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs, -- Lock profile at PV
+                            traceIfFalse "9" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs -- Lock rank at RV
+                          ]
+        _ -> traceError "6" -- Invalid script info
 
 -------------------------------------------------------------------------------
 

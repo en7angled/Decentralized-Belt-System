@@ -449,6 +449,26 @@ run_admin_cmd_no_output accept-promotion --asset-class "$PROMO4_ID"
 print_success "Master Ricardo is now a 1st Degree Black belt!"
 
 # ============================================================================
+# STEP 7: Dust Cleanup (Permissionless Maintenance)
+# ============================================================================
+print_section "Step 7: Dust Cleanup"
+
+print_info "Running cleanup-dust to sweep any dust UTxOs from validator addresses..."
+cleanup_output=""
+cleanup_exit=0
+cleanup_output=$(cd "$REPO_ROOT" && $ADMIN cleanup-dust 2>&1) || cleanup_exit=$?
+if [ "$cleanup_exit" -eq 0 ]; then
+    print_success "Dust cleanup completed"
+else
+    # NoDustFound is expected on a clean testnet — not an error
+    if echo "$cleanup_output" | grep -q "No dust UTxOs found"; then
+        print_info "No dust UTxOs found at validator addresses (clean state)"
+    else
+        print_warning "Dust cleanup returned exit code $cleanup_exit"
+    fi
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 print_section "Testnet Population Complete!"

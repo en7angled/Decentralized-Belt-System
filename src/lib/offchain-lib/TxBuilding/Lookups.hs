@@ -13,14 +13,17 @@ import GeniusYield.Types.Value
 import Onchain.CIP68 (CIP68Datum (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
 import Onchain.Protocol qualified as Onchain
-import Onchain.Protocol.Types (OracleParams)
-import PlutusLedgerApi.V1.Value
+import Onchain.Protocol.Id (deriveMembershipHistoryId)
+import PlutusLedgerApi.V1.Value (AssetClass (..), CurrencySymbol, Value, flattenValue)
 import PlutusTx (fromBuiltinData)
 import TxBuilding.Context (DeployedScriptsContext (..))
 import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Functors
 import TxBuilding.Utils
-import TxBuilding.Validators (oracleValidatorGY, profilesValidatorHashGY, ranksValidatorHashGY)
+import Onchain.Protocol.Types (MembershipDatum (..), MembershipHistoriesListNode (..), OracleParams (..))
+import Onchain.Protocol.Types qualified as OnchainTypes
+import Onchain.LinkedList (NodeDatum (..))
+import TxBuilding.Validators (oracleValidatorGY, profilesValidatorHashGY, ranksValidatorHashGY, membershipsValidatorHashGY)
 
 ------------------------------------------------------------------------------------------------
 
@@ -180,3 +183,145 @@ queryOracleParams = do
         Just params -> return (params, utxoRef utxo, utxoValue utxo)
         Nothing -> throwError (GYApplicationException OracleDatumInvalid)
     Nothing -> throwError (GYApplicationException OracleNotFound)
+
+------------------------------------------------------------------------------------------------
+
+-- * Dust / Cleanup Lookup Functions
+
+------------------------------------------------------------------------------------------------
+
+-- | Find dust UTxOs at a validator address: those that contain no token
+-- with the protocol's 'CurrencySymbol'. These are griefing/dust UTxOs
+-- that can be cleaned up via the permissionless 'Cleanup' redeemer.
+getDustUTxOs ::
+  (GYTxQueryMonad m) =>
+  GYAddress -> CurrencySymbol -> m [GYUTxO]
+getDustUTxOs addr protocolCS = do
+  allUtxos <- utxosAtAddresses [addr]
+  return $ filter (not . hasProtocolToken) (utxosToList allUtxos)
+  where
+    hasProtocolToken utxo =
+      any (\(cs, _, _) -> cs == protocolCS) $ flattenValue $ valueToPlutus $ utxoValue utxo
+
+------------------------------------------------------------------------------------------------
+
+-- * Membership Lookup Functions
+
+------------------------------------------------------------------------------------------------
+
+-- | Get a MembershipDatum (list node or interval) by its NFT asset class.
+getMembershipDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (MembershipDatum, Value)
+getMembershipDatumAndValue nftAC = do
+  utxo <- getUTxOWithNFT nftAC
+  case getInlineDatumAndValue utxo of
+    Just (gyDatum, gyValue) ->
+      case fromBuiltinData (datumToPlutus' gyDatum) of
+        Just md -> return (md, valueToPlutus gyValue)
+        Nothing -> throwError (GYApplicationException DatumParseError)
+    Nothing -> throwError (GYApplicationException MembershipListNodeNotFound)
+
+-- | Get a membership list node datum and value by its NFT asset class.
+getMembershipListNodeDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (MembershipHistoriesListNode, Value)
+getMembershipListNodeDatumAndValue nodeAC = do
+  (md, val) <- getMembershipDatumAndValue nodeAC
+  case md of
+    ListNodeDatum node -> return (node, val)
+    _ -> throwError (GYApplicationException MembershipListNodeNotFound)
+
+
+
+-- | Find the insert point for a new membership history.
+--
+-- The list is sorted by node key (practitioner id). We traverse from the root
+-- to find the last node that is strictly before the new key, then decide:
+--
+--   - Append: (lastNodeAC, Nothing) — new key is greater than all existing; spend last node,
+--     new node goes after it. Tx only spends the last node.
+--
+--   - Insert: (leftNodeAC, Just rightNodeAC) — new key lies between left and right; spend left
+--     node, add right node as reference input, new node goes between. Tx spends left and refs right.
+--
+-- Returns (leftNodeAC, Maybe rightNodeAC) for use in 'createMembershipHistoryTX'.
+findInsertPointForNewMembership ::
+  (GYTxQueryMonad m) =>
+  GYAssetClass ->
+  GYAssetClass ->
+  m (GYAssetClass, Maybe GYAssetClass)
+findInsertPointForNewMembership gyOrgProfileRefAC gyNewPractitionerRefAC = do
+  let plutusOrgRef = assetClassToPlutus gyOrgProfileRefAC
+      -- Key of the node we are about to create (practitioner id; list is sorted by this).
+      newKey = Just (assetClassToPlutus gyNewPractitionerRefAC)
+
+  gyRootAC <- assetClassFromPlutus' (Onchain.deriveMembershipHistoriesListId plutusOrgRef)
+  (rootNode, _) <- getMembershipListNodeDatumAndValue gyRootAC
+
+  case nextNodeKey (nodeInfo rootNode) of
+    -- Empty list: root has no next → append after root.
+    Nothing ->
+      return (gyRootAC, Nothing)
+    -- Non-empty: compare new key with first node's key.
+    Just firstKey -> do
+      gyFirstAC <- assetClassFromPlutus' (deriveMembershipHistoryId plutusOrgRef firstKey)
+      (firstNode, _) <- getMembershipListNodeDatumAndValue gyFirstAC
+      let firstKeyMaybe = Just firstKey
+      if newKey < firstKeyMaybe
+        then -- New key is smallest → insert between root and first node.
+          return (gyRootAC, Just gyFirstAC)
+        else -- New key >= first → walk list to find predecessor or end.
+          go newKey gyFirstAC firstNode
+  where
+    -- Walk from leftNode: either we are at the end (append) or we find a next node and decide insert vs continue.
+    go key leftAC leftNode =
+      case nextNodeKey (nodeInfo leftNode) of
+        -- No next node → we are at the tail; append after leftNode.
+        Nothing -> return (leftAC, Nothing)
+        Just nextKey -> do
+          let orgId = OnchainTypes.organizationId leftNode
+              rightHistoryId = deriveMembershipHistoryId orgId nextKey
+          gyRightAC <- assetClassFromPlutus' rightHistoryId
+          (rightNode, _) <- getMembershipListNodeDatumAndValue gyRightAC
+          let nextKeyMaybe = Just nextKey
+          if key < nextKeyMaybe
+            then -- New key sits between leftNode and rightNode → insert between them.
+              return (leftAC, Just gyRightAC)
+            else -- New key >= nextKey → keep walking (rightNode becomes new left).
+              go key gyRightAC rightNode
+
+-- | Get a membership interval datum and value by its NFT asset class.
+getMembershipIntervalDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (OnchainTypes.OnchainMembershipInterval, Value)
+getMembershipIntervalDatumAndValue intervalAC = do
+  (md, val) <- getMembershipDatumAndValue intervalAC
+  case md of
+    IntervalDatum interval -> return (interval, val)
+    _ -> throwError (GYApplicationException MembershipIntervalNotFound)
+
+-- | Get all membership datums at the memberships validator address.
+getAllMembershipDatums :: (GYTxQueryMonad m) => GYNetworkId -> m [MembershipDatum]
+getAllMembershipDatums nid = getAllParsedDatumsAtValidator nid membershipsValidatorHashGY membershipDatumParser
+  where
+    membershipDatumParser gyDatum = fromBuiltinData (datumToPlutus' gyDatum)
+
+-- | Get all membership histories for a given organization profile.
+getMembershipHistoriesForOrganization :: (GYTxQueryMonad m) => GYNetworkId -> ProfileRefAC -> m [MembershipHistory]
+getMembershipHistoriesForOrganization nid orgProfileAC = do
+  allDatums <- getAllMembershipDatums nid
+  let histories =
+        [ hist
+          | ListNodeDatum MembershipHistoriesListNode {nodeInfo} <- allDatums,
+            Just hist <- [nodeData nodeInfo]
+        ]
+  catMaybes <$> mapM safeConvert histories
+  where
+    safeConvert hist = do
+      mh <- onchainMembershipHistoryToMembershipHistory hist
+      gyOrgId <- assetClassFromPlutus' (OnchainTypes.membershipHistoryOrganizationId hist)
+      if gyOrgId == orgProfileAC
+        then return (Just mh)
+        else return Nothing
+
+-- | Get all membership intervals at the validator.
+getAllMembershipIntervals :: (GYTxQueryMonad m) => GYNetworkId -> m [MembershipInterval]
+getAllMembershipIntervals nid = do
+  allDatums <- getAllMembershipDatums nid
+  let intervals = [iv | IntervalDatum iv <- allDatums]
+  mapM onchainMembershipIntervalToMembershipInterval intervals

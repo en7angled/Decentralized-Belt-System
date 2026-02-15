@@ -32,9 +32,9 @@ oracleNFTPolicyLambda :: TxOutRef -> ScriptContext -> Bool
 oracleNFTPolicyLambda seedRef (ScriptContext TxInfo {..} _ scriptInfo) =
   case scriptInfo of
     MintingScript _ ->
-      traceIfFalse "Must spend seed UTxO"
+      traceIfFalse "0"
         $ any ((== seedRef) . txInInfoOutRef) txInfoInputs
-    _ -> traceError "Invalid script purpose"
+    _ -> traceError "1"
 
 -------------------------------------------------------------------------------
 

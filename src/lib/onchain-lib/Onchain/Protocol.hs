@@ -89,7 +89,7 @@ mkMembershipHistoriesListNode history maybeNextNodeId =
 unsafeGetMembershipHistory :: MembershipHistoriesListNode -> OnchainMembershipHistory
 unsafeGetMembershipHistory node = case nodeData (nodeInfo node) of
   Just history -> history
-  Nothing -> traceError "Root node has no history"
+  Nothing -> traceError "3" -- Root node has no history
 
 -- | Insert a membership history node between two existing nodes in the sorted list.
 -- Validates that all nodes belong to the same organization.
@@ -107,7 +107,7 @@ insertMembershipHistoryInBetween (oldLeftNode, rightNode, insertedNode) =
             { organizationId = leftOrganizationId,
               nodeInfo = updatedLeftNode
             }
-        else traceError "Cannot insert membership history in between nodes from different organizations"
+        else traceError "4" -- Cannot insert: different orgs
 
 -- | Append a membership history node to the end of the sorted list.
 -- Validates that both nodes belong to the same organization.
@@ -124,7 +124,7 @@ appendMembershipHistory (lastNode, appendedNode) =
             { organizationId = lastOrganizationId,
               nodeInfo = updatedLastNode
             }
-        else traceError "Cannot append membership history to nodes from different organizations"
+        else traceError "5" -- Cannot append: different orgs
 
 -- | Replace the membership history inside a list node, preserving node pointers.
 {-# INLINEABLE updateNodeMembershipHistory #-}
@@ -194,13 +194,13 @@ addMembershipIntervalToHistory currentHistory lastInterval startDate maybeEndDat
       newHistory = currentHistory {membershipHistoryIntervalsHeadId = newIntervalId}
    in if addMembershipsValidations
         then (newHistory, newInterval)
-        else traceError "Cannot add membership interval: validation failed"
+        else traceError "6" -- Cannot add interval: validation failed
   where
     addMembershipsValidations =
       and
-        [ traceIfFalse "last interval is not the head of the history" validLastInterval,
-          traceIfFalse "last interval is not closed" lastIntervalIsClosed,
-          traceIfFalse "last interval is not accepted" lastIntervalIsAccepted
+        [ traceIfFalse "7" validLastInterval, -- last interval is not the head
+          traceIfFalse "8" lastIntervalIsClosed, -- last interval not closed
+          traceIfFalse "9" lastIntervalIsAccepted -- last interval not accepted
         ]
     validLastInterval = membershipHistoryIntervalsHeadId currentHistory == membershipIntervalId lastInterval -- Required: prevents head-bypass attacks (see OnchainSecurityAudit.md)
     lastIntervalIsAccepted = membershipIntervalIsAck lastInterval
@@ -216,14 +216,14 @@ updateMembershipIntervalEndDate mi newEndDate = case membershipIntervalEndDate m
   Just currentEndDate ->
     if newEndDate >= currentEndDate
       then mi {membershipIntervalEndDate = Just newEndDate}
-      else traceError "Cannot update interval: new end date is before current end date"
+      else traceError "A" -- Cannot update interval: end date before current
 
 -- | Mark a membership interval as accepted by the practitioner. Fails if already accepted.
 {-# INLINEABLE acceptMembershipInterval #-}
 acceptMembershipInterval :: OnchainMembershipInterval -> OnchainMembershipInterval
 acceptMembershipInterval mi =
   if membershipIntervalIsAck mi
-    then traceError "Cannot accept interval: already accepted"
+    then traceError "M" -- Cannot accept interval: already accepted
     else mi {membershipIntervalIsAck = True}
 
 -------------------------------------------------------------------------------
@@ -248,7 +248,7 @@ mkPromotion pendingRankId awardedTo awardedBy achievementDate rankNumber protoco
 -- | Transform a pending 'Promotion' into a confirmed 'Rank' by recording the previous rank.
 {-# INLINEABLE acceptRank #-}
 acceptRank :: OnchainRank -> RankId -> OnchainRank
-acceptRank (Rank {}) _ = traceError "Cannot accept a rank that is not pending"
+acceptRank (Rank {}) _ = traceError "N" -- Cannot accept a rank that is not pending
 acceptRank Promotion {..} previousRankId =
   Rank
     { rankId = promotionId,
@@ -271,8 +271,8 @@ promoteProfileDatum :: CIP68Datum OnchainProfile -> OnchainRank -> CIP68Datum On
 promoteProfileDatum (CIP68Datum metadata version profile@OnchainProfile {..}) Promotion {..} = case currentRank of
   Just _currentRankId ->
     CIP68Datum metadata version (profile {currentRank = Just promotionId})
-  Nothing -> traceError "OnchainProfile has no rank"
-promoteProfileDatum _ _ = traceError "Cannot accept a rank that is not pending"
+  Nothing -> traceError "O" -- OnchainProfile has no rank
+promoteProfileDatum _ _ = traceError "P" -- Cannot accept: not pending
 
 {-# INLINEABLE promoteProfile #-}
 
@@ -285,7 +285,7 @@ promoteProfile (CIP68Datum metadata version profile@OnchainProfile {..}) promoti
     let newRank = acceptRank promotion currentRankId
         updatedProfile = profile {currentRank = Just (rankId newRank)}
      in (CIP68Datum metadata version updatedProfile, newRank)
-  Nothing -> traceError "OnchainProfile has no rank"
+  Nothing -> traceError "Q" -- OnchainProfile has no rank
 
 -- | Create a new practitioner profile together with its initial rank (white belt).
 {-# INLINEABLE mkPractitionerProfile #-}
@@ -326,4 +326,4 @@ mkOrganizationProfile profileId protocolParams =
 {-# INLINEABLE getCurrentRankId #-}
 getCurrentRankId :: OnchainProfile -> RankId
 getCurrentRankId (OnchainProfile _ Practitioner (Just rankId) _) = rankId
-getCurrentRankId _ = traceError "OnchainProfile has no rank"
+getCurrentRankId _ = traceError "R" -- OnchainProfile has no rank

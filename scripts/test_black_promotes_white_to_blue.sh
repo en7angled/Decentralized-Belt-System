@@ -303,6 +303,26 @@ if [ "$oracle_exit3" -eq 0 ]; then
 fi
 
 # ============================================================================
+# Step 7: Test Dust Cleanup (Permissionless)
+# ============================================================================
+print_section "Step 7: Dust Cleanup"
+
+print_info "Running cleanup-dust (will report if no dust found, which is expected on a clean testnet)..."
+cleanup_output=""
+cleanup_exit=0
+cleanup_output=$(cd "$REPO_ROOT" && $ADMIN cleanup-dust 2>&1) || cleanup_exit=$?
+if [ "$cleanup_exit" -eq 0 ]; then
+    print_success "Dust cleanup completed"
+else
+    # NoDustFound is expected on a clean testnet — not an error
+    if echo "$cleanup_output" | grep -q "No dust UTxOs found"; then
+        print_info "No dust UTxOs found (expected on a clean testnet)"
+    else
+        print_warning "Dust cleanup returned exit code $cleanup_exit"
+    fi
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 print_section "Test Completed Successfully!"
@@ -321,6 +341,7 @@ echo -e "  2. Unpause protocol"
 echo -e "  3. Set fees"
 echo -e "  4. Clear fees"
 echo -e "  5. Query oracle"
+echo -e "  6. Cleanup dust"
 echo ""
 
 print_success "Black Promotes White to Blue + Admin Actions test completed successfully!"

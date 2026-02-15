@@ -96,6 +96,29 @@ PromotionProjection
     insertedAt       UTCTime
     UniquePromotionProjection promotionId
     deriving Show
+
+MembershipHistoryProjection
+    createdAtSlot             Integer
+    createdAtHash             Text
+    membershipHistoryId       GYAssetClass
+    practitionerProfileId     GYAssetClass
+    organizationProfileId     GYAssetClass
+    insertedAt                UTCTime
+    UniqueMembershipHistoryProjection membershipHistoryId
+    deriving Show
+
+MembershipIntervalProjection
+    createdAtSlot             Integer
+    createdAtHash             Text
+    membershipIntervalId      GYAssetClass
+    startDate                 GYTime
+    endDate                   GYTime Maybe
+    isAccepted                Bool
+    practitionerProfileId     GYAssetClass
+    intervalNumber            Integer
+    insertedAt                UTCTime
+    UniqueMembershipIntervalProjection membershipIntervalId
+    deriving Show
 |]
 
 runMigrations :: (MonadIO m) => SqlPersistT m ()
@@ -139,6 +162,8 @@ putMatchAndProjections networkId km = do
             deletePromotionProjection (rankId r)
           ProfileEvent p -> putProfileProjection slotNoInt header p
           PromotionEvent pr -> putPromotionProjection slotNoInt header pr
+          MembershipHistoryEvent mh -> putMembershipHistoryProjection slotNoInt header mh
+          MembershipIntervalEvent mi -> putMembershipIntervalProjection slotNoInt header mi
           NoEvent _ -> pure ()
 
 putKupoMatch :: (MonadIO m) => KupoMatch -> SqlPersistT m ()
@@ -197,6 +222,35 @@ deletePromotionProjection :: (MonadIO m) => GYAssetClass -> SqlPersistT m ()
 deletePromotionProjection promotionId = do
   deleteBy (UniquePromotionProjection promotionId)
 
+putMembershipHistoryProjection :: (MonadIO m) => Integer -> Text -> MembershipHistory -> SqlPersistT m ()
+putMembershipHistoryProjection createdSlot createdHash mh = do
+  now <- liftIO getCurrentTime
+  let ev =
+        MembershipHistoryProjection
+          createdSlot
+          createdHash
+          (membershipHistoryId mh)
+          (membershipHistoryPractitionerId mh)
+          (membershipHistoryOrganizationId mh)
+          now
+  upsertByUnique (UniqueMembershipHistoryProjection . membershipHistoryProjectionMembershipHistoryId) ev
+
+putMembershipIntervalProjection :: (MonadIO m) => Integer -> Text -> MembershipInterval -> SqlPersistT m ()
+putMembershipIntervalProjection createdSlot createdHash mi = do
+  now <- liftIO getCurrentTime
+  let ev =
+        MembershipIntervalProjection
+          createdSlot
+          createdHash
+          (membershipIntervalId mi)
+          (membershipIntervalStartDate mi)
+          (membershipIntervalEndDate mi)
+          (membershipIntervalIsAccepted mi)
+          (membershipIntervalPractitionerId mi)
+          (membershipIntervalNumber mi)
+          now
+  upsertByUnique (UniqueMembershipIntervalProjection . membershipIntervalProjectionMembershipIntervalId) ev
+
 -- | Rollback all stored events and projections strictly beyond the given slot,
 --   and any rows at the slot with a mismatching block header hash.
 rollbackTo :: (MonadIO m) => Integer -> Text -> SqlPersistT m ()
@@ -214,3 +268,9 @@ rollbackTo slotNo headerHash = do
 
   deleteWhere [PromotionProjectionCreatedAtSlot >. slotNo]
   deleteWhere [PromotionProjectionCreatedAtSlot ==. slotNo, PromotionProjectionCreatedAtHash !=. headerHash]
+
+  deleteWhere [MembershipHistoryProjectionCreatedAtSlot >. slotNo]
+  deleteWhere [MembershipHistoryProjectionCreatedAtSlot ==. slotNo, MembershipHistoryProjectionCreatedAtHash !=. headerHash]
+
+  deleteWhere [MembershipIntervalProjectionCreatedAtSlot >. slotNo]
+  deleteWhere [MembershipIntervalProjectionCreatedAtSlot ==. slotNo, MembershipIntervalProjectionCreatedAtHash !=. headerHash]

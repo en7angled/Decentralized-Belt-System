@@ -8,6 +8,7 @@ import GeniusYield.Types
 import Onchain.BJJ (intToBelt)
 import Onchain.CIP68 (MetadataFields (..), getMetadataFields, extra, CIP68Datum)
 import Onchain.Protocol qualified as Onchain
+import Onchain.Protocol.Types (OnchainMembershipHistory (..), OnchainMembershipInterval (..))
 import PlutusLedgerApi.V3
 import PlutusTx.Builtins (decodeUtf8)
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteStringUtf8)
@@ -96,3 +97,35 @@ profileDatumToProfile datum = do
       profileImageURI = profileDataImageURI,
       profileType = profileType
     }
+
+------------------------------------------------------------------------------------------------
+
+-- * Membership Conversions
+
+------------------------------------------------------------------------------------------------
+
+onchainMembershipHistoryToMembershipHistory :: (MonadError GYTxMonadException m) => OnchainMembershipHistory -> m MembershipHistory
+onchainMembershipHistoryToMembershipHistory OnchainMembershipHistory {..} = do
+  gyHistoryId <- assetClassFromPlutus' membershipHistoryId
+  gyPractitionerId <- assetClassFromPlutus' membershipHistoryPractitionerId
+  gyOrganizationId <- assetClassFromPlutus' membershipHistoryOrganizationId
+  return
+    MembershipHistory
+      { membershipHistoryId = gyHistoryId,
+        membershipHistoryPractitionerId = gyPractitionerId,
+        membershipHistoryOrganizationId = gyOrganizationId
+      }
+
+onchainMembershipIntervalToMembershipInterval :: (MonadError GYTxMonadException m) => OnchainMembershipInterval -> m MembershipInterval
+onchainMembershipIntervalToMembershipInterval OnchainMembershipInterval {..} = do
+  gyIntervalId <- assetClassFromPlutus' membershipIntervalId
+  gyPractitionerId <- assetClassFromPlutus' membershipIntervalPractitionerId
+  return
+    MembershipInterval
+      { membershipIntervalId = gyIntervalId,
+        membershipIntervalStartDate = timeFromPlutus membershipIntervalStartDate,
+        membershipIntervalEndDate = timeFromPlutus <$> membershipIntervalEndDate,
+        membershipIntervalIsAccepted = membershipIntervalIsAck,
+        membershipIntervalPractitionerId = gyPractitionerId,
+        membershipIntervalNumber = membershipIntervalNumber
+      }

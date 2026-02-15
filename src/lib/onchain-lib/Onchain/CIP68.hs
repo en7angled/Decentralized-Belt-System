@@ -86,21 +86,15 @@ maxImageURILength = 256
 {-# INLINEABLE validateMetadataFields #-}
 validateMetadataFields :: MetadataFields -> Bool
 validateMetadataFields Metadata222 {..} =
-  and
-    [ traceIfFalse "Name too long (max 128 bytes)"
-        $ lengthOfByteString metadataName <= maxNameLength,
-      traceIfFalse "Description too long (max 1024 bytes)"
-        $ lengthOfByteString metadataDescription <= maxDescriptionLength,
-      traceIfFalse "Image URI too long (max 256 bytes)"
-        $ lengthOfByteString metadataImageURI <= maxImageURILength
-    ]
+  traceIfFalse "0" (lengthOfByteString metadataName <= maxNameLength) -- Name too long (max 128 bytes)
+    && traceIfFalse "1" (lengthOfByteString metadataDescription <= maxDescriptionLength) -- Description too long (max 1024 bytes)
+    && traceIfFalse "2" (lengthOfByteString metadataImageURI <= maxImageURILength) -- Image URI too long (max 256 bytes)
 
 -- | Validate image URI size only (for updates)
 {-# INLINEABLE validateImageURI #-}
 validateImageURI :: BuiltinByteString -> Bool
 validateImageURI uri =
-  traceIfFalse "Image URI too long (max 256 bytes)"
-    $ lengthOfByteString uri <= maxImageURILength
+  traceIfFalse "2" $ lengthOfByteString uri <= maxImageURILength -- Image URI too long (max 256 bytes)
 
 -- All UTF-8 encoded keys and values need to be converted into their respective byte's representation when creating the datum on-chain.
 {-# INLINEABLE mkCIP68Datum #-}

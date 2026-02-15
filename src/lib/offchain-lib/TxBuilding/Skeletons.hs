@@ -93,6 +93,18 @@ txMustSpendFromRefScriptWithKnownDatum refScript utxoRef' gyDatum gyRedeemer gyV
         gyTxInWitness = GYTxInWitnessScript (GYInReference refScript $ validatorToScript gyValidator) (Just gyDatum) gyRedeemer
       }
 
+-- | Build a spend skeleton for a dust/griefing UTxO that may lack a valid datum.
+-- Extracts the inline datum if present; passes 'Nothing' if the UTxO has no datum.
+-- Used by the permissionless 'Cleanup' redeemer to sweep non-protocol UTxOs.
+txMustSpendUTxOFromRefScript :: GYTxOutRef -> GYUTxO -> GYRedeemer -> GYScript 'PlutusV3 -> GYTxSkeleton 'PlutusV3
+txMustSpendUTxOFromRefScript refScript utxo gyRedeemer gyValidator =
+  let maybeDatum = fst <$> getInlineDatumAndValue utxo
+   in mustHaveInput
+        GYTxIn
+          { gyTxInTxOutRef = utxoRef utxo,
+            gyTxInWitness = GYTxInWitnessScript (GYInReference refScript $ validatorToScript gyValidator) maybeDatum gyRedeemer
+          }
+
 txMustHaveUTxOAsRefInput :: (GYTxUserQueryMonad m) => GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustHaveUTxOAsRefInput gyAC = do
   utxo <- getUTxOWithNFT gyAC

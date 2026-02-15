@@ -379,6 +379,133 @@ beltsServer = handleGetBelts :<|> handleGetBeltsCount :<|> handleGetBeltsFrequen
 
 ------------------------------------------------------------------------------------------------
 
+--  Memberships API
+
+------------------------------------------------------------------------------------------------
+
+type Memberships =
+  ( Summary "Get Membership Histories"
+      :> Description "Get membership histories with optional filters"
+      :> "membership-histories"
+      :> QueryParam' '[Optional] "limit" Int
+      :> QueryParam' '[Optional] "offset" Int
+      :> QueryParams "organization" ProfileRefAC
+      :> QueryParams "practitioner" ProfileRefAC
+      :> QueryParam' '[Optional] "order_by" MembershipHistoriesOrderBy
+      :> QueryParam' '[Optional] "sort_order" SortOrder
+      :> Get '[JSON] [MembershipHistory]
+  )
+    :<|>
+    ( Summary "Get Membership Histories Count"
+        :> Description "Get count of membership histories"
+        :> "membership-histories"
+        :> "count"
+        :> QueryParams "organization" ProfileRefAC
+        :> QueryParams "practitioner" ProfileRefAC
+        :> Get '[JSON] Int
+    )
+    :<|>
+    ( Summary "Get Membership Intervals"
+        :> Description "Get membership intervals with optional filters"
+        :> "membership-intervals"
+        :> QueryParam' '[Optional] "limit" Int
+        :> QueryParam' '[Optional] "offset" Int
+        :> QueryParams "practitioner" ProfileRefAC
+        :> QueryParam' '[Optional] "order_by" MembershipIntervalsOrderBy
+        :> QueryParam' '[Optional] "sort_order" SortOrder
+        :> Get '[JSON] [MembershipInterval]
+    )
+    :<|>
+    ( Summary "Get Membership Intervals Count"
+        :> Description "Get count of membership intervals"
+        :> "membership-intervals"
+        :> "count"
+        :> QueryParams "practitioner" ProfileRefAC
+        :> Get '[JSON] Int
+    )
+
+handleGetMembershipHistories ::
+  Maybe Int ->
+  Maybe Int ->
+  [ProfileRefAC] ->
+  [ProfileRefAC] ->
+  Maybe MembershipHistoriesOrderBy ->
+  Maybe SortOrder ->
+  QueryAppMonad [MembershipHistory]
+handleGetMembershipHistories limit offset orgRefs practRefs orderBy sortOrder = do
+  let limitOffset = case (limit, offset) of
+        (Just l, Just o) -> Just (l, o)
+        (Just l, Nothing) -> Just (l, 0)
+        (Nothing, Just o) -> Just (100, o)
+        (Nothing, Nothing) -> Nothing
+  let filter' =
+        if Prelude.null orgRefs && Prelude.null practRefs
+          then Nothing
+          else
+            Just
+              C.MembershipHistoryFilter
+                { C.membershipHistoryFilterOrganizationProfileId = if Prelude.null orgRefs then Nothing else Just orgRefs,
+                  C.membershipHistoryFilterPractitionerProfileId = if Prelude.null practRefs then Nothing else Just practRefs
+                }
+  let order = case (orderBy, sortOrder) of
+        (Just ob, Just so) -> Just (ob, so)
+        (Just ob, Nothing) -> Just (ob, Asc)
+        _ -> Nothing
+  P.getMembershipHistories limitOffset filter' order
+
+handleGetMembershipHistoriesCount :: [ProfileRefAC] -> [ProfileRefAC] -> QueryAppMonad Int
+handleGetMembershipHistoriesCount orgRefs practRefs = do
+  let filter' =
+        if Prelude.null orgRefs && Prelude.null practRefs
+          then Nothing
+          else
+            Just
+              C.MembershipHistoryFilter
+                { C.membershipHistoryFilterOrganizationProfileId = if Prelude.null orgRefs then Nothing else Just orgRefs,
+                  C.membershipHistoryFilterPractitionerProfileId = if Prelude.null practRefs then Nothing else Just practRefs
+                }
+  P.getMembershipHistoriesCount filter'
+
+handleGetMembershipIntervals ::
+  Maybe Int ->
+  Maybe Int ->
+  [ProfileRefAC] ->
+  Maybe MembershipIntervalsOrderBy ->
+  Maybe SortOrder ->
+  QueryAppMonad [MembershipInterval]
+handleGetMembershipIntervals limit offset practRefs orderBy sortOrder = do
+  let limitOffset = case (limit, offset) of
+        (Just l, Just o) -> Just (l, o)
+        (Just l, Nothing) -> Just (l, 0)
+        (Nothing, Just o) -> Just (100, o)
+        (Nothing, Nothing) -> Nothing
+  let filter' =
+        if Prelude.null practRefs
+          then Nothing
+          else Just (C.MembershipIntervalFilter {C.membershipIntervalFilterPractitionerProfileId = Just practRefs})
+  let order = case (orderBy, sortOrder) of
+        (Just ob, Just so) -> Just (ob, so)
+        (Just ob, Nothing) -> Just (ob, Asc)
+        _ -> Nothing
+  P.getMembershipIntervals limitOffset filter' order
+
+handleGetMembershipIntervalsCount :: [ProfileRefAC] -> QueryAppMonad Int
+handleGetMembershipIntervalsCount practRefs = do
+  let filter' =
+        if Prelude.null practRefs
+          then Nothing
+          else Just (C.MembershipIntervalFilter {C.membershipIntervalFilterPractitionerProfileId = Just practRefs})
+  P.getMembershipIntervalsCount filter'
+
+membershipsServer :: ServerT Memberships QueryAppMonad
+membershipsServer =
+  handleGetMembershipHistories
+    :<|> handleGetMembershipHistoriesCount
+    :<|> handleGetMembershipIntervals
+    :<|> handleGetMembershipIntervalsCount
+
+------------------------------------------------------------------------------------------------
+
 --  Core Function API
 
 ------------------------------------------------------------------------------------------------
@@ -388,12 +515,13 @@ type CoreFunctionAPI =
   Profiles
     :<|> Promotions
     :<|> Belts
+    :<|> Memberships
 
 proxyCoreFunctionAPI :: Proxy CoreFunctionAPI
 proxyCoreFunctionAPI = Proxy
 
 coreFunctionServer :: ServerT CoreFunctionAPI QueryAppMonad
-coreFunctionServer = profilesServer :<|> promotionsServer :<|> beltsServer
+coreFunctionServer = profilesServer :<|> promotionsServer :<|> beltsServer :<|> membershipsServer
 
 ------------------------------------------------------------------------------------------------
 
@@ -413,7 +541,7 @@ apiSwagger =
   toSwagger proxyPublicAPI
     & info . title .~ "Decentralized Belt System Query API"
     & info . Data.Swagger.version .~ "1.0"
-    & info . Data.Swagger.description ?~ "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, and belts"
+    & info . Data.Swagger.description ?~ "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, belts, and membership histories and intervals"
     & info
       . license
       ?~ "GPL-3.0 license"

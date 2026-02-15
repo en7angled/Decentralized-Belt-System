@@ -1,6 +1,21 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.3 -- 2026-02-15
+
+### Memberships (histories & intervals)
+
+- **On-chain**: `MembershipsValidator`, minting redeemers `NewMembershipHistory` / `NewMembershipInterval`, `fcMembershipFee`, oracle integration; protocol types and IDs in `Protocol/Types.hs`, `Protocol/Id.hs`
+- **Off-chain**: Domain types `MembershipHistory` / `MembershipInterval`; actions `CreateMembershipHistoryAction`, `AddMembershipIntervalAction`, `AcceptMembershipIntervalAction`; operations `createMembershipHistoryTX`, `addMembershipIntervalTX`, `acceptMembershipIntervalTX`; lookups, interactions, context `membershipsValidatorHashAndRef`, validators `membershipsValidatorGY`, `deployReferenceScripts`, exceptions, functors, datum parser
+- **Storage & ingestion**: `MembershipHistoryProjection` / `MembershipIntervalProjection`, put/rollback; `MembershipHistoryEvent` / `MembershipIntervalEvent`, `projectChainEvent` for memberships validator
+- **Query API**: REST endpoints for membership histories and intervals (list/count, filters, ordering) in `RestAPI.hs`, `Query/Projected.hs`
+- **Admin CLI**: `CreateMembershipHistory`, `AddMembershipInterval`, `AcceptMembershipInterval`; `verifyDeployedScriptsAreReady` includes memberships validator
+- **Export & config**: `exportValidators` writes memberships validator; `defaultMembershipsValidatorFile` / `exportMembershipsValidator` in Constants and Validators; `config_bjj_validators.json` includes all six fields (placeholders for memberships and oracle)
+- **Tests**: Unit tests for create history, accept interval, 3-practitioner interval update
+- **Security (LOW)**: Permissionless `Cleanup` redeemer added to ProfilesValidator, RanksValidator, MembershipsValidator (dust/griefing mitigation); `cleanupDustTX`, `CleanupDustAction`, `cleanup-dust` admin CLI; see `OnchainSecurityAudit.md`
+- **Docs**: Membership implementation status moved from Developer Guide §6.1 to `docs/to-do-tasks.md`; removed `inconsistencies-todos-consolidated.md`
+
+
 ## 0.3.1.2 -- 2026-02-15
 
 ### TxBuilding Exception Refactor & HTTP Status Mapping

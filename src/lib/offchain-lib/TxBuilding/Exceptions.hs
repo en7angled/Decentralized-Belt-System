@@ -22,6 +22,10 @@ data TxBuildingException
   | WrongRankDataType
     -- * Promotion Errors
   | PromotionNotFound
+    -- * Membership Errors
+  | MembershipHistoryNotFound
+  | MembershipIntervalNotFound
+  | MembershipListNodeNotFound
     -- * Oracle Errors
   | OracleNotFound
   | OracleDatumInvalid
@@ -33,6 +37,8 @@ data TxBuildingException
   | InvalidAssetClass
   | MultipleUtxosFound
   | DatumParseError
+    -- * Cleanup Errors
+  | NoDustFound
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
 
 instance Exception TxBuildingException where
@@ -43,6 +49,9 @@ instance Exception TxBuildingException where
   displayException RankListEmpty = "Rank list is empty for this practitioner"
   displayException WrongRankDataType = "Wrong rank data type"
   displayException PromotionNotFound = "Promotion not found"
+  displayException MembershipHistoryNotFound = "Membership history not found"
+  displayException MembershipIntervalNotFound = "Membership interval not found"
+  displayException MembershipListNodeNotFound = "Membership list node not found"
   displayException OracleNotFound = "Oracle UTxO not found"
   displayException OracleDatumInvalid = "Oracle datum invalid or unparseable"
   displayException ProtocolPaused = "Protocol is paused"
@@ -51,6 +60,7 @@ instance Exception TxBuildingException where
   displayException InvalidAssetClass = "Invalid asset class"
   displayException MultipleUtxosFound = "Multiple UTxOs found for this asset class"
   displayException DatumParseError = "UTxO datum is missing or unparseable"
+  displayException NoDustFound = "No dust UTxOs found at validator addresses"
 
 instance IsGYApiError TxBuildingException
 
@@ -67,7 +77,11 @@ txBuildingExceptionToHttpStatus ProfileNotFound = 404
 txBuildingExceptionToHttpStatus RankNotFound = 404
 txBuildingExceptionToHttpStatus RankListEmpty = 404
 txBuildingExceptionToHttpStatus PromotionNotFound = 404
+txBuildingExceptionToHttpStatus MembershipHistoryNotFound = 404
+txBuildingExceptionToHttpStatus MembershipIntervalNotFound = 404
+txBuildingExceptionToHttpStatus MembershipListNodeNotFound = 404
 txBuildingExceptionToHttpStatus OracleNotFound = 404
 txBuildingExceptionToHttpStatus DeployedScriptsNotReady = 503
 txBuildingExceptionToHttpStatus ProtocolPaused = 503
+txBuildingExceptionToHttpStatus NoDustFound = 404
 txBuildingExceptionToHttpStatus _ = 400

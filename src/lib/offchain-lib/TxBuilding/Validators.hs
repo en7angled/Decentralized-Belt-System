@@ -107,12 +107,10 @@ compileOracleNFTPolicy seedRef =
 -- The oracle token is dynamic (depends on the oracle NFT minting tx)
 -- so this cannot be a top-level constant.
 mkProtocolParams :: V1.AssetClass -> ProtocolParams
-mkProtocolParams oracleAC =
-  ProtocolParams
+mkProtocolParams = ProtocolParams
     ranksValidatorHashPlutus
     profilesValidatorHashPlutus
     membershipsValidatorHashPlutus
-    oracleAC
 
 -- | Protocol params with a placeholder oracle token, for blueprint generation only.
 -- The actual oracle token is determined at deployment time.
@@ -154,6 +152,10 @@ membershipsValidatorSize = compiledCodeSize membershipsValidatorPlutus
 oracleValidatorSize :: Int
 oracleValidatorSize = compiledCodeSize oracleValidatorPlutus
 
+-- | Size of the minting policy compiled with the given oracle NFT (parameterized script).
+mintingPolicySize :: V1.AssetClass -> Int
+mintingPolicySize oracleAC = compiledCodeSize (MintingPolicy.mintingPolicyCompile (mkProtocolParams oracleAC))
+
 ------------------------------------------------------------------------------------------------
 
 -- * Export Validators
@@ -166,6 +168,9 @@ exportProfilesValidator = writeScript @'PlutusV3 Constants.defaultProfilesValida
 exportRanksValidator :: IO ()
 exportRanksValidator = writeScript @'PlutusV3 Constants.defaultRanksValidatorFile $ validatorToScript ranksValidatorGY
 
+exportMembershipsValidator :: IO ()
+exportMembershipsValidator = writeScript @'PlutusV3 Constants.defaultMembershipsValidatorFile $ validatorToScript membershipsValidatorGY
+
 exportOracleValidator :: IO ()
 exportOracleValidator = writeScript @'PlutusV3 Constants.defaultOracleValidatorFile $ validatorToScript oracleValidatorGY
 
@@ -173,4 +178,5 @@ exportValidators :: IO ()
 exportValidators = do
   exportProfilesValidator
   exportRanksValidator
+  exportMembershipsValidator
   exportOracleValidator

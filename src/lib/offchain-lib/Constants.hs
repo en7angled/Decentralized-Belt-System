@@ -12,6 +12,9 @@ defaultProfilesValidatorFile = "docs/validators/profiles_validator.plutus"
 defaultRanksValidatorFile :: FilePath
 defaultRanksValidatorFile = "docs/validators/ranks_validator.plutus"
 
+defaultMembershipsValidatorFile :: FilePath
+defaultMembershipsValidatorFile = "docs/validators/memberships_validator.plutus"
+
 defaultMintingPolicyFile :: FilePath
 defaultMintingPolicyFile = "docs/validators/minting_policy.plutus"
 

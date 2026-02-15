@@ -12,9 +12,9 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Run cabal test and capture output
+# Run cabal test and capture output (do not exit on failure so we always print script sizes)
 echo -e "${CYAN}Running cabal test...${NC}"
-TEST_OUTPUT=$(cabal test 2>&1)
+TEST_OUTPUT=$(cabal test 2>&1) || true
 
 # Check if tests passed
 if echo "$TEST_OUTPUT" | grep -q "All.*tests passed\|Test suite.*PASS"; then
@@ -106,8 +106,8 @@ my $total_steps = 0;
 my $total_fee = 0;
 my $count = 0;
 
-# Split by INTERACTION markers (matches both "INTERACTION:" and "ADMIN INTERACTION:")
-my @blocks = split(/(?:ADMIN )?INTERACTION:/, $text);
+# Split by INTERACTION markers (matches "INTERACTION:", "ADMIN INTERACTION:", "PROTOCOL INTERACTION:")
+my @blocks = split(/(?:ADMIN |PROTOCOL )?INTERACTION:/, $text);
 shift @blocks;  # Remove text before first INTERACTION
 
 foreach my $block (@blocks) {
@@ -120,6 +120,8 @@ foreach my $block (@blocks) {
         $category = "Profile";
     } elsif ($block =~ /AdminAction/) {
         $category = "Admin";
+    } elsif ($block =~ /ProtocolAction/) {
+        $category = "Protocol";
     }
 
     if ($block =~ /CreateProfileWithRankAction/) {
@@ -132,6 +134,8 @@ foreach my $block (@blocks) {
         $action = "AcceptPromotion";
     } elsif ($block =~ /UpdateProfileAction/) {
         $action = "UpdateProfile";
+    } elsif ($block =~ /CleanupDustAction/) {
+        $action = "CleanupDust";
     } elsif ($block =~ /PauseProtocolAction/) {
         $action = "PauseProtocol";
     } elsif ($block =~ /UnpauseProtocolAction/) {

@@ -21,7 +21,7 @@ where
 import GHC.Generics (Generic)
 import Onchain.BJJ (BeltSnapshot (..), intToBelt, validatePromotion)
 import Onchain.CIP68 (MetadataFields, deriveUserFromRefAC, generateRefAndUserTN, mkCIP68Datum, validateMetadataFields)
-import Onchain.Protocol (MembershipDatum (..), MembershipHistoriesListNodeId, OnchainProfileType (..), OnchainMembershipHistory (..), OnchainRank (..), ProfileId, ProtocolParams, addMembershipIntervalToHistory, deriveMembershipHistoriesListId, derivePromotionRankId, getCurrentRankId, initEmptyMembershipHistoriesList, initMembershipHistory, membershipIntervalId, membershipsValidatorScriptHash, mkOrganizationProfile, mkPromotion, mkPractitionerProfile, oracleToken, profilesValidatorScriptHash, ranksValidatorScriptHash, unsafeGetListNodeDatumAndValue, unsafeGetMembershipHistory, unsafeGetMembershipInterval, unsafeGetProfile, unsafeGetRank)
+import Onchain.Protocol (MembershipDatum (..), MembershipHistoriesListNodeId, OnchainMembershipHistory (..), OnchainProfileType (..), OnchainRank (..), ProfileId, ProtocolParams, addMembershipIntervalToHistory, deriveMembershipHistoriesListId, derivePromotionRankId, getCurrentRankId, initEmptyMembershipHistoriesList, initMembershipHistory, membershipIntervalId, membershipsValidatorScriptHash, mkOrganizationProfile, mkPractitionerProfile, mkPromotion, oracleToken, profilesValidatorScriptHash, ranksValidatorScriptHash, unsafeGetListNodeDatumAndValue, unsafeGetMembershipHistory, unsafeGetMembershipInterval, unsafeGetProfile, unsafeGetRank)
 import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import Onchain.Utils (checkFee, hasCurrencySymbol, readOracleParams)
 import Onchain.Utils qualified as Utils
@@ -61,6 +61,16 @@ makeIsDataSchemaIndexed ''MintingRedeemer [('CreateProfile, 0), ('Promote, 1), (
 
 -------------------------------------------------------------------------------
 
+-- | Precomputed minLv and validator addresses for the minting policy.
+data MintingContext = MintingContext
+  { ctxMinLv :: Value,
+    ctxProfilesAddress :: Address,
+    ctxRanksAddress :: Address,
+    ctxMembershipsAddress :: Address
+  }
+
+-------------------------------------------------------------------------------
+
 -- * Minting Policy
 
 -------------------------------------------------------------------------------
@@ -74,22 +84,31 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
           let oracle = readOracleParams (oracleToken protocolParams) txInfoReferenceInputs
               minLv = V1.lovelaceValue (V1.Lovelace (opMinOutputLovelace oracle))
               profilesValidatorAddress = V1.scriptHashAddress (profilesValidatorScriptHash protocolParams)
+              ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
+              membershipsValidatorAddress = V1.scriptHashAddress (membershipsValidatorScriptHash protocolParams)
+              ctx =
+                MintingContext
+                  { ctxMinLv = minLv,
+                    ctxProfilesAddress = profilesValidatorAddress,
+                    ctxRanksAddress = ranksValidatorAddress,
+                    ctxMembershipsAddress = membershipsValidatorAddress
+                  }
            in -- Global gate: protocol must not be paused
-              traceIfFalse "Protocol is paused" (not (opPaused oracle))
+              traceIfFalse "0" (not (opPaused oracle)) -- Protocol is paused
                 && case redeemer of
                   CreateProfile seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOrMembershipRootOutputIdx ->
                     checkFee oracle fcProfileCreationFee txInfoOutputs
-                      && handleCreateProfile protocolParams txInfo mintingPolicyCurrencySymbol profilesValidatorAddress minLv seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOrMembershipRootOutputIdx
+                      && handleCreateProfile protocolParams txInfo mintingPolicyCurrencySymbol ctx seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOrMembershipRootOutputIdx
                   Promote seedTxOutRef studentProfileId masterProfileId achievementDate nextRankNum pendingRankOutputIdx ->
                     checkFee oracle fcPromotionFee txInfoOutputs
-                      && handlePromote protocolParams txInfo mintingPolicyCurrencySymbol profilesValidatorAddress minLv seedTxOutRef studentProfileId masterProfileId achievementDate nextRankNum pendingRankOutputIdx
+                      && handlePromote protocolParams txInfo mintingPolicyCurrencySymbol ctx seedTxOutRef studentProfileId masterProfileId achievementDate nextRankNum pendingRankOutputIdx
                   NewMembershipHistory organizationProfileId practitionerId startDate endDate leftNodeId firstIntervalOutputIdx ->
                     checkFee oracle fcMembershipFee txInfoOutputs
-                      && handleNewMembershipHistory protocolParams txInfo mintingPolicyCurrencySymbol minLv organizationProfileId practitionerId startDate endDate leftNodeId firstIntervalOutputIdx
+                      && handleNewMembershipHistory txInfo mintingPolicyCurrencySymbol ctx organizationProfileId practitionerId startDate endDate leftNodeId firstIntervalOutputIdx
                   NewMembershipInterval organizationProfileId membershipNodeId startDate mEndDate intervalOutputIdx ->
                     checkFee oracle fcMembershipFee txInfoOutputs
-                      && handleNewMembershipInterval protocolParams txInfo mintingPolicyCurrencySymbol minLv organizationProfileId membershipNodeId startDate mEndDate intervalOutputIdx
-        _ -> traceError "Invalid purpose"
+                      && handleNewMembershipInterval txInfo mintingPolicyCurrencySymbol ctx organizationProfileId membershipNodeId startDate mEndDate intervalOutputIdx
+        _ -> traceError "1" -- Invalid purpose
 
 -------------------------------------------------------------------------------
 
@@ -102,8 +121,7 @@ handleCreateProfile ::
   ProtocolParams ->
   TxInfo ->
   CurrencySymbol ->
-  Address ->
-  Value ->
+  MintingContext ->
   TxOutRef ->
   MetadataFields ->
   OnchainProfileType ->
@@ -112,62 +130,43 @@ handleCreateProfile ::
   Integer ->
   Integer ->
   Bool
-handleCreateProfile protocolParams TxInfo {..} mintingPolicyCurrencySymbol profilesValidatorAddress minLv seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOrMembershipRootOutputIdx =
+handleCreateProfile protocolParams TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOrMembershipRootOutputIdx =
   -- NOTE: rankNumber validation handled by intToBelt (fails for values outside 0-14)
   let (profileRefTN, profileUserTN) = generateRefAndUserTN $ Utils.nameFromTxOutRef seedTxOutRef
       profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)
       profileUserAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileUserTN)
       profileRefNFT = V1.assetClassValue profileRefAssetClass 1
       profileUserNFT = V1.assetClassValue profileUserAssetClass 1
-   in and
-        [ traceIfFalse "Creation date must be before the tx validity range"
-            $ creationDate
-            `before` txInfoValidRange,
-          traceIfFalse "Must spend seed TxOutRef"
-            $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs,
-          -- Validate metadata field sizes to prevent oversized datums
-          validateMetadataFields metadata
-        ]
+      minLv = ctxMinLv ctx
+      profilesValidatorAddress = ctxProfilesAddress ctx
+   in traceIfFalse "2" (creationDate `before` txInfoValidRange) -- Creation date must be before the tx validity range
+        && traceIfFalse "3" (any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs) -- Must spend seed TxOutRef
+        && validateMetadataFields metadata
         && case profileType of
           Practitioner ->
             let (profile, rankDatum) = mkPractitionerProfile profileRefAssetClass creationDate protocolParams rankNumber
                 profileDatum = mkCIP68Datum profile metadata
                 rankAssetClass = rankId rankDatum
                 rankNFT = V1.assetClassValue rankAssetClass 1
-                ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
-             in and
-                  [ traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address (output idx)"
-                      $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx profileDatum (profileRefNFT + minLv) profilesValidatorAddress txInfoOutputs,
-                    traceIfFalse "Tx must mint JUST OnchainProfile Ref and User NFTs and Rank NFT"
-                      $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
-                      == (profileRefNFT + profileUserNFT + rankNFT),
-                    traceIfFalse "Must lock rank NFT with inline datum at ranksValidator address (output idx)"
-                      $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOrMembershipRootOutputIdx rankDatum (rankNFT + minLv) ranksValidatorAddress txInfoOutputs
-                  ]
+             in traceIfFalse "4" (Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx profileDatum (profileRefNFT + minLv) profilesValidatorAddress txInfoOutputs) -- Must lock profile at PV
+                  && traceIfFalse "5" (mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT + rankNFT)) -- Exact mint check
+                  && traceIfFalse "6" (Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOrMembershipRootOutputIdx rankDatum (rankNFT + minLv) (ctxRanksAddress ctx) txInfoOutputs) -- Must lock rank at RV
           Organization ->
             let profile = mkOrganizationProfile profileRefAssetClass protocolParams
                 profileDatum = mkCIP68Datum profile metadata
                 membershipHistoriesRootDatum = initEmptyMembershipHistoriesList profileRefAssetClass
                 membershipHistoriesRootAssetClass = deriveMembershipHistoriesListId profileRefAssetClass
                 membershipHistoriesRootNFT = V1.assetClassValue membershipHistoriesRootAssetClass 1
-                membershipsValidatorAddress = V1.scriptHashAddress (membershipsValidatorScriptHash protocolParams)
-             in and
-                  [ traceIfFalse "Must lock profile Ref NFT with inline datum at profilesValidator address (output idx)"
-                      $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx profileDatum (profileRefNFT + minLv) profilesValidatorAddress txInfoOutputs,
-                    traceIfFalse "Must lock membership histories root NFT with inline datum at membershipsValidator address (output idx)"
-                      $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOrMembershipRootOutputIdx (ListNodeDatum membershipHistoriesRootDatum) (membershipHistoriesRootNFT + minLv) membershipsValidatorAddress txInfoOutputs,
-                    traceIfFalse "Tx must mint JUST Ref, User NFTs and Membership Histories Root NFT"
-                      $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
-                      == (profileRefNFT + profileUserNFT + membershipHistoriesRootNFT)
-                  ]
+             in traceIfFalse "7" (Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx profileDatum (profileRefNFT + minLv) profilesValidatorAddress txInfoOutputs) -- Must lock profile at PV
+                  && traceIfFalse "8" (Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOrMembershipRootOutputIdx (ListNodeDatum membershipHistoriesRootDatum) (membershipHistoriesRootNFT + minLv) (ctxMembershipsAddress ctx) txInfoOutputs) -- Must lock root at MV
+                  && traceIfFalse "9" (mintValueMinted txInfoMint == (profileRefNFT + profileUserNFT + membershipHistoriesRootNFT)) -- Exact mint check
 
 {-# INLINEABLE handlePromote #-}
 handlePromote ::
   ProtocolParams ->
   TxInfo ->
   CurrencySymbol ->
-  Address ->
-  Value ->
+  MintingContext ->
   TxOutRef ->
   ProfileId ->
   ProfileId ->
@@ -175,8 +174,10 @@ handlePromote ::
   Integer ->
   Integer ->
   Bool
-handlePromote protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol profilesValidatorAddress minLv seedTxOutRef studentProfileId masterProfileId achievementDate nextRankNum pendingRankOutputIdx =
-  let ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
+handlePromote protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOutRef studentProfileId masterProfileId achievementDate nextRankNum pendingRankOutputIdx =
+  let profilesValidatorAddress = ctxProfilesAddress ctx
+      ranksValidatorAddress = ctxRanksAddress ctx
+      minLv = ctxMinLv ctx
       --- Validate student and master profiles are valid
       isStudentValid = hasCurrencySymbol studentProfileId mintingPolicyCurrencySymbol
       isMasterValid = hasCurrencySymbol masterProfileId mintingPolicyCurrencySymbol
@@ -205,31 +206,18 @@ handlePromote protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol prof
       studentNext = BeltSnapshot (intToBelt nextRankNum) achievementDate
 
       isPromotionValid = validatePromotion master studentCurrent studentNext
-   in and
-        [ traceIfFalse
-            "Profiles must have correct currency symbol"
-            (isStudentValid && isMasterValid),
-          traceIfFalse "Must spend seed TxOutRef for uniqueness"
-            $ any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs,
-          traceIfFalse "Must spend user NFT of the profile who awards the promotion"
-            $ V1.assetClassValueOf (valueSpent txInfo) masterUserAC
-            == 1,
-          traceIfFalse "Tx must mint JUST the pending rank NFT"
-            $ mintValueMinted txInfoMint
-            == pendingRankNFT,
-          traceIfFalse "Must lock pending rank NFT with inline datum at ranksValidator address (output idx)"
-            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress pendingRankOutputIdx pendingRankDatum (pendingRankNFT + minLv) ranksValidatorAddress txInfoOutputs,
-          traceIfFalse
-            "Must pass promotion validation rules"
-            isPromotionValid
-        ]
+   in traceIfFalse "A" (isStudentValid && isMasterValid) -- Profiles must have correct currency symbol
+        && traceIfFalse "B" (any ((== seedTxOutRef) . txInInfoOutRef) txInfoInputs) -- Must spend seed TxOutRef for uniqueness
+        && traceIfFalse "C" (V1.assetClassValueOf (valueSpent txInfo) masterUserAC == 1) -- Must spend user NFT of the profile who awards the promotion"
+        && traceIfFalse "D" (mintValueMinted txInfoMint == pendingRankNFT) -- Tx must mint JUST the pending rank NFT
+        && traceIfFalse "E" (Utils.checkTxOutAtIndexWithDatumValueAndAddress pendingRankOutputIdx pendingRankDatum (pendingRankNFT + minLv) ranksValidatorAddress txInfoOutputs) -- Must lock pending rank NFT with inline datum at ranksValidator address (output idx)
+        && traceIfFalse "F" isPromotionValid -- Must pass promotion validation rules
 
 {-# INLINEABLE handleNewMembershipHistory #-}
 handleNewMembershipHistory ::
-  ProtocolParams ->
   TxInfo ->
   CurrencySymbol ->
-  Value ->
+  MintingContext ->
   ProfileId ->
   ProfileId ->
   POSIXTime ->
@@ -237,12 +225,13 @@ handleNewMembershipHistory ::
   MembershipHistoriesListNodeId ->
   Integer ->
   Bool
-handleNewMembershipHistory protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol minLv organizationProfileId practitionerId startDate endDate leftNodeId firstIntervalOutputIdx =
+handleNewMembershipHistory txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx organizationProfileId practitionerId startDate endDate leftNodeId firstIntervalOutputIdx =
   let organizationUserAC = deriveUserFromRefAC organizationProfileId
       isOrganizationValid = hasCurrencySymbol organizationProfileId mintingPolicyCurrencySymbol
       isPractitionerValid = hasCurrencySymbol practitionerId mintingPolicyCurrencySymbol
       isLeftNodeIdValid = hasCurrencySymbol leftNodeId mintingPolicyCurrencySymbol
-      membershipsValidatorAddress = V1.scriptHashAddress (membershipsValidatorScriptHash protocolParams)
+      membershipsValidatorAddress = ctxMembershipsAddress ctx
+      minLv = ctxMinLv ctx
 
       (newHistory, fstInterval) = initMembershipHistory practitionerId organizationProfileId startDate endDate
 
@@ -254,44 +243,30 @@ handleNewMembershipHistory protocolParams txInfo@TxInfo {..} mintingPolicyCurren
       -- Must mint the membership history NFT and the membership interval NFT -- enforced both here and in membershipsValidator
       -- Must lock the membership history NFT with inline datum at membershipsValidator address (output idx) -- enforced by membershipsValidator
       -- Must lock the membership interval NFT with inline datum at membershipsValidator address (output idx)
-      and
-        [ traceIfFalse "Start date must be before tx validity range"
-            $ startDate
-            `before` txInfoValidRange,
-          traceIfFalse
-            "Organization profile, practitioner and left node must have correct currency symbol"
-            (isOrganizationValid && isPractitionerValid && isLeftNodeIdValid),
-          traceIfFalse "Must spend user NFT of the organization profile who is creating the membership history"
-            $ V1.assetClassValueOf (valueSpent txInfo) organizationUserAC
-            == 1,
-          traceIfFalse "Must spend left node of the membership history list from membershipsValidator address"
-            $ Utils.hasTxInAtAddressWithNFT leftNodeId membershipsValidatorAddress txInfoInputs,
-          traceIfFalse
-            "Tx must mint JUST inserted node NFT and interval NFT"
-            $ mintValueMinted
-              txInfoMint -- protection against other-token-name attack vector
-            == (membershipHistoryNFT + fstIntervalNFT),
-          traceIfFalse "Must lock the first interval with inline datum at membershipsValidator address (output idx)"
-            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress firstIntervalOutputIdx (IntervalDatum fstInterval) (fstIntervalNFT + minLv) membershipsValidatorAddress txInfoOutputs
-        ]
+      traceIfFalse "G" (startDate `before` txInfoValidRange) -- Start date before validity (can not be in the future)
+        && traceIfFalse "H" (isOrganizationValid && isPractitionerValid && isLeftNodeIdValid) -- CS check
+        && traceIfFalse "I" (V1.assetClassValueOf (valueSpent txInfo) organizationUserAC == 1) -- Must spend org User NFT
+        && traceIfFalse "J" (Utils.hasTxInAtAddressWithNFT leftNodeId membershipsValidatorAddress txInfoInputs) -- Must spend left node
+        && traceIfFalse "K" (mintValueMinted txInfoMint == (membershipHistoryNFT + fstIntervalNFT)) -- Exact mint check
+        && traceIfFalse "L" (Utils.checkTxOutAtIndexWithDatumValueAndAddress firstIntervalOutputIdx (IntervalDatum fstInterval) (fstIntervalNFT + minLv) membershipsValidatorAddress txInfoOutputs) -- Lock interval at MV
 
 {-# INLINEABLE handleNewMembershipInterval #-}
 handleNewMembershipInterval ::
-  ProtocolParams ->
   TxInfo ->
   CurrencySymbol ->
-  Value ->
+  MintingContext ->
   ProfileId ->
   MembershipHistoriesListNodeId ->
   POSIXTime ->
   Maybe POSIXTime ->
   Integer ->
   Bool
-handleNewMembershipInterval protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol minLv organizationProfileId membershipNodeId startDate mEndDate intervalOutputIdx =
+handleNewMembershipInterval txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx organizationProfileId membershipNodeId startDate mEndDate intervalOutputIdx =
   let organizationUserAC = deriveUserFromRefAC organizationProfileId
       isOrganizationValid = hasCurrencySymbol organizationProfileId mintingPolicyCurrencySymbol
       isMembershipNodeIdValid = hasCurrencySymbol membershipNodeId mintingPolicyCurrencySymbol
-      membershipsValidatorAddress = V1.scriptHashAddress (membershipsValidatorScriptHash protocolParams)
+      membershipsValidatorAddress = ctxMembershipsAddress ctx
+      minLv = ctxMinLv ctx
 
       (_, membershipNodeDatum) = unsafeGetListNodeDatumAndValue membershipNodeId membershipsValidatorAddress txInfoInputs
       oldHistory = unsafeGetMembershipHistory membershipNodeDatum
@@ -309,24 +284,12 @@ handleNewMembershipInterval protocolParams txInfo@TxInfo {..} mintingPolicyCurre
       -- Must mint the membership interval NFT -- enforced both here and in membershipsValidator
       -- Must lock the membership interval NFT with inline datum at membershipsValidator address (output idx) -- enforced here
 
-      and
-        [ traceIfFalse "Start date must be before tx validity range"
-            $ startDate
-            `before` txInfoValidRange,
-          traceIfFalse
-            "Organization profile and membership node must have correct currency symbol"
-            (isOrganizationValid && isMembershipNodeIdValid),
-          traceIfFalse "Must spend user NFT of the organization profile who is creating the membership interval"
-            $ V1.assetClassValueOf (valueSpent txInfo) organizationUserAC
-            == 1,
-          traceIfFalse "Must spend the UTxO of the updated membership history (with IntervalDatum) from membershipsValidator address"
-            $ Utils.hasTxInAtAddressWithNFT membershipNodeId membershipsValidatorAddress txInfoInputs,
-          traceIfFalse "Tx must mint JUST interval NFT"
-            $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
-            == newIntervalNFT,
-          traceIfFalse "Must lock interval with inline datum at membershipsValidator address (output idx)"
-            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress intervalOutputIdx (IntervalDatum newInterval) (minLv + newIntervalNFT) membershipsValidatorAddress txInfoOutputs
-        ]
+      traceIfFalse "M" (startDate `before` txInfoValidRange) -- Start date before validity
+        && traceIfFalse "N" (isOrganizationValid && isMembershipNodeIdValid) -- CS check
+        && traceIfFalse "O" (V1.assetClassValueOf (valueSpent txInfo) organizationUserAC == 1) -- Must spend org User NFT
+        && traceIfFalse "P" (Utils.hasTxInAtAddressWithNFT membershipNodeId membershipsValidatorAddress txInfoInputs) -- Must spend history node
+        && traceIfFalse "Q" (mintValueMinted txInfoMint == newIntervalNFT) -- Exact mint check
+        && traceIfFalse "R" (Utils.checkTxOutAtIndexWithDatumValueAndAddress intervalOutputIdx (IntervalDatum newInterval) (minLv + newIntervalNFT) membershipsValidatorAddress txInfoOutputs) -- Lock interval at MV
 
 -------------------------------------------------------------------------------
 

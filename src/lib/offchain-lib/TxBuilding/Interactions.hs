@@ -52,6 +52,7 @@ data UserAddresses = UserAddresses
 
 data ActionType
   = ProfileAction ProfileActionType
+  | ProtocolAction ProtocolActionType
   | AdminAction AdminActionType
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
@@ -100,6 +101,17 @@ interactionToTxSkeleton Interaction {..} = do
           promoteProfileTX promotedProfileId promotedByProfileId (timeToPlutus achievementDate) belt usedAddrs
         AcceptPromotionAction promotionId ->
           acceptPromotionTX promotionId usedAddrs
+        CreateMembershipHistoryAction orgProfileId practitionerProfileId startDate mEndDate ->
+          createMembershipHistoryTX orgProfileId practitionerProfileId (timeToPlutus startDate) (timeToPlutus <$> mEndDate) usedAddrs
+        AddMembershipIntervalAction orgProfileId membershipNodeId startDate mEndDate ->
+          addMembershipIntervalTX orgProfileId membershipNodeId (timeToPlutus startDate) (timeToPlutus <$> mEndDate) usedAddrs
+        AcceptMembershipIntervalAction intervalId -> do
+          skeleton <- acceptMembershipIntervalTX intervalId usedAddrs
+          return (skeleton, intervalId)
+    ProtocolAction protocolActionType -> case protocolActionType of
+      CleanupDustAction -> do
+        (skeleton, _dustCount) <- cleanupDustTX
+        return (skeleton, Nothing)
     AdminAction adminActionType -> do
       skeleton <- updateOracleTX adminActionType
       return (skeleton, Nothing)

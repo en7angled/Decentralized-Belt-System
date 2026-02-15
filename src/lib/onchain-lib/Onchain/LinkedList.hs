@@ -54,9 +54,7 @@ checkIfValidNodeDatum node = case nodeKey node of
   Just key -> case nextNodeKey node of
     Nothing -> True -- Last node
     Just nextKey ->
-      traceIfFalse "Invalid node: currency symbol mismatch between key and next key"
-        $ assetClassCurrencySymbol key
-        == assetClassCurrencySymbol nextKey
+      traceIfFalse "B" $ assetClassCurrencySymbol key == assetClassCurrencySymbol nextKey -- CS mismatch
   where
     assetClassCurrencySymbol (AssetClass (cs, _)) = cs
 
@@ -72,15 +70,15 @@ checkInputsAndInsertInBetweenNodes (oldLeftNode, rightNode, insertedNode) =
     then
       updatedLeftNode
     else
-      traceError "Cannot insert node: adjacency or ordering invariant violated"
+      traceError "C" -- Insert invariant violated
   where
     updatedLeftNode = oldLeftNode {nextNodeKey = nodeKey insertedNode}
     validInputs =
       and
-        [ traceIfFalse "input nodes were adjacent" $ nextNodeKey oldLeftNode == nodeKey rightNode,
-          traceIfFalse "left must be less than inserted" $ nodeKey oldLeftNode < nodeKey insertedNode,
-          traceIfFalse "right must be greater than inserted" $ nodeKey rightNode > nodeKey insertedNode,
-          traceIfFalse "inserted must point to the right node" $ nextNodeKey insertedNode == nodeKey rightNode,
+        [ traceIfFalse "D" $ nextNodeKey oldLeftNode == nodeKey rightNode, -- adjacent
+          traceIfFalse "E" $ nodeKey oldLeftNode < nodeKey insertedNode, -- left < inserted
+          traceIfFalse "F" $ nodeKey rightNode > nodeKey insertedNode, -- right > inserted
+          traceIfFalse "G" $ nextNodeKey insertedNode == nodeKey rightNode, -- inserted -> right
           all checkIfValidNodeDatum [oldLeftNode, rightNode, insertedNode]
         ]
 
@@ -95,14 +93,14 @@ checkInputsAndAppendNode (lastNode, appendedNode) =
     then
       updatedLastNode
     else
-      traceError "Cannot append node: end-of-list invariant violated"
+      traceError "H" -- Append invariant violated
   where
     updatedLastNode = lastNode {nextNodeKey = nodeKey appendedNode}
     validInputs =
       and
-        [ traceIfFalse "last node must not have a next node" $ isNothing (nextNodeKey lastNode),
-          traceIfFalse "appended node must have a key" $ isJust (nodeKey appendedNode),
-          traceIfFalse "appended node must not have a next node" $ isNothing (nextNodeKey appendedNode),
-          traceIfFalse "appended node must be greater than last" $ nodeKey appendedNode > nodeKey lastNode,
+        [ traceIfFalse "I" $ isNothing (nextNodeKey lastNode), -- last has no next
+          traceIfFalse "J" $ isJust (nodeKey appendedNode), -- appended has key
+          traceIfFalse "K" $ isNothing (nextNodeKey appendedNode), -- appended has no next
+          traceIfFalse "L" $ nodeKey appendedNode > nodeKey lastNode, -- appended > last
           all checkIfValidNodeDatum [lastNode, appendedNode]
         ]

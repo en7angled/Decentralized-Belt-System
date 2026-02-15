@@ -4,7 +4,9 @@
 module TestRuns
   ( deployBJJValidators,
     bjjInteraction,
+    protocolInteraction,
     adminInteraction,
+    sendDustToValidator,
     userPlutusPkh,
     logPractitionerProfileInformation,
     getProfileAndRank,
@@ -62,6 +64,7 @@ deployBJJValidators w = do
   -- Step 1: Deploy spending validators as reference scripts
   (pVhash, refProfilesValidator) <- deployReferenceScriptRun profilesValidatorGY w w
   (rVhash, refRanksValidator) <- deployReferenceScriptRun ranksValidatorGY w w
+  (mVhash, refMembershipsValidator) <- deployReferenceScriptRun membershipsValidatorGY w w
   (ovHash, refOracleValidator) <- deployReferenceScriptRun oracleValidatorGY w w
 
   -- Step 2: Mint oracle NFT and lock initial OracleParams at oracle validator
@@ -76,13 +79,15 @@ deployBJJValidators w = do
     "SCRIPT_SIZES:\n" <>
     "  ProfilesValidator: " <> show profilesValidatorSize <> " bytes\n" <>
     "  RanksValidator: " <> show ranksValidatorSize <> " bytes\n" <>
+    "  MembershipsValidator: " <> show membershipsValidatorSize <> " bytes\n" <>
     "  OracleValidator: " <> show oracleValidatorSize <> " bytes\n" <>
-    "  MembershipsValidator: " <> show membershipsValidatorSize <> " bytes"
+    "  MintingPolicy: " <> show (mintingPolicySize (assetClassToPlutus oracleNFTAC)) <> " bytes"
 
   return
     DeployedScriptsContext
       { profilesValidatorHashAndRef = (pVhash, refProfilesValidator),
         ranksValidatorHashAndRef = (rVhash, refRanksValidator),
+        membershipsValidatorHashAndRef = (mVhash, refMembershipsValidator),
         mintingPolicyHashAndRef = (mphash, refMintingPolicy),
         oracleValidatorHashAndRef = (ovHash, refOracleValidator),
         oracleNFTAssetClass = oracleNFTAC
@@ -156,6 +161,23 @@ bjjInteraction txBuildingContext user actionType mrecipient = asUser user $ do
   
   return (gyTxId, gyAC)
 
+-- | Execute a protocol maintenance action (e.g., dust cleanup) through the Interaction pipeline.
+protocolInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> ProtocolActionType -> m GYTxId
+protocolInteraction txBuildingContext user protocolAction = asUser user $ do
+  let interaction =
+        Interaction
+          { action = ProtocolAction protocolAction,
+            userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
+            recipient = Nothing
+          }
+  (skeleton, _) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
+  (gyTxBody, gyTxId) <- sendSkeleton' skeleton
+
+  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $ "PROTOCOL INTERACTION: \n" <> show interaction
+  logTxBudget gyTxBody
+
+  return gyTxId
+
 -- | Execute an admin action (oracle update) through the Interaction pipeline.
 adminInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> AdminActionType -> m GYTxId
 adminInteraction txBuildingContext user adminAction = asUser user $ do
@@ -181,6 +203,29 @@ logTxBudget txBody = do
     "TX BUDGET:\n" <>
     "  Fee: " <> show fee <> " lovelace\n" <>
     "  TxBody: " <> show txBody
+
+------------------------------------------------------------------------------------------------
+
+-- * Dust / Cleanup Helpers
+
+------------------------------------------------------------------------------------------------
+
+-- | Send a dust UTxO (ADA only, no datum) to a validator address to simulate griefing.
+-- Returns the 'GYTxOutRef' of the created dust UTxO.
+sendDustToValidator :: (GYTxGameMonad m, HasCallStack) => User -> GYScript 'PlutusV3 -> m ()
+sendDustToValidator user validator = asUser user $ do
+  validatorAddr <- scriptAddress validator
+  let dustSkeleton =
+        mustHaveOutput
+          GYTxOut
+            { gyTxOutAddress = validatorAddr,
+              gyTxOutDatum = Nothing,
+              gyTxOutValue = valueFromLovelace 2_000_000,
+              gyTxOutRefS = Nothing
+            }
+  void $ sendSkeleton' dustSkeleton
+  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $
+    "Sent dust UTxO (2 ADA, no datum) to validator: " <> show (scriptHash validator)
 
 ------------------------------------------------------------------------------------------------
 

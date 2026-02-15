@@ -62,7 +62,7 @@ minLovelaceValue = V1.lovelaceValue 3_500_000
 mkUntypedLambda ::
   (ScriptContext -> Bool) ->
   (BuiltinData -> BuiltinUnit)
-mkUntypedLambda f c = check $ f (parseData c "Invalid context")
+mkUntypedLambda f c = check $ f (parseData c "S") -- Invalid context
   where
     parseData mdata message = case fromBuiltinData mdata of
       Just d -> d
@@ -106,7 +106,7 @@ unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs =
   let i = PlutusTx.List.find (\TxInInfo {txInInfoOutRef} -> txInInfoOutRef == spendingTxOutRef) txInfoInputs
    in case i of
         Just (TxInInfo _inOutRef inOut) -> inOut
-        Nothing -> traceError "Cannot find own input by TxOutRef"
+        Nothing -> traceError "T" -- Cannot find own input by TxOutRef
 
 -------------------------------------------------------------------------------
 
@@ -119,13 +119,13 @@ checkAndGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -
 checkAndGetCurrentStateDatumAndValue stateToken addr outs =
   case filter (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress})) -> (txOutValue `geq` V1.assetClassValue stateToken 1) && (addr == txOutAddress)) outs of
     [TxInInfo _inOutRef out] -> (txOutValue out, checkAndGetInlineDatum out)
-    _ -> traceError "Cannot find state NFT at expected address"
+    _ -> traceError "U" -- Cannot find state NFT at expected address
 
 {-# INLINEABLE checkAndGetInlineDatum #-}
 checkAndGetInlineDatum :: TxOut -> BuiltinData
 checkAndGetInlineDatum out = case txOutDatum out of
   OutputDatum da -> getDatum da
-  _ -> traceError "Invalid output: expected inline datum"
+  _ -> traceError "V" -- Invalid output: expected inline datum
 
 -------------------------------------------------------------------------------
 
@@ -143,9 +143,9 @@ readOracleParams oracleAC refInputs =
     Just (TxInInfo _ TxOut {txOutDatum}) -> case txOutDatum of
       OutputDatum (Datum bd) -> case fromBuiltinData @OracleParams bd of
         Just params -> params
-        Nothing -> traceError "Cannot decode oracle datum"
-      _ -> traceError "Oracle UTxO must have inline datum"
-    Nothing -> traceError "Oracle UTxO not found in reference inputs"
+        Nothing -> traceError "W" -- Cannot decode oracle datum
+      _ -> traceError "X" -- Oracle UTxO must have inline datum
+    Nothing -> traceError "Y" -- Oracle UTxO not found in reference inputs
   where
     hasOracleNFT (TxInInfo _ TxOut {txOutValue}) =
       V1.assetClassValueOf txOutValue oracleAC == 1
@@ -162,7 +162,7 @@ checkFee oracle feeSelector outputs = case opFeeConfig oracle of
     let requiredFee = feeSelector feeConfig
         feeAddr = fcFeeAddress feeConfig
         feeValue = V1.lovelaceValue (V1.Lovelace requiredFee)
-     in traceIfFalse "Must pay required fee to fee address"
+     in traceIfFalse "Z" -- Must pay required fee
           $ any
             ( \TxOut {txOutValue = v, txOutAddress = a} ->
                 a == feeAddr && v `geq` feeValue

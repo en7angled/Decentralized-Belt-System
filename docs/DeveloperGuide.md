@@ -330,7 +330,7 @@ offchain-lib/
 ├── DomainTypes/
 │   ├── Core/
 │   │   ├── Types.hs               -- Profile, Rank, Promotion (off-chain domain model)
-│   │   ├── Actions.hs             -- ProfileActionType, AdminActionType, ProfileData
+│   │   ├── Actions.hs             -- ProfileActionType, ProtocolActionType, AdminActionType, ProfileData
 │   │   └── BJJ.hs                 -- BJJBelt with JSON/Swagger instances
 │   └── Transfer/
 │       └── Types.hs               -- PractitionerProfileInformation, OrganizationProfileInformation
@@ -399,10 +399,13 @@ data DeployedScriptsContext = DeployedScriptsContext
   { mintingPolicyHashAndRef       :: (GYScriptHash, GYTxOutRef)
   , profilesValidatorHashAndRef   :: (GYScriptHash, GYTxOutRef)
   , ranksValidatorHashAndRef      :: (GYScriptHash, GYTxOutRef)
+  , membershipsValidatorHashAndRef :: (GYScriptHash, GYTxOutRef)
   , oracleValidatorHashAndRef     :: (GYScriptHash, GYTxOutRef)
   , oracleNFTAssetClass           :: GYAssetClass
   }
 ```
+
+**Config file requirement:** The file at `defaultTxBuldingContextFile` (`config/config_bjj_validators.json`) must include all six fields: `mintingPolicyHashAndRef`, `profilesValidatorHashAndRef`, `ranksValidatorHashAndRef`, `membershipsValidatorHashAndRef`, `oracleValidatorHashAndRef`, and `oracleNFTAssetClass`. Chain-sync and interaction-api load this file at startup; missing fields will cause parse failures. After deployment, replace any placeholder values with the actual script hashes, TxOutRefs, and oracle NFT asset class from the deployed scripts.
 
 **When adding a new validator**, you must:
 1. Add a new field: `myValidatorHashAndRef :: (GYScriptHash, GYTxOutRef)`
@@ -478,6 +481,9 @@ Operations are **domain-level transaction builders**. Each one:
 | `updateProfileTX` | Updates profile image URI |
 | `promoteProfileTX` | Creates a pending promotion |
 | `acceptPromotionTX` | Accepts a promotion (updates profile + rank) |
+| `createMembershipHistoryTX` | Creates a membership history for a practitioner at an org (append to list, mint history + first interval) |
+| `addMembershipIntervalTX` | Adds a new membership interval to an existing history |
+| `acceptMembershipIntervalTX` | Practitioner accepts a membership interval |
 | `updateOracleTX` | Admin updates oracle parameters |
 
 **Standard operation signature:**
@@ -568,8 +574,9 @@ data Interaction = Interaction
   }
 
 data ActionType
-  = ProfileAction ProfileActionType    -- User-facing actions
-  | AdminAction AdminActionType        -- Admin oracle actions
+  = ProfileAction ProfileActionType       -- User-facing actions
+  | ProtocolAction ProtocolActionType     -- Permissionless protocol maintenance
+  | AdminAction AdminActionType           -- Admin oracle actions
 
 -- Core mapping function:
 interactionToTxSkeleton ::
@@ -1045,8 +1052,6 @@ Use this checklist when adding any new concept:
 - [ ] `OnchainArchitecture.md` updated
 - [ ] Blueprint regenerated (`admin write-blueprint`)
 - [ ] Test scripts updated
-
----
 
 ## 7. Worked Example: Adding "Achievements"
 

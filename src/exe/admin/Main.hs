@@ -10,7 +10,7 @@ import Data.ByteString.Char8 qualified as LSB8
 import Data.ByteString.Lazy qualified as B
 import Data.Char (toLower, toUpper)
 import Data.Text qualified as T
-import DomainTypes.Core.Actions (AdminActionType (..), ProfileActionType (..), ProfileData (..))
+import DomainTypes.Core.Actions (AdminActionType (..), ProfileActionType (..), ProfileData (..), ProtocolActionType (..))
 import DomainTypes.Core.Types (ProfileType (..))
 import GeniusYield.GYConfig
 import GeniusYield.Imports
@@ -53,6 +53,10 @@ data Command
   | PromoteProfile PromoteProfileArgs
   | AcceptPromotion AcceptPromotionArgs
   | CreateProfileWithRank CreateProfileWithRankArgs
+  | CreateMembershipHistory CreateMembershipHistoryArgs
+  | AddMembershipInterval AddMembershipIntervalArgs
+  | AcceptMembershipInterval AcceptMembershipIntervalArgs
+  | CleanupDust
   deriving (Show)
 
 data SetFeesArgs
@@ -100,6 +104,30 @@ data CreateProfileWithRankArgs = CreateProfileWithRankArgs
     cpwraCreationDate :: GYTime,
     cpwraBelt :: BJJBelt,
     cpwraOutputId :: Bool
+  }
+  deriving (Show)
+
+data CreateMembershipHistoryArgs = CreateMembershipHistoryArgs
+  { cmhaOrgProfileId :: GYAssetClass,
+    cmhaPractitionerProfileId :: GYAssetClass,
+    cmhaStartDate :: GYTime,
+    cmhaEndDate :: Maybe GYTime,
+    cmhaOutputId :: Bool
+  }
+  deriving (Show)
+
+data AddMembershipIntervalArgs = AddMembershipIntervalArgs
+  { amiaOrgProfileId :: GYAssetClass,
+    amiaMembershipNodeId :: GYAssetClass,
+    amiaStartDate :: GYTime,
+    amiaEndDate :: Maybe GYTime,
+    amiaOutputId :: Bool
+  }
+  deriving (Show)
+
+data AcceptMembershipIntervalArgs = AcceptMembershipIntervalArgs
+  { amiaIntervalId :: GYAssetClass,
+    amiaAcceptOutputId :: Bool
   }
   deriving (Show)
 
@@ -159,6 +187,18 @@ posixTimeParser =
           <> metavar "POSIX_TIME"
           <> help "POSIX timestamp"
       )
+
+-- Optional POSIX time parser
+optionalPosixTimeParser :: Parser (Maybe GYTime)
+optionalPosixTimeParser =
+  optional $
+    timeFromPlutus . POSIXTime
+      <$> option
+        auto
+        ( long "end-posix"
+            <> metavar "END_POSIX_TIME"
+            <> help "Optional end POSIX timestamp"
+        )
 
 -- Asset class parser helper function
 parseAssetClass :: String -> Maybe GYAssetClass
@@ -344,6 +384,55 @@ commandParser =
               ( progDesc "Create a profile with initial rank"
               )
           )
+        <> command
+          "create-membership-history"
+          ( info
+              ( CreateMembershipHistory
+                  <$> ( CreateMembershipHistoryArgs
+                          <$> option (maybeReader parseAssetClass) (long "org-profile-id" <> metavar "ORG_PROFILE_ID" <> help "Organization profile asset class")
+                          <*> option (maybeReader parseAssetClass) (long "practitioner-profile-id" <> metavar "PRACTITIONER_PROFILE_ID" <> help "Practitioner profile asset class")
+                          <*> posixTimeParser
+                          <*> optionalPosixTimeParser
+                          <*> outputIdParser
+                      )
+              )
+              ( progDesc "Create a new membership history for a practitioner at an organization"
+              )
+          )
+        <> command
+          "add-membership-interval"
+          ( info
+              ( AddMembershipInterval
+                  <$> ( AddMembershipIntervalArgs
+                          <$> option (maybeReader parseAssetClass) (long "org-profile-id" <> metavar "ORG_PROFILE_ID" <> help "Organization profile asset class")
+                          <*> option (maybeReader parseAssetClass) (long "membership-node-id" <> metavar "MEMBERSHIP_NODE_ID" <> help "Membership history node asset class")
+                          <*> posixTimeParser
+                          <*> optionalPosixTimeParser
+                          <*> outputIdParser
+                      )
+              )
+              ( progDesc "Add a new membership interval to an existing membership history"
+              )
+          )
+        <> command
+          "accept-membership-interval"
+          ( info
+              ( AcceptMembershipInterval
+                  <$> ( AcceptMembershipIntervalArgs
+                          <$> option (maybeReader parseAssetClass) (long "interval-id" <> short 'i' <> metavar "INTERVAL_ID" <> help "Membership interval asset class")
+                          <*> outputIdParser
+                      )
+              )
+              ( progDesc "Accept a membership interval (practitioner acknowledges membership)"
+              )
+          )
+        <> command
+          "cleanup-dust"
+          ( info
+              (pure CleanupDust)
+              ( progDesc "Sweep dust/griefing UTxOs from validator addresses (permissionless — anyone can run this)"
+              )
+          )
     )
 
 -- Action type conversion functions
@@ -366,6 +455,18 @@ acceptPromotionToActionType AcceptPromotionArgs {apaPromotionId} =
 createProfileWithRankToActionType :: CreateProfileWithRankArgs -> ActionType
 createProfileWithRankToActionType CreateProfileWithRankArgs {cpwraProfileData, cpwraProfileType, cpwraCreationDate, cpwraBelt} =
   ProfileAction $ CreateProfileWithRankAction cpwraProfileData cpwraProfileType cpwraCreationDate cpwraBelt
+
+createMembershipHistoryToActionType :: CreateMembershipHistoryArgs -> ActionType
+createMembershipHistoryToActionType CreateMembershipHistoryArgs {cmhaOrgProfileId, cmhaPractitionerProfileId, cmhaStartDate, cmhaEndDate} =
+  ProfileAction $ CreateMembershipHistoryAction cmhaOrgProfileId cmhaPractitionerProfileId cmhaStartDate cmhaEndDate
+
+addMembershipIntervalToActionType :: AddMembershipIntervalArgs -> ActionType
+addMembershipIntervalToActionType AddMembershipIntervalArgs {amiaOrgProfileId, amiaMembershipNodeId, amiaStartDate, amiaEndDate} =
+  ProfileAction $ AddMembershipIntervalAction amiaOrgProfileId amiaMembershipNodeId amiaStartDate amiaEndDate
+
+acceptMembershipIntervalToActionType :: AcceptMembershipIntervalArgs -> ActionType
+acceptMembershipIntervalToActionType AcceptMembershipIntervalArgs {amiaIntervalId} =
+  ProfileAction $ AcceptMembershipIntervalAction amiaIntervalId
 
 -- | Convert SetFeesArgs to the AdminActionType for the Interaction pipeline
 setFeesToAdminAction :: SetFeesArgs -> AdminActionType
@@ -475,6 +576,36 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     if cpwraOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
       else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  -- Membership commands — routed through the Interaction pipeline
+  CreateMembershipHistory args -> do
+    printYellow "Creating membership history..."
+    let actionType = createMembershipHistoryToActionType args
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    printGreen "Membership history created successfully!"
+    if cmhaOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Membership History ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  AddMembershipInterval args -> do
+    printYellow "Adding membership interval..."
+    let actionType = addMembershipIntervalToActionType args
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    printGreen "Membership interval added successfully!"
+    if amiaOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Interval ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  AcceptMembershipInterval args -> do
+    printYellow "Accepting membership interval..."
+    let actionType = acceptMembershipIntervalToActionType args
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    printGreen "Membership interval accepted successfully!"
+    if amiaAcceptOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Interval ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  CleanupDust -> do
+    printYellow "Sweeping dust UTxOs from validator addresses..."
+    let actionType = ProtocolAction CleanupDustAction
+    (txId, _) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    printGreen $ "Dust cleanup successful! TxId: " <> show txId
 
 main :: IO ()
 main = do

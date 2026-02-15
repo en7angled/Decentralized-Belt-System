@@ -14,6 +14,7 @@ import Data.Text hiding (init, tail)
 import Deriving.Aeson
 import DomainTypes.Core.Types
 import GHC.Generics ()
+import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
 import DomainTypes.Core.BJJ (BJJBelt)
 import Onchain.Protocol.Types (FeeConfig)
@@ -71,6 +72,35 @@ data ProfileActionType
         creation_date :: GYTime,
         belt :: BJJBelt
       }
+  | CreateMembershipHistoryAction
+      { cmh_organization_profile_id :: ProfileRefAC,
+        cmh_practitioner_profile_id :: ProfileRefAC,
+        cmh_start_date :: GYTime,
+        cmh_end_date :: Maybe GYTime
+      }
+  | AddMembershipIntervalAction
+      { ami_organization_profile_id :: ProfileRefAC,
+        ami_membership_node_id :: GYAssetClass,
+        ami_start_date :: GYTime,
+        ami_end_date :: Maybe GYTime
+      }
+  | AcceptMembershipIntervalAction
+      { aci_interval_id :: GYAssetClass
+      }
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+
+-------------------------------------------------------------------------------
+
+-- * Protocol Actions (permissionless maintenance)
+
+-------------------------------------------------------------------------------
+
+-- | Protocol-level maintenance actions that any user can trigger.
+-- These do not require admin privileges and are available via the REST API.
+data ProtocolActionType
+  = -- | Permissionless cleanup of dust/griefing UTxOs at validator addresses.
+    -- Anyone can call this — the recovered ADA goes to the caller.
+    CleanupDustAction
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 -------------------------------------------------------------------------------
