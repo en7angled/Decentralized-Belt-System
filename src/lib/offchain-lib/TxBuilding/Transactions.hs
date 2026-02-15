@@ -3,7 +3,6 @@
 {-# HLINT ignore "Redundant $" #-}
 module TxBuilding.Transactions where
 
-import Cardano.Api qualified (Key (getVerificationKey), castVerificationKey)
 import Control.Monad (when)
 import Control.Monad.Reader
 import Data.Text
@@ -77,9 +76,7 @@ addressFromSkey pCtx skey =
    in addressFromPaymentSigningKey nid skey
 
 pkhFromSkey :: GYExtendedPaymentSigningKey -> GYPaymentKeyHash
-pkhFromSkey skey =
-  let vkey = Cardano.Api.getVerificationKey $ extendedPaymentSigningKeyToApi skey
-   in paymentKeyHash (paymentVerificationKeyFromApi (Cardano.Api.castVerificationKey vkey))
+pkhFromSkey = pkhFromExtendedSkey
 
 runBJJActionWithPK :: TxBuildingContext -> GYExtendedPaymentSigningKey -> ActionType -> Maybe GYAddress -> IO (GYTxId, Maybe GYAssetClass)
 runBJJActionWithPK txBuildingCtx@TxBuildingContext {..} skey action optionalRecipient = do

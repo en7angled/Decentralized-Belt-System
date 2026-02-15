@@ -7,7 +7,7 @@ import Data.Text.IO qualified
 import GeniusYield.TxBuilder.Class (enclosingSlotFromTime', slotToBeginTime)
 import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import GeniusYield.TxBuilder.Query.Class (GYTxQueryMonad)
-import GeniusYield.Types (Ada, GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYSlot, GYTokenName, GYTxOutRef, GYUTxO, GYUTxOs, GYValue, foldMapUTxOs, fromValue, paymentKeyHash, txOutRefToPlutus, utxoOutDatum, utxoValue, valueToPlutus)
+import GeniusYield.Types (Ada, GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYPaymentKeyHash, GYSlot, GYTokenName, GYTxOutRef, GYUTxO, GYUTxOs, GYValue, foldMapUTxOs, fromValue, paymentKeyHash, txOutRefToPlutus, utxoOutDatum, utxoValue, valueToPlutus)
 import GeniusYield.Types.Address (addressFromPaymentKeyHash)
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
@@ -36,13 +36,14 @@ getAdaBalance = fromValue . getValueBalance
 getValueBalance :: GYUTxOs -> Value
 getValueBalance = valueToPlutus . foldMapUTxOs utxoValue
 
+-- | Extract the payment key hash from an extended payment signing key.
+pkhFromExtendedSkey :: GYExtendedPaymentSigningKey -> GYPaymentKeyHash
+pkhFromExtendedSkey skey =
+  let vkey = Cardano.Api.getVerificationKey $ extendedPaymentSigningKeyToApi skey
+   in paymentKeyHash (paymentVerificationKeyFromApi (castVerificationKey vkey))
+
 addressFromPaymentSigningKey :: GYNetworkId -> GYExtendedPaymentSigningKey -> GYAddress
-addressFromPaymentSigningKey nid extendedSkey =
-  let vkey = Cardano.Api.getVerificationKey $ extendedPaymentSigningKeyToApi extendedSkey
-      pub_key = paymentVerificationKeyFromApi (castVerificationKey vkey)
-      payment_key_hash = paymentKeyHash pub_key
-      address = addressFromPaymentKeyHash nid payment_key_hash
-   in address
+addressFromPaymentSigningKey nid skey = addressFromPaymentKeyHash nid (pkhFromExtendedSkey skey)
 
 pPOSIXTimeFromSlotInteger :: (GYTxQueryMonad m) => Integer -> m POSIXTime
 pPOSIXTimeFromSlotInteger = (timeToPlutus <$>) . slotToBeginTime . unsafeSlotFromInteger

@@ -16,6 +16,7 @@
 - `mintOracleNFTAndLockDatum` and `mintTestOracleNFT` now use `txMustLockStateWithInlineDatumAndValue` instead of manual output construction
 - `queryOracleParams` now uses `getUtxoWithTokenAtAddresses` and `getInlineDatumAndValue` instead of manual UTxO filtering and datum parsing
 - Added `getNetworkId :: ProviderCtx -> GYNetworkId` helper; replaced 7+ occurrences of `cfgNetworkId . ctxCoreCfg`
+- Extracted `pkhFromExtendedSkey` into `TxBuilding.Utils`; `addressFromPaymentSigningKey` and `pkhFromSkey` now share the same key derivation logic
 
 
 ## 0.3.0.0 -- 2026-02-15
