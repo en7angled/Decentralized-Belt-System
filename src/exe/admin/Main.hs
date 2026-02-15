@@ -29,12 +29,6 @@ import TxBuilding.Utils
 import TxBuilding.Validators (blueprintProtocolParams)
 import Utils
 
-atlasCoreConfig :: FilePath
-atlasCoreConfig = "config/config_atlas.json"
-
-txBuldingContextFile :: FilePath
-txBuldingContextFile = "config/config_bjj_validators.json"
-
 mnemonicFilePath :: FilePath
 mnemonicFilePath = "operation.prv"
 
@@ -396,8 +390,8 @@ executeCommand (Left pCtx) signKey cmd = case cmd of
   DeployReferenceScripts -> do
     printYellow "Deploying reference scripts..."
     deployedScriptsCtx <- deployReferenceScripts pCtx signKey
-    B.writeFile txBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
-    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> txBuldingContextFile
+    B.writeFile Constants.defaultTxBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
+    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> Constants.defaultTxBuldingContextFile
   _ -> do
     printYellow "No transaction building context found."
     printYellow "Please run 'deploy-reference-scripts' first to set up the system."
@@ -406,8 +400,8 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
   DeployReferenceScripts -> do
     printYellow "Deploying reference scripts..."
     deployedScriptsCtx <- deployReferenceScripts (providerCtx txBuildingCtx) signKey
-    B.writeFile txBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
-    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> txBuldingContextFile
+    B.writeFile Constants.defaultTxBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
+    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> Constants.defaultTxBuldingContextFile
   -- Oracle admin commands — routed through the Interaction pipeline
   PauseProtocol -> do
     printYellow "Pausing protocol..."
@@ -507,7 +501,7 @@ main = do
 -- | Execute commands that require blockchain providers and signing keys
 executeOnchainCommand :: Command -> IO ()
 executeOnchainCommand cmd = do
-  mTxBuildingContext <- decodeConfigFile @DeployedScriptsContext txBuldingContextFile
+  mTxBuildingContext <- decodeConfigFile @DeployedScriptsContext Constants.defaultTxBuldingContextFile
   case mTxBuildingContext of
     Nothing -> do
       printYellow "No transaction building context found, please run deploy-reference-scripts first"
@@ -518,7 +512,7 @@ executeOnchainCommand cmd = do
   signKey <- readMnemonicFile mnemonicFilePath
 
   printYellow "Reading atlas configuration file ..."
-  atlasConfig <- maybe (error "Atlas configuration file not found") return =<< decodeConfigFile @GYCoreConfig atlasCoreConfig
+  atlasConfig <- maybe (error "Atlas configuration file not found") return =<< decodeConfigFile @GYCoreConfig Constants.defaultAtlasCoreConfig
 
   printYellow "Loading Providers ..."
   withCfgProviders atlasConfig (Text.read @GYLogNamespace "bjj-belt-system") $ \providers -> do
