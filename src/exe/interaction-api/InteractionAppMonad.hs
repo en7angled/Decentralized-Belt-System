@@ -52,28 +52,25 @@ instance MonadReader InteractionAppContext InteractionAppMonad where
   local :: (InteractionAppContext -> InteractionAppContext) -> InteractionAppMonad a -> InteractionAppMonad a
   local f (InteractionAppMonad app) = InteractionAppMonad (local f app)
 
+-- | Run an IO action in the TxBuilding context with standardized error handling.
+runWithTxErrorHandling :: IO a -> InteractionAppMonad a
+runWithTxErrorHandling action = InteractionAppMonad $ do
+  res <- liftIO $ try action
+  case res of
+    Left (e :: GYTxMonadException) -> do
+      liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
+      throwError err400 {errBody = BL8.pack (show e)}
+    Right ok -> pure ok
+
 buildInteractionApp :: Interaction -> InteractionAppMonad String
 buildInteractionApp inter = do
-  -- Lift into the TxBuildingContext reader
-  InteractionAppMonad $ do
-    InteractionAppContext {..} <- ask
-    res <- liftIO $ try (runReaderT (interactionToHexEncodedCBOR inter) txBuildingContext)
-    case res of
-      Left (e :: GYTxMonadException) -> do
-        liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
-        throwError err400 {errBody = BL8.pack (show e)}
-      Right ok -> pure ok
+  InteractionAppContext {..} <- ask
+  runWithTxErrorHandling $ runReaderT (interactionToHexEncodedCBOR inter) txBuildingContext
 
 submitTxApp :: GYTx -> InteractionAppMonad GYTxId
 submitTxApp tx = do
-  InteractionAppMonad $ do
-    InteractionAppContext {..} <- ask
-    res <- liftIO $ try (runReaderT (submitTx tx) txBuildingContext)
-    case res of
-      Left (e :: GYTxMonadException) -> do
-        liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
-        throwError err400 {errBody = BL8.pack (show e)}
-      Right ok -> pure ok
+  InteractionAppContext {..} <- ask
+  runWithTxErrorHandling $ runReaderT (submitTx tx) txBuildingContext
 
 checkDeployedScriptsAreReady :: InteractionAppMonad (ServiceProbeStatus Text)
 checkDeployedScriptsAreReady = do
