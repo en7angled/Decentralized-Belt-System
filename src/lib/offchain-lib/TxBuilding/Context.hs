@@ -27,6 +27,9 @@ data DeployedScriptsContext = DeployedScriptsContext
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (ToJSON, FromJSON)
 
+getMintingPolicyHash :: DeployedScriptsContext -> GYScriptHash
+getMintingPolicyHash ctx = fst $ mintingPolicyHashAndRef ctx
+
 getMintingPolicyRef :: DeployedScriptsContext -> GYTxOutRef
 getMintingPolicyRef ctx = snd $ mintingPolicyHashAndRef ctx
 

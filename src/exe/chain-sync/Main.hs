@@ -78,7 +78,7 @@ main = do
   let networkId = cfgNetworkId atlasConfig
 
   deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
-  let (mpHash, _mpRef) = mintingPolicyHashAndRef deployedScriptsContext
+  let mpHash = getMintingPolicyHash deployedScriptsContext
 
   let policyHexText = T.pack $ printf "%s" mpHash
 

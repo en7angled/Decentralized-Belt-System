@@ -21,6 +21,7 @@
 - Standardized redeemer construction to use `redeemerFromPlutusData` everywhere (replaced `redeemerFromPlutus' . toBuiltinData`)
 - Fixed malicious AcceptPromotion test to use `PromotionAcceptance` redeemer instead of `unitRedeemer` so the test isolates the intended vulnerability
 - Replaced local `whenJust` in `Query.Projected` with `for_` from `Data.Foldable`; removed dead `whenJust` from `Query.Common`
+- Added `getMintingPolicyHash` getter to `TxBuilding.Context`; chain-sync now uses it instead of destructuring the tuple directly
 
 
 ## 0.3.0.0 -- 2026-02-15
