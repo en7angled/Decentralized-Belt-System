@@ -134,6 +134,12 @@ foreach my $block (@blocks) {
         $action = "AcceptPromotion";
     } elsif ($block =~ /UpdateProfileAction/) {
         $action = "UpdateProfile";
+    } elsif ($block =~ /CreateMembershipHistoryAction/) {
+        $action = "CreateMembershipHistory";
+    } elsif ($block =~ /AddMembershipIntervalAction/) {
+        $action = "AddMembershipInterval";
+    } elsif ($block =~ /AcceptMembershipIntervalAction/) {
+        $action = "AcceptMembershipInterval";
     } elsif ($block =~ /CleanupDustAction/) {
         $action = "CleanupDust";
     } elsif ($block =~ /PauseProtocolAction/) {

@@ -11,11 +11,11 @@ import Data.ByteString.Lazy qualified as B
 import Data.Char (toLower, toUpper)
 import Data.Text qualified as T
 import DomainTypes.Core.Actions (AdminActionType (..), ProfileActionType (..), ProfileData (..), ProtocolActionType (..))
+import DomainTypes.Core.BJJ (BJJBelt (..), parseBelt)
 import DomainTypes.Core.Types (ProfileType (..))
 import GeniusYield.GYConfig
 import GeniusYield.Imports
 import GeniusYield.Types
-import DomainTypes.Core.BJJ (BJJBelt (..), parseBelt)
 import Onchain.Blueprint (contractBlueprint)
 import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import Options.Applicative
@@ -272,8 +272,7 @@ commandParser =
         "deploy-reference-scripts"
         ( info
             (pure DeployReferenceScripts)
-            ( progDesc "Deploy reference scripts for the BJJ belt system (includes oracle deployment)"
-            )
+            (progDesc "Deploy reference scripts for the BJJ belt system (includes oracle deployment)")
         )
         <> command
           "write-blueprint"
@@ -288,36 +287,31 @@ commandParser =
                         <> help "Output file path for the CIP-57 contract blueprint JSON"
                     )
               )
-              ( progDesc "Write the CIP-57 contract blueprint JSON to a file"
-              )
+              (progDesc "Write the CIP-57 contract blueprint JSON to a file")
           )
         <> command
           "pause-protocol"
           ( info
               (pure PauseProtocol)
-              ( progDesc "Pause the protocol (set opPaused = True in oracle)"
-              )
+              (progDesc "Pause the protocol (set opPaused = True in oracle)")
           )
         <> command
           "unpause-protocol"
           ( info
               (pure UnpauseProtocol)
-              ( progDesc "Unpause the protocol (set opPaused = False in oracle)"
-              )
+              (progDesc "Unpause the protocol (set opPaused = False in oracle)")
           )
         <> command
           "set-fees"
           ( info
               setFeesParser
-              ( progDesc "Set or clear fee configuration in the oracle"
-              )
+              (progDesc "Set or clear fee configuration in the oracle")
           )
         <> command
           "query-oracle"
           ( info
               (pure QueryOracle)
-              ( progDesc "Display current oracle parameters (read-only)"
-              )
+              (progDesc "Display current oracle parameters (read-only)")
           )
         <> command
           "init-profile"
@@ -330,8 +324,7 @@ commandParser =
                           <*> outputIdParser
                       )
               )
-              ( progDesc "Initialize a new profile"
-              )
+              (progDesc "Initialize a new profile")
           )
         <> command
           "update-profile-image"
@@ -343,8 +336,7 @@ commandParser =
                           <*> outputIdParser
                       )
               )
-              ( progDesc "Update profile image"
-              )
+              (progDesc "Update profile image")
           )
         <> command
           "promote-profile"
@@ -358,16 +350,13 @@ commandParser =
                           <*> outputIdParser
                       )
               )
-              ( progDesc "Promote a profile to a new belt"
-              )
+              (progDesc "Promote a profile to a new belt")
           )
         <> command
           "accept-promotion"
           ( info
-              ( AcceptPromotion . AcceptPromotionArgs <$> assetClassParser
-              )
-              ( progDesc "Accept a promotion"
-              )
+              (AcceptPromotion . AcceptPromotionArgs <$> assetClassParser)
+              (progDesc "Accept a promotion")
           )
         <> command
           "create-profile-with-rank"
@@ -381,8 +370,7 @@ commandParser =
                           <*> outputIdParser
                       )
               )
-              ( progDesc "Create a profile with initial rank"
-              )
+              (progDesc "Create a profile with initial rank")
           )
         <> command
           "create-membership-history"
@@ -396,8 +384,7 @@ commandParser =
                           <*> outputIdParser
                       )
               )
-              ( progDesc "Create a new membership history for a practitioner at an organization"
-              )
+              (progDesc "Create a new membership history for a practitioner at an organization")
           )
         <> command
           "add-membership-interval"
@@ -411,8 +398,7 @@ commandParser =
                           <*> outputIdParser
                       )
               )
-              ( progDesc "Add a new membership interval to an existing membership history"
-              )
+              (progDesc "Add a new membership interval to an existing membership history")
           )
         <> command
           "accept-membership-interval"
@@ -423,15 +409,13 @@ commandParser =
                           <*> outputIdParser
                       )
               )
-              ( progDesc "Accept a membership interval (practitioner acknowledges membership)"
-              )
+              (progDesc "Accept a membership interval (practitioner acknowledges membership)")
           )
         <> command
           "cleanup-dust"
           ( info
               (pure CleanupDust)
-              ( progDesc "Sweep dust/griefing UTxOs from validator addresses (permissionless — anyone can run this)"
-              )
+              (progDesc "Sweep dust/griefing UTxOs from validator addresses (permissionless — anyone can run this)")
           )
     )
 
@@ -474,12 +458,14 @@ setFeesToAdminAction ClearFees = SetFeesAction Nothing
 setFeesToAdminAction UpdateFees {..} =
   let gyAddr = unsafeAddressFromText (T.pack sfaFeeAddress)
       plutusAddr = addressToPlutus gyAddr
-  in SetFeesAction $ Just FeeConfig
-      { fcFeeAddress = plutusAddr
-      , fcProfileCreationFee = sfaProfileCreationFee
-      , fcPromotionFee = sfaPromotionFee
-      , fcMembershipFee = sfaMembershipFee
-      }
+   in SetFeesAction $
+        Just
+          FeeConfig
+            { fcFeeAddress = plutusAddr,
+              fcProfileCreationFee = sfaProfileCreationFee,
+              fcPromotionFee = sfaPromotionFee,
+              fcMembershipFee = sfaMembershipFee
+            }
 
 -- Execute command function
 executeCommand :: Either ProviderCtx TxBuildingContext -> GYExtendedPaymentSigningKey -> Command -> IO ()

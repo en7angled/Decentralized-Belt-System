@@ -14,6 +14,14 @@
 #   - Master promotes student Blue -> Purple
 #   - Different master promotes different student White -> Blue
 #   - Grand Master promotes master Black -> Black1
+#
+# Membership scenarios:
+#   - John at Gracie Barra: create history, add second interval, accept interval
+#   - Maria at Alliance: create history, add second interval, accept interval
+#   - Carlos at Gracie Barra: create history, add interval, accept
+#   - Emma at Alliance: create history, add interval, accept
+#   - John at Alliance (second org): create history only
+#   - Master Ricardo at Gracie Barra (instructor): create history
 
 set -e # Exit on any error
 set -o pipefail
@@ -155,8 +163,8 @@ print_section "BJJ Belt System - Testnet Data Population"
 print_info "This script populates the testnet with sample profiles and promotions"
 print_info "for testing and demonstration purposes."
 print_info ""
-print_info "The deploy-reference-scripts command now includes the full oracle deployment flow:"
-print_info "  1. Deploy OracleValidator, ProfilesValidator, RanksValidator as reference scripts"
+print_info "The deploy-reference-scripts command now includes the full oracle and validators flow:"
+print_info "  1. Deploy OracleValidator, ProfilesValidator, RanksValidator, MembershipsValidator as reference scripts"
 print_info "  2. Mint oracle NFT and lock initial OracleParams at oracle validator"
 print_info "  3. Compile MintingPolicy with oracle NFT and deploy as reference script"
 
@@ -449,6 +457,131 @@ run_admin_cmd_no_output accept-promotion --asset-class "$PROMO4_ID"
 print_success "Master Ricardo is now a 1st Degree Black belt!"
 
 # ============================================================================
+# STEP 6b: Memberships (practitioner at organization)
+# ============================================================================
+print_section "Step 6b: Create Memberships"
+
+# John at Gracie Barra: create history (2021-01-01 to 2022-01-01), add second interval (2022-01-01 to 2023-01-01), accept second interval
+MEMBERSHIP_JOHN_START=1609459200000   # 2021-01-01
+MEMBERSHIP_JOHN_FIRST_END=1640995200000   # 2022-01-01
+MEMBERSHIP_JOHN_SECOND_END=1672531200000  # 2023-01-01
+
+print_subsection "Membership 1: John at Gracie Barra Academy"
+print_info "Creating membership history (John at Gracie Barra)..."
+MEMBERSHIP_JOHN_ID=$(run_admin_cmd create-membership-history \
+    --org-profile-id "$ORG1_ID" \
+    --practitioner-profile-id "$STUDENT1_ID" \
+    --posix "$MEMBERSHIP_JOHN_START" \
+    --end-posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --output-id)
+print_success "Membership history created: $MEMBERSHIP_JOHN_ID"
+
+print_info "Adding second membership interval (2022-01-01 to 2023-01-01)..."
+INTERVAL_JOHN_ID=$(run_admin_cmd add-membership-interval \
+    --org-profile-id "$ORG1_ID" \
+    --membership-node-id "$MEMBERSHIP_JOHN_ID" \
+    --posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --end-posix "$MEMBERSHIP_JOHN_SECOND_END" \
+    --output-id)
+print_success "Second interval created: $INTERVAL_JOHN_ID"
+
+print_info "John accepting membership interval..."
+run_admin_cmd_no_output accept-membership-interval --interval-id "$INTERVAL_JOHN_ID"
+print_success "John's membership interval accepted!"
+
+# Maria at Alliance: create history, add second interval, accept
+print_subsection "Membership 2: Maria at Alliance Jiu-Jitsu"
+print_info "Creating membership history (Maria at Alliance)..."
+MEMBERSHIP_MARIA_ID=$(run_admin_cmd create-membership-history \
+    --org-profile-id "$ORG2_ID" \
+    --practitioner-profile-id "$STUDENT2_ID" \
+    --posix "$MEMBERSHIP_JOHN_START" \
+    --end-posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --output-id)
+print_success "Membership history created: $MEMBERSHIP_MARIA_ID"
+
+print_info "Adding second membership interval for Maria..."
+INTERVAL_MARIA_ID=$(run_admin_cmd add-membership-interval \
+    --org-profile-id "$ORG2_ID" \
+    --membership-node-id "$MEMBERSHIP_MARIA_ID" \
+    --posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --end-posix "$MEMBERSHIP_JOHN_SECOND_END" \
+    --output-id)
+print_success "Second interval created: $INTERVAL_MARIA_ID"
+
+print_info "Maria accepting membership interval..."
+run_admin_cmd_no_output accept-membership-interval --interval-id "$INTERVAL_MARIA_ID"
+print_success "Maria's membership interval accepted!"
+
+# Carlos at Gracie Barra: create history, add interval, accept
+print_subsection "Membership 3: Carlos at Gracie Barra Academy"
+print_info "Creating membership history (Carlos at Gracie Barra)..."
+MEMBERSHIP_CARLOS_ID=$(run_admin_cmd create-membership-history \
+    --org-profile-id "$ORG1_ID" \
+    --practitioner-profile-id "$STUDENT3_ID" \
+    --posix "$MEMBERSHIP_JOHN_START" \
+    --end-posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --output-id)
+print_success "Membership history created: $MEMBERSHIP_CARLOS_ID"
+
+print_info "Adding second interval for Carlos..."
+INTERVAL_CARLOS_ID=$(run_admin_cmd add-membership-interval \
+    --org-profile-id "$ORG1_ID" \
+    --membership-node-id "$MEMBERSHIP_CARLOS_ID" \
+    --posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --end-posix "$MEMBERSHIP_JOHN_SECOND_END" \
+    --output-id)
+print_success "Second interval created: $INTERVAL_CARLOS_ID"
+
+print_info "Carlos accepting membership interval..."
+run_admin_cmd_no_output accept-membership-interval --interval-id "$INTERVAL_CARLOS_ID"
+print_success "Carlos's membership interval accepted!"
+
+# Emma at Alliance: create history, add interval, accept
+print_subsection "Membership 4: Emma at Alliance Jiu-Jitsu"
+print_info "Creating membership history (Emma at Alliance)..."
+MEMBERSHIP_EMMA_ID=$(run_admin_cmd create-membership-history \
+    --org-profile-id "$ORG2_ID" \
+    --practitioner-profile-id "$STUDENT4_ID" \
+    --posix "$MEMBERSHIP_JOHN_START" \
+    --end-posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --output-id)
+print_success "Membership history created: $MEMBERSHIP_EMMA_ID"
+
+print_info "Adding second interval for Emma..."
+INTERVAL_EMMA_ID=$(run_admin_cmd add-membership-interval \
+    --org-profile-id "$ORG2_ID" \
+    --membership-node-id "$MEMBERSHIP_EMMA_ID" \
+    --posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --end-posix "$MEMBERSHIP_JOHN_SECOND_END" \
+    --output-id)
+print_success "Second interval created: $INTERVAL_EMMA_ID"
+
+print_info "Emma accepting membership interval..."
+run_admin_cmd_no_output accept-membership-interval --interval-id "$INTERVAL_EMMA_ID"
+print_success "Emma's membership interval accepted!"
+
+# John at Alliance (same practitioner, second organization)
+print_subsection "Membership 5: John at Alliance Jiu-Jitsu (second org)"
+print_info "Creating membership history (John at Alliance)..."
+MEMBERSHIP_JOHN_ALLIANCE_ID=$(run_admin_cmd create-membership-history \
+    --org-profile-id "$ORG2_ID" \
+    --practitioner-profile-id "$STUDENT1_ID" \
+    --posix "$MEMBERSHIP_JOHN_FIRST_END" \
+    --output-id)
+print_success "Membership history created: $MEMBERSHIP_JOHN_ALLIANCE_ID"
+
+# Master Ricardo at Gracie Barra (instructor membership)
+print_subsection "Membership 6: Master Ricardo at Gracie Barra (instructor)"
+print_info "Creating membership history (Master Ricardo at Gracie Barra)..."
+MEMBERSHIP_MASTER_RICARDO_ID=$(run_admin_cmd create-membership-history \
+    --org-profile-id "$ORG1_ID" \
+    --practitioner-profile-id "$MASTER1_ID" \
+    --posix "$MASTER1_CREATION_TIME" \
+    --output-id)
+print_success "Membership history created: $MEMBERSHIP_MASTER_RICARDO_ID"
+
+# ============================================================================
 # STEP 7: Dust Cleanup (Permissionless Maintenance)
 # ============================================================================
 print_section "Step 7: Dust Cleanup"
@@ -495,6 +628,14 @@ echo -e "${GREEN}Promotions Created:${NC}"
 echo -e "  1. John: White -> Blue -> Purple"
 echo -e "  2. Maria: White -> Blue"
 echo -e "  3. Master Ricardo: Black -> Black1"
+echo ""
+echo -e "${GREEN}Memberships:${NC}"
+echo -e "  • John at Gracie Barra:       history ${CYAN}$MEMBERSHIP_JOHN_ID${NC}, interval accepted ${CYAN}$INTERVAL_JOHN_ID${NC}"
+echo -e "  • Maria at Alliance:          history ${CYAN}$MEMBERSHIP_MARIA_ID${NC}, interval accepted ${CYAN}$INTERVAL_MARIA_ID${NC}"
+echo -e "  • Carlos at Gracie Barra:     history ${CYAN}$MEMBERSHIP_CARLOS_ID${NC}, interval accepted ${CYAN}$INTERVAL_CARLOS_ID${NC}"
+echo -e "  • Emma at Alliance:           history ${CYAN}$MEMBERSHIP_EMMA_ID${NC}, interval accepted ${CYAN}$INTERVAL_EMMA_ID${NC}"
+echo -e "  • John at Alliance (2nd org):  history ${CYAN}$MEMBERSHIP_JOHN_ALLIANCE_ID${NC}"
+echo -e "  • Master Ricardo at Gracie B: history ${CYAN}$MEMBERSHIP_MASTER_RICARDO_ID${NC}"
 echo ""
 
 print_success "Testnet successfully populated with sample BJJ data!"

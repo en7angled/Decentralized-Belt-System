@@ -40,6 +40,12 @@ print_section() {
     echo ""
 }
 
+print_subsection() {
+    echo -e "${CYAN}────────────────────────────────────────${NC}"
+    echo -e "${CYAN}  $1${NC}"
+    echo -e "${CYAN}────────────────────────────────────────${NC}"
+}
+
 # Resolve repo root (script may be run from anywhere)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -142,7 +148,7 @@ print_info "This script reproduces the core part of blackPromotesWhiteToBlue tes
 print_section "Step 1: Deploy Reference Scripts"
 
 if [ ! -f "$REPO_ROOT/config/config_bjj_validators.json" ]; then
-    print_info "Deploying reference scripts..."
+    print_info "Deploying reference scripts (Profiles, Ranks, Memberships, Oracle)..."
     # Use direct command for deploy (it outputs informational messages we shouldn't treat as errors)
     deploy_output=""
     deploy_exit=0
@@ -184,29 +190,42 @@ else
     print_warning "Could not query oracle (exit code $oracle_exit). Continuing..."
 fi
 
-print_subsection "Print colored output helper"
-print_subsection() {
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-    echo -e "${CYAN}  $1${NC}"
-    echo -e "${CYAN}────────────────────────────────────────${NC}"
-}
-
 # ============================================================================
 # Timestamps for profile creation and promotions
 # ============================================================================
 
+ORG_CREATION_TIME=1666819105000
 STUDENT_PROFILE_CREATION_TIME=1666819105000
 MASTER_PROFILE_CREATION_TIME=1752441505000
 BLUE_PROMOTION_TIME=1752623616000
+MEMBERSHIP_START=1752441505000
+MEMBERSHIP_FIRST_END=1783977505000
+MEMBERSHIP_SECOND_END=1815513505000
 
+print_info "Organization creation time: $ORG_CREATION_TIME"
 print_info "Student profile creation time: $STUDENT_PROFILE_CREATION_TIME"
 print_info "Master profile creation time: $MASTER_PROFILE_CREATION_TIME"
 print_info "Blue promotion time: $BLUE_PROMOTION_TIME"
 
 # ============================================================================
-# Step 2: Create master profile with Black belt
+# Step 2: Create organization (for membership)
 # ============================================================================
-print_section "Step 2: Create Master Profile"
+print_section "Step 2: Create Organization"
+
+print_info "Creating organization (academy)..."
+ORG_PROFILE_ID=$(run_admin_cmd init-profile \
+    --name "Test Academy" \
+    --description "Test BJJ academy for script" \
+    --image-uri "https://example.com/academy.png" \
+    --organization \
+    --posix "$ORG_CREATION_TIME" \
+    --output-id)
+print_success "Organization created: $ORG_PROFILE_ID"
+
+# ============================================================================
+# Step 3: Create master profile with Black belt
+# ============================================================================
+print_section "Step 3: Create Master Profile"
 
 print_info "Creating master profile with Black belt..."
 MASTER_PROFILE_ID=$(run_admin_cmd create-profile-with-rank \
@@ -220,9 +239,9 @@ MASTER_PROFILE_ID=$(run_admin_cmd create-profile-with-rank \
 print_success "Master profile created: $MASTER_PROFILE_ID"
 
 # ============================================================================
-# Step 3: Create student profile with White belt (initially)
+# Step 4: Create student profile with White belt (initially)
 # ============================================================================
-print_section "Step 3: Create Student Profile"
+print_section "Step 4: Create Student Profile"
 
 print_info "Creating student profile (White belt)..."
 STUDENT_PROFILE_ID=$(run_admin_cmd init-profile \
@@ -235,9 +254,9 @@ STUDENT_PROFILE_ID=$(run_admin_cmd init-profile \
 print_success "Student profile created: $STUDENT_PROFILE_ID"
 
 # ============================================================================
-# Step 4: Promote student from White to Blue belt
+# Step 5: Promote student from White to Blue belt
 # ============================================================================
-print_section "Step 4: Create Promotion"
+print_section "Step 5: Create Promotion"
 
 print_info "Master promoting student from White to Blue belt..."
 BLUE_PROMOTION_ID=$(run_admin_cmd promote-profile \
@@ -249,18 +268,45 @@ BLUE_PROMOTION_ID=$(run_admin_cmd promote-profile \
 print_success "Blue belt promotion created: $BLUE_PROMOTION_ID"
 
 # ============================================================================
-# Step 5: Accept the Blue belt promotion
+# Step 6: Accept the Blue belt promotion
 # ============================================================================
-print_section "Step 5: Accept Promotion"
+print_section "Step 6: Accept Promotion"
 
 print_info "Student accepting Blue belt promotion..."
 run_admin_cmd_no_output accept-promotion --asset-class "$BLUE_PROMOTION_ID"
 print_success "Blue belt promotion accepted!"
 
 # ============================================================================
-# Step 6: Test Oracle Admin Actions
+# Step 7: Memberships (student at organization)
 # ============================================================================
-print_section "Step 6: Oracle Admin Actions"
+print_section "Step 7: Memberships"
+
+print_info "Creating membership history (student at academy)..."
+MEMBERSHIP_ID=$(run_admin_cmd create-membership-history \
+    --org-profile-id "$ORG_PROFILE_ID" \
+    --practitioner-profile-id "$STUDENT_PROFILE_ID" \
+    --posix "$MEMBERSHIP_START" \
+    --end-posix "$MEMBERSHIP_FIRST_END" \
+    --output-id)
+print_success "Membership history created: $MEMBERSHIP_ID"
+
+print_info "Adding second membership interval..."
+INTERVAL_ID=$(run_admin_cmd add-membership-interval \
+    --org-profile-id "$ORG_PROFILE_ID" \
+    --membership-node-id "$MEMBERSHIP_ID" \
+    --posix "$MEMBERSHIP_FIRST_END" \
+    --end-posix "$MEMBERSHIP_SECOND_END" \
+    --output-id)
+print_success "Second interval created: $INTERVAL_ID"
+
+print_info "Accepting membership interval..."
+run_admin_cmd_no_output accept-membership-interval --interval-id "$INTERVAL_ID"
+print_success "Membership interval accepted!"
+
+# ============================================================================
+# Step 8: Test Oracle Admin Actions
+# ============================================================================
+print_section "Step 8: Oracle Admin Actions"
 
 print_info "Pausing protocol..."
 run_admin_cmd_no_output pause-protocol
@@ -303,9 +349,9 @@ if [ "$oracle_exit3" -eq 0 ]; then
 fi
 
 # ============================================================================
-# Step 7: Test Dust Cleanup (Permissionless)
+# Step 9: Test Dust Cleanup (Permissionless)
 # ============================================================================
-print_section "Step 7: Dust Cleanup"
+print_section "Step 9: Dust Cleanup"
 
 print_info "Running cleanup-dust (will report if no dust found, which is expected on a clean testnet)..."
 cleanup_output=""
@@ -329,11 +375,14 @@ print_section "Test Completed Successfully!"
 
 echo ""
 echo -e "${GREEN}Results:${NC}"
-echo -e "  - Master profile (Black belt): ${CYAN}$MASTER_PROFILE_ID${NC}"
-echo -e "  - Student profile:             ${CYAN}$STUDENT_PROFILE_ID${NC}"
-echo -e "  - Blue belt promotion:         ${CYAN}$BLUE_PROMOTION_ID${NC}"
+echo -e "  - Organization:                 ${CYAN}$ORG_PROFILE_ID${NC}"
+echo -e "  - Master profile (Black belt):  ${CYAN}$MASTER_PROFILE_ID${NC}"
+echo -e "  - Student profile:              ${CYAN}$STUDENT_PROFILE_ID${NC}"
+echo -e "  - Blue belt promotion:          ${CYAN}$BLUE_PROMOTION_ID${NC}"
+echo -e "  - Membership history:           ${CYAN}$MEMBERSHIP_ID${NC}"
+echo -e "  - Membership interval accepted: ${CYAN}$INTERVAL_ID${NC}"
 echo ""
-echo -e "${GREEN}Progression:${NC} Student White belt -> Blue belt"
+echo -e "${GREEN}Progression:${NC} Student White belt -> Blue belt; membership at academy (create, add interval, accept)"
 echo ""
 echo -e "${GREEN}Admin Actions Tested:${NC}"
 echo -e "  1. Pause protocol"
@@ -344,4 +393,4 @@ echo -e "  5. Query oracle"
 echo -e "  6. Cleanup dust"
 echo ""
 
-print_success "Black Promotes White to Blue + Admin Actions test completed successfully!"
+print_success "Black Promotes White to Blue + Memberships + Admin Actions test completed successfully!"

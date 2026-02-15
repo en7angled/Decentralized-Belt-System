@@ -1,6 +1,16 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.4 -- 2026-02-15
+
+### Scripts: memberships and exUnits
+
+- **populate_testnet.sh**: Deploy step now mentions MembershipsValidator; added Step 6b memberships: John and Maria (create + add interval + accept), Carlos and Emma (same), John at Alliance (second org), Master Ricardo at Gracie Barra (instructor). Summary lists all six memberships.
+- **test_black_promotes_white_to_blue.sh**: Fixed duplicate `print_subsection` (define once at top); deploy message mentions Memberships; added Step 2 (create org), Step 7 (memberships: create history, add interval, accept); renumbered steps; summary includes org and membership IDs.
+- **test_exunits.sh**: Parser now recognizes `CreateMembershipHistoryAction`, `AddMembershipIntervalAction`, `AcceptMembershipIntervalAction` for exUnits table and summary.
+- **admin Main.hs**: Import order and minor `progDesc` formatting.
+
+
 ## 0.3.1.3 -- 2026-02-15
 
 ### Memberships (histories & intervals)
