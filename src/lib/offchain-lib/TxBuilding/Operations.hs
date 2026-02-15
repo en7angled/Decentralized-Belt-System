@@ -51,14 +51,7 @@ getFeeSkeleton oracle feeSelector = case opFeeConfig oracle of
     let feeAmount = feeSelector feeConfig
     let plutusFeeAddr = fcFeeAddress feeConfig
     gyFeeAddr <- addressFromPlutus' plutusFeeAddr
-    return $
-      mustHaveOutput
-        GYTxOut
-          { gyTxOutAddress = gyFeeAddr,
-            gyTxOutDatum = Nothing,
-            gyTxOutValue = valueFromLovelace feeAmount,
-            gyTxOutRefS = Nothing
-          }
+    txIsPayingValueToAddress gyFeeAddr (valueFromLovelace feeAmount)
 
 ------------------------------------------------------------------------------------------------
 
