@@ -68,43 +68,6 @@ txIsPayingValueToAddress recipient gyValue = do
           gyTxOutRefS = Nothing
         }
 
-txIsPayingValueToAddressWithInlineDatum :: (GYTxQueryMonad m) => GYDatum -> GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
-txIsPayingValueToAddressWithInlineDatum gyDatum recipient gyValue = do
-  return $
-    mustHaveOutput
-      GYTxOut
-        { gyTxOutAddress = recipient,
-          gyTxOutDatum = Just (gyDatum, GYTxOutUseInlineDatum),
-          gyTxOutValue = gyValue,
-          gyTxOutRefS = Nothing
-        }
-
-isValidBetween :: GYSlot -> GYSlot -> GYTxSkeleton 'PlutusV3
-isValidBetween s1 s2 =
-  mconcat
-    [ isInvalidBefore s1,
-      isInvalidAfter s2
-    ]
-
-safeEraTime :: Natural
-safeEraTime = 25920 -- ~7h in seconds (era safe zone)
-
--- txIsValidByDDL :: (GYTxQueryMonad m) => POSIXTime -> m (GYTxSkeleton 'PlutusV3)
--- txIsValidByDDL ddl = do
---   now <- slotOfCurrentBlock
---   afterSafeEraSlot <- advanceSlot' now safeEraTime
---   afterSafeEraTime <- pPOSIXTimeFromGYSlot afterSafeEraSlot
---   validUntil <- gySlotFromPOSIXTime (min ddl afterSafeEraTime)
---   return $ isValidBetween now validUntil
-
-txIsValidForSafeEra :: (GYTxQueryMonad m) => m (GYTxSkeleton 'PlutusV3)
-txIsValidForSafeEra = do
-  now <- slotOfCurrentBlock
-  afterSafeEraSlot <- advanceSlot' now safeEraTime
-  afterSafeEraTime <- pPOSIXTimeFromGYSlot afterSafeEraSlot
-  validUntil <- gySlotFromPOSIXTime afterSafeEraTime
-  return $ isValidBetween now validUntil
-
 txMustSpendStateFromRefScriptWithRedeemer :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYAssetClass -> GYRedeemer -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyValidator =
   do
@@ -186,6 +149,7 @@ txCIP68UserAndRef mintOrBurn mpRefScript mpScript gyRedeemer gyProfileRefAC = do
 txMustMintCIP68UserAndRef :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustMintCIP68UserAndRef = txCIP68UserAndRef True
 
+-- | Reserved for future profile deletion support.
 txMustBurnCIP68UserAndRef :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustBurnCIP68UserAndRef = txCIP68UserAndRef False
 

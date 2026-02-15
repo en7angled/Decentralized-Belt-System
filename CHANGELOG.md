@@ -24,6 +24,7 @@
 - Added `getMintingPolicyHash` getter to `TxBuilding.Context`; chain-sync now uses it instead of destructuring the tuple directly
 - Extracted `runWithTxErrorHandling` helper in `InteractionAppMonad` to deduplicate the try/catch/log/throwError pattern
 - Added `appVersion` constant to `Constants.hs`; replaced hardcoded `"1.0.0"` in `InteractionAppMonad` and `QueryAppMonad` probe responses
+- Removed dead code: `txIsPayingValueToAddressWithInlineDatum`, `isValidBetween`, `safeEraTime`, `txIsValidForSafeEra` from Skeletons; `getAdaBalance`/`getValueBalance` from Utils; annotated `txMustBurnCIP68UserAndRef` as reserved for future use
 
 
 ## 0.3.0.0 -- 2026-02-15

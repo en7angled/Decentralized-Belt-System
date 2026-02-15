@@ -7,7 +7,7 @@ import Data.Text.IO qualified
 import GeniusYield.TxBuilder.Class (enclosingSlotFromTime', slotToBeginTime)
 import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import GeniusYield.TxBuilder.Query.Class (GYTxQueryMonad)
-import GeniusYield.Types (Ada, GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYPaymentKeyHash, GYSlot, GYTokenName, GYTxOutRef, GYUTxO, GYUTxOs, GYValue, foldMapUTxOs, fromValue, paymentKeyHash, txOutRefToPlutus, utxoOutDatum, utxoValue, valueToPlutus)
+import GeniusYield.Types (GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYPaymentKeyHash, GYSlot, GYTokenName, GYTxOutRef, GYUTxO, GYValue, paymentKeyHash, txOutRefToPlutus, utxoOutDatum, utxoValue, valueToPlutus)
 import GeniusYield.Types.Address (addressFromPaymentKeyHash)
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
@@ -29,12 +29,6 @@ import Utils
 -- * Utilities
 
 ------------------------------------------------------------------------------------------------
-
-getAdaBalance :: GYUTxOs -> Ada
-getAdaBalance = fromValue . getValueBalance
-
-getValueBalance :: GYUTxOs -> Value
-getValueBalance = valueToPlutus . foldMapUTxOs utxoValue
 
 -- | Extract the payment key hash from an extended payment signing key.
 pkhFromExtendedSkey :: GYExtendedPaymentSigningKey -> GYPaymentKeyHash
