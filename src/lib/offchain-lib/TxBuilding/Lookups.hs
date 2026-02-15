@@ -65,7 +65,8 @@ getRankStateDataAndValue rankRefAC = do
 
 getProfileRanks :: (GYTxQueryMonad m) => GYAssetClass -> m [OnchainRank]
 getProfileRanks profileRef = do
-  (CIP68Datum _metadata _version profile, _profileValue) <- getProfileStateDataAndValue profileRef
+  (profileDatum, _profileValue) <- getProfileStateDataAndValue profileRef
+  let profile = extra profileDatum
   case Onchain.profileType profile of
     Onchain.Organization -> throwError (GYApplicationException WrongProfileType)
     Onchain.Practitioner -> do
