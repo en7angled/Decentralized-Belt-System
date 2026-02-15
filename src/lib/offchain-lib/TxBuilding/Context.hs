@@ -50,10 +50,14 @@ data ProviderCtx = ProviderCtx
     ctxProviders :: !GYProviders
   }
 
+-- | Extract the network ID from a 'ProviderCtx'.
+getNetworkId :: ProviderCtx -> GYNetworkId
+getNetworkId = cfgNetworkId . ctxCoreCfg
+
 -- | To run for simple queries, the one which don't requiring building for transaction skeleton.
 runQuery :: ProviderCtx -> GYTxQueryMonadIO a -> IO a
 runQuery ctx q = do
-  let nid = cfgNetworkId $ ctxCoreCfg ctx
+  let nid = getNetworkId ctx
       providers = ctxProviders ctx
   runGYTxQueryMonadIO nid providers q
 
@@ -69,7 +73,7 @@ runTx' ::
   GYTxBuilderMonadIO (GYTxSkeleton v) ->
   IO GYTxBody
 runTx' ctx addrs addr collateral skeleton = do
-  let nid = cfgNetworkId $ ctxCoreCfg ctx
+  let nid = getNetworkId ctx
       providers = ctxProviders ctx
   runGYTxBuilderMonadIO
     nid
@@ -98,7 +102,7 @@ runTx ::
   GYTxBuilderMonadIO (GYTxSkeleton 'PlutusV3, Maybe GYAssetClass) ->
   IO (GYTxBody, Maybe GYAssetClass)
 runTx ctx addrs addr collateral skeleton = do
-  let nid = cfgNetworkId $ ctxCoreCfg ctx
+  let nid = getNetworkId ctx
       providers = ctxProviders ctx
 
   runGYTxBuilderMonadIO

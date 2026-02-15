@@ -15,6 +15,7 @@
 - `getFeeSkeleton` now uses `txIsPayingValueToAddress` instead of manual output construction
 - `mintOracleNFTAndLockDatum` and `mintTestOracleNFT` now use `txMustLockStateWithInlineDatumAndValue` instead of manual output construction
 - `queryOracleParams` now uses `getUtxoWithTokenAtAddresses` and `getInlineDatumAndValue` instead of manual UTxO filtering and datum parsing
+- Added `getNetworkId :: ProviderCtx -> GYNetworkId` helper; replaced 7+ occurrences of `cfgNetworkId . ctxCoreCfg`
 
 
 ## 0.3.0.0 -- 2026-02-15

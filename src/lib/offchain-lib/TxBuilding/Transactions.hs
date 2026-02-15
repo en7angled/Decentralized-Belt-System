@@ -7,7 +7,6 @@ import Cardano.Api qualified (Key (getVerificationKey), castVerificationKey)
 import Control.Monad (when)
 import Control.Monad.Reader
 import Data.Text
-import GeniusYield.GYConfig
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.Protocol.Types (OracleParams (..))
@@ -74,7 +73,7 @@ interactionToHexEncodedCBOR = (txToHex <$>) . interactionToUnsignedTx
 
 addressFromSkey :: ProviderCtx -> GYExtendedPaymentSigningKey -> GYAddress
 addressFromSkey pCtx skey =
-  let nid = (cfgNetworkId . ctxCoreCfg) pCtx
+  let nid = getNetworkId pCtx
    in addressFromPaymentSigningKey nid skey
 
 pkhFromSkey :: GYExtendedPaymentSigningKey -> GYPaymentKeyHash
@@ -154,7 +153,7 @@ deployReferenceScripts providerCtx skey = do
 -- | Mint the oracle NFT using a one-shot policy and lock the initial oracle datum.
 mintOracleNFTAndLockDatum :: ProviderCtx -> GYExtendedPaymentSigningKey -> GYPaymentKeyHash -> IO GYAssetClass
 mintOracleNFTAndLockDatum providerCtx skey adminPKH = do
-  let nid = cfgNetworkId $ ctxCoreCfg providerCtx
+  let nid = getNetworkId providerCtx
   let my_addr = addressFromSkey providerCtx skey
   let providers = ctxProviders providerCtx
 

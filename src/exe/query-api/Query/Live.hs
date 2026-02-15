@@ -9,7 +9,6 @@ import Data.Ord (Down (..))
 import Data.Text qualified as Text
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
-import GeniusYield.GYConfig (GYCoreConfig (..))
 import DomainTypes.Core.BJJ (BJJBelt)
 import Query.Common
 import QueryAppMonad (QueryAppContext (..))
@@ -30,12 +29,12 @@ getOrganizationProfile profileRefAC = do
 getProfilesCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe ProfileType -> m Int
 getProfilesCount _ = do
   providerCtx <- asks providerContext
-  liftIO $ runQuery providerCtx $ getAllProfilesCount (cfgNetworkId . ctxCoreCfg $ providerCtx)
+  liftIO $ runQuery providerCtx $ getAllProfilesCount (getNetworkId providerCtx)
 
 getProfiles :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [Profile]
 getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
   providerCtx <- asks providerContext
-  allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (cfgNetworkId . ctxCoreCfg $ providerCtx))
+  allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (getNetworkId providerCtx))
   return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyProfileFilter maybeProfileFilter allProfiles
   where
     applyOrdering Nothing profiles = profiles
@@ -69,7 +68,7 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
 getPromotions :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe PromotionFilter -> Maybe (PromotionsOrderBy, SortOrder) -> m [Promotion]
 getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
   providerCtx <- asks providerContext
-  allPromotions <- liftIO $ runQuery providerCtx (getAllPromotions (cfgNetworkId . ctxCoreCfg $ providerCtx))
+  allPromotions <- liftIO $ runQuery providerCtx (getAllPromotions (getNetworkId providerCtx))
   return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyPromotionFilter maybePromotionFilter allPromotions
   where
     applyOrdering Nothing promotions = promotions
@@ -113,7 +112,7 @@ getPromotionsCount maybePromotionFilter = Prelude.length <$> getPromotions Nothi
 getRanks :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe RankFilter -> Maybe (RanksOrderBy, SortOrder) -> m [Rank]
 getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
   providerCtx <- asks providerContext
-  allRanks <- liftIO $ runQuery providerCtx (getAllRanks (cfgNetworkId . ctxCoreCfg $ providerCtx))
+  allRanks <- liftIO $ runQuery providerCtx (getAllRanks (getNetworkId providerCtx))
   return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyRankFilter maybeRankFilter allRanks
   where
     applyOrdering Nothing ranks = ranks
