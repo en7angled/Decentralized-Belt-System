@@ -1,6 +1,6 @@
 module TxBuilding.Operations where
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Monad.Reader.Class
 import Data.Maybe
 import DomainTypes.Core.Actions (AdminActionType (..))
@@ -17,7 +17,7 @@ import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import Onchain.RanksValidator (RanksRedeemer (..))
 import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
-import TxBuilding.Exceptions (ProfileException (..))
+import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue, queryOracleParams)
 import TxBuilding.Skeletons
 import TxBuilding.Utils (txOutRefToV3Plutus)
@@ -34,11 +34,15 @@ getProtocolParamsFromCtx ctx =
   mkProtocolParams (assetClassToPlutus $ oracleNFTAssetClass ctx)
 
 -- | Build a skeleton component that adds the oracle UTxO as a reference input.
+-- Also checks whether the protocol is paused and throws 'ProtocolPaused' if so.
+-- Admin operations ('updateOracleTX') bypass this function and remain unaffected.
 getOracleRefInputSkeleton ::
   (GYTxQueryMonad m, MonadReader DeployedScriptsContext m) =>
   m (GYTxSkeleton 'PlutusV3, OracleParams)
 getOracleRefInputSkeleton = do
   (oracleParams, oracleRef, _oracleValue) <- queryOracleParams
+  when (opPaused oracleParams) $
+    throwError (GYApplicationException ProtocolPaused)
   return (mustHaveRefInput oracleRef, oracleParams)
 
 -- | Build a skeleton component that pays a fee if fees are configured.

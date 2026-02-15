@@ -5,6 +5,7 @@
 
 module Query.Projected where
 
+import Control.Exception (throwIO)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (for_)
 import Control.Monad.Reader.Class
@@ -18,6 +19,7 @@ import DomainTypes.Core.BJJ (BJJBelt)
 import Query.Common qualified as C
 import QueryAppMonad
 import Storage
+import TxBuilding.Exceptions (TxBuildingException (..))
 import Types
 
 
@@ -27,7 +29,7 @@ getPractitionerProfile profileRefAC = do
   liftIO $ runSqlPool (do
     mProf <- P.getBy (UniqueProfileProjection profileRefAC)
     case mProf of
-      Nothing -> liftIO $ ioError (userError "Practitioner profile not found")
+      Nothing -> liftIO $ throwIO ProfileNotFound
       Just (Entity _ prof) -> do
         ranksAsc <- select $ do
           rp <- from $ table @RankProjection
@@ -44,7 +46,7 @@ getPractitionerProfile profileRefAC = do
                 }
             domainRanks = Prelude.map (toRank . entityVal) ranksAsc
         case Prelude.reverse domainRanks of
-          [] -> liftIO $ ioError (userError "No ranks found for practitioner")
+          [] -> liftIO $ throwIO RankListEmpty
           (current : restRev) ->
             return
               PractitionerProfileInformation
@@ -63,7 +65,7 @@ getOrganizationProfile profileRefAC = do
   liftIO $ runSqlPool (do
     mProf <- P.getBy (UniqueProfileProjection profileRefAC)
     case mProf of
-      Nothing -> liftIO $ ioError (userError "Organization profile not found")
+      Nothing -> liftIO $ throwIO ProfileNotFound
       Just (Entity _ prof) ->
         return
           OrganizationProfileInformation

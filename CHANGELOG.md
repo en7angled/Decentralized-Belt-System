@@ -1,6 +1,21 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.2 -- 2026-02-15
+
+### TxBuilding Exception Refactor & HTTP Status Mapping
+
+- **Exceptions**: Renamed `ProfileException` to `TxBuildingException`; expanded to cover all offchain tx-building failures (RankListEmpty, PromotionNotFound, OracleDatumInvalid, DeployedScriptsNotReady, MultipleUtxosFound, DatumParseError)
+- **HTTP Status Mapping**: Added `txBuildingExceptionToHttpStatus` to map exceptions to 404 (not found), 503 (service unavailable / protocol paused), 400 (bad request)
+- **Interaction API**: `runWithTxErrorHandling` and `checkDeployedScriptsAreReady` now cast `GYApplicationException` to `TxBuildingException` and return appropriate HTTP status codes instead of always 400
+- **Operations**: Added `ensureDeployedScriptsAreReady` (throws `DeployedScriptsNotReady`); interaction API probe now uses it for structured error handling
+- **Operations**: `getOracleRefInputSkeleton` now checks `opPaused` and throws `ProtocolPaused` before building profile transactions
+- **Query.Projected**: Use `throwIO ProfileNotFound` / `throwIO RankListEmpty` instead of `ioError (userError ...)` for structured exceptions
+- **Semantic fixes**: Use `DatumParseError` (not `ProfileNotFound`) when UTxO exists but datum parsing fails in Lookups and Skeletons
+- **Admin CLI**: Removed redundant parens around `setFeesParser`
+- **Documentation**: Added `docs/DeveloperGuide.md` — comprehensive guide for adding new concepts (onchain types, validators, offchain ops, API, chain sync, tests)
+
+
 ## 0.3.1.1 -- 2026-02-15
 
 ### Consistency: use existing wrappers and abstractions

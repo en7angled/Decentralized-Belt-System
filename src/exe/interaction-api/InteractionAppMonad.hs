@@ -10,19 +10,21 @@
 module InteractionAppMonad where
 
 import Constants qualified
-import Control.Exception
+import Control.Exception (displayException, try)
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Text hiding (elem, reverse, take)
 import Data.Time (defaultTimeLocale, getCurrentTime)
 import Data.Time.Format (formatTime)
-import GeniusYield.TxBuilder.Errors (GYTxMonadException)
+import Data.Typeable (cast)
+import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import GeniusYield.Types
 import Servant
 import TxBuilding.Context
+import TxBuilding.Exceptions (txBuildingExceptionToHttpStatus)
 import TxBuilding.Interactions (Interaction)
-import TxBuilding.Operations (verifyDeployedScriptsAreReady)
+import TxBuilding.Operations (ensureDeployedScriptsAreReady)
 import TxBuilding.Transactions (interactionToHexEncodedCBOR, submitTx)
 import WebAPI.Auth (AuthContext)
 import WebAPI.ServiceProbe (ServiceProbeStatus (..))
@@ -53,14 +55,30 @@ instance MonadReader InteractionAppContext InteractionAppMonad where
   local :: (InteractionAppContext -> InteractionAppContext) -> InteractionAppMonad a -> InteractionAppMonad a
   local f (InteractionAppMonad app) = InteractionAppMonad (local f app)
 
+-- | Convert an HTTP status code to the corresponding Servant error.
+mkServantErr :: Int -> String -> ServerError
+mkServantErr 404 msg = err404 {errBody = BL8.pack msg}
+mkServantErr 503 msg = err503 {errBody = BL8.pack msg}
+mkServantErr _ msg = err400 {errBody = BL8.pack msg}
+
 -- | Run an IO action in the TxBuilding context with standardized error handling.
+-- Maps 'TxBuildingException' constructors to appropriate HTTP status codes
+-- using the centralized 'txBuildingExceptionToHttpStatus' mapping.
 runWithTxErrorHandling :: IO a -> InteractionAppMonad a
 runWithTxErrorHandling action = InteractionAppMonad $ do
   res <- liftIO $ try action
   case res of
-    Left (e :: GYTxMonadException) -> do
-      liftIO $ putStrLn $ "GYTxMonadException: \n" <> show e
-      throwError err400 {errBody = BL8.pack (show e)}
+    Left ex ->
+      case ex of
+        GYApplicationException appE
+          | Just txEx <- cast appE -> do
+              let status = txBuildingExceptionToHttpStatus txEx
+              let msg = displayException txEx
+              liftIO $ putStrLn $ "TxBuildingException (" <> show status <> "): " <> msg
+              throwError $ mkServantErr status msg
+        _ -> do
+          liftIO $ putStrLn $ "GYTxMonadException: \n" <> show ex
+          throwError err400 {errBody = BL8.pack (show ex)}
     Right ok -> pure ok
 
 buildInteractionApp :: Interaction -> InteractionAppMonad String
@@ -77,28 +95,26 @@ checkDeployedScriptsAreReady :: InteractionAppMonad (ServiceProbeStatus Text)
 checkDeployedScriptsAreReady = do
   InteractionAppMonad $ do
     InteractionAppContext {..} <- ask
-    let queryDeploydScripts = runReaderT verifyDeployedScriptsAreReady (deployedScriptsCtx txBuildingContext)
-    res <- liftIO $ runQuery (providerCtx txBuildingContext) queryDeploydScripts
+    let queryScriptsReady = runReaderT ensureDeployedScriptsAreReady (deployedScriptsCtx txBuildingContext)
+    res <- liftIO $ try $ runQuery (providerCtx txBuildingContext) queryScriptsReady
     now <- liftIO getCurrentTime
-    if res
-      then do
+    case res of
+      Left ex ->
+        case ex of
+          GYApplicationException appE
+            | Just txEx <- cast appE -> do
+                let status = txBuildingExceptionToHttpStatus txEx
+                let msg = displayException txEx
+                liftIO $ putStrLn $ "checkDeployedScriptsAreReady TxBuildingException (" <> show status <> "): " <> msg
+                throwError $ mkServantErr status msg
+          _ -> do
+            liftIO $ putStrLn $ "checkDeployedScriptsAreReady GYTxMonadException: " <> show ex
+            throwError err400 {errBody = BL8.pack (show ex)}
+      Right () ->
         return $
           ServiceProbeStatus
             { status = "ready" :: Text,
               service = "interaction-api" :: Text,
               version = pack Constants.appVersion,
               timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
-            }
-      else
-        throwError
-          err503
-            { errBody =
-                BL8.pack $
-                  show
-                    ServiceProbeStatus
-                      { status = "readiness timeout, deployed scripts are not found" :: Text,
-                        service = "interaction-api",
-                        version = pack Constants.appVersion,
-                        timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
-                      }
             }

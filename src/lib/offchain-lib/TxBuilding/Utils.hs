@@ -21,7 +21,7 @@ import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Tx qualified as V3
 import System.Directory.Extra
-import TxBuilding.Exceptions (ProfileException (..))
+import TxBuilding.Exceptions (TxBuildingException (..))
 import Utils
 
 ------------------------------------------------------------------------------------------------

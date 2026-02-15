@@ -268,7 +268,7 @@ commandParser =
         <> command
           "set-fees"
           ( info
-              (setFeesParser)
+              setFeesParser
               ( progDesc "Set or clear fee configuration in the oracle"
               )
           )

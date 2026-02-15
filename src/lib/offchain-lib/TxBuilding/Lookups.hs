@@ -17,7 +17,7 @@ import Onchain.Protocol.Types (OracleParams)
 import PlutusLedgerApi.V1.Value
 import PlutusTx (fromBuiltinData)
 import TxBuilding.Context (DeployedScriptsContext (..))
-import TxBuilding.Exceptions (ProfileException (..))
+import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Functors
 import TxBuilding.Utils
 import TxBuilding.Validators (oracleValidatorGY, profilesValidatorHashGY, ranksValidatorHashGY)
@@ -54,7 +54,7 @@ getProfileStateDataAndValue profileRefAC = do
   profileStateUTxO <- getUTxOWithNFT profileRefAC
   case profileAndValueFromUTxO profileStateUTxO of
     Just (profile, value) -> return (profile, value)
-    Nothing -> throwError (GYApplicationException ProfileNotFound)
+    Nothing -> throwError (GYApplicationException DatumParseError)
 
 getRankStateDataAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (OnchainRank, Value)
 getRankStateDataAndValue rankRefAC = do

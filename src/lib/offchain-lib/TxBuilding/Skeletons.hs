@@ -7,7 +7,7 @@ import Onchain.CIP68 (deriveUserFromRefTN, generateRefAndUserTN)
 import Onchain.Utils (nameFromTxOutRef)
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import TxBuilding.Exceptions (ProfileException (..))
+import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Lookups (getUTxOWithNFT, getUtxoWithTokenAtAddresses)
 import TxBuilding.Utils
 
@@ -81,7 +81,7 @@ txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyVa
           }
   where
     gyGetInlineDatumAndValue' :: (MonadError GYTxMonadException m) => GYUTxO -> m (GYDatum, GYValue)
-    gyGetInlineDatumAndValue' utxo = maybe (throwError (GYApplicationException ProfileNotFound)) return $ getInlineDatumAndValue utxo
+    gyGetInlineDatumAndValue' utxo = maybe (throwError (GYApplicationException DatumParseError)) return $ getInlineDatumAndValue utxo
 
 -- | Build a spend skeleton for a UTxO whose ref and datum are already known (e.g. from a prior query).
 -- Unlike 'txMustSpendStateFromRefScriptWithRedeemer', this does not look up the UTxO by NFT.
