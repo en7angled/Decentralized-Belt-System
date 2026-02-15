@@ -14,6 +14,7 @@
 - Added `txMustSpendFromRefScriptWithKnownDatum` skeleton helper for spending UTxOs with pre-resolved refs/datums; used in `updateOracleTX`
 - `getFeeSkeleton` now uses `txIsPayingValueToAddress` instead of manual output construction
 - `mintOracleNFTAndLockDatum` and `mintTestOracleNFT` now use `txMustLockStateWithInlineDatumAndValue` instead of manual output construction
+- `queryOracleParams` now uses `getUtxoWithTokenAtAddresses` and `getInlineDatumAndValue` instead of manual UTxO filtering and datum parsing
 
 
 ## 0.3.0.0 -- 2026-02-15

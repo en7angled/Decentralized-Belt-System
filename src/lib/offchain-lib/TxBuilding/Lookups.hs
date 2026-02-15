@@ -6,7 +6,7 @@ import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.TxBuilder
-import GeniusYield.Types (GYNetworkId, GYOutDatum (..), GYTxOutRef, GYUTxO, filterUTxOs, utxoOutDatum, utxoRef, utxoValue, utxosToList)
+import GeniusYield.Types (GYNetworkId, GYTxOutRef, GYUTxO, filterUTxOs, utxoRef, utxoValue, utxosToList)
 import GeniusYield.Types.Address
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Value
@@ -172,16 +172,10 @@ queryOracleParams ::
 queryOracleParams = do
   oracleAC <- asks oracleNFTAssetClass
   oracleAddr <- scriptAddress oracleValidatorGY
-  utxos <- utxosAtAddresses [oracleAddr]
-  let oracleUtxos = filterUTxOs (\utxo -> valueAssetPresent (utxoValue utxo) oracleAC) utxos
-  case utxosToList oracleUtxos of
-    [utxo] -> case oracleParamsFromUTxO utxo of
-      Just params -> return (params, utxoRef utxo, utxoValue utxo)
-      Nothing -> throwError (GYApplicationException OracleNotFound)
-    [] -> throwError (GYApplicationException OracleNotFound)
-    _ -> throwError (GYApplicationException OracleNotFound)
-  where
-    oracleParamsFromUTxO :: GYUTxO -> Maybe OracleParams
-    oracleParamsFromUTxO utxo = case utxoOutDatum utxo of
-      GYOutDatumInline d -> fromBuiltinData (datumToPlutus' d)
-      _ -> Nothing
+  utxo <- getUtxoWithTokenAtAddresses oracleAC [oracleAddr]
+  case getInlineDatumAndValue utxo of
+    Just (gyDatum, _) ->
+      case fromBuiltinData (datumToPlutus' gyDatum) of
+        Just params -> return (params, utxoRef utxo, utxoValue utxo)
+        Nothing -> throwError (GYApplicationException OracleNotFound)
+    Nothing -> throwError (GYApplicationException OracleNotFound)
