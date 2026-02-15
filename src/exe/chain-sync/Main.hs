@@ -15,6 +15,7 @@ import ChainSyncServer (startProbeServer)
 import ChainsyncAPI (ChainSyncState (..), SyncMetrics (..))
 import Constants
 import Control.Concurrent.Extra
+import GeniusYield.GYConfig (GYCoreConfig (..))
 import Control.Monad.Extra
 import Control.Monad.IO.Class
 import Control.Monad.Logger (runStdoutLoggingT)
@@ -73,6 +74,9 @@ main = do
 
   -- Chain sync loop
 
+  atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration failed") <$> decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
+  let networkId = cfgNetworkId atlasConfig
+
   deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
   let (mpHash, _mpRef) = mintingPolicyHashAndRef deployedScriptsContext
 
@@ -112,7 +116,7 @@ main = do
       Behind _isWayBehind -> do
         liftIO $ putStrLn "Chain is behind"
         liftIO $ putStrLn "Fetching matches"
-        fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
+        fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
         blockchainTip' <- getBlockchainTip kupoUrl
         updateLocalTip pool blockchainTip'
       Ahead -> do
