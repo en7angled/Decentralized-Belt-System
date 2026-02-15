@@ -60,7 +60,7 @@ gyDeriveUserFromRefTN gyProfileRefTN = tokenNameFromPlutus' $ deriveUserFromRefT
 
 ------------------------------------------------------------------------------------------------
 
-txIsPayingValueToAddress :: (GYTxUserQueryMonad m) => GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
+txIsPayingValueToAddress :: (GYTxQueryMonad m) => GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
 txIsPayingValueToAddress recipient gyValue = do
   return $
     mustHaveOutput
@@ -71,7 +71,7 @@ txIsPayingValueToAddress recipient gyValue = do
           gyTxOutRefS = Nothing
         }
 
-txIsPayingValueToAddressWithInlineDatum :: (GYTxUserQueryMonad m) => GYDatum -> GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
+txIsPayingValueToAddressWithInlineDatum :: (GYTxQueryMonad m) => GYDatum -> GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
 txIsPayingValueToAddressWithInlineDatum gyDatum recipient gyValue = do
   return $
     mustHaveOutput
@@ -142,7 +142,7 @@ txMustSpendFromAddress tokenId addrs = do
             gyTxInWitness = GYTxInWitnessKey
           }
 
-txMustLockStateWithInlineDatumAndValue :: (GYTxUserQueryMonad m, ToData a) => GYScript 'PlutusV3 -> a -> GYValue -> m (GYTxSkeleton 'PlutusV3)
+txMustLockStateWithInlineDatumAndValue :: (GYTxQueryMonad m, ToData a) => GYScript 'PlutusV3 -> a -> GYValue -> m (GYTxSkeleton 'PlutusV3)
 txMustLockStateWithInlineDatumAndValue validator todata value = do
   validatorAddressGY <- scriptAddress validator
 

@@ -1,6 +1,13 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.0 -- 2026-02-15
+
+### Codebase Consistency & Cleanup
+
+- Relaxed monad constraints on `txMustLockStateWithInlineDatumAndValue`, `txIsPayingValueToAddress`, and `txIsPayingValueToAddressWithInlineDatum` from `GYTxUserQueryMonad` to `GYTxQueryMonad` (they only use `scriptAddress`/`return`/`mustHaveOutput`)
+
+
 ## 0.3.0.0 -- 2026-02-15
 
 ### Oracle Hub for Parameters
