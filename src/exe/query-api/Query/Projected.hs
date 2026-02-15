@@ -6,6 +6,7 @@
 module Query.Projected where
 
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.Foldable (for_)
 import Control.Monad.Reader.Class
 import Data.MultiSet (fromList, toOccurList)
 import Data.Text qualified as T
@@ -19,9 +20,6 @@ import QueryAppMonad
 import Storage
 import Types
 
-whenJust :: Maybe a -> (a -> SqlQuery ()) -> SqlQuery ()
-whenJust Nothing _ = pure ()
-whenJust (Just a) f = f a
 
 getPractitionerProfile :: (MonadIO m, MonadReader QueryAppContext m) => ProfileRefAC -> m PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
@@ -99,10 +97,10 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
       case maybeProfileFilter of
         Nothing -> pure ()
         Just C.ProfileFilter {..} -> do
-          whenJust profileFilterId (\ids -> where_ (pp ^. ProfileProjectionProfileId `in_` valList ids))
-          whenJust profileFilterType (\pt -> where_ (pp ^. ProfileProjectionProfileType ==. val pt))
-          whenJust profileFilterName (\nameSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileName) `like` val (T.pack "%" <> T.toLower nameSubstring <> T.pack "%")))
-          whenJust profileFilterDescription (\descriptionSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileDescription) `like` val (T.pack "%" <> T.toLower descriptionSubstring <> T.pack "%")))
+          for_ profileFilterId (\ids -> where_ (pp ^. ProfileProjectionProfileId `in_` valList ids))
+          for_ profileFilterType (\pt -> where_ (pp ^. ProfileProjectionProfileType ==. val pt))
+          for_ profileFilterName (\nameSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileName) `like` val (T.pack "%" <> T.toLower nameSubstring <> T.pack "%")))
+          for_ profileFilterDescription (\descriptionSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileDescription) `like` val (T.pack "%" <> T.toLower descriptionSubstring <> T.pack "%")))
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
@@ -138,10 +136,10 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
       case maybePromotionFilter of
         Nothing -> pure ()
         Just C.PromotionFilter {..} -> do
-          whenJust promotionFilterId (\ids -> where_ (pr ^. PromotionProjectionPromotionId `in_` valList ids))
-          whenJust promotionFilterBelt (\belts -> where_ (pr ^. PromotionProjectionPromotionBelt `in_` valList belts))
-          whenJust promotionFilterAchievedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAchievedByProfileId `in_` valList ids))
-          whenJust promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
+          for_ promotionFilterId (\ids -> where_ (pr ^. PromotionProjectionPromotionId `in_` valList ids))
+          for_ promotionFilterBelt (\belts -> where_ (pr ^. PromotionProjectionPromotionBelt `in_` valList belts))
+          for_ promotionFilterAchievedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAchievedByProfileId `in_` valList ids))
+          for_ promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
           case promotionFilterAchievementDateInterval of
             (Nothing, Nothing) -> pure ()
             (Just f, Nothing) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f)
@@ -183,10 +181,10 @@ getPromotionsCount maybePromotionFilter = do
       case maybePromotionFilter of
         Nothing -> pure countRows
         Just C.PromotionFilter {..} -> do
-          whenJust promotionFilterId (\ids -> where_ (pr ^. PromotionProjectionPromotionId `in_` valList ids))
-          whenJust promotionFilterBelt (\belts -> where_ (pr ^. PromotionProjectionPromotionBelt `in_` valList belts))
-          whenJust promotionFilterAchievedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAchievedByProfileId `in_` valList ids))
-          whenJust promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
+          for_ promotionFilterId (\ids -> where_ (pr ^. PromotionProjectionPromotionId `in_` valList ids))
+          for_ promotionFilterBelt (\belts -> where_ (pr ^. PromotionProjectionPromotionBelt `in_` valList belts))
+          for_ promotionFilterAchievedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAchievedByProfileId `in_` valList ids))
+          for_ promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
           case promotionFilterAchievementDateInterval of
             (Nothing, Nothing) -> pure ()
             (Just f, Nothing) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f)
@@ -205,10 +203,10 @@ getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
       case maybeRankFilter of
         Nothing -> pure ()
         Just C.RankFilter {..} -> do
-          whenJust rankFilterId (\ids -> where_ (rp ^. RankProjectionRankId `in_` valList ids))
-          whenJust rankFilterBelt (\belts -> where_ (rp ^. RankProjectionRankBelt `in_` valList belts))
-          whenJust rankFilterAchievedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAchievedByProfileId `in_` valList ids))
-          whenJust rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
+          for_ rankFilterId (\ids -> where_ (rp ^. RankProjectionRankId `in_` valList ids))
+          for_ rankFilterBelt (\belts -> where_ (rp ^. RankProjectionRankBelt `in_` valList belts))
+          for_ rankFilterAchievedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAchievedByProfileId `in_` valList ids))
+          for_ rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
           case rankFilterAchievementDateInterval of
             (Nothing, Nothing) -> pure ()
             (Just f, Nothing) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f)
@@ -250,10 +248,10 @@ getRanksCount maybeRankFilter = do
       case maybeRankFilter of
         Nothing -> pure countRows
         Just C.RankFilter {..} -> do
-          whenJust rankFilterId (\ids -> where_ (rp ^. RankProjectionRankId `in_` valList ids))
-          whenJust rankFilterBelt (\belts -> where_ (rp ^. RankProjectionRankBelt `in_` valList belts))
-          whenJust rankFilterAchievedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAchievedByProfileId `in_` valList ids))
-          whenJust rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
+          for_ rankFilterId (\ids -> where_ (rp ^. RankProjectionRankId `in_` valList ids))
+          for_ rankFilterBelt (\belts -> where_ (rp ^. RankProjectionRankBelt `in_` valList belts))
+          for_ rankFilterAchievedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAchievedByProfileId `in_` valList ids))
+          for_ rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
           case rankFilterAchievementDateInterval of
             (Nothing, Nothing) -> pure ()
             (Just f, Nothing) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f)

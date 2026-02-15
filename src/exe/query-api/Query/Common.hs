@@ -39,10 +39,6 @@ data RankFilter = RankFilter
     rankFilterAchievementDateInterval :: (Maybe GYTime, Maybe GYTime)
   }
 
-whenJust :: Maybe a -> (a -> b) -> b -> b
-whenJust Nothing _ def = def
-whenJust (Just a) f _ = f a
-
 -- Abstraction for retrieving the projection DB connection info from an environment
 class HasProjectionDB r where
   getProjectionDbPath :: r -> Text
