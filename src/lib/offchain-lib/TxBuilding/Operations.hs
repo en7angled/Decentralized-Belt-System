@@ -431,7 +431,6 @@ updateOracleTX adminAction = do
   (currentParams, oracleRef, oracleValue) <- queryOracleParams
   let ovRef = getOracleValidatorRef ctx
   let gyRedeemer = redeemerFromPlutusData ()
-  oracleAddr <- scriptAddress oracleValidatorGY
 
   -- Apply the action to derive the new oracle params
   let newParams = applyAdminAction adminAction currentParams
@@ -449,14 +448,7 @@ updateOracleTX adminAction = do
             }
 
   -- Re-lock oracle with new datum and same value
-  let lockOracle =
-        mustHaveOutput
-          GYTxOut
-            { gyTxOutAddress = oracleAddr,
-              gyTxOutDatum = Just (datumFromPlutusData newParams, GYTxOutUseInlineDatum),
-              gyTxOutValue = oracleValue,
-              gyTxOutRefS = Nothing
-            }
+  lockOracle <- txMustLockStateWithInlineDatumAndValue oracleValidatorGY newParams oracleValue
 
   -- Require admin signature (on-chain validator checks txInfoSignatories)
   let requireAdminSig = mustBeSignedBy gyAdminPkh
