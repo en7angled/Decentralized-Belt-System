@@ -120,6 +120,16 @@ txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyVa
     gyGetInlineDatumAndValue' :: (MonadError GYTxMonadException m) => GYUTxO -> m (GYDatum, GYValue)
     gyGetInlineDatumAndValue' utxo = maybe (throwError (GYApplicationException ProfileNotFound)) return $ getInlineDatumAndValue utxo
 
+-- | Build a spend skeleton for a UTxO whose ref and datum are already known (e.g. from a prior query).
+-- Unlike 'txMustSpendStateFromRefScriptWithRedeemer', this does not look up the UTxO by NFT.
+txMustSpendFromRefScriptWithKnownDatum :: GYTxOutRef -> GYTxOutRef -> GYDatum -> GYRedeemer -> GYScript 'PlutusV3 -> GYTxSkeleton 'PlutusV3
+txMustSpendFromRefScriptWithKnownDatum refScript utxoRef' gyDatum gyRedeemer gyValidator =
+  mustHaveInput
+    GYTxIn
+      { gyTxInTxOutRef = utxoRef',
+        gyTxInWitness = GYTxInWitnessScript (GYInReference refScript $ validatorToScript gyValidator) (Just gyDatum) gyRedeemer
+      }
+
 txMustHaveUTxOAsRefInput :: (GYTxUserQueryMonad m) => GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustHaveUTxOAsRefInput gyAC = do
   utxo <- getUTxOWithNFT gyAC

@@ -440,12 +440,7 @@ updateOracleTX adminAction = do
 
   -- Spend the current oracle UTxO
   let currentDatum = datumFromPlutusData currentParams
-  let spendOracle =
-        mustHaveInput
-          GYTxIn
-            { gyTxInTxOutRef = oracleRef,
-              gyTxInWitness = GYTxInWitnessScript (GYInReference ovRef $ validatorToScript oracleValidatorGY) (Just currentDatum) gyRedeemer
-            }
+  let spendOracle = txMustSpendFromRefScriptWithKnownDatum ovRef oracleRef currentDatum gyRedeemer oracleValidatorGY
 
   -- Re-lock oracle with new datum and same value
   lockOracle <- txMustLockStateWithInlineDatumAndValue oracleValidatorGY newParams oracleValue

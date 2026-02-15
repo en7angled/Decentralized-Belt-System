@@ -11,6 +11,7 @@
 - Admin CLI now uses `decodeConfigEnvOrFile` for config loading, supporting `DEPLOYED_VALIDATORS_CONFIG` and `ATLAS_CORE_CONFIG` env vars (consistent with all other executables)
 - Chain sync service now reads network ID from `GYCoreConfig` instead of hardcoding `GYTestnetPreview`
 - `updateOracleTX` now uses `txMustLockStateWithInlineDatumAndValue` for re-locking oracle datum (consistent with all other operations)
+- Added `txMustSpendFromRefScriptWithKnownDatum` skeleton helper for spending UTxOs with pre-resolved refs/datums; used in `updateOracleTX`
 
 
 ## 0.3.0.0 -- 2026-02-15
