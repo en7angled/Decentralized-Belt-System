@@ -20,3 +20,7 @@ defaultOracleValidatorFile = "docs/validators/oracle_validator.plutus"
 
 defaultBlueprintFile :: FilePath
 defaultBlueprintFile = "docs/bjj-belt-system-blueprint.json"
+
+-- | Application version used in service probe responses.
+appVersion :: String
+appVersion = "1.0.0"

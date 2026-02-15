@@ -9,6 +9,7 @@
 
 module InteractionAppMonad where
 
+import Constants qualified
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -85,7 +86,7 @@ checkDeployedScriptsAreReady = do
           ServiceProbeStatus
             { status = "ready" :: Text,
               service = "interaction-api" :: Text,
-              version = "1.0.0",
+              version = pack Constants.appVersion,
               timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
             }
       else
@@ -97,7 +98,7 @@ checkDeployedScriptsAreReady = do
                     ServiceProbeStatus
                       { status = "readiness timeout, deployed scripts are not found" :: Text,
                         service = "interaction-api",
-                        version = "1.0.0",
+                        version = pack Constants.appVersion,
                         timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
                       }
             }
