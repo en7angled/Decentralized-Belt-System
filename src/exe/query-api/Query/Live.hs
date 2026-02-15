@@ -19,7 +19,7 @@ import Types
 getPractitionerProfile :: (MonadReader QueryAppContext m, MonadIO m) => ProfileRefAC -> m PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
   providerCtx <- asks providerContext
-  liftIO $ runQuery providerCtx $ getPractiotionerInformation profileRefAC
+  liftIO $ runQuery providerCtx $ getPractitionerInformation profileRefAC
 
 getOrganizationProfile :: (MonadReader QueryAppContext m, MonadIO m) => ProfileRefAC -> m OrganizationProfileInformation
 getOrganizationProfile profileRefAC = do

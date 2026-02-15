@@ -1,6 +1,19 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.1 -- 2026-02-15
+
+### Consistency: use existing wrappers and abstractions
+
+- **Lookups**: Use `profileDatumToProfileData` from `TxBuilding.Functors` in `getPractitionerInformation` and `getOrganizationInformation` instead of inlining `metadataFieldsToProfileData . getMetadataFields`
+- **Lookups**: Renamed `getPractiotionerInformation` to `getPractitionerInformation`; updated call sites in `Query.Live` and `TestRuns`
+- **Lookups**: Added `getAllParsedDatumsAtValidator` and refactored `getAllOnchainValidRanks` and `getAllOnchainProfiles` to use it
+- **Operations**: Unified reader usage to `asks getX` in `createProfileWithRankTX`, `promoteProfileTX`, and `updateOracleTX` (removed `ctx <- ask` + `let x = getX ctx`)
+- **Operations**: Removed redundant `$` in single-argument `redeemerFromPlutusData` calls
+- **chain-sync**: Use imported `fromMaybe` instead of `Data.Maybe.fromMaybe` for config loading
+- **Storage**: Added generic `upsertByUnique` and refactored `putCursor`, `putKupoMatch`, `putRankProjection`, `putProfileProjection`, and `putPromotionProjection` to use it
+
+
 ## 0.3.1.0 -- 2026-02-15
 
 ### Codebase Consistency & Cleanup

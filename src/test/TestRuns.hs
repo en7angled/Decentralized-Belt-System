@@ -190,7 +190,7 @@ logTxBudget txBody = do
 
 logPractitionerProfileInformation :: (GYTxGameMonad m, HasCallStack) => User -> ProfileRefAC -> m ()
 logPractitionerProfileInformation user profileRefAC = asUser user $ do
-  profileInformation <- getPractiotionerInformation profileRefAC
+  profileInformation <- getPractitionerInformation profileRefAC
   gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ greenColorString $ "PRACTITIONER PROFILE INFORMATION: \n" <> show profileInformation
   return ()
 

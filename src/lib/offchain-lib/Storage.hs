@@ -101,17 +101,25 @@ PromotionProjection
 runMigrations :: (MonadIO m) => SqlPersistT m ()
 runMigrations = runMigration migrateAll
 
+-- | Upsert a record by its unique key: insert if absent, replace if present.
+upsertByUnique ::
+  (PersistEntity a, PersistEntityBackend a ~ SqlBackend, SafeToInsert a, MonadIO m) =>
+  (a -> Unique a) ->
+  a ->
+  SqlPersistT m ()
+upsertByUnique getUnique val = do
+  mExisting <- getBy (getUnique val)
+  case mExisting of
+    Nothing -> void (insert val)
+    Just (Entity key _) -> replace key val
+
 -- Fetch current cursor if exists
 getCursorValue :: (MonadIO m) => SqlPersistT m (Maybe ChainCursor)
 getCursorValue = fmap entityVal <$> getBy (UniqueCursor True)
 
 -- Upsert the singleton cursor
 putCursor :: (MonadIO m) => ChainCursor -> SqlPersistT m ()
-putCursor cur = do
-  mExisting <- getBy (UniqueCursor True)
-  case mExisting of
-    Nothing -> void (insert cur)
-    Just (Entity key _) -> replace key cur
+putCursor = upsertByUnique (const (UniqueCursor True))
 
 putMatchAndProjections :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
 putMatchAndProjections networkId km = do
@@ -138,10 +146,7 @@ putKupoMatch km = do
   let cSlot = slot_no (created_at km)
       cHash = header_hash (created_at km)
       ev = OnchainMatchEvent cSlot cHash km
-  mExisting <- getBy (UniqueKupoMatch cSlot cHash)
-  case mExisting of
-    Nothing -> void (insert ev)
-    Just (Entity key _) -> replace key ev
+  upsertByUnique (\e -> UniqueKupoMatch (onchainMatchEventCreatedSlot e) (onchainMatchEventCreatedHeader e)) ev
 
 putRankProjection :: (MonadIO m) => Integer -> Text -> Rank -> SqlPersistT m ()
 putRankProjection createdSlot createdHash r = do
@@ -156,10 +161,7 @@ putRankProjection createdSlot createdHash r = do
           (rankAwardedByProfileId r)
           (rankAchievementDate r)
           now
-  mExisting <- getBy (UniqueRankProjection (rankId r))
-  case mExisting of
-    Nothing -> void (insert ev)
-    Just (Entity key _) -> replace key ev
+  upsertByUnique (UniqueRankProjection . rankProjectionRankId) ev
 
 putProfileProjection :: (MonadIO m) => Integer -> Text -> Profile -> SqlPersistT m ()
 putProfileProjection createdSlot createdHash p = do
@@ -174,10 +176,7 @@ putProfileProjection createdSlot createdHash p = do
           (profileImageURI p)
           (profileType p)
           now
-  mExisting <- getBy (UniqueProfileProjection (profileId p))
-  case mExisting of
-    Nothing -> void (insert ev)
-    Just (Entity key _) -> replace key ev
+  upsertByUnique (UniqueProfileProjection . profileProjectionProfileId) ev
 
 putPromotionProjection :: (MonadIO m) => Integer -> Text -> Promotion -> SqlPersistT m ()
 putPromotionProjection createdSlot createdHash pr = do
@@ -192,10 +191,7 @@ putPromotionProjection createdSlot createdHash pr = do
           (promotionAwardedByProfileId pr)
           (promotionAchievementDate pr)
           now
-  mExisting <- getBy (UniquePromotionProjection (promotionId pr))
-  case mExisting of
-    Nothing -> void (insert ev)
-    Just (Entity key _) -> replace key ev
+  upsertByUnique (UniquePromotionProjection . promotionProjectionPromotionId) ev
 
 deletePromotionProjection :: (MonadIO m) => GYAssetClass -> SqlPersistT m ()
 deletePromotionProjection promotionId = do

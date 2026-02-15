@@ -6,11 +6,11 @@ import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.TxBuilder
-import GeniusYield.Types (GYNetworkId, GYTxOutRef, GYUTxO, filterUTxOs, utxoRef, utxoValue, utxosToList)
+import GeniusYield.Types (GYDatum, GYNetworkId, GYScriptHash, GYTxOutRef, GYUTxO, filterUTxOs, utxoRef, utxoValue, utxosToList)
 import GeniusYield.Types.Address
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Value
-import Onchain.CIP68 (CIP68Datum (..), getMetadataFields)
+import Onchain.CIP68 (CIP68Datum (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types (OracleParams)
@@ -35,7 +35,7 @@ getUtxoWithTokenAtAddresses nftAC addrs = do
   case utxosToList utxosWithNFT of
     [utxo] -> return utxo
     [] -> throwError (GYApplicationException ProfileNotFound)
-    _ -> throwError (GYApplicationException InvalidAssetClass)
+    _ -> throwError (GYApplicationException MultipleUtxosFound)
 
 getUTxOWithNFT :: (GYTxQueryMonad m) => GYAssetClass -> m GYUTxO
 getUTxOWithNFT gyAC = do
@@ -46,7 +46,7 @@ getUTxOWithNFT gyAC = do
       case utxosToList utxos of
         [utxo] -> return utxo
         [] -> throwError (GYApplicationException ProfileNotFound)
-        _ -> throwError (GYApplicationException InvalidAssetClass)
+        _ -> throwError (GYApplicationException MultipleUtxosFound)
 
 -- | Get profile state data and value from asset class
 getProfileStateDataAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (CIP68Datum OnchainProfile, Value)
@@ -85,11 +85,15 @@ getProfileRanks profileRef = do
             previousRanks <- getRankList gyPreviousRankId
             return (rankData : previousRanks)
 
+-- | Query all UTxOs at a validator script address and parse their inline datums.
+getAllParsedDatumsAtValidator :: (GYTxQueryMonad m) => GYNetworkId -> GYScriptHash -> (GYDatum -> Maybe a) -> m [a]
+getAllParsedDatumsAtValidator nid scriptHash parser = do
+  let addr = addressFromScriptHash nid scriptHash
+  allDatums <- fmap snd <$> utxosAtAddressesWithDatums [addr]
+  return $ mapMaybe parser (catMaybes allDatums)
+
 getAllOnchainValidRanks :: (GYTxQueryMonad m) => GYNetworkId -> m [OnchainRank]
-getAllOnchainValidRanks nid = do
-  let ranksValidatorAddress = addressFromScriptHash nid ranksValidatorHashGY
-  allDatums <- fmap snd <$> utxosAtAddressesWithDatums [ranksValidatorAddress]
-  return $ mapMaybe rankDatumFromDatum (catMaybes allDatums)
+getAllOnchainValidRanks nid = getAllParsedDatumsAtValidator nid ranksValidatorHashGY rankDatumFromDatum
 
 getAllPromotions :: (GYTxQueryMonad m) => GYNetworkId -> m [Promotion]
 getAllPromotions nid = do
@@ -102,11 +106,7 @@ getAllRanks nid = do
   catMaybes <$> mapM onchainRankToRankInformation onChainRanks
 
 getAllOnchainProfiles :: (GYTxQueryMonad m) => GYNetworkId -> m [CIP68Datum OnchainProfile]
-getAllOnchainProfiles nid = do
-  let profilesValidatorAddress = addressFromScriptHash nid profilesValidatorHashGY
-  allDatums <- fmap snd <$> utxosAtAddressesWithDatums [profilesValidatorAddress]
-  let allProfiles = mapMaybe profileDatumFromDatum (catMaybes allDatums)
-  return allProfiles
+getAllOnchainProfiles nid = getAllParsedDatumsAtValidator nid profilesValidatorHashGY profileDatumFromDatum
 
 getAllProfilesCount :: (GYTxQueryMonad m) => GYNetworkId -> m Int
 getAllProfilesCount nid = length <$> getAllOnchainProfiles nid
@@ -122,10 +122,10 @@ getAllProfiles nid = do
 
 ------------------------------------------------------------------------------------------------
 
-getPractiotionerInformation :: (GYTxQueryMonad m) => ProfileRefAC -> m PractitionerProfileInformation
-getPractiotionerInformation profileRefAC = do
+getPractitionerInformation :: (GYTxQueryMonad m) => ProfileRefAC -> m PractitionerProfileInformation
+getPractitionerInformation profileRefAC = do
   (profileDatum, _profileValue) <- getProfileStateDataAndValue profileRefAC
-  let ProfileData {profileDataName, profileDataDescription, profileDataImageURI} = metadataFieldsToProfileData (getMetadataFields profileDatum)
+  let ProfileData {profileDataName, profileDataDescription, profileDataImageURI} = profileDatumToProfileData profileDatum
   case Onchain.profileType (extra profileDatum) of
     Onchain.Practitioner -> do
       ranks <- getProfileRanks profileRefAC
@@ -146,7 +146,7 @@ getPractiotionerInformation profileRefAC = do
 getOrganizationInformation :: (GYTxQueryMonad m) => ProfileRefAC -> m OrganizationProfileInformation
 getOrganizationInformation profileRefAC = do
   (profileDatum, _profileValue) <- getProfileStateDataAndValue profileRefAC
-  let ProfileData {profileDataName, profileDataDescription, profileDataImageURI} = metadataFieldsToProfileData (getMetadataFields profileDatum)
+  let ProfileData {profileDataName, profileDataDescription, profileDataImageURI} = profileDatumToProfileData profileDatum
   case Onchain.profileType (extra profileDatum) of
     Onchain.Organization -> do
       return $
@@ -178,5 +178,5 @@ queryOracleParams = do
     Just (gyDatum, _) ->
       case fromBuiltinData (datumToPlutus' gyDatum) of
         Just params -> return (params, utxoRef utxo, utxoValue utxo)
-        Nothing -> throwError (GYApplicationException OracleNotFound)
+        Nothing -> throwError (GYApplicationException OracleDatumInvalid)
     Nothing -> throwError (GYApplicationException OracleNotFound)

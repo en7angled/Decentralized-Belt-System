@@ -1,5 +1,6 @@
 module TxBuilding.Operations where
 
+import Control.Monad (unless)
 import Control.Monad.Reader.Class
 import Data.Maybe
 import DomainTypes.Core.Actions (AdminActionType (..))
@@ -16,6 +17,7 @@ import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import Onchain.RanksValidator (RanksRedeemer (..))
 import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
+import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue, queryOracleParams)
 import TxBuilding.Skeletons
 import TxBuilding.Utils (txOutRefToV3Plutus)
@@ -82,6 +84,14 @@ verifyDeployedScriptsAreReady = do
 
   return $ all isJust [mintingPolicyHasRefScript, profilesValidatorHasRefScript, ranksValidatorHasRefScript, oracleValidatorHasRefScript]
 
+-- | Like 'verifyDeployedScriptsAreReady' but throws 'DeployedScriptsNotReady' when scripts are not ready.
+ensureDeployedScriptsAreReady ::
+  (GYTxQueryMonad m, MonadReader DeployedScriptsContext m, MonadError GYTxMonadException m) =>
+  m ()
+ensureDeployedScriptsAreReady = do
+  ready <- verifyDeployedScriptsAreReady
+  unless ready $ throwError (GYApplicationException DeployedScriptsNotReady)
+
 ------------------------------------------------------------------------------------------------
 
 -- * OnChainProfile Operations
@@ -109,9 +119,8 @@ createProfileWithRankTX ::
   BJJBelt ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 createProfileWithRankTX recipient metadata profileType creationDate belt = do
-  ctx <- ask
-  let mpGY = getMintingPolicyFromCtx ctx
-  let pp = getProtocolParamsFromCtx ctx
+  mpGY <- asks getMintingPolicyFromCtx
+  pp <- asks getProtocolParamsFromCtx
   now <- slotOfCurrentBlock
   let isInvalidBeforeNow = isInvalidBefore now
 
@@ -145,7 +154,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   let profileOutputIdx = 0 :: Integer
   let rankOrMembershipHistoriesRootOutputIdx = 2 :: Integer
   let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate (beltToInt belt) profileOutputIdx rankOrMembershipHistoriesRootOutputIdx
-  let gyCreateProfileRedeemer = redeemerFromPlutusData $ redeemer
+  let gyCreateProfileRedeemer = redeemerFromPlutusData redeemer
 
   isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mpRef mpGY gyCreateProfileRedeemer gyProfileRefAC
 
@@ -224,7 +233,7 @@ updateProfileTX gyProfileRefAC newImageURI ownAddrs = do
 
   (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyProfileRefAC
   let updateRedeemer = UpdateProfileImage newImageURI profileOutputIdx
-  let gyRedeemer = redeemerFromPlutusData $ updateRedeemer
+  let gyRedeemer = redeemerFromPlutusData updateRedeemer
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyProfileRefAC gyRedeemer profilesValidatorGY
   gyProfileUserAC <- gyDeriveUserFromRefAC gyProfileRefAC
   spendsProfileUserNFT <- txMustSpendFromAddress gyProfileUserAC ownAddrs
@@ -256,9 +265,8 @@ promoteProfileTX ::
   [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt ownAddrs = do
-  ctx <- ask
-  let mpGY = getMintingPolicyFromCtx ctx
-  let pp = getProtocolParamsFromCtx ctx
+  mpGY <- asks getMintingPolicyFromCtx
+  pp <- asks getProtocolParamsFromCtx
 
   -- Oracle reference input + params (for minLovelace and fee)
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
@@ -294,7 +302,7 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
   let pendingRankOutputIdx = 0 :: Integer
 
   let redeemer = Promote seedTxOutRefPlutus (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt) pendingRankOutputIdx
-  let gyRedeemer = redeemerFromPlutusData $ redeemer
+  let gyRedeemer = redeemerFromPlutusData redeemer
   gyPromotionRankAC <- assetClassFromPlutus' $ derivePromotionRankId seedTxOutRefPlutus (mintingPolicyCurrencySymbol mpGY)
   isMintingPromotionRank <- txMustMintWithMintRef True mpRef mpGY gyRedeemer gyPromotionRankAC
 
@@ -420,9 +428,8 @@ updateOracleTX ::
   AdminActionType ->
   m (GYTxSkeleton 'PlutusV3)
 updateOracleTX adminAction = do
-  ctx <- ask
+  ovRef <- asks getOracleValidatorRef
   (currentParams, oracleRef, oracleValue) <- queryOracleParams
-  let ovRef = getOracleValidatorRef ctx
   let gyRedeemer = redeemerFromPlutusData ()
 
   -- Apply the action to derive the new oracle params
