@@ -9,7 +9,7 @@ import Onchain.BJJ (BJJBelt (White), beltToInt)
 import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.MintingPolicy
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Protocol (OnchainRank (..), deriveMembershipHistoriesListId, generatePromotionRankId, initEmptyMembershipHistoriesList, mkOrganizationProfile, mkPendingRank, mkPractitionerProfile, promoteProfile)
+import Onchain.Protocol (OnchainRank (..), deriveMembershipHistoriesListId, derivePromotionRankId, initEmptyMembershipHistoriesList, mkOrganizationProfile, mkPromotion, mkPractitionerProfile, promoteProfile)
 import Onchain.Protocol qualified as Onchain
 import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
@@ -59,7 +59,7 @@ createProfileTX ::
   (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
   GYAddress ->
   MetadataFields ->
-  Onchain.OnChainProfileType ->
+  Onchain.OnchainProfileType ->
   POSIXTime ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 createProfileTX recipient metadata profileType creationDate = createProfileWithRankTX recipient metadata profileType creationDate White
@@ -70,7 +70,7 @@ createProfileWithRankTX ::
   (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
   GYAddress ->
   MetadataFields ->
-  Onchain.OnChainProfileType ->
+  Onchain.OnchainProfileType ->
   POSIXTime ->
   BJJBelt ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
@@ -242,11 +242,11 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
 
   let redeemer = Promote seedTxOutRefPlutus (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt) pendingRankOutputIdx
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
-  gyPromotionRankAC <- assetClassFromPlutus' $ generatePromotionRankId seedTxOutRefPlutus (mintingPolicyCurrencySymbol mintingPolicyGY)
+  gyPromotionRankAC <- assetClassFromPlutus' $ derivePromotionRankId seedTxOutRefPlutus (mintingPolicyCurrencySymbol mintingPolicyGY)
   isMintingPromotionRank <- txMustMintWithMintRef True mpRef mintingPolicyGY gyRedeemer gyPromotionRankAC
 
   let pendingRankDatum =
-        mkPendingRank
+        mkPromotion
           (assetClassToPlutus gyPromotionRankAC)
           (assetClassToPlutus gyPromotedProfileId)
           (assetClassToPlutus gyPromotedByProfileId)

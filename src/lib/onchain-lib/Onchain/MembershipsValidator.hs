@@ -4,7 +4,19 @@
 
 {-# HLINT ignore "Use &&" #-}
 
-module Onchain.MembershipsValidator where
+-- | Memberships validator managing membership histories and intervals
+-- in a sorted linked list.
+module Onchain.MembershipsValidator
+  ( -- * Memberships Redeemer
+    MembershipsRedeemer (..),
+
+    -- * Memberships Validator
+    membershipsLambda,
+
+    -- * Compilation
+    membershipsCompile,
+  )
+where
 
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:optimize #-}
@@ -39,9 +51,11 @@ import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
 
------------------------------------------------------------------------------
--- Memberships Validator
------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+
+-- * Memberships Redeemer
+
+-------------------------------------------------------------------------------
 
 -- | Custom redeemer :
 data MembershipsRedeemer
@@ -68,11 +82,16 @@ data MembershipsRedeemer
 
 makeIsDataSchemaIndexed ''MembershipsRedeemer [('InsertNodeToMHList, 0), ('UpdateNodeInMHList, 1), ('AcceptInterval, 2)]
 
+-------------------------------------------------------------------------------
+
+-- * Memberships Validator
+
+-------------------------------------------------------------------------------
+
 {-# INLINEABLE membershipsLambda #-}
 membershipsLambda :: ScriptContext -> Bool
 membershipsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bsredeemer) scriptInfo) =
   let redeemer = unsafeFromBuiltinData @MembershipsRedeemer bsredeemer
-      minValue = V1.lovelaceValue 3_500_000 
    in case scriptInfo of
         (SpendingScript spendingTxOutRef mdatum) ->
           let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
@@ -85,67 +104,117 @@ membershipsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bsredeemer) script
                   Just (datum :: MembershipDatum) -> case datum of
                     ListNodeDatum spendingNode -> case redeemer of
                       InsertNodeToMHList {maybeRightNodeId, insertedMembershipHistory, updatedLeftNodeTxOutIdx, insertedNodeTxOutIdx} ->
-                        let oldLeftNode = spendingNode
-                            -- Derive org User NFT from the EXISTING on-chain datum (not redeemer) to prevent cross-org attacks
-                            orgUserAC = deriveUserFromRefAC (organizationId oldLeftNode)
-
-                            insertedNodeDatum = mkMembershipHistoriesListNode insertedMembershipHistory maybeRightNodeId
-                            insertedNodeNFT = V1.assetClassValue (membershipHistoryId insertedMembershipHistory) 1
-                            newIntervalId = membershipHistoryIntervalsHeadId $ unsafeGetMembershipHistory insertedNodeDatum
-                            newIntervalNFT = V1.assetClassValue newIntervalId 1
-
-                            -- Validate insert rules and get the updated left node
-                            updatedLeftNode = case maybeRightNodeId of
-                              Just rightNodeId ->
-                                let (_rightNodeValue, rightNode) = unsafeGetListNodeDatumAndValue rightNodeId ownAddress txInfoReferenceInputs
-                                 in insertMembershipHistoryInBetween (oldLeftNode, rightNode, insertedNodeDatum)
-                              Nothing ->
-                                appendMembershipHistory (oldLeftNode, insertedNodeDatum)
-                         in and
-                              [ traceIfFalse "Must spend organization User NFT to modify membership list"
-                                  $ V1.assetClassValueOf (valueSpent txInfo) orgUserAC
-                                  == 1,
-                                traceIfFalse "Must lock updated left node with inline datum at membershipsValidator address (output idx)"
-                                  $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedLeftNodeTxOutIdx (ListNodeDatum updatedLeftNode) ownValue ownAddress txInfoOutputs, -- Guarantees that tokens never leaves the validator.
-                                traceIfFalse "Tx must mint JUST inserted node NFT and interval NFT"
-                                  $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
-                                  == (insertedNodeNFT + newIntervalNFT),
-                                traceIfFalse "Must lock inserted node at membershipsValidator address (output idx)"
-                                  $ Utils.checkTxOutAtIndexWithDatumValueAndAddress insertedNodeTxOutIdx (ListNodeDatum insertedNodeDatum) (insertedNodeNFT + minValue) ownAddress txInfoOutputs
-                              ]
+                        handleInsertNode txInfo ownValue ownAddress spendingNode maybeRightNodeId insertedMembershipHistory updatedLeftNodeTxOutIdx insertedNodeTxOutIdx
                       UpdateNodeInMHList {lastIntervalId, startDate, endDate, updatedNodeTxOutIdx} ->
-                        let -- Derive org User NFT from the EXISTING on-chain datum (not redeemer) to prevent cross-org attacks
-                            orgUserAC = deriveUserFromRefAC (organizationId spendingNode)
-                            oldHistory = unsafeGetMembershipHistory spendingNode
-                            (_lastIntervalValue, lastInterval) = unsafeGetMembershipInterval lastIntervalId ownAddress txInfoReferenceInputs
-                            (newHistory, newInterval) = addMembershipIntervalToHistory oldHistory lastInterval startDate endDate
-                            newIntervalId = membershipIntervalId newInterval
-                            newIntervalNFT = V1.assetClassValue newIntervalId 1
-                            updatedNode = updateNodeMembershipHistory spendingNode newHistory
-                         in and
-                              [ traceIfFalse "Must spend organization User NFT to modify membership history"
-                                  $ V1.assetClassValueOf (valueSpent txInfo) orgUserAC
-                                  == 1,
-                                traceIfFalse "Must lock updated node with inline datum at membershipsValidator address (output idx)"
-                                  $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- Guarantees that tokens never leaves the validator.
-                                traceIfFalse "Tx must mint JUST interval NFT"
-                                  $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
-                                  == newIntervalNFT
-                              ]
+                        handleUpdateNode txInfo ownValue ownAddress spendingNode lastIntervalId startDate endDate updatedNodeTxOutIdx
                       _otherRedeemer -> traceError "Invalid redeemer for ListNodeDatum"
                     IntervalDatum unacceptedInterval -> case redeemer of
                       AcceptInterval {updatedIntervalTxOutIdx} ->
-                        let acceptedInterval = acceptMembershipInterval unacceptedInterval
-                            profileUserAssetClass = deriveUserFromRefAC (membershipIntervalPractitionerId acceptedInterval)
-                         in and
-                              [ traceIfFalse "Must lock updated interval with inline datum at membershipsValidator address (output idx)"
-                                  $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedIntervalTxOutIdx (IntervalDatum acceptedInterval) ownValue ownAddress txInfoOutputs, -- Guarantees that tokens never leaves the validator.
-                                traceIfFalse "Must spend profile User NFT to accept membership interval"
-                                  $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                                  == 1
-                              ]
+                        handleAcceptInterval txInfo ownValue ownAddress unacceptedInterval updatedIntervalTxOutIdx
                       _otherRedeemer -> traceError "Invalid redeemer for IntervalDatum"
         _ -> traceError "Invalid purpose"
+
+-------------------------------------------------------------------------------
+
+-- * Per-Redeemer Handlers
+
+-------------------------------------------------------------------------------
+
+{-# INLINEABLE handleInsertNode #-}
+handleInsertNode ::
+  TxInfo ->
+  Value ->
+  Address ->
+  MembershipHistoriesListNode ->
+  Maybe MembershipHistoriesListNodeId ->
+  OnchainMembershipHistory ->
+  Integer ->
+  Integer ->
+  Bool
+handleInsertNode txInfo@TxInfo {..} ownValue ownAddress oldLeftNode maybeRightNodeId insertedMembershipHistory updatedLeftNodeTxOutIdx insertedNodeTxOutIdx =
+  let -- Derive org User NFT from the EXISTING on-chain datum (not redeemer) to prevent cross-org attacks
+      orgUserAC = deriveUserFromRefAC (organizationId oldLeftNode)
+
+      insertedNodeDatum = mkMembershipHistoriesListNode insertedMembershipHistory maybeRightNodeId
+      insertedNodeNFT = V1.assetClassValue (membershipHistoryId insertedMembershipHistory) 1
+      newIntervalId = membershipHistoryIntervalsHeadId $ unsafeGetMembershipHistory insertedNodeDatum
+      newIntervalNFT = V1.assetClassValue newIntervalId 1
+
+      -- Validate insert rules and get the updated left node
+      updatedLeftNode = case maybeRightNodeId of
+        Just rightNodeId ->
+          let (_rightNodeValue, rightNode) = unsafeGetListNodeDatumAndValue rightNodeId ownAddress txInfoReferenceInputs
+           in insertMembershipHistoryInBetween (oldLeftNode, rightNode, insertedNodeDatum)
+        Nothing ->
+          appendMembershipHistory (oldLeftNode, insertedNodeDatum)
+   in and
+        [ traceIfFalse "Must spend organization User NFT to modify membership list"
+            $ V1.assetClassValueOf (valueSpent txInfo) orgUserAC
+            == 1,
+          traceIfFalse "Must lock updated left node with inline datum at membershipsValidator address (output idx)"
+            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedLeftNodeTxOutIdx (ListNodeDatum updatedLeftNode) ownValue ownAddress txInfoOutputs, -- Guarantees that tokens never leaves the validator.
+          traceIfFalse "Tx must mint JUST inserted node NFT and interval NFT"
+            $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
+            == (insertedNodeNFT + newIntervalNFT),
+          traceIfFalse "Must lock inserted node at membershipsValidator address (output idx)"
+            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress insertedNodeTxOutIdx (ListNodeDatum insertedNodeDatum) (insertedNodeNFT + Utils.minLovelaceValue) ownAddress txInfoOutputs
+        ]
+
+{-# INLINEABLE handleUpdateNode #-}
+handleUpdateNode ::
+  TxInfo ->
+  Value ->
+  Address ->
+  MembershipHistoriesListNode ->
+  MembershipIntervalId ->
+  POSIXTime ->
+  Maybe POSIXTime ->
+  Integer ->
+  Bool
+handleUpdateNode txInfo@TxInfo {..} ownValue ownAddress spendingNode lastIntervalId startDate endDate updatedNodeTxOutIdx =
+  let -- Derive org User NFT from the EXISTING on-chain datum (not redeemer) to prevent cross-org attacks
+      orgUserAC = deriveUserFromRefAC (organizationId spendingNode)
+      oldHistory = unsafeGetMembershipHistory spendingNode
+      (_lastIntervalValue, lastInterval) = unsafeGetMembershipInterval lastIntervalId ownAddress txInfoReferenceInputs
+      (newHistory, newInterval) = addMembershipIntervalToHistory oldHistory lastInterval startDate endDate
+      newIntervalId = membershipIntervalId newInterval
+      newIntervalNFT = V1.assetClassValue newIntervalId 1
+      updatedNode = updateNodeMembershipHistory spendingNode newHistory
+   in and
+        [ traceIfFalse "Must spend organization User NFT to modify membership history"
+            $ V1.assetClassValueOf (valueSpent txInfo) orgUserAC
+            == 1,
+          traceIfFalse "Must lock updated node with inline datum at membershipsValidator address (output idx)"
+            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- Guarantees that tokens never leaves the validator.
+          traceIfFalse "Tx must mint JUST interval NFT"
+            $ mintValueMinted txInfoMint -- protection against other-token-name attack vector
+            == newIntervalNFT
+        ]
+
+{-# INLINEABLE handleAcceptInterval #-}
+handleAcceptInterval ::
+  TxInfo ->
+  Value ->
+  Address ->
+  OnchainMembershipInterval ->
+  Integer ->
+  Bool
+handleAcceptInterval txInfo@TxInfo {..} ownValue ownAddress unacceptedInterval updatedIntervalTxOutIdx =
+  let acceptedInterval = acceptMembershipInterval unacceptedInterval
+      profileUserAssetClass = deriveUserFromRefAC (membershipIntervalPractitionerId acceptedInterval)
+   in and
+        [ traceIfFalse "Must lock updated interval with inline datum at membershipsValidator address (output idx)"
+            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedIntervalTxOutIdx (IntervalDatum acceptedInterval) ownValue ownAddress txInfoOutputs, -- Guarantees that tokens never leaves the validator.
+          traceIfFalse "Must spend profile User NFT to accept membership interval"
+            $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
+            == 1
+        ]
+
+-------------------------------------------------------------------------------
+
+-- * Compilation
+
+-------------------------------------------------------------------------------
 
 -- | Lose the types
 membershipsUntyped :: BuiltinData -> BuiltinUnit

@@ -2,7 +2,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 -- Required for `makeLift`:
 {-# LANGUAGE ScopedTypeVariables #-}
----
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
@@ -12,12 +11,26 @@
 
 {-# HLINT ignore "Use &&" #-}
 
-module Onchain.ProfilesValidator where
+-- | Profiles validator governing profile lifecycle, image updates,
+-- and promotion acceptance.
+module Onchain.ProfilesValidator
+  ( -- * Profiles Redeemer
+    ProfilesRedeemer (..),
+    ProfilesDatum,
+
+    -- * Profiles Validator
+    profilesLambda,
+
+    -- * Compilation
+    profilesCompile,
+  )
+where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68 (CIP68Datum (CIP68Datum), ImageURI, deriveUserFromRefAC, updateCIP68DatumImage, validateImageURI)
-import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), RankId, getCurrentRankId, hasCurrencySymbol, promoteProfileDatum, protocolParams, ranksValidatorScriptHash, unsafeGetRankDatumAndValue)
+import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), RankId, getCurrentRankId, promoteProfileDatum, protocolParams, ranksValidatorScriptHash, unsafeGetRankDatumAndValue)
 import Onchain.Protocol qualified as Onchain
+import Onchain.Utils (hasCurrencySymbol)
 import Onchain.Utils qualified as Utils
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3
@@ -26,6 +39,12 @@ import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
+
+-------------------------------------------------------------------------------
+
+-- * Profiles Redeemer
+
+-------------------------------------------------------------------------------
 
 -- | Custom redeemer :
 -- NOTE: Profile deletion is intentionally not supported to preserve lineage integrity.
@@ -46,9 +65,11 @@ makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('AcceptPr
 
 type ProfilesDatum = CIP68Datum Onchain.OnchainProfile
 
---------------------------------------
--- Profiles Validator
---------------------------------------
+-------------------------------------------------------------------------------
+
+-- * Profiles Validator
+
+-------------------------------------------------------------------------------
 
 {-# INLINEABLE profilesLambda #-}
 profilesLambda :: ScriptContext -> Bool
@@ -67,74 +88,114 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
                   -- It is important to validate that the value of this UTxO contains an NFT of this asset class.
                in case redeemer of
                     (UpdateProfileImage newImageURI profileOutputIdx) ->
-                      let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum
-                          profileUserAssetClass = deriveUserFromRefAC profileRefAssetClass
-                       in and
-                            [ traceIfFalse "Own value must contain profile Ref NFT"
-                                $ V1.assetClassValueOf ownValue profileRefAssetClass
-                                == 1,
-                              traceIfFalse "Must spend profile User NFT"
-                                $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
-                                == 1,
-                              -- Validate image URI size to prevent oversized datums
-                              validateImageURI newImageURI,
-                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
-                                $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Guarantees that tokens never leaves the validator.
-                            ]
+                      handleUpdateProfileImage txInfo ownValue ownAddress profileRefAssetClass profileDatum newImageURI profileOutputIdx
                     (AcceptPromotion promotionId profileOutputIdx) ->
-                      let isValidPromotionId = hasCurrencySymbol promotionId mintingPolicyCurrencySymbol
-                          ranksValidatorAddress = V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
-                          (_promotionValue, pendingRankDatum) = unsafeGetRankDatumAndValue promotionId ranksValidatorAddress txInfoInputs
-
-                          -- Get current rank from reference inputs to validate promotion is still valid
-                          currentRankId = getCurrentRankId profile
-                          (_, currentRankDatum) = unsafeGetRankDatumAndValue currentRankId ranksValidatorAddress txInfoReferenceInputs
-
-                          -- Validate the promotion is still valid given current state
-                          currentBelt =  rankNumber currentRankDatum
-                          currentBeltDate = rankAchievementDate currentRankDatum
-                          nextBelt = promotionRankNumber pendingRankDatum
-                          nextBeltDate = promotionAchievementDate pendingRankDatum
-
-                          isPromotionStillValid =
-                            and
-                              [ traceIfFalse
-                                  "Promotion invalid - promotion ID must have correct currency symbol"
-                                  isValidPromotionId,
-                                traceIfFalse "Promotion invalid - already at or past this rank"
-                                  $ nextBelt
-                                  > currentBelt,
-                                traceIfFalse "Promotion invalid - achievement date must be after current rank date"
-                                  $ nextBeltDate
-                                  > currentBeltDate
-                              ]
-
-                          -- R4 optimization: use promoteProfileDatum instead of promoteProfile
-                          -- to avoid constructing the full 7-field Rank record that PV doesn't need.
-                          -- Rank output validation is handled by RanksValidator (R2).
-                          updatedProfileCIP68Datum = promoteProfileDatum profileDatum pendingRankDatum
-                       in -- NOTE: User NFT consent check is NOT needed here because:
-                          -- 1. AcceptPromotion reads the promotion from txInfoInputs
-                          -- 2. This means the Promotion UTxO at RanksValidator MUST be spent
-                          -- 3. RanksValidator always runs when Promotion UTxO is spent
-                          -- 4. RanksValidator checks User NFT consent (deriveUserFromRefAC)
-                          -- Therefore, RanksValidator guarantees user consent for this transaction.
-                          --
-                          -- NOTE (R2 redundancy removed — see OnchainSecurityAudit.md):
-                          -- The rank output check was removed from PV because RV has only one
-                          -- redeemer (PromotionAcceptance) and always validates the rank output.
-                          -- When PV forces the promotion to be in txInfoInputs, RV must run,
-                          -- and it has no alternative code path. Removing this also eliminates
-                          -- the rankOutputIdx parameter from the AcceptPromotion redeemer.
-                          and
-                            [ traceIfFalse "Own value must contain profile Ref NFT"
-                                $ V1.assetClassValueOf ownValue profileRefAssetClass
-                                == 1,
-                              isPromotionStillValid,
-                              traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
-                                $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs -- Guarantees that tokens never leaves the validator.
-                            ]
+                      handleAcceptPromotion txInfo ownValue ownAddress profileRefAssetClass mintingPolicyCurrencySymbol profile profileDatum promotionId profileOutputIdx
         _ -> traceError "Invalid purpose"
+
+-------------------------------------------------------------------------------
+
+-- * Per-Redeemer Handlers
+
+-------------------------------------------------------------------------------
+
+{-# INLINEABLE handleUpdateProfileImage #-}
+handleUpdateProfileImage ::
+  TxInfo ->
+  Value ->
+  Address ->
+  V1.AssetClass ->
+  CIP68Datum OnchainProfile ->
+  ImageURI ->
+  Integer ->
+  Bool
+handleUpdateProfileImage txInfo@TxInfo {..} ownValue ownAddress profileRefAssetClass profileDatum newImageURI profileOutputIdx =
+  let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum
+      profileUserAssetClass = deriveUserFromRefAC profileRefAssetClass
+   in and
+        [ traceIfFalse "Own value must contain profile Ref NFT"
+            $ V1.assetClassValueOf ownValue profileRefAssetClass
+            == 1,
+          traceIfFalse "Must spend profile User NFT"
+            $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass
+            == 1,
+          -- Validate image URI size to prevent oversized datums
+          validateImageURI newImageURI,
+          traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
+            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Guarantees that tokens never leaves the validator.
+        ]
+
+{-# INLINEABLE handleAcceptPromotion #-}
+handleAcceptPromotion ::
+  TxInfo ->
+  Value ->
+  Address ->
+  V1.AssetClass ->
+  CurrencySymbol ->
+  OnchainProfile ->
+  CIP68Datum OnchainProfile ->
+  RankId ->
+  Integer ->
+  Bool
+handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass mintingPolicyCurrencySymbol profile profileDatum promotionId profileOutputIdx =
+  let isValidPromotionId = hasCurrencySymbol promotionId mintingPolicyCurrencySymbol
+      ranksValidatorAddress = V1.scriptHashAddress $ ranksValidatorScriptHash $ protocolParams profile
+      (_promotionValue, pendingRankDatum) = unsafeGetRankDatumAndValue promotionId ranksValidatorAddress txInfoInputs
+
+      -- Get current rank from reference inputs to validate promotion is still valid
+      currentRankId = getCurrentRankId profile
+      (_, currentRankDatum) = unsafeGetRankDatumAndValue currentRankId ranksValidatorAddress txInfoReferenceInputs
+
+      -- Validate the promotion is still valid given current state
+      currentBelt = rankNumber currentRankDatum
+      currentBeltDate = rankAchievementDate currentRankDatum
+      nextBelt = promotionRankNumber pendingRankDatum
+      nextBeltDate = promotionAchievementDate pendingRankDatum
+
+      isPromotionStillValid =
+        and
+          [ traceIfFalse
+              "Promotion invalid - promotion ID must have correct currency symbol"
+              isValidPromotionId,
+            traceIfFalse "Promotion invalid - already at or past this rank"
+              $ nextBelt
+              > currentBelt,
+            traceIfFalse "Promotion invalid - achievement date must be after current rank date"
+              $ nextBeltDate
+              > currentBeltDate
+          ]
+
+      -- R4 optimization: use promoteProfileDatum instead of promoteProfile
+      -- to avoid constructing the full 7-field Rank record that PV doesn't need.
+      -- Rank output validation is handled by RanksValidator (R2).
+      updatedProfileCIP68Datum = promoteProfileDatum profileDatum pendingRankDatum
+   in -- NOTE: User NFT consent check is NOT needed here because:
+      -- 1. AcceptPromotion reads the promotion from txInfoInputs
+      -- 2. This means the Promotion UTxO at RanksValidator MUST be spent
+      -- 3. RanksValidator always runs when Promotion UTxO is spent
+      -- 4. RanksValidator checks User NFT consent (deriveUserFromRefAC)
+      -- Therefore, RanksValidator guarantees user consent for this transaction.
+      --
+      -- NOTE (R2 redundancy removed — see OnchainSecurityAudit.md):
+      -- The rank output check was removed from PV because RV has only one
+      -- redeemer (PromotionAcceptance) and always validates the rank output.
+      -- When PV forces the promotion to be in txInfoInputs, RV must run,
+      -- and it has no alternative code path. Removing this also eliminates
+      -- the rankOutputIdx parameter from the AcceptPromotion redeemer.
+      and
+        [ traceIfFalse "Own value must contain profile Ref NFT"
+            $ V1.assetClassValueOf ownValue profileRefAssetClass
+            == 1,
+          isPromotionStillValid,
+          traceIfFalse "Must lock profile Ref NFT with inline updated datum at profilesValidator address (output idx)"
+            $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs -- Guarantees that tokens never leaves the validator.
+        ]
+
+-------------------------------------------------------------------------------
+
+-- * Compilation
+
+-------------------------------------------------------------------------------
 
 -- | Lose the types
 profilesUntyped :: BuiltinData -> BuiltinUnit

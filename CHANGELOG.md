@@ -1,6 +1,53 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.2.9.0 -- 2026-02-15
+
+### Memberships Onchain & Code Quality
+
+#### New: Memberships Validator & Protocol Logic (Onchain)
+
+Extended the onchain library with the full memberships system, including new modules and refactored protocol logic.
+
+**New Modules**:
+- `Onchain.Protocol.Types` — Core on-chain data types extracted from `Protocol.hs`
+- `Onchain.Protocol.Lookup` — Typed datum lookup helpers
+- `Onchain.Protocol.Id` — Asset class / ID generation functions
+
+**Protocol.hs Refactor**:
+- Split monolithic `Protocol.hs` into `Protocol/Types.hs`, `Protocol/Lookup.hs`, and `Protocol/Id.hs`
+- `Protocol.hs` now re-exports the sub-modules and contains business logic only
+
+#### Code Quality: Haskell Style Guide Compliance
+
+Applied the project `HaskellStyleGuide.md` to all `onchain-lib` modules:
+
+**INLINEABLE Pragma Placement**:
+- Moved `{-# INLINEABLE #-}` pragmas from after definitions to before type signatures across `CIP68.hs` and other modules
+
+**Haddock Comments**:
+- Added module-level Haddock comments to all validators, `BJJ.hs`, `Blueprint.hs`, and `Utils.hs`
+- Fixed triple-dash `--- ^` to standard `-- ^` for record field comments in `CIP68.hs`
+- Converted line-above `-- |` to inline `-- ^` for record fields in `Protocol/Types.hs`
+
+**Explicit Export Lists**:
+- Added explicit export lists with Haddock section headings to: `BJJ.hs`, `Blueprint.hs`, `CIP68.hs`, `Utils.hs`, `MintingPolicy.hs`, `ProfilesValidator.hs`, `RanksValidator.hs`, `MembershipsValidator.hs`
+
+**Blank Line Cleanup**:
+- Collapsed multiple consecutive blank lines to a single blank line in `CIP68.hs`
+
+**Error Message Convention**:
+- Standardised all `traceError` / `traceIfFalse` messages to the pattern `"Cannot <verb>: <reason>"` or `"Invalid <noun>: <reason>"` across `Protocol.hs`, `Utils.hs`, `LinkedList.hs`, `Protocol/Lookup.hs`
+
+**Refactoring**:
+- Introduced `BeltSnapshot` record type in `BJJ.hs` bundling `BJJBelt` + `POSIXTime`, replacing the error-prone 6-argument `validatePromotion` signature with 3 `BeltSnapshot` arguments
+- Updated call site in `MintingPolicy.hs` and property tests in `BJJPropertyTests.hs`
+
+**Style Guide Update**:
+- Removed the "Trailing commas: use leading-comma style" rule from `HaskellStyleGuide.md` (the project already uses trailing-comma style consistently)
+
+---
+
 ## 0.2.8.2 -- 2026-02-10
 
 ### Script Size Reporting in Test Output

@@ -13,7 +13,7 @@ import Database.Esqueleto.Experimental
 import Database.Persist qualified as P
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
-import Onchain.BJJ (BJJBelt)
+import DomainTypes.Core.BJJ (BJJBelt)
 import Query.Common qualified as C
 import QueryAppMonad
 import Storage

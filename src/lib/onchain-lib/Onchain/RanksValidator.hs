@@ -9,7 +9,18 @@
 
 {-# HLINT ignore "Use &&" #-}
 
-module Onchain.RanksValidator where
+-- | Ranks validator enforcing promotion acceptance and rank state transitions.
+module Onchain.RanksValidator
+  ( -- * Ranks Redeemer
+    RanksRedeemer (..),
+
+    -- * Ranks Validator
+    ranksLambda,
+
+    -- * Compilation
+    ranksCompile,
+  )
+where
 
 import Onchain.CIP68 (deriveUserFromRefAC)
 import Onchain.Protocol (OnchainRank (..), profilesValidatorScriptHash, promoteProfile, unsafeGetProfileDatumAndValue)
@@ -18,18 +29,20 @@ import Onchain.Utils qualified as Utils
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Contexts
-import PlutusPrelude (Generic)
+import GHC.Generics (Generic)
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
 import Prelude qualified
 
------------------------------------------------------------------------------
--- Ranks Validator
---
+-------------------------------------------------------------------------------
+
+-- * Ranks Redeemer
+
+-------------------------------------------------------------------------------
+
 -- This validator is simplified because promotion validation now happens
 -- at mint time in the MintingPolicy.
------------------------------------------------------------------------------
 
 data RanksRedeemer
   = -- | AcceptPromotion profileOutputIdx rankOutputIdx
@@ -38,6 +51,12 @@ data RanksRedeemer
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''RanksRedeemer [('PromotionAcceptance, 0)]
+
+-------------------------------------------------------------------------------
+
+-- * Ranks Validator
+
+-------------------------------------------------------------------------------
 
 {-# INLINEABLE ranksLambda #-}
 ranksLambda :: ScriptContext -> Bool
@@ -82,6 +101,12 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
                             $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs
                         ]
         _ -> traceError "Invalid script info"
+
+-------------------------------------------------------------------------------
+
+-- * Compilation
+
+-------------------------------------------------------------------------------
 
 -- | Lose the types
 ranksUntyped :: BuiltinData -> BuiltinUnit

@@ -35,13 +35,13 @@ fromBuiltinByteStringUtf8 :: BuiltinByteString -> T.Text
 fromBuiltinByteStringUtf8 = T.pack . init . tail . show . decodeUtf8
 
 
-profileTypeToOnChainProfileType :: ProfileType -> Onchain.OnChainProfileType
-profileTypeToOnChainProfileType Practitioner = Onchain.Practitioner
-profileTypeToOnChainProfileType Organization = Onchain.Organization
+profileTypeToOnchainProfileType :: ProfileType -> Onchain.OnchainProfileType
+profileTypeToOnchainProfileType Practitioner = Onchain.Practitioner
+profileTypeToOnchainProfileType Organization = Onchain.Organization
 
-onChainProfileTypeToProfileType :: Onchain.OnChainProfileType -> ProfileType
-onChainProfileTypeToProfileType Onchain.Practitioner = Practitioner
-onChainProfileTypeToProfileType Onchain.Organization = Organization
+onchainProfileTypeToProfileType :: Onchain.OnchainProfileType -> ProfileType
+onchainProfileTypeToProfileType Onchain.Practitioner = Practitioner
+onchainProfileTypeToProfileType Onchain.Organization = Organization
 
 onchainRankToRankInformation :: (MonadError GYTxMonadException m) => Onchain.OnchainRank -> m (Maybe Rank)
 onchainRankToRankInformation (Onchain.Rank {..}) = do
@@ -87,7 +87,7 @@ profileDatumToProfile :: (MonadError GYTxMonadException m) => CIP68Datum Onchain
 profileDatumToProfile datum = do
   let ProfileData {..} = profileDatumToProfileData datum
       onchainProfile =  extra datum
-  let profileType = onChainProfileTypeToProfileType $ Onchain.profileType onchainProfile
+  let profileType = onchainProfileTypeToProfileType $ Onchain.profileType onchainProfile
   gyProfileId <- assetClassFromPlutus' (Onchain.profileId onchainProfile)
   return $ Profile
     { profileId = gyProfileId,

@@ -60,6 +60,9 @@ library onchain-lib
     Onchain.MintingPolicy
     Onchain.ProfilesValidator
     Onchain.Protocol
+    Onchain.Protocol.Id
+    Onchain.Protocol.Lookup
+    Onchain.Protocol.Types
     Onchain.RanksValidator
     Onchain.Utils
 
@@ -70,13 +73,8 @@ library onchain-lib
 
   -- other-extensions:
   build-depends:
-    , aeson
     , bytestring
     , containers
-    , http-types
-    , servant-server
-    , swagger2
-    , text
 
   --- Cardano specific dependencies
   build-depends:
@@ -174,6 +172,7 @@ library offchain-lib
     DomainTypes.Core.Types
     DomainTypes.Transfer.Types
     Ingestion
+    DomainTypes.Core.BJJ
     Storage
     TxBuilding.Context
     TxBuilding.Exceptions

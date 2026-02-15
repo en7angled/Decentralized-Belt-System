@@ -30,7 +30,7 @@ import GeniusYield.Types
 import Ingestion
 import KupoAtlas (kupoMatchToAtlasMatch)
 import KupoClient (CreatedAt (..), KupoMatch (..))
-import Onchain.BJJ (BJJBelt)
+import DomainTypes.Core.BJJ (BJJBelt)
 
 derivePersistFieldJSON "BJJBelt"
 derivePersistFieldJSON "GYAssetClass"

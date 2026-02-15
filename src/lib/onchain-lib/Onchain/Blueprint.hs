@@ -1,4 +1,10 @@
-module Onchain.Blueprint where
+-- | CIP-57 contract blueprint generation for the BJJ Belt System.
+module Onchain.Blueprint
+  ( contractBlueprint,
+    mintingPolicyBlueprint,
+    myPreamble,
+  )
+where
 
 import Data.ByteString.Short (fromShort)
 import Data.Set qualified as Set
@@ -152,6 +158,7 @@ membershipsValidatorBlueprint _mp =
     }
 
 -- | Legacy function for backward compatibility
+{-# DEPRECATED mintingPolicyBlueprint "Use contractBlueprint instead" #-}
 mintingPolicyBlueprint :: ProtocolParams -> ContractBlueprint
 mintingPolicyBlueprint mp =
   MkContractBlueprint

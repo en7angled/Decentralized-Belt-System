@@ -12,7 +12,7 @@ import DomainTypes.Core.Types (ProfileType (..))
 import GeniusYield.GYConfig
 import GeniusYield.Imports
 import GeniusYield.Types
-import Onchain.BJJ (BJJBelt (..), parseBelt)
+import DomainTypes.Core.BJJ (BJJBelt (..), parseBelt)
 import Onchain.Blueprint (contractBlueprint)
 import Options.Applicative
 import PlutusLedgerApi.V3

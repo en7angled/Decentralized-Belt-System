@@ -4,6 +4,9 @@
 {-# HLINT ignore "Use &&" #-}
 {-# HLINT ignore "Use isNothing" #-}
 
+-- | Generic sorted linked list implementation for on-chain use.
+-- Provides node datum types and validated insert/append operations
+-- with ordering and adjacency invariants.
 module Onchain.LinkedList where
 
 import GHC.Generics (Generic)
@@ -51,7 +54,7 @@ checkIfValidNodeDatum node = case nodeKey node of
   Just key -> case nextNodeKey node of
     Nothing -> True -- Last node
     Just nextKey ->
-      traceIfFalse "currency symbol mismatch for node key and next key"
+      traceIfFalse "Invalid node: currency symbol mismatch between key and next key"
         $ assetClassCurrencySymbol key
         == assetClassCurrencySymbol nextKey
   where
@@ -69,12 +72,12 @@ checkInputsAndInsertInBetweenNodes (oldLeftNode, rightNode, insertedNode) =
     then
       updatedLeftNode
     else
-      traceError "Invalid insert inputs"
+      traceError "Cannot insert node: adjacency or ordering invariant violated"
   where
     updatedLeftNode = oldLeftNode {nextNodeKey = nodeKey insertedNode}
     validInputs =
       and
-        [ traceIfFalse "input nodes where adiacent" $ nextNodeKey oldLeftNode == nodeKey rightNode,
+        [ traceIfFalse "input nodes were adjacent" $ nextNodeKey oldLeftNode == nodeKey rightNode,
           traceIfFalse "left must be less than inserted" $ nodeKey oldLeftNode < nodeKey insertedNode,
           traceIfFalse "right must be greater than inserted" $ nodeKey rightNode > nodeKey insertedNode,
           traceIfFalse "inserted must point to the right node" $ nextNodeKey insertedNode == nodeKey rightNode,
@@ -92,7 +95,7 @@ checkInputsAndAppendNode (lastNode, appendedNode) =
     then
       updatedLastNode
     else
-      traceError "Invalid append inputs"
+      traceError "Cannot append node: end-of-list invariant violated"
   where
     updatedLastNode = lastNode {nextNodeKey = nodeKey appendedNode}
     validInputs =

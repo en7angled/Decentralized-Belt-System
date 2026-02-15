@@ -188,14 +188,15 @@ prop_monthsToPosixTimeNonNegative = property $ do
 
 prop_timeRequirementsEnforced :: Property
 prop_timeRequirementsEnforced = property $ do
-  (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, studentNextDate) <- forAll genInvalidTimePromotion
-  Hedgehog.assert $ not (validatePromotion masterBelt masterDate studentCurrentBelt studentCurrentDate studentNextBelt studentNextDate)
+  (master, studentCurrent, studentNext) <- forAll genInvalidTimePromotion
+  Hedgehog.assert $ not (validatePromotion master studentCurrent studentNext)
 
 prop_sameBeltPromotionFails :: Property
 prop_sameBeltPromotionFails = property $ do
-  belt <- forAll genBelt
+  b <- forAll genBelt
   date <- forAll genPOSIXTime
-  Hedgehog.assert $ not (validatePromotion belt date belt date belt date)
+  let snapshot = BeltSnapshot b date
+  Hedgehog.assert $ not (validatePromotion snapshot snapshot snapshot)
 
 prop_downgradePromotionFails :: Property
 prop_downgradePromotionFails = property $ do
@@ -203,7 +204,7 @@ prop_downgradePromotionFails = property $ do
   lowerBelt <- forAll genBelt
   date <- forAll genPOSIXTime
   when (higherBelt > lowerBelt) $ do
-    Hedgehog.assert $ not (validatePromotion higherBelt date higherBelt date lowerBelt date)
+    Hedgehog.assert $ not (validatePromotion (BeltSnapshot higherBelt date) (BeltSnapshot higherBelt date) (BeltSnapshot lowerBelt date))
 
 -- =============================================================================
 -- Generators
@@ -216,7 +217,7 @@ genPOSIXTime :: Gen POSIXTime
 genPOSIXTime = POSIXTime <$> Gen.integral (Range.linear 0 1000000000)
 
 -- Invalid time promotion generator
-genInvalidTimePromotion :: Gen (BJJBelt, POSIXTime, BJJBelt, POSIXTime, BJJBelt, POSIXTime)
+genInvalidTimePromotion :: Gen (BeltSnapshot, BeltSnapshot, BeltSnapshot)
 genInvalidTimePromotion = do
   masterBelt <- Gen.element [Black, Black1, Black2]
   masterDate <- genPOSIXTime
@@ -226,4 +227,4 @@ genInvalidTimePromotion = do
 
   -- Set next date before current date
   let invalidNextDate = POSIXTime (unPOSIXTime studentCurrentDate - 2629800000) -- Before current date
-  pure (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, invalidNextDate)
+  pure (BeltSnapshot masterBelt masterDate, BeltSnapshot studentCurrentBelt studentCurrentDate, BeltSnapshot studentNextBelt invalidNextDate)

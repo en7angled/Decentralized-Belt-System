@@ -3,7 +3,7 @@ module Query.Common where
 import Data.Text (Text)
 import DomainTypes.Core.Types
 import GeniusYield.Types (GYTime)
-import Onchain.BJJ (BJJBelt)
+import DomainTypes.Core.BJJ (BJJBelt)
 
 type Limit = Int
 

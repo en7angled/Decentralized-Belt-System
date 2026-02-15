@@ -16,7 +16,7 @@ import GeniusYield.Imports
 import GeniusYield.Types hiding (title)
 import Network.Wai
 import Network.Wai.Middleware.Servant.Options (provideOptions)
-import Onchain.BJJ (BJJBelt)
+import DomainTypes.Core.BJJ (BJJBelt)
 import Query.Common qualified as C
 import Query.Live qualified as L
 import Query.Projected qualified as P

@@ -14,7 +14,7 @@ import Deriving.Aeson
 import DomainTypes.Core.Types
 import GHC.Generics ()
 import GeniusYield.Types.Time
-import Onchain.BJJ (BJJBelt)
+import DomainTypes.Core.BJJ (BJJBelt)
 
 -------------------------------------------------------------------------------
 

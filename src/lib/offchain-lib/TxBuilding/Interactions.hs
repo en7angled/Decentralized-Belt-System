@@ -80,14 +80,14 @@ interactionToTxSkeleton Interaction {..} = do
           createProfileWithRankTX
             receiveAddr
             (profileDataToMetadataFields profileData)
-            (profileTypeToOnChainProfileType profileType)
+            (profileTypeToOnchainProfileType profileType)
             (timeToPlutus creationDate)
             belt
         InitProfileAction profileData profileType creationDate -> do
           createProfileTX
             receiveAddr
             (profileDataToMetadataFields profileData)
-            (profileTypeToOnChainProfileType profileType)
+            (profileTypeToOnchainProfileType profileType)
             (timeToPlutus creationDate)
         UpdateProfileImageAction profileRefAC imgURI -> do
           (,profileRefAC)

@@ -16,7 +16,7 @@ import Deriving.Aeson
 import GHC.Generics ()
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
-import Onchain.BJJ (BJJBelt)
+import DomainTypes.Core.BJJ (BJJBelt)
 import Servant (FromHttpApiData (..))
 import Utils
 

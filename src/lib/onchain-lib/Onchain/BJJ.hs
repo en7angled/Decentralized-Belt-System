@@ -3,19 +3,27 @@
 
 {-# HLINT ignore "Use guards" #-}
 
-module Onchain.BJJ where
+-- | BJJ belt types, promotion rules, and time-in-grade requirements.
+module Onchain.BJJ
+  ( -- * BJJ Rank Types
+    BJJBelt (..),
+    BeltSnapshot (..),
+    beltToInt,
+    intToBelt,
+    minMonthsForBelt,
+    msPerMonth,
+    monthsToPosixTime,
 
-import Data.Aeson.Types
-import Data.String (IsString (..))
-import Data.Swagger
-import Data.Text (Text)
-import Data.Text qualified as T
+    -- * BJJ Promotion Rules
+    validatePromotion,
+  )
+where
+
 import GHC.Generics (Generic)
 import PlutusLedgerApi.V3 (POSIXTime (POSIXTime))
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
-import Servant (FromHttpApiData (..))
 import Prelude qualified
 
 -------------------------------------------------------------------------------
@@ -41,34 +49,9 @@ data BJJBelt
   | Red -- 9th Degree
   | Red10 -- 10th Degree
   deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition, FromJSON, ToJSON, ToSchema, ToParamSchema)
+  deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''BJJBelt [('White, 0), ('Blue, 1), ('Purple, 2), ('Brown, 3), ('Black, 4), ('Black1, 5), ('Black2, 6), ('Black3, 7), ('Black4, 8), ('Black5, 9), ('Black6, 10), ('RedAndBlack, 11), ('RedAndWhite, 12), ('Red, 13), ('Red10, 14)]
-
-instance IsString BJJBelt where
-  fromString :: Prelude.String -> BJJBelt
-  fromString s = case parseBelt s of
-    Just belt -> belt
-    Nothing -> traceError "Invalid belt"
-
-parseBelt :: Prelude.String -> Maybe BJJBelt
-parseBelt s = case s of
-  "White" -> Just White
-  "Blue" -> Just Blue
-  "Purple" -> Just Purple
-  "Brown" -> Just Brown
-  "Black" -> Just Black
-  "Black1" -> Just Black1
-  "Black2" -> Just Black2
-  "Black3" -> Just Black3
-  "Black4" -> Just Black4
-  "Black5" -> Just Black5
-  "Black6" -> Just Black6
-  "RedAndBlack" -> Just RedAndBlack
-  "RedAndWhite" -> Just RedAndWhite
-  "Red" -> Just Red
-  "Red10" -> Just Red10
-  _ -> Nothing
 
 {-# INLINEABLE beltToInt #-}
 beltToInt :: BJJBelt -> Integer
@@ -199,43 +182,63 @@ minMonthsForBelt belt = case belt of
   Red -> 120
   Red10 -> 0
 
+-- | Milliseconds per average month (30.4375 days).
+{-# INLINEABLE msPerMonth #-}
+msPerMonth :: Integer
+msPerMonth = 2_629_800_000
+
 {-# INLINEABLE monthsToPosixTime #-}
 monthsToPosixTime :: Integer -> POSIXTime
-monthsToPosixTime months = POSIXTime $ months * 2629800000
+monthsToPosixTime months = POSIXTime $ months * msPerMonth
 
-instance FromHttpApiData BJJBelt where
-  parseQueryParam :: Text -> Either Text BJJBelt
-  parseQueryParam = maybe (Left "Invalid belt") Right . parseBelt . T.unpack
+-------------------------------------------------------------------------------
 
--- -------------------------------------------------------------------------------
+-- * Belt Snapshot
 
--- -- * BJJ Promotion Rules
+-------------------------------------------------------------------------------
 
--- -------------------------------------------------------------------------------
+-- | A snapshot of a belt rank and its achievement date.
+-- Used to bundle the two related arguments and prevent argument-swapping bugs
+-- in 'validatePromotion'.
+data BeltSnapshot = BeltSnapshot
+  { belt :: BJJBelt,
+    beltDate :: POSIXTime
+  }
+  deriving stock (Generic, Prelude.Show)
+  deriving anyclass (HasBlueprintDefinition)
+
+makeIsDataSchemaIndexed ''BeltSnapshot [('BeltSnapshot, 0)]
+
+-------------------------------------------------------------------------------
+
+-- * BJJ Promotion Rules
+
+-------------------------------------------------------------------------------
+
 {-# INLINEABLE validatePromotion #-}
-validatePromotion :: BJJBelt -> POSIXTime -> BJJBelt -> POSIXTime -> BJJBelt -> POSIXTime -> Bool
-validatePromotion masterBelt masterBeltDate studentCurrentBelt studentCurrentBeltDate studentNextBelt studentNextBeltDate =
-  case masterBelt of
+validatePromotion :: BeltSnapshot -> BeltSnapshot -> BeltSnapshot -> Bool
+validatePromotion master studentCurrent studentNext =
+  case belt master of
     r | r < Black -> traceIfFalse "Belts lower than black are not allowed to promote" False
-    r | r == Black1 -> traceIfFalse "Only 2 degree black belts can promote to black" $ studentNextBelt < Black && generalRules
+    r | r == Black1 -> traceIfFalse "Only 2 degree black belts can promote to black" $ belt studentNext < Black && generalRules
     _ -> generalRules
   where
     generalRules =
       and
         [ traceIfFalse "Master belt must be greater than the student's next belt"
-            $ masterBelt
-            > studentNextBelt,
+            $ belt master
+            > belt studentNext,
           traceIfFalse "Master belt date must be before the student's next belt date"
-            $ masterBeltDate
-            < studentNextBeltDate,
+            $ beltDate master
+            < beltDate studentNext,
           traceIfFalse "Student's next belt must be greater than the student's current belt"
-            $ studentNextBelt
-            > studentCurrentBelt,
+            $ belt studentNext
+            > belt studentCurrent,
           traceIfFalse "Student Next belt date must be after the student's current belt date"
-            $ studentNextBeltDate
-            > studentCurrentBeltDate,
+            $ beltDate studentNext
+            > beltDate studentCurrent,
           traceIfFalse "Time in the current belt must be greater than the minimum time for the next belt"
-            $ studentNextBeltDate
-            - studentCurrentBeltDate
-            > monthsToPosixTime (minMonthsForBelt studentCurrentBelt)
+            $ beltDate studentNext
+            - beltDate studentCurrent
+            > monthsToPosixTime (minMonthsForBelt (belt studentCurrent))
         ]

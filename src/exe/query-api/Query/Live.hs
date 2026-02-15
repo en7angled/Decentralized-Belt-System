@@ -10,7 +10,7 @@ import Data.Text qualified as Text
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.GYConfig (GYCoreConfig (..))
-import Onchain.BJJ (BJJBelt)
+import DomainTypes.Core.BJJ (BJJBelt)
 import Query.Common
 import QueryAppMonad (QueryAppContext (..))
 import TxBuilding.Context

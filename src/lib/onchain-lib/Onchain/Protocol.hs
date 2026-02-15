@@ -1,200 +1,57 @@
-{-# LANGUAGE DerivingVia #-}
--- Required for `makeLift`:
-{-# LANGUAGE MultiParamTypeClasses #-}
--- Required for `makeLift`:
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-partial-fields #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use &&" #-}
 
-module Onchain.Protocol where
+-- | Business logic for the BJJ Belt protocol.
+--
+-- Re-exports 'Onchain.Protocol.Types', 'Onchain.Protocol.Id', and
+-- 'Onchain.Protocol.Lookup' so that existing @import Onchain.Protocol@
+-- statements continue to work unchanged.
+module Onchain.Protocol
+  ( -- * Re-exports
+    module Onchain.Protocol.Types,
+    module Onchain.Protocol.Id,
+    module Onchain.Protocol.Lookup,
 
-import GHC.Generics (Generic)
-import Onchain.CIP68 (CIP68Datum (CIP68Datum, extra))
+    -- * Membership List Operations
+    initEmptyMembershipHistoriesList,
+    mkMembershipHistoriesListNode,
+    unsafeGetMembershipHistory,
+    insertMembershipHistoryInBetween,
+    appendMembershipHistory,
+    updateNodeMembershipHistory,
+
+    -- * Membership History / Interval Operations
+    initMembershipHistory,
+    addMembershipIntervalToHistory,
+    updateMembershipIntervalEndDate,
+    acceptMembershipInterval,
+
+    -- * Profile / Rank Smart Constructors
+    mkPromotion,
+    acceptRank,
+    promoteProfileDatum,
+    promoteProfile,
+    mkPractitionerProfile,
+    mkOrganizationProfile,
+    getCurrentRankId,
+  )
+where
+
+import Onchain.CIP68 (CIP68Datum (CIP68Datum))
 import Onchain.LinkedList (NodeDatum (..))
 import Onchain.LinkedList qualified as LinkedList
-import Onchain.Utils (checkAndGetCurrentStateDatumAndValue, nameFromTxOutRef)
-import PlutusLedgerApi.V1.Value (AssetClass (..))
-import PlutusLedgerApi.V3
-  ( Address,
-    CurrencySymbol,
-    POSIXTime,
-    ScriptHash,
-    TokenName (TokenName),
-    TxInInfo,
-    TxOutRef,
-    Value,
-  )
-import PlutusTx
-import PlutusTx.Blueprint
-import PlutusTx.Builtins
+import Onchain.Protocol.Id
+import Onchain.Protocol.Lookup
+import Onchain.Protocol.Types
+import PlutusLedgerApi.V1.Value (AssetClass)
+import PlutusLedgerApi.V3 (POSIXTime)
 import PlutusTx.Prelude
-import Prelude qualified
 
 -------------------------------------------------------------------------------
 
--- * Protocol Parameters
-
--------------------------------------------------------------------------------
-newtype ProtocolParams = ProtocolParams (ScriptHash, ScriptHash, ScriptHash)
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''ProtocolParams [('ProtocolParams, 0)]
-makeLift ''ProtocolParams
-
-profilesValidatorScriptHash :: ProtocolParams -> ScriptHash
-profilesValidatorScriptHash (ProtocolParams (_, p, _)) = p
-
-ranksValidatorScriptHash :: ProtocolParams -> ScriptHash
-ranksValidatorScriptHash (ProtocolParams (r, _, _)) = r
-
-membershipsValidatorScriptHash :: ProtocolParams -> ScriptHash
-membershipsValidatorScriptHash (ProtocolParams (_, _, m)) = m
-
--------------------------------------------------------------------------------
-
--- * OnchainProfile
-
--------------------------------------------------------------------------------
-type RankId = AssetClass
-
-type ProfileId = AssetClass
-
-type MembershipHistoriesListNodeId = AssetClass
-
-type MembershipHistoryId = AssetClass
-
-type MembershipIntervalId = AssetClass
-
-data OnChainProfileType
-  = Practitioner
-  | Organization
-  deriving stock (Generic, Prelude.Show, Prelude.Eq)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''OnChainProfileType [('Practitioner, 0), ('Organization, 1)]
-
-data OnchainProfile
-  = OnchainProfile
-  { profileId :: ProfileId,
-    profileType :: OnChainProfileType,
-    currentRank :: Maybe RankId, -- ˆ Organisations have no rank
-    protocolParams :: ProtocolParams
-  }
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''OnchainProfile [('OnchainProfile, 0)]
-
--------------------------------------------------------------------------------
-
--- * OnchainRank
-
--------------------------------------------------------------------------------
-
-data OnchainRank
-  = Rank
-      { rankId :: RankId,
-        rankNumber :: Integer,
-        rankAchievedByProfileId :: ProfileId,
-        rankAwardedByProfileId :: ProfileId,
-        rankAchievementDate :: POSIXTime,
-        rankPreviousRankId :: Maybe RankId,
-        rankProtocolParams :: ProtocolParams
-      }
-  | Promotion
-      { promotionId :: RankId,
-        promotionRankNumber :: Integer,
-        promotionAwardedTo :: ProfileId,
-        promotionAwardedBy :: ProfileId,
-        promotionAchievementDate :: POSIXTime,
-        promotionProtocolParams :: ProtocolParams
-      }
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''OnchainRank [('Rank, 0), ('Promotion, 1)]
-
--------------------------------------------------------------------------------
-
--- * MembershipHistory
-
--------------------------------------------------------------------------------
-
-data OnchainMembershipHistory = OnchainMembershipHistory
-  { -- | AssetClass of the membership history NFT
-    membershipHistoryId :: MembershipHistoryId,
-    -- | Practitioner ProfileId
-    membershipHistoryPractitionerId :: ProfileId,
-    -- | Organization ProfileId
-    membershipHistoryOrganizationId :: ProfileId,
-    -- |  AssetClass of the head of the intervals list
-    membershipHistoryIntervalsHeadId :: MembershipIntervalId
-  }
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''OnchainMembershipHistory [('OnchainMembershipHistory, 0)]
-
--------------------------------------------------------------------------------
-
--- * MembershipInterval
-
--------------------------------------------------------------------------------
-
-data OnchainMembershipInterval = OnchainMembershipInterval
-  { -- | AssetClass of the membership interval NFT
-    membershipIntervalId :: MembershipIntervalId,
-    -- | Start date of the membership interval
-    membershipIntervalStartDate :: POSIXTime,
-    -- | End date of the membership interval
-    membershipIntervalEndDate :: Maybe POSIXTime,
-    -- | Is the membership interval accepted
-    membershipIntervalIsAck :: Bool,
-    -- | Maybe AssetClass of the previous interval, Nothing for the first interval
-    membershipIntervalPrevId :: Maybe MembershipIntervalId,
-    -- | Number of the membership interval (starts from 0)
-    membershipIntervalNumber :: Integer,
-    -- | Practitioner ProfileId
-    membershipIntervalPractitionerId :: ProfileId
-  }
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''OnchainMembershipInterval [('OnchainMembershipInterval, 0)]
-
--------------------------------------------------------------------------------
-
--- * Onchain Membership Histories List
-
--------------------------------------------------------------------------------
-
-data MembershipHistoriesListNode
-  = MembershipHistoriesListNode
-  { organizationId :: ProfileId,
-    nodeInfo :: NodeDatum (Maybe OnchainMembershipHistory)
-  }
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''MembershipHistoriesListNode [('MembershipHistoriesListNode, 0)]
-
--- | Sum type for datums stored at the MembershipsValidator address.
--- Distinguishes between linked list nodes (membership histories) and interval records.
-data MembershipDatum
-  = ListNodeDatum MembershipHistoriesListNode
-  | IntervalDatum OnchainMembershipInterval
-  deriving stock (Generic, Prelude.Show)
-  deriving anyclass (HasBlueprintDefinition)
-
-makeIsDataSchemaIndexed ''MembershipDatum [('ListNodeDatum, 0), ('IntervalDatum, 1)]
-
--------------------------------------------------------------------------------
-
--- * Protocol Logic
+-- * Membership List Operations
 
 -------------------------------------------------------------------------------
 
@@ -212,6 +69,7 @@ initEmptyMembershipHistoriesList organizationId =
           }
     }
 
+-- | Wrap a membership history into a linked-list node with an optional next-node pointer.
 {-# INLINEABLE mkMembershipHistoriesListNode #-}
 mkMembershipHistoriesListNode :: OnchainMembershipHistory -> Maybe MembershipHistoriesListNodeId -> MembershipHistoriesListNode
 mkMembershipHistoriesListNode history maybeNextNodeId =
@@ -226,35 +84,15 @@ mkMembershipHistoriesListNode history maybeNextNodeId =
           nodeInfo = nodeInfo
         }
 
+-- | Extract the membership history from a list node. Fails on root nodes.
 {-# INLINEABLE unsafeGetMembershipHistory #-}
 unsafeGetMembershipHistory :: MembershipHistoriesListNode -> OnchainMembershipHistory
 unsafeGetMembershipHistory node = case nodeData (nodeInfo node) of
   Just history -> history
   Nothing -> traceError "Root node has no history"
 
-
-
-
--- | Derive a unique membership history ID from two profile IDs
-{-# INLINEABLE deriveMembershipHistoryId #-}
-deriveMembershipHistoryId :: ProfileId -> ProfileId -> MembershipHistoryId
-deriveMembershipHistoryId (AssetClass (cs, TokenName orgId)) (AssetClass (_cs, TokenName prId)) =
-  AssetClass (cs, TokenName (blake2b_224 (orgId `appendByteString` prId)))
-
--- | Derive a unique membership interval ID from a membership history ID and a number
-{-# INLINEABLE deriveMembershipIntervalId #-}
-deriveMembershipIntervalId :: MembershipHistoryId -> Integer -> MembershipIntervalId
-deriveMembershipIntervalId (AssetClass (cs, TokenName bs)) i =
-  AssetClass (cs, TokenName (blake2b_224 (bs `appendByteString` integerToByteString BigEndian 0 i)))
-
--- | Derive a unique membership histories list ID from a profile ID as the hash of the profile ID
-{-# INLINEABLE deriveMembershipHistoriesListId #-}
-deriveMembershipHistoriesListId :: ProfileId -> MembershipHistoriesListNodeId
-deriveMembershipHistoriesListId (AssetClass (cs, TokenName bs)) = AssetClass (cs, TokenName (blake2b_224 bs))
-
-
-
-
+-- | Insert a membership history node between two existing nodes in the sorted list.
+-- Validates that all nodes belong to the same organization.
 {-# INLINEABLE insertMembershipHistoryInBetween #-}
 insertMembershipHistoryInBetween :: (MembershipHistoriesListNode, MembershipHistoriesListNode, MembershipHistoriesListNode) -> MembershipHistoriesListNode
 insertMembershipHistoryInBetween (oldLeftNode, rightNode, insertedNode) =
@@ -271,6 +109,8 @@ insertMembershipHistoryInBetween (oldLeftNode, rightNode, insertedNode) =
             }
         else traceError "Cannot insert membership history in between nodes from different organizations"
 
+-- | Append a membership history node to the end of the sorted list.
+-- Validates that both nodes belong to the same organization.
 {-# INLINEABLE appendMembershipHistory #-}
 appendMembershipHistory :: (MembershipHistoriesListNode, MembershipHistoriesListNode) -> MembershipHistoriesListNode
 appendMembershipHistory (lastNode, appendedNode) =
@@ -286,6 +126,7 @@ appendMembershipHistory (lastNode, appendedNode) =
             }
         else traceError "Cannot append membership history to nodes from different organizations"
 
+-- | Replace the membership history inside a list node, preserving node pointers.
 {-# INLINEABLE updateNodeMembershipHistory #-}
 updateNodeMembershipHistory :: MembershipHistoriesListNode -> OnchainMembershipHistory -> MembershipHistoriesListNode
 updateNodeMembershipHistory node history =
@@ -299,6 +140,13 @@ updateNodeMembershipHistory node history =
           }
     }
 
+-------------------------------------------------------------------------------
+
+-- * Membership History / Interval Operations
+
+-------------------------------------------------------------------------------
+
+-- | Create a new membership history with its first interval.
 {-# INLINEABLE initMembershipHistory #-}
 initMembershipHistory :: AssetClass -> AssetClass -> POSIXTime -> Maybe POSIXTime -> (OnchainMembershipHistory, OnchainMembershipInterval)
 initMembershipHistory practitionerId organizationId startDate endDate =
@@ -346,7 +194,7 @@ addMembershipIntervalToHistory currentHistory lastInterval startDate maybeEndDat
       newHistory = currentHistory {membershipHistoryIntervalsHeadId = newIntervalId}
    in if addMembershipsValidations
         then (newHistory, newInterval)
-        else traceError "failed addMembershipIntervalToHistory validations"
+        else traceError "Cannot add membership interval: validation failed"
   where
     addMembershipsValidations =
       and
@@ -360,6 +208,7 @@ addMembershipIntervalToHistory currentHistory lastInterval startDate maybeEndDat
       Just lastIntervalEndDate -> startDate >= lastIntervalEndDate
       Nothing -> False -- If the last interval is not closed, we can add a new interval
 
+-- | Update the end date of a membership interval. Only allows extending, not shortening.
 {-# INLINEABLE updateMembershipIntervalEndDate #-}
 updateMembershipIntervalEndDate :: OnchainMembershipInterval -> POSIXTime -> OnchainMembershipInterval
 updateMembershipIntervalEndDate mi newEndDate = case membershipIntervalEndDate mi of
@@ -367,22 +216,26 @@ updateMembershipIntervalEndDate mi newEndDate = case membershipIntervalEndDate m
   Just currentEndDate ->
     if newEndDate >= currentEndDate
       then mi {membershipIntervalEndDate = Just newEndDate}
-      else traceError "New end date is before current end date"
+      else traceError "Cannot update interval: new end date is before current end date"
 
+-- | Mark a membership interval as accepted by the practitioner. Fails if already accepted.
 {-# INLINEABLE acceptMembershipInterval #-}
 acceptMembershipInterval :: OnchainMembershipInterval -> OnchainMembershipInterval
 acceptMembershipInterval mi =
   if membershipIntervalIsAck mi
-    then traceError "interval is already accepted"
+    then traceError "Cannot accept interval: already accepted"
     else mi {membershipIntervalIsAck = True}
 
 -------------------------------------------------------------------------------
--------------------------------------------------------------------------------
+
+-- * Profile / Rank Smart Constructors
+
 -------------------------------------------------------------------------------
 
-{-# INLINEABLE mkPendingRank #-}
-mkPendingRank :: AssetClass -> ProfileId -> ProfileId -> POSIXTime -> Integer -> ProtocolParams -> OnchainRank
-mkPendingRank pendingRankId awardedTo awardedBy achievementDate rankNumber protocolParams =
+-- | Construct a pending 'Promotion' value awaiting acceptance by the student.
+{-# INLINEABLE mkPromotion #-}
+mkPromotion :: AssetClass -> ProfileId -> ProfileId -> POSIXTime -> Integer -> ProtocolParams -> OnchainRank
+mkPromotion pendingRankId awardedTo awardedBy achievementDate rankNumber protocolParams =
   Promotion
     { promotionId = pendingRankId,
       promotionAwardedTo = awardedTo,
@@ -392,6 +245,7 @@ mkPendingRank pendingRankId awardedTo awardedBy achievementDate rankNumber proto
       promotionProtocolParams = protocolParams
     }
 
+-- | Transform a pending 'Promotion' into a confirmed 'Rank' by recording the previous rank.
 {-# INLINEABLE acceptRank #-}
 acceptRank :: OnchainRank -> RankId -> OnchainRank
 acceptRank (Rank {}) _ = traceError "Cannot accept a rank that is not pending"
@@ -433,10 +287,11 @@ promoteProfile (CIP68Datum metadata version profile@OnchainProfile {..}) promoti
      in (CIP68Datum metadata version updatedProfile, newRank)
   Nothing -> traceError "OnchainProfile has no rank"
 
+-- | Create a new practitioner profile together with its initial rank (white belt).
 {-# INLINEABLE mkPractitionerProfile #-}
 mkPractitionerProfile :: ProfileId -> POSIXTime -> ProtocolParams -> Integer -> (OnchainProfile, OnchainRank)
 mkPractitionerProfile profileId creationDate protocolParams rankNumber =
-  let newRankId = generateRankId profileId rankNumber
+  let newRankId = deriveRankId profileId rankNumber
       firstRank =
         Rank
           { rankId = newRankId,
@@ -456,6 +311,7 @@ mkPractitionerProfile profileId creationDate protocolParams rankNumber =
           }
    in (profile, firstRank)
 
+-- | Create a new organization profile (organizations have no rank).
 {-# INLINEABLE mkOrganizationProfile #-}
 mkOrganizationProfile :: ProfileId -> ProtocolParams -> OnchainProfile
 mkOrganizationProfile profileId protocolParams =
@@ -466,66 +322,8 @@ mkOrganizationProfile profileId protocolParams =
       protocolParams = protocolParams
     }
 
+-- | Extract the current rank ID from a practitioner profile. Fails on organizations.
 {-# INLINEABLE getCurrentRankId #-}
 getCurrentRankId :: OnchainProfile -> RankId
 getCurrentRankId (OnchainProfile _ Practitioner (Just rankId) _) = rankId
 getCurrentRankId _ = traceError "OnchainProfile has no rank"
-
-{-# INLINEABLE generateRankId #-}
-generateRankId :: ProfileId -> Integer -> RankId
-generateRankId (AssetClass (cs, TokenName bs)) i = AssetClass (cs, TokenName (blake2b_224 (bs `appendByteString` integerToByteString BigEndian 0 i))) -- takeByteString 28 $ blake2b_256 (bs <> (serialiseData . toBuiltinData) i))
-
--- | Generate a unique promotion rank ID from a seed TxOutRef
--- The seed ensures uniqueness since each TxOutRef can only be spent once
-{-# INLINEABLE generatePromotionRankId #-}
-generatePromotionRankId :: TxOutRef -> CurrencySymbol -> RankId
-generatePromotionRankId seed cs = AssetClass (cs, TokenName (nameFromTxOutRef seed))
-
-{-# INLINEABLE hasCurrencySymbol #-}
-hasCurrencySymbol :: AssetClass -> CurrencySymbol -> Bool
-hasCurrencySymbol (AssetClass (cs, _)) cs' = cs == cs'
-
--------------------------------------------------------------------------------
-
--- * Protocol Onchain Helpers
-
--------------------------------------------------------------------------------
-{-# INLINEABLE unsafeGetRank #-}
-unsafeGetRank :: RankId -> Address -> [TxInInfo] -> OnchainRank
-unsafeGetRank ac addr txins =
-  let (_, b) = checkAndGetCurrentStateDatumAndValue ac addr txins
-   in unsafeFromBuiltinData b
-
-{-# INLINEABLE unsafeGetRankDatumAndValue #-}
-unsafeGetRankDatumAndValue :: RankId -> Address -> [TxInInfo] -> (Value, OnchainRank)
-unsafeGetRankDatumAndValue ac addr txins =
-  let (v, b) = checkAndGetCurrentStateDatumAndValue ac addr txins
-   in (v, unsafeFromBuiltinData b)
-
-{-# INLINEABLE unsafeGetProfile #-}
-unsafeGetProfile :: ProfileId -> Address -> [TxInInfo] -> OnchainProfile
-unsafeGetProfile ac addr txins =
-  let (_, b) = checkAndGetCurrentStateDatumAndValue ac addr txins
-   in extra (unsafeFromBuiltinData b :: CIP68Datum OnchainProfile)
-
-{-# INLINEABLE unsafeGetProfileDatumAndValue #-}
-unsafeGetProfileDatumAndValue :: ProfileId -> Address -> [TxInInfo] -> (Value, CIP68Datum OnchainProfile)
-unsafeGetProfileDatumAndValue ac addr txins =
-  let (v, b) = checkAndGetCurrentStateDatumAndValue ac addr txins
-   in (v, unsafeFromBuiltinData b :: CIP68Datum OnchainProfile)
-
-{-# INLINEABLE unsafeGetListNodeDatumAndValue #-}
-unsafeGetListNodeDatumAndValue :: MembershipHistoriesListNodeId -> Address -> [TxInInfo] -> (Value, MembershipHistoriesListNode)
-unsafeGetListNodeDatumAndValue listNodeId addr txins =
-  let (v, b) = checkAndGetCurrentStateDatumAndValue listNodeId addr txins
-   in case unsafeFromBuiltinData b :: MembershipDatum of
-        ListNodeDatum node -> (v, node)
-        _ -> traceError "Expected ListNodeDatum"
-
-{-# INLINEABLE unsafeGetMembershipInterval #-}
-unsafeGetMembershipInterval :: MembershipIntervalId -> Address -> [TxInInfo] -> (Value, OnchainMembershipInterval)
-unsafeGetMembershipInterval intervalId addr txins =
-  let (v, b) = checkAndGetCurrentStateDatumAndValue intervalId addr txins
-   in case unsafeFromBuiltinData b :: MembershipDatum of
-        IntervalDatum interval -> (v, interval)
-        _ -> traceError "Expected IntervalDatum"
