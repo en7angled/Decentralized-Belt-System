@@ -19,6 +19,7 @@
 - Extracted `pkhFromExtendedSkey` into `TxBuilding.Utils`; `addressFromPaymentSigningKey` and `pkhFromSkey` now share the same key derivation logic
 - `getProfileRanks` now uses the `extra` accessor instead of pattern-matching `CIP68Datum` internals
 - Standardized redeemer construction to use `redeemerFromPlutusData` everywhere (replaced `redeemerFromPlutus' . toBuiltinData`)
+- Fixed malicious AcceptPromotion test to use `PromotionAcceptance` redeemer instead of `unitRedeemer` so the test isolates the intended vulnerability
 
 
 ## 0.3.0.0 -- 2026-02-15

@@ -27,6 +27,7 @@ import GeniusYield.TxBuilder.User qualified as User
 import GeniusYield.Types
 import Onchain.CIP68
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
+import Onchain.RanksValidator (RanksRedeemer (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId, promoteProfile)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types (OracleParams (..))
@@ -242,6 +243,7 @@ maliciousAcceptPromotionTX gyPromotionId = do
   -- Output 0: Updated profile state locked at profilesValidator
   -- Output 1: Updated rank state locked at ranksValidator
   let profileOutputIdx = 0 :: Integer
+  let rankOutputIdx = 1 :: Integer
 
   let gySpendProfileRedeemer = redeemerFromPlutusData $ AcceptPromotion (assetClassToPlutus gyPromotionId) profileOutputIdx
   spendsStudentProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyStudentProfileRefAC gySpendProfileRedeemer profilesValidatorGY
@@ -261,7 +263,8 @@ maliciousAcceptPromotionTX gyPromotionId = do
   -- Output 1: Updated rank state
   isLockingUpdatedRank <- txMustLockStateWithInlineDatumAndValue ranksValidatorGY plutuStudentUpdatedRankDatum gyRankValue
 
-  spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer rvRef gyPromotionId unitRedeemer ranksValidatorGY
+  let gySpendPromotionRedeemer = redeemerFromPlutusData $ PromotionAcceptance profileOutputIdx rankOutputIdx
+  spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer rvRef gyPromotionId gySpendPromotionRedeemer ranksValidatorGY
 
   -- Reference the student's current rank for acceptance-time validation
   referencesCurrentRank <- txMustHaveUTxOsAsRefInputs [gyStudentCurrentRankAC]
