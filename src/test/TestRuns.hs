@@ -119,8 +119,6 @@ mintTestOracleNFT w = asUser w $ do
           , opMinOutputLovelace = 3500000
           }
 
-  oracleAddr <- scriptAddress oracleValidatorGY
-
   -- Spend seed UTxO
   let spendSeed = mustHaveInput (GYTxIn seedGYRef GYTxInWitnessKey)
 
@@ -130,14 +128,7 @@ mintTestOracleNFT w = asUser w $ do
   let mintNFT = mustMint mp gyRedeemer oracleNFTTN 1
 
   -- Lock oracle NFT + datum at oracle validator address
-  let lockOutput =
-        mustHaveOutput
-          GYTxOut
-            { gyTxOutAddress = oracleAddr
-            , gyTxOutDatum = Just (datumFromPlutusData initialOracleParams, GYTxOutUseInlineDatum)
-            , gyTxOutValue = valueSingleton theOracleNFTAC 1 <> valueFromLovelace 3500000
-            , gyTxOutRefS = Nothing
-            }
+  lockOutput <- txMustLockStateWithInlineDatumAndValue oracleValidatorGY initialOracleParams (valueSingleton theOracleNFTAC 1 <> valueFromLovelace 3500000)
 
   void $ sendSkeleton' $ mconcat [spendSeed, mintNFT, lockOutput]
 
