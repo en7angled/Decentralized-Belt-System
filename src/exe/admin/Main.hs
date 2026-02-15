@@ -501,7 +501,7 @@ main = do
 -- | Execute commands that require blockchain providers and signing keys
 executeOnchainCommand :: Command -> IO ()
 executeOnchainCommand cmd = do
-  mTxBuildingContext <- decodeConfigFile @DeployedScriptsContext Constants.defaultTxBuldingContextFile
+  mTxBuildingContext <- decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" Constants.defaultTxBuldingContextFile
   case mTxBuildingContext of
     Nothing -> do
       printYellow "No transaction building context found, please run deploy-reference-scripts first"
@@ -512,7 +512,7 @@ executeOnchainCommand cmd = do
   signKey <- readMnemonicFile mnemonicFilePath
 
   printYellow "Reading atlas configuration file ..."
-  atlasConfig <- maybe (error "Atlas configuration file not found") return =<< decodeConfigFile @GYCoreConfig Constants.defaultAtlasCoreConfig
+  atlasConfig <- maybe (error "Atlas configuration file not found") return =<< decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" Constants.defaultAtlasCoreConfig
 
   printYellow "Loading Providers ..."
   withCfgProviders atlasConfig (Text.read @GYLogNamespace "bjj-belt-system") $ \providers -> do
