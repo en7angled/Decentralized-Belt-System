@@ -168,6 +168,30 @@ else
 fi
 
 # ============================================================================
+# Step 1b: Query and verify oracle
+# ============================================================================
+print_subsection "Verify Oracle"
+print_info "Querying oracle parameters..."
+oracle_output=""
+oracle_exit=0
+oracle_output=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit=$?
+if [ "$oracle_exit" -eq 0 ]; then
+    print_success "Oracle is accessible"
+    echo "$oracle_output" | grep -E "(Paused|Min Output|Fee Config)" | while read -r line; do
+        print_info "  $line"
+    done
+else
+    print_warning "Could not query oracle (exit code $oracle_exit). Continuing..."
+fi
+
+print_subsection "Print colored output helper"
+print_subsection() {
+    echo -e "${CYAN}────────────────────────────────────────${NC}"
+    echo -e "${CYAN}  $1${NC}"
+    echo -e "${CYAN}────────────────────────────────────────${NC}"
+}
+
+# ============================================================================
 # Timestamps for profile creation and promotions
 # ============================================================================
 
@@ -234,6 +258,51 @@ run_admin_cmd_no_output accept-promotion --asset-class "$BLUE_PROMOTION_ID"
 print_success "Blue belt promotion accepted!"
 
 # ============================================================================
+# Step 6: Test Oracle Admin Actions
+# ============================================================================
+print_section "Step 6: Oracle Admin Actions"
+
+print_info "Pausing protocol..."
+run_admin_cmd_no_output pause-protocol
+print_success "Protocol paused"
+
+print_info "Querying oracle (should show Paused: True)..."
+oracle_output2=""
+oracle_exit2=0
+oracle_output2=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit2=$?
+if [ "$oracle_exit2" -eq 0 ]; then
+    echo "$oracle_output2" | grep -E "(Paused|Min Output|Fee Config)" | while read -r line; do
+        print_info "  $line"
+    done
+fi
+
+print_info "Unpausing protocol..."
+run_admin_cmd_no_output unpause-protocol
+print_success "Protocol unpaused"
+
+print_info "Setting fee configuration..."
+run_admin_cmd_no_output set-fees \
+    --fee-address "addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp" \
+    --profile-fee 2000000 \
+    --promotion-fee 3000000 \
+    --membership-fee 1500000
+print_success "Fee configuration set"
+
+print_info "Clearing fees..."
+run_admin_cmd_no_output set-fees --clear-fees
+print_success "Fees cleared"
+
+print_info "Querying oracle (final state)..."
+oracle_output3=""
+oracle_exit3=0
+oracle_output3=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit3=$?
+if [ "$oracle_exit3" -eq 0 ]; then
+    echo "$oracle_output3" | grep -E "(Paused|Min Output|Fee Config)" | while read -r line; do
+        print_info "  $line"
+    done
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 print_section "Test Completed Successfully!"
@@ -246,5 +315,12 @@ echo -e "  - Blue belt promotion:         ${CYAN}$BLUE_PROMOTION_ID${NC}"
 echo ""
 echo -e "${GREEN}Progression:${NC} Student White belt -> Blue belt"
 echo ""
+echo -e "${GREEN}Admin Actions Tested:${NC}"
+echo -e "  1. Pause protocol"
+echo -e "  2. Unpause protocol"
+echo -e "  3. Set fees"
+echo -e "  4. Clear fees"
+echo -e "  5. Query oracle"
+echo ""
 
-print_success "Black Promotes White to Blue test completed successfully!"
+print_success "Black Promotes White to Blue + Admin Actions test completed successfully!"

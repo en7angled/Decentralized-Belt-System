@@ -57,9 +57,9 @@ while ($text =~ /SCRIPT_SIZES:\s*(.*?)(?=\n\S|\z)/sg) {
 
 if [ -s "$SIZE_FILE" ]; then
     echo -e "${BOLD}${CYAN}Deployed Script Sizes:${NC}"
-    echo -e "${YELLOW}╔══════════════════════════╤══════════════╤══════════════════╗${NC}"
-    echo -e "${YELLOW}║${NC} ${CYAN}Script${NC}                   ${YELLOW}│${NC}  ${CYAN}Size (bytes)${NC} ${YELLOW}│${NC} ${CYAN}% of Max (16 KB)${NC} ${YELLOW}║${NC}"
-    echo -e "${YELLOW}╠══════════════════════════╪══════════════╪══════════════════╣${NC}"
+    printf "${YELLOW}+-%-24s-+-%-12s-+-%-16s-+${NC}\n" "------------------------" "------------" "----------------"
+    printf "${YELLOW}|${NC} ${CYAN}%-24s${NC} ${YELLOW}|${NC} ${CYAN}%-12s${NC} ${YELLOW}|${NC} ${CYAN}%-16s${NC} ${YELLOW}|${NC}\n" "Script" "Size (bytes)" "% of Max (16 KB)"
+    printf "${YELLOW}+-%-24s-+-%-12s-+-%-16s-+${NC}\n" "------------------------" "------------" "----------------"
 
     TOTAL_SIZE=0
     while IFS='|' read -r name size; do
@@ -76,13 +76,13 @@ if [ -s "$SIZE_FILE" ]; then
             pct_color="${GREEN}"
         fi
 
-        printf "${YELLOW}║${NC} %-24s ${YELLOW}│${NC} %12s ${YELLOW}│${NC} ${pct_color}%14s%%${NC} ${YELLOW}║${NC}\n" "$name" "$size_formatted" "$pct"
+        printf "${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %12s ${YELLOW}|${NC} ${pct_color}%15s%%${NC} ${YELLOW}|${NC}\n" "$name" "$size_formatted" "$pct"
     done < "$SIZE_FILE"
 
-    echo -e "${YELLOW}╠══════════════════════════╪══════════════╪══════════════════╣${NC}"
+    printf "${YELLOW}+-%-24s-+-%-12s-+-%-16s-+${NC}\n" "------------------------" "------------" "----------------"
     total_formatted=$(format_number "$TOTAL_SIZE")
-    printf "${YELLOW}║${NC} ${GREEN}%-24s${NC} ${YELLOW}│${NC} %12s ${YELLOW}│${NC} %15s ${YELLOW}║${NC}\n" "TOTAL" "$total_formatted" ""
-    echo -e "${YELLOW}╚══════════════════════════╧══════════════╧══════════════════╝${NC}"
+    printf "${YELLOW}|${NC} ${GREEN}%-24s${NC} ${YELLOW}|${NC} %12s ${YELLOW}|${NC} %16s ${YELLOW}|${NC}\n" "TOTAL" "$total_formatted" ""
+    printf "${YELLOW}+-%-24s-+-%-12s-+-%-16s-+${NC}\n" "------------------------" "------------" "----------------"
     echo ""
 fi
 
@@ -106,15 +106,22 @@ my $total_steps = 0;
 my $total_fee = 0;
 my $count = 0;
 
-# Split by INTERACTION markers
-my @blocks = split(/INTERACTION:/, $text);
+# Split by INTERACTION markers (matches both "INTERACTION:" and "ADMIN INTERACTION:")
+my @blocks = split(/(?:ADMIN )?INTERACTION:/, $text);
 shift @blocks;  # Remove text before first INTERACTION
 
 foreach my $block (@blocks) {
     $count++;
     
-    # Extract action type from the interaction description
+    # Extract action category and specific action from the interaction description
+    my $category = "Unknown";
     my $action = "Unknown";
+    if ($block =~ /ProfileAction/) {
+        $category = "Profile";
+    } elsif ($block =~ /AdminAction/) {
+        $category = "Admin";
+    }
+
     if ($block =~ /CreateProfileWithRankAction/) {
         $action = "CreateProfileWithRank";
     } elsif ($block =~ /InitProfileAction/) {
@@ -125,6 +132,14 @@ foreach my $block (@blocks) {
         $action = "AcceptPromotion";
     } elsif ($block =~ /UpdateProfileAction/) {
         $action = "UpdateProfile";
+    } elsif ($block =~ /PauseProtocolAction/) {
+        $action = "PauseProtocol";
+    } elsif ($block =~ /UnpauseProtocolAction/) {
+        $action = "UnpauseProtocol";
+    } elsif ($block =~ /SetFeesAction/) {
+        $action = "SetFees";
+    } elsif ($block =~ /SetMinLovelaceAction/) {
+        $action = "SetMinLovelace";
     }
     
     # Find the TX BUDGET section - it ends at "encoded tx:" or next INTERACTION
@@ -155,14 +170,14 @@ foreach my $block (@blocks) {
     }
     
     if ($script_count > 0) {
-        print "$count|$action|$mem_sum|$steps_sum|$script_count|$fee\n";
+        print "$count|$category|$action|$mem_sum|$steps_sum|$script_count|$fee\n";
         $total_mem += $mem_sum;
         $total_steps += $steps_sum;
         $total_fee += $fee;
     }
 }
 
-print "TOTAL||$total_mem|$total_steps||$total_fee\n";
+print "TOTAL|||$total_mem|$total_steps||$total_fee\n";
 ' > "$TEMP_FILE"
 
 # Mainnet limits: 14,000,000 memory units, 10,000,000,000 CPU steps per transaction
@@ -170,27 +185,26 @@ MAX_MEM=14000000
 MAX_STEPS=10000000000
 
 # Print the table header
-echo -e "${YELLOW}╔═══════╤══════════════════════════╤═════════╤════════════════════╤═══════════════════════╤═══════════════╤═════════════════╗${NC}"
-echo -e "${YELLOW}║${NC}   ${CYAN}#${NC}   ${YELLOW}│${NC} ${CYAN}Interaction${NC}              ${YELLOW}│${NC} ${CYAN}Scripts${NC} ${YELLOW}│${NC}   ${CYAN}exUnitsMem${NC}       ${YELLOW}│${NC}    ${CYAN}exUnitsSteps${NC}      ${YELLOW}│${NC}   ${CYAN}Fee (ADA)${NC}   ${YELLOW}│${NC}  ${CYAN}% of Limit${NC}    ${YELLOW}║${NC}"
-echo -e "${YELLOW}╠═══════╪══════════════════════════╪═════════╪════════════════════╪═══════════════════════╪═══════════════╪═════════════════╣${NC}"
+printf "${YELLOW}+-------+---------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
+printf "${YELLOW}|${NC} ${CYAN}%5s${NC} ${YELLOW}|${NC} ${CYAN}%-7s${NC} ${YELLOW}|${NC} ${CYAN}%-24s${NC} ${YELLOW}|${NC} ${CYAN}%7s${NC} ${YELLOW}|${NC} ${CYAN}%18s${NC} ${YELLOW}|${NC} ${CYAN}%21s${NC} ${YELLOW}|${NC} ${CYAN}%13s${NC} ${YELLOW}|${NC} ${CYAN}%15s${NC} ${YELLOW}|${NC}\n" "#" "Type" "Action" "Scripts" "exUnitsMem" "exUnitsSteps" "Fee (ADA)" "% of Limit"
+printf "${YELLOW}+-------+---------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
 
 # Read and format the data
-while IFS='|' read -r num interaction mem steps script_count fee; do
+while IFS='|' read -r num category action mem steps script_count fee; do
     if [ "$num" = "TOTAL" ]; then
-        echo -e "${YELLOW}╠═══════╪══════════════════════════╪═════════╪════════════════════╪═══════════════════════╪═══════════════╪═════════════════╣${NC}"
+        printf "${YELLOW}+-------+---------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
         mem_formatted=$(format_number "$mem")
         steps_formatted=$(format_number "$steps")
-        # Convert lovelace to ADA (1 ADA = 1,000,000 lovelace)
         fee_ada=$(awk "BEGIN {printf \"%.4f\", $fee / 1000000}")
-        printf "${YELLOW}║${NC} ${GREEN}TOTAL${NC} ${YELLOW}│${NC} %-24s ${YELLOW}│${NC} %7s ${YELLOW}│${NC} %18s ${YELLOW}│${NC} %21s ${YELLOW}│${NC} %13s ${YELLOW}│${NC} %15s ${YELLOW}║${NC}\n" "" "" "$mem_formatted" "$steps_formatted" "$fee_ada" ""
+        printf "${YELLOW}|${NC} ${GREEN}%-5s${NC} ${YELLOW}|${NC} %7s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %7s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} %15s ${YELLOW}|${NC}\n" "TOTAL" "" "" "" "$mem_formatted" "$steps_formatted" "$fee_ada" ""
+        printf "${YELLOW}+-------+---------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
     else
-        # Truncate interaction name if too long
-        if [ ${#interaction} -gt 24 ]; then
-            interaction="${interaction:0:21}..."
+        # Truncate action name if too long
+        if [ ${#action} -gt 24 ]; then
+            action="${action:0:21}..."
         fi
         mem_formatted=$(format_number "$mem")
         steps_formatted=$(format_number "$steps")
-        # Convert lovelace to ADA (1 ADA = 1,000,000 lovelace)
         fee_ada=$(awk "BEGIN {printf \"%.4f\", $fee / 1000000}")
         
         # Calculate percentage of budget used
@@ -207,41 +221,41 @@ while IFS='|' read -r num interaction mem steps script_count fee; do
         fi
         
         pct_display="${mem_pct}%/${steps_pct}%"
-        printf "${YELLOW}║${NC} %5s ${YELLOW}│${NC} %-24s ${YELLOW}│${NC} %7s ${YELLOW}│${NC} %18s ${YELLOW}│${NC} %21s ${YELLOW}│${NC} %13s ${YELLOW}│${NC} ${pct_color}%13s${NC} ${YELLOW}║${NC}\n" "$num" "$interaction" "$script_count" "$mem_formatted" "$steps_formatted" "$fee_ada" "$pct_display"
+        printf "${YELLOW}|${NC} %5s ${YELLOW}|${NC} %-7s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %7s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} ${pct_color}%15s${NC} ${YELLOW}|${NC}\n" "$num" "$category" "$action" "$script_count" "$mem_formatted" "$steps_formatted" "$fee_ada" "$pct_display"
     fi
 done < "$TEMP_FILE"
 
-echo -e "${YELLOW}╚═══════╧══════════════════════════╧═════════╧════════════════════╧═══════════════════════╧═══════════════╧═════════════════╝${NC}"
-
 echo ""
 
-# Generate summary by interaction type
-echo -e "${BOLD}${CYAN}Summary by Interaction Type:${NC}"
-echo -e "${YELLOW}╔══════════════════════════╤═══════╤════════════════════╤═══════════════════════╤═══════════════╤═════════════════╗${NC}"
-echo -e "${YELLOW}║${NC} ${CYAN}Interaction${NC}              ${YELLOW}│${NC} ${CYAN}Count${NC} ${YELLOW}│${NC}   ${CYAN}Avg Memory${NC}       ${YELLOW}│${NC}     ${CYAN}Avg Steps${NC}        ${YELLOW}│${NC}  ${CYAN}Avg Fee${NC}     ${YELLOW}│${NC}  ${CYAN}Avg % Limit${NC}   ${YELLOW}║${NC}"
-echo -e "${YELLOW}╠══════════════════════════╪═══════╪════════════════════╪═══════════════════════╪═══════════════╪═════════════════╣${NC}"
+# Generate summary by action type
+echo -e "${BOLD}${CYAN}Summary by Action:${NC}"
+printf "${YELLOW}+---------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
+printf "${YELLOW}|${NC} ${CYAN}%-7s${NC} ${YELLOW}|${NC} ${CYAN}%-24s${NC} ${YELLOW}|${NC} ${CYAN}%5s${NC} ${YELLOW}|${NC} ${CYAN}%18s${NC} ${YELLOW}|${NC} ${CYAN}%21s${NC} ${YELLOW}|${NC} ${CYAN}%13s${NC} ${YELLOW}|${NC} ${CYAN}%15s${NC} ${YELLOW}|${NC}\n" "Type" "Action" "Count" "Avg Memory" "Avg Steps" "Avg Fee" "Avg % Limit"
+printf "${YELLOW}+---------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
 
-# Aggregate by interaction type
+# Aggregate by category + action type
 awk -F'|' '
 BEGIN { }
-$1 != "TOTAL" && NF >= 6 {
-    type = $2
-    mem = $3
-    steps = $4
-    fee = $6
-    count[type]++
-    total_mem[type] += mem
-    total_steps[type] += steps
-    total_fee[type] += fee
+$1 != "TOTAL" && NF >= 7 {
+    cat = $2
+    action = $3
+    mem = $4
+    steps = $5
+    fee = $7
+    key = cat "|" action
+    count[key]++
+    total_mem[key] += mem
+    total_steps[key] += steps
+    total_fee[key] += fee
 }
 END {
-    for (type in count) {
-        avg_mem = int(total_mem[type] / count[type])
-        avg_steps = int(total_steps[type] / count[type])
-        avg_fee = int(total_fee[type] / count[type])
-        print type "|" count[type] "|" avg_mem "|" avg_steps "|" avg_fee
+    for (key in count) {
+        avg_mem = int(total_mem[key] / count[key])
+        avg_steps = int(total_steps[key] / count[key])
+        avg_fee = int(total_fee[key] / count[key])
+        print key "|" count[key] "|" avg_mem "|" avg_steps "|" avg_fee
     }
-}' "$TEMP_FILE" | sort -t'|' -k1 | while IFS='|' read -r type cnt avg_mem avg_steps avg_fee; do
+}' "$TEMP_FILE" | sort -t'|' -k1,2 | while IFS='|' read -r cat action cnt avg_mem avg_steps avg_fee; do
     avg_mem_formatted=$(format_number "$avg_mem")
     avg_steps_formatted=$(format_number "$avg_steps")
     avg_fee_ada=$(awk "BEGIN {printf \"%.4f\", $avg_fee / 1000000}")
@@ -256,11 +270,11 @@ END {
         pct_color="${GREEN}"
     fi
     
-    printf "${YELLOW}║${NC} %-24s ${YELLOW}│${NC} %5s ${YELLOW}│${NC} %18s ${YELLOW}│${NC} %21s ${YELLOW}│${NC} %13s ${YELLOW}│${NC} ${pct_color}%13s${NC} ${YELLOW}║${NC}\n" \
-        "$type" "$cnt" "$avg_mem_formatted" "$avg_steps_formatted" "$avg_fee_ada" "${mem_pct}%/${steps_pct}%"
+    printf "${YELLOW}|${NC} %-7s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %5s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} ${pct_color}%15s${NC} ${YELLOW}|${NC}\n" \
+        "$cat" "$action" "$cnt" "$avg_mem_formatted" "$avg_steps_formatted" "$avg_fee_ada" "${mem_pct}%/${steps_pct}%"
 done
 
-echo -e "${YELLOW}╚══════════════════════════╧═══════╧════════════════════╧═══════════════════════╧═══════════════╧═════════════════╝${NC}"
+printf "${YELLOW}+---------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
 
 echo ""
 echo -e "${CYAN}Budget limits per transaction:${NC}"

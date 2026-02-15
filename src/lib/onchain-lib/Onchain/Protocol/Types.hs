@@ -7,7 +7,7 @@ module Onchain.Protocol.Types where
 import GHC.Generics (Generic)
 import Onchain.LinkedList (NodeDatum (..))
 import PlutusLedgerApi.V1.Value (AssetClass)
-import PlutusLedgerApi.V3 (POSIXTime, ScriptHash)
+import PlutusLedgerApi.V3 (Address, POSIXTime, PubKeyHash, ScriptHash)
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
@@ -19,30 +19,73 @@ import Prelude qualified
 
 -------------------------------------------------------------------------------
 
--- | Protocol parameters containing validator script hashes.
--- The 3-tuple layout is intentional for on-chain size minimization:
+-- | Protocol parameters containing validator script hashes and the oracle token.
+-- Baked into the MintingPolicy at compile time and embedded in datums for
+-- cross-validator communication.
 --
---   * Position 0: RanksValidator script hash
---   * Position 1: ProfilesValidator script hash
---   * Position 2: MembershipsValidator script hash
-newtype ProtocolParams = ProtocolParams (ScriptHash, ScriptHash, ScriptHash)
-  deriving stock (Generic, Prelude.Show)
+-- Field layout:
+--   * Field 0: RanksValidator script hash
+--   * Field 1: ProfilesValidator script hash
+--   * Field 2: MembershipsValidator script hash
+--   * Field 3: Oracle NFT AssetClass (identifies the oracle UTxO)
+data ProtocolParams = ProtocolParams ScriptHash ScriptHash ScriptHash AssetClass
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''ProtocolParams [('ProtocolParams, 0)]
 makeLift ''ProtocolParams
 
--- | Extract the ProfilesValidator script hash (position 1).
-profilesValidatorScriptHash :: ProtocolParams -> ScriptHash
-profilesValidatorScriptHash (ProtocolParams (_, p, _)) = p
-
--- | Extract the RanksValidator script hash (position 0).
+-- | Extract the RanksValidator script hash.
+{-# INLINEABLE ranksValidatorScriptHash #-}
 ranksValidatorScriptHash :: ProtocolParams -> ScriptHash
-ranksValidatorScriptHash (ProtocolParams (r, _, _)) = r
+ranksValidatorScriptHash (ProtocolParams r _ _ _) = r
 
--- | Extract the MembershipsValidator script hash (position 2).
+-- | Extract the ProfilesValidator script hash.
+{-# INLINEABLE profilesValidatorScriptHash #-}
+profilesValidatorScriptHash :: ProtocolParams -> ScriptHash
+profilesValidatorScriptHash (ProtocolParams _ p _ _) = p
+
+-- | Extract the MembershipsValidator script hash.
+{-# INLINEABLE membershipsValidatorScriptHash #-}
 membershipsValidatorScriptHash :: ProtocolParams -> ScriptHash
-membershipsValidatorScriptHash (ProtocolParams (_, _, m)) = m
+membershipsValidatorScriptHash (ProtocolParams _ _ m _) = m
+
+-- | Extract the oracle NFT AssetClass used to locate the oracle UTxO.
+{-# INLINEABLE oracleToken #-}
+oracleToken :: ProtocolParams -> AssetClass
+oracleToken (ProtocolParams _ _ _ o) = o
+
+-------------------------------------------------------------------------------
+
+-- * Oracle Parameters
+
+-------------------------------------------------------------------------------
+
+-- | Fee configuration for protocol operations.
+-- When set, users must include a fee payment output in their transactions.
+data FeeConfig = FeeConfig
+  { fcFeeAddress :: Address           -- ^ Address that collects fees
+  , fcProfileCreationFee :: Integer   -- ^ Fee in lovelace for creating a profile
+  , fcPromotionFee :: Integer         -- ^ Fee in lovelace for creating a promotion
+  , fcMembershipFee :: Integer        -- ^ Fee in lovelace for membership operations
+  }
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
+  deriving anyclass (HasBlueprintDefinition)
+
+makeIsDataSchemaIndexed ''FeeConfig [('FeeConfig, 0)]
+
+-- | Mutable operational parameters stored in the oracle UTxO datum.
+-- Read as a reference input by the MintingPolicy at execution time.
+data OracleParams = OracleParams
+  { opAdminPkh :: PubKeyHash         -- ^ Admin public key hash (can rotate itself)
+  , opPaused :: Bool                  -- ^ Protocol pause switch
+  , opFeeConfig :: Maybe FeeConfig   -- ^ Optional fee configuration
+  , opMinOutputLovelace :: Integer    -- ^ Minimum lovelace for protocol UTxO outputs
+  }
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
+  deriving anyclass (HasBlueprintDefinition)
+
+makeIsDataSchemaIndexed ''OracleParams [('OracleParams, 0)]
 
 -------------------------------------------------------------------------------
 
@@ -81,7 +124,7 @@ data OnchainProfile
     currentRank :: Maybe RankId, -- ˆ Organisations have no rank
     protocolParams :: ProtocolParams
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''OnchainProfile [('OnchainProfile, 0)]
@@ -110,7 +153,7 @@ data OnchainRank
         promotionAchievementDate :: POSIXTime,
         promotionProtocolParams :: ProtocolParams
       }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''OnchainRank [('Rank, 0), ('Promotion, 1)]
@@ -127,7 +170,7 @@ data OnchainMembershipHistory = OnchainMembershipHistory
     membershipHistoryOrganizationId :: ProfileId, -- ^ Organization ProfileId
     membershipHistoryIntervalsHeadId :: MembershipIntervalId -- ^ AssetClass of the head of the intervals list
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''OnchainMembershipHistory [('OnchainMembershipHistory, 0)]
@@ -141,7 +184,7 @@ data OnchainMembershipInterval = OnchainMembershipInterval
     membershipIntervalNumber :: Integer, -- ^ Number of the membership interval (starts from 0)
     membershipIntervalPractitionerId :: ProfileId -- ^ Practitioner ProfileId
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''OnchainMembershipInterval [('OnchainMembershipInterval, 0)]
@@ -157,7 +200,7 @@ data MembershipHistoriesListNode
   { organizationId :: ProfileId,
     nodeInfo :: NodeDatum (Maybe OnchainMembershipHistory)
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''MembershipHistoriesListNode [('MembershipHistoriesListNode, 0)]
@@ -167,7 +210,7 @@ makeIsDataSchemaIndexed ''MembershipHistoriesListNode [('MembershipHistoriesList
 data MembershipDatum
   = ListNodeDatum MembershipHistoriesListNode
   | IntervalDatum OnchainMembershipInterval
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''MembershipDatum [('ListNodeDatum, 0), ('IntervalDatum, 1)]

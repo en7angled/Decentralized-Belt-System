@@ -1,21 +1,26 @@
 module TxBuilding.Lookups where
 
+import Control.Monad.Reader.Class (MonadReader, asks)
 import Data.Maybe
 import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.TxBuilder
-import GeniusYield.Types (GYNetworkId, GYUTxO, filterUTxOs, utxoValue, utxosToList)
+import GeniusYield.Types (GYNetworkId, GYOutDatum (..), GYTxOutRef, GYUTxO, filterUTxOs, utxoOutDatum, utxoRef, utxoValue, utxosToList)
 import GeniusYield.Types.Address
+import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Value
 import Onchain.CIP68 (CIP68Datum (..), getMetadataFields)
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
 import Onchain.Protocol qualified as Onchain
+import Onchain.Protocol.Types (OracleParams)
 import PlutusLedgerApi.V1.Value
+import PlutusTx (fromBuiltinData)
+import TxBuilding.Context (DeployedScriptsContext (..))
 import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Functors
 import TxBuilding.Utils
-import TxBuilding.Validators (profilesValidatorHashGY, ranksValidatorHashGY)
+import TxBuilding.Validators (oracleValidatorGY, profilesValidatorHashGY, ranksValidatorHashGY)
 
 ------------------------------------------------------------------------------------------------
 
@@ -151,3 +156,32 @@ getOrganizationInformation profileRefAC = do
             organizationImageURI = profileDataImageURI
           }
     _ -> throwError (GYApplicationException WrongProfileType)
+
+------------------------------------------------------------------------------------------------
+
+-- * Oracle Lookup Functions
+
+------------------------------------------------------------------------------------------------
+
+-- | Query the oracle UTxO and parse its 'OracleParams' datum.
+-- Looks up the oracle UTxO by finding the oracle NFT at the oracle validator address.
+-- Returns the parsed params, the UTxO reference, and the UTxO value.
+queryOracleParams ::
+  (GYTxQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  m (OracleParams, GYTxOutRef, GYValue)
+queryOracleParams = do
+  oracleAC <- asks oracleNFTAssetClass
+  oracleAddr <- scriptAddress oracleValidatorGY
+  utxos <- utxosAtAddresses [oracleAddr]
+  let oracleUtxos = filterUTxOs (\utxo -> valueAssetPresent (utxoValue utxo) oracleAC) utxos
+  case utxosToList oracleUtxos of
+    [utxo] -> case oracleParamsFromUTxO utxo of
+      Just params -> return (params, utxoRef utxo, utxoValue utxo)
+      Nothing -> throwError (GYApplicationException OracleNotFound)
+    [] -> throwError (GYApplicationException OracleNotFound)
+    _ -> throwError (GYApplicationException OracleNotFound)
+  where
+    oracleParamsFromUTxO :: GYUTxO -> Maybe OracleParams
+    oracleParamsFromUTxO utxo = case utxoOutDatum utxo of
+      GYOutDatumInline d -> fromBuiltinData (datumToPlutus' d)
+      _ -> Nothing

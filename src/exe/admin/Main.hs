@@ -1,27 +1,32 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Main where
 
 import Constants qualified
+import Control.Monad.Reader (runReaderT)
 import Data.Aeson (encode)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Char8 qualified as LSB8
 import Data.ByteString.Lazy qualified as B
 import Data.Char (toLower, toUpper)
 import Data.Text qualified as T
-import DomainTypes.Core.Actions (ProfileActionType (..), ProfileData (..))
+import DomainTypes.Core.Actions (AdminActionType (..), ProfileActionType (..), ProfileData (..))
 import DomainTypes.Core.Types (ProfileType (..))
 import GeniusYield.GYConfig
 import GeniusYield.Imports
 import GeniusYield.Types
 import DomainTypes.Core.BJJ (BJJBelt (..), parseBelt)
 import Onchain.Blueprint (contractBlueprint)
+import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import Options.Applicative
 import PlutusLedgerApi.V3
 import Text.Read qualified as Text
 import TxBuilding.Context
 import TxBuilding.Interactions
+import TxBuilding.Lookups (queryOracleParams)
 import TxBuilding.Transactions
 import TxBuilding.Utils
-import TxBuilding.Validators (defaultProtocolParams)
+import TxBuilding.Validators (blueprintProtocolParams)
 import Utils
 
 atlasCoreConfig :: FilePath
@@ -45,11 +50,25 @@ printGreen = putStrLn . greenColorString
 data Command
   = DeployReferenceScripts
   | WriteBlueprint FilePath
+  | PauseProtocol
+  | UnpauseProtocol
+  | SetFees SetFeesArgs
+  | QueryOracle
   | InitProfile InitProfileArgs
   | UpdateProfileImage UpdateProfileImageArgs
   | PromoteProfile PromoteProfileArgs
   | AcceptPromotion AcceptPromotionArgs
   | CreateProfileWithRank CreateProfileWithRankArgs
+  deriving (Show)
+
+data SetFeesArgs
+  = ClearFees
+  | UpdateFees
+      { sfaFeeAddress :: String,
+        sfaProfileCreationFee :: Integer,
+        sfaPromotionFee :: Integer,
+        sfaMembershipFee :: Integer
+      }
   deriving (Show)
 
 data InitProfileArgs = InitProfileArgs
@@ -199,6 +218,18 @@ outputIdParser =
         <> help "Output the asset ID in a parseable format"
     )
 
+-- Set fees parser (--clear-fees flag or individual fee fields)
+setFeesParser :: Parser Command
+setFeesParser =
+  fmap SetFees $
+    flag' ClearFees (long "clear-fees" <> help "Clear fee configuration (no fees)")
+      <|> ( UpdateFees
+              <$> strOption (long "fee-address" <> metavar "ADDRESS" <> help "Bech32 address to receive fees")
+              <*> option auto (long "profile-fee" <> metavar "LOVELACE" <> help "Profile creation fee in lovelace")
+              <*> option auto (long "promotion-fee" <> metavar "LOVELACE" <> help "Promotion fee in lovelace")
+              <*> option auto (long "membership-fee" <> metavar "LOVELACE" <> help "Membership fee in lovelace")
+          )
+
 -- Main command parser
 commandParser :: Parser Command
 commandParser =
@@ -207,7 +238,7 @@ commandParser =
         "deploy-reference-scripts"
         ( info
             (pure DeployReferenceScripts)
-            ( progDesc "Deploy reference scripts for the BJJ belt system"
+            ( progDesc "Deploy reference scripts for the BJJ belt system (includes oracle deployment)"
             )
         )
         <> command
@@ -224,6 +255,34 @@ commandParser =
                     )
               )
               ( progDesc "Write the CIP-57 contract blueprint JSON to a file"
+              )
+          )
+        <> command
+          "pause-protocol"
+          ( info
+              (pure PauseProtocol)
+              ( progDesc "Pause the protocol (set opPaused = True in oracle)"
+              )
+          )
+        <> command
+          "unpause-protocol"
+          ( info
+              (pure UnpauseProtocol)
+              ( progDesc "Unpause the protocol (set opPaused = False in oracle)"
+              )
+          )
+        <> command
+          "set-fees"
+          ( info
+              (setFeesParser)
+              ( progDesc "Set or clear fee configuration in the oracle"
+              )
+          )
+        <> command
+          "query-oracle"
+          ( info
+              (pure QueryOracle)
+              ( progDesc "Display current oracle parameters (read-only)"
               )
           )
         <> command
@@ -314,10 +373,26 @@ createProfileWithRankToActionType :: CreateProfileWithRankArgs -> ActionType
 createProfileWithRankToActionType CreateProfileWithRankArgs {cpwraProfileData, cpwraProfileType, cpwraCreationDate, cpwraBelt} =
   ProfileAction $ CreateProfileWithRankAction cpwraProfileData cpwraProfileType cpwraCreationDate cpwraBelt
 
+-- | Convert SetFeesArgs to the AdminActionType for the Interaction pipeline
+setFeesToAdminAction :: SetFeesArgs -> AdminActionType
+setFeesToAdminAction ClearFees = SetFeesAction Nothing
+setFeesToAdminAction UpdateFees {..} =
+  let gyAddr = unsafeAddressFromText (T.pack sfaFeeAddress)
+      plutusAddr = addressToPlutus gyAddr
+  in SetFeesAction $ Just FeeConfig
+      { fcFeeAddress = plutusAddr
+      , fcProfileCreationFee = sfaProfileCreationFee
+      , fcPromotionFee = sfaPromotionFee
+      , fcMembershipFee = sfaMembershipFee
+      }
+
 -- Execute command function
 executeCommand :: Either ProviderCtx TxBuildingContext -> GYExtendedPaymentSigningKey -> Command -> IO ()
 executeCommand (Left pCtx) signKey cmd = case cmd of
   WriteBlueprint _ -> pure () -- Handled in main before provider loading
+  QueryOracle -> do
+    printYellow "No transaction building context found."
+    printYellow "Please run 'deploy-reference-scripts' first to set up the system."
   DeployReferenceScripts -> do
     printYellow "Deploying reference scripts..."
     deployedScriptsCtx <- deployReferenceScripts pCtx signKey
@@ -333,44 +408,79 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     deployedScriptsCtx <- deployReferenceScripts (providerCtx txBuildingCtx) signKey
     B.writeFile txBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
     printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> txBuldingContextFile
+  -- Oracle admin commands — routed through the Interaction pipeline
+  PauseProtocol -> do
+    printYellow "Pausing protocol..."
+    (txId, _) <- runBJJActionWithPK txBuildingCtx signKey (AdminAction PauseProtocolAction) Nothing
+    printGreen $ "Protocol paused successfully! TxId: " <> show txId
+  UnpauseProtocol -> do
+    printYellow "Unpausing protocol..."
+    (txId, _) <- runBJJActionWithPK txBuildingCtx signKey (AdminAction UnpauseProtocolAction) Nothing
+    printGreen $ "Protocol unpaused successfully! TxId: " <> show txId
+  SetFees args -> do
+    printYellow "Updating fee configuration..."
+    let adminAction = setFeesToAdminAction args
+    (txId, _) <- runBJJActionWithPK txBuildingCtx signKey (AdminAction adminAction) Nothing
+    printGreen $ "Fee configuration updated successfully! TxId: " <> show txId
+  -- Query oracle — read-only, does not go through the Interaction pipeline
+  QueryOracle -> do
+    printYellow "Querying oracle parameters..."
+    let pCtx = providerCtx txBuildingCtx
+        dCtx = deployedScriptsCtx txBuildingCtx
+    (oracleParams, oracleRef, oracleVal) <- runQuery pCtx $ runReaderT queryOracleParams dCtx
+    printGreen "=== Oracle Parameters ==="
+    printGreen $ "  UTxO Ref:           " <> show oracleRef
+    printGreen $ "  Value:              " <> show oracleVal
+    printGreen $ "  Admin PKH:          " <> show (opAdminPkh oracleParams)
+    printGreen $ "  Paused:             " <> show (opPaused oracleParams)
+    printGreen $ "  Min Output Lovelace:" <> show (opMinOutputLovelace oracleParams)
+    case opFeeConfig oracleParams of
+      Nothing -> printGreen "  Fee Config:          None"
+      Just fc -> do
+        printGreen "  Fee Config:"
+        printGreen $ "    Fee Address:         " <> show (fcFeeAddress fc)
+        printGreen $ "    Profile Creation Fee: " <> show (fcProfileCreationFee fc) <> " lovelace"
+        printGreen $ "    Promotion Fee:        " <> show (fcPromotionFee fc) <> " lovelace"
+        printGreen $ "    Membership Fee:       " <> show (fcMembershipFee fc) <> " lovelace"
+  -- Profile commands — routed through the Interaction pipeline
   InitProfile args -> do
     printYellow "Initializing profile..."
     let actionType = initProfileToActionType args
-    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile initialized successfully!"
     if ipaOutputId args
-      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
-      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
   UpdateProfileImage args -> do
     printYellow "Updating profile image..."
     let actionType = updateProfileImageToActionType args
-    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile image updated successfully!"
     if upiaOutputId args
-      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
-      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
   PromoteProfile args -> do
     printYellow "Promoting profile..."
     let actionType = promoteProfileToActionType args
-    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile promoted successfully!"
     if ppaOutputId args
-      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
-      else printGreen $ "Promotion ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Promotion ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
   AcceptPromotion args -> do
     printYellow "Accepting promotion..."
     let actionType = acceptPromotionToActionType args
-    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Promotion accepted successfully!"
-    printGreen $ "Rank ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
+    printGreen $ "Rank ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
   CreateProfileWithRank args -> do
     printYellow "Creating profile with rank..."
     let actionType = createProfileWithRankToActionType args
-    (_txId, assetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Profile with rank created successfully!"
     if cpwraOutputId args
-      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode assetClass
-      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode assetClass))
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
 
 main :: IO ()
 main = do
@@ -390,7 +500,7 @@ main = do
   case cmd of
     WriteBlueprint outputPath -> do
       printYellow $ "Writing CIP-57 contract blueprint to " <> outputPath <> " ..."
-      B.writeFile outputPath (encode $ contractBlueprint defaultProtocolParams)
+      B.writeFile outputPath (encode $ contractBlueprint blueprintProtocolParams)
       printGreen $ "Blueprint written successfully to " <> outputPath
     _ -> executeOnchainCommand cmd
 

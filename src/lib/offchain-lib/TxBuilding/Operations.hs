@@ -2,6 +2,7 @@ module TxBuilding.Operations where
 
 import Control.Monad.Reader.Class
 import Data.Maybe
+import DomainTypes.Core.Actions (AdminActionType (..))
 import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
@@ -11,17 +12,54 @@ import Onchain.MintingPolicy
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
 import Onchain.Protocol (OnchainRank (..), deriveMembershipHistoriesListId, derivePromotionRankId, initEmptyMembershipHistoriesList, mkOrganizationProfile, mkPromotion, mkPractitionerProfile, promoteProfile)
 import Onchain.Protocol qualified as Onchain
+import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
+import Onchain.RanksValidator (RanksRedeemer (..))
 import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Tx qualified as V3
-import TxBuilding.Context (DeployedScriptsContext (..), getMintingPolicyRef, getProfilesValidatorRef, getRanksValidatorRef)
-import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue)
+import TxBuilding.Context (DeployedScriptsContext (..), getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
+import TxBuilding.Lookups (getProfileStateDataAndValue, getRankStateDataAndValue, queryOracleParams)
 import TxBuilding.Skeletons
 import TxBuilding.Validators
-import Onchain.RanksValidator (RanksRedeemer(..))
 
-datumLovelaces :: Integer
-datumLovelaces = 3500000
+-- | Get the compiled minting policy from the oracle NFT in context.
+getMintingPolicyFromCtx :: DeployedScriptsContext -> GYScript 'PlutusV3
+getMintingPolicyFromCtx ctx =
+  compileMintingPolicy (assetClassToPlutus $ oracleNFTAssetClass ctx)
+
+-- | Get the 'ProtocolParams' from the oracle NFT in context.
+getProtocolParamsFromCtx :: DeployedScriptsContext -> Onchain.ProtocolParams
+getProtocolParamsFromCtx ctx =
+  mkProtocolParams (assetClassToPlutus $ oracleNFTAssetClass ctx)
+
+-- | Build a skeleton component that adds the oracle UTxO as a reference input.
+getOracleRefInputSkeleton ::
+  (GYTxQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  m (GYTxSkeleton 'PlutusV3, OracleParams)
+getOracleRefInputSkeleton = do
+  (oracleParams, oracleRef, _oracleValue) <- queryOracleParams
+  return (mustHaveRefInput oracleRef, oracleParams)
+
+-- | Build a skeleton component that pays a fee if fees are configured.
+getFeeSkeleton ::
+  (GYTxQueryMonad m) =>
+  OracleParams ->
+  (FeeConfig -> Integer) ->
+  m (GYTxSkeleton 'PlutusV3)
+getFeeSkeleton oracle feeSelector = case opFeeConfig oracle of
+  Nothing -> return mempty
+  Just feeConfig -> do
+    let feeAmount = feeSelector feeConfig
+    let plutusFeeAddr = fcFeeAddress feeConfig
+    gyFeeAddr <- addressFromPlutus' plutusFeeAddr
+    return $
+      mustHaveOutput
+        GYTxOut
+          { gyTxOutAddress = gyFeeAddr,
+            gyTxOutDatum = Nothing,
+            gyTxOutValue = valueFromLovelace feeAmount,
+            gyTxOutRefS = Nothing
+          }
 
 ------------------------------------------------------------------------------------------------
 
@@ -36,6 +74,7 @@ verifyDeployedScriptsAreReady = do
   mpRef <- asks getMintingPolicyRef
   pvRef <- asks getProfilesValidatorRef
   rvRef <- asks getRanksValidatorRef
+  ovRef <- asks getOracleValidatorRef
 
   mintingPolicyUTxO <- utxoAtTxOutRef mpRef
   let mintingPolicyHasRefScript = utxoRefScript =<< mintingPolicyUTxO
@@ -46,7 +85,10 @@ verifyDeployedScriptsAreReady = do
   ranksValidatorUTxO <- utxoAtTxOutRef rvRef
   let ranksValidatorHasRefScript = utxoRefScript =<< ranksValidatorUTxO
 
-  return $ all isJust [mintingPolicyHasRefScript, profilesValidatorHasRefScript, ranksValidatorHasRefScript]
+  oracleValidatorUTxO <- utxoAtTxOutRef ovRef
+  let oracleValidatorHasRefScript = utxoRefScript =<< oracleValidatorUTxO
+
+  return $ all isJust [mintingPolicyHasRefScript, profilesValidatorHasRefScript, ranksValidatorHasRefScript, oracleValidatorHasRefScript]
 
 ------------------------------------------------------------------------------------------------
 
@@ -75,8 +117,16 @@ createProfileWithRankTX ::
   BJJBelt ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 createProfileWithRankTX recipient metadata profileType creationDate belt = do
+  ctx <- ask
+  let mpGY = getMintingPolicyFromCtx ctx
+  let pp = getProtocolParamsFromCtx ctx
   now <- slotOfCurrentBlock
   let isInvalidBeforeNow = isInvalidBefore now
+
+  -- Oracle reference input + params (for minLovelace and fee)
+  (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
+  let minLv = opMinOutputLovelace oracleParams
+  feeSkeleton <- getFeeSkeleton oracleParams fcProfileCreationFee
 
   mpRef <- asks getMintingPolicyRef
   seedTxOutRef <- someUTxOWithoutRefScript
@@ -84,14 +134,14 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
 
-  (gyProfileRefAC, gyProfileUserAC) <- gyGenerateRefAndUserAC seedTxOutRef
+  (gyProfileRefAC, gyProfileUserAC) <- gyGenerateRefAndUserAC mpGY seedTxOutRef
   gyLogDebug' "gyProfileRefAC: " $ show gyProfileRefAC
 
   let profileRefAC = assetClassToPlutus gyProfileRefAC
 
   let plutusProfile = case profileType of
-        Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams (beltToInt belt)
-        Onchain.Organization -> mkOrganizationProfile profileRefAC defaultProtocolParams
+        Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate pp (beltToInt belt)
+        Onchain.Organization -> mkOrganizationProfile profileRefAC pp
   let plutusProfileCIP68Datum = mkCIP68Datum plutusProfile metadata
 
   -- ============================================================
@@ -100,19 +150,20 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   -- Output 0: Profile state locked at profilesValidator
   -- Output 1: User NFT payment to recipient
   -- Output 2: Rank state locked at ranksValidator (Practitioner only)
+  -- Output 3 (optional): Fee payment
   let profileOutputIdx = 0 :: Integer
   let rankOrMembershipHistoriesRootOutputIdx = 2 :: Integer
   let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate (beltToInt belt) profileOutputIdx rankOrMembershipHistoriesRootOutputIdx
   let gyCreateProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
 
-  isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mpRef mintingPolicyGY gyCreateProfileRedeemer gyProfileRefAC
+  isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mpRef mpGY gyCreateProfileRedeemer gyProfileRefAC
 
   -- Output 0: Profile state
   isLockingProfileState <-
     txMustLockStateWithInlineDatumAndValue
       profilesValidatorGY
       plutusProfileCIP68Datum
-      (valueSingleton gyProfileRefAC 1 <> valueFromLovelace datumLovelaces)
+      (valueSingleton gyProfileRefAC 1 <> valueFromLovelace minLv)
 
   -- Output 1: User NFT payment
   isPayingProfileUserNFT <- txIsPayingValueToAddress recipient (valueSingleton gyProfileUserAC 1)
@@ -123,26 +174,26 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
     Onchain.Organization -> do
       let membershipHistoriesRootDatum = initEmptyMembershipHistoriesList profileRefAC
       gyMembershipHistoriesRootAC <- assetClassFromPlutus' $ deriveMembershipHistoriesListId profileRefAC
-      isMintingMembershipHistoriesRoot <- txMustMintWithMintRef True mpRef mintingPolicyGY gyCreateProfileRedeemer gyMembershipHistoriesRootAC
+      isMintingMembershipHistoriesRoot <- txMustMintWithMintRef True mpRef mpGY gyCreateProfileRedeemer gyMembershipHistoriesRootAC
       isLockingMembershipHistoriesRootState <-
         txMustLockStateWithInlineDatumAndValue
           membershipsValidatorGY
           membershipHistoriesRootDatum
-          (valueSingleton gyMembershipHistoriesRootAC 1 <> valueFromLovelace datumLovelaces)
+          (valueSingleton gyMembershipHistoriesRootAC 1 <> valueFromLovelace minLv)
       return $
         mconcat
           [ isMintingMembershipHistoriesRoot,
             isLockingMembershipHistoriesRootState -- Output 2: Membership Histories Root NFT
           ]
     Onchain.Practitioner -> do
-      let rankData = snd $ mkPractitionerProfile profileRefAC creationDate defaultProtocolParams (beltToInt belt)
+      let rankData = snd $ mkPractitionerProfile profileRefAC creationDate pp (beltToInt belt)
       gyRankAC <- assetClassFromPlutus' $ rankId rankData
-      isMintingRank <- txMustMintWithMintRef True mpRef mintingPolicyGY gyCreateProfileRedeemer gyRankAC
+      isMintingRank <- txMustMintWithMintRef True mpRef mpGY gyCreateProfileRedeemer gyRankAC
       isLockingRankState <-
         txMustLockStateWithInlineDatumAndValue
           ranksValidatorGY
           rankData
-          (valueSingleton gyRankAC 1 <> valueFromLovelace datumLovelaces)
+          (valueSingleton gyRankAC 1 <> valueFromLovelace minLv)
       return $
         mconcat
           [ isMintingRank,
@@ -153,10 +204,12 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
     ( mconcat
         [ isSpendingSeedUTxO, -- Input (no output index)
           isInvalidBeforeNow, -- Validity (no output index)
+          oracleRefSkeleton, -- Reference input: oracle UTxO
           isMintingProfileCIP68UserAndRef, -- Mint (no output index)
           isLockingProfileState, -- Output 0: Profile state
           isPayingProfileUserNFT, -- Output 1: User NFT payment
-          isLockingRankOrMembershipHistoriesRootState -- Output 2: Rank state (if Practitioner) or Membership Histories Root NFT (if Organization)
+          isLockingRankOrMembershipHistoriesRootState, -- Output 2: Rank state (if Practitioner) or Membership Histories Root NFT (if Organization)
+          feeSkeleton -- Output 3 (optional): Fee payment
         ],
       gyProfileRefAC
     )
@@ -212,6 +265,15 @@ promoteProfileTX ::
   [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt ownAddrs = do
+  ctx <- ask
+  let mpGY = getMintingPolicyFromCtx ctx
+  let pp = getProtocolParamsFromCtx ctx
+
+  -- Oracle reference input + params (for minLovelace and fee)
+  (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
+  let minLv = opMinOutputLovelace oracleParams
+  feeSkeleton <- getFeeSkeleton oracleParams fcPromotionFee
+
   mpRef <- asks getMintingPolicyRef
 
   -- Get a seed TxOutRef for uniqueness (similar to profile creation)
@@ -238,12 +300,13 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
   -- Output index tracking (order must match skeleton mconcat order)
   -- ============================================================
   -- Output 0: Pending rank state locked at ranksValidator
+  -- Output 1 (optional): Fee payment
   let pendingRankOutputIdx = 0 :: Integer
 
   let redeemer = Promote seedTxOutRefPlutus (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt) pendingRankOutputIdx
   let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
-  gyPromotionRankAC <- assetClassFromPlutus' $ derivePromotionRankId seedTxOutRefPlutus (mintingPolicyCurrencySymbol mintingPolicyGY)
-  isMintingPromotionRank <- txMustMintWithMintRef True mpRef mintingPolicyGY gyRedeemer gyPromotionRankAC
+  gyPromotionRankAC <- assetClassFromPlutus' $ derivePromotionRankId seedTxOutRefPlutus (mintingPolicyCurrencySymbol mpGY)
+  isMintingPromotionRank <- txMustMintWithMintRef True mpRef mpGY gyRedeemer gyPromotionRankAC
 
   let pendingRankDatum =
         mkPromotion
@@ -252,14 +315,14 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
           (assetClassToPlutus gyPromotedByProfileId)
           achievementDate
           (beltToInt belt)
-          defaultProtocolParams
+          pp
 
   -- Output 0: Pending rank state
   isLockingPendingRankState <-
     txMustLockStateWithInlineDatumAndValue
       ranksValidatorGY
       pendingRankDatum
-      (valueSingleton gyPromotionRankAC 1 <> valueFromLovelace datumLovelaces)
+      (valueSingleton gyPromotionRankAC 1 <> valueFromLovelace minLv)
 
   -- Add reference inputs for student and master profiles and their current ranks
   referencesProfilesAndRanks <-
@@ -274,9 +337,11 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
     ( mconcat
         [ isSpendingSeedUTxO, -- Input (no output index)
           spendsMasterProfileUserNFT, -- Input (no output index)
+          oracleRefSkeleton, -- Reference input: oracle UTxO
           isMintingPromotionRank, -- Mint (no output index)
           isLockingPendingRankState, -- Output 0: Pending rank state
-          referencesProfilesAndRanks -- Reference inputs (no output index)
+          referencesProfilesAndRanks, -- Reference inputs (no output index)
+          feeSkeleton -- Output 1 (optional): Fee payment
         ],
       gyPromotionRankAC
     )
@@ -351,3 +416,59 @@ acceptPromotionTX gyPromotionId ownAddrs = do
         ],
       gyRankAC
     )
+
+------------------------------------------------------------------------------------------------
+
+-- * Oracle Management Operations
+
+------------------------------------------------------------------------------------------------
+
+-- | Build a transaction skeleton that updates oracle parameters based on an admin action.
+-- Queries the current oracle params, applies the action delta, and builds spend + re-lock skeletons.
+updateOracleTX ::
+  (HasCallStack, GYTxQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  AdminActionType ->
+  m (GYTxSkeleton 'PlutusV3)
+updateOracleTX adminAction = do
+  ctx <- ask
+  (currentParams, oracleRef, oracleValue) <- queryOracleParams
+  let ovRef = getOracleValidatorRef ctx
+  let gyRedeemer = redeemerFromPlutusData ()
+  oracleAddr <- scriptAddress oracleValidatorGY
+
+  -- Apply the action to derive the new oracle params
+  let newParams = applyAdminAction adminAction currentParams
+
+  -- Convert admin PKH from Plutus to GY for required signer
+  gyAdminPkh <- pubKeyHashFromPlutus' (opAdminPkh currentParams)
+
+  -- Spend the current oracle UTxO
+  let currentDatum = datumFromPlutusData currentParams
+  let spendOracle =
+        mustHaveInput
+          GYTxIn
+            { gyTxInTxOutRef = oracleRef,
+              gyTxInWitness = GYTxInWitnessScript (GYInReference ovRef $ validatorToScript oracleValidatorGY) (Just currentDatum) gyRedeemer
+            }
+
+  -- Re-lock oracle with new datum and same value
+  let lockOracle =
+        mustHaveOutput
+          GYTxOut
+            { gyTxOutAddress = oracleAddr,
+              gyTxOutDatum = Just (datumFromPlutusData newParams, GYTxOutUseInlineDatum),
+              gyTxOutValue = oracleValue,
+              gyTxOutRefS = Nothing
+            }
+
+  -- Require admin signature (on-chain validator checks txInfoSignatories)
+  let requireAdminSig = mustBeSignedBy gyAdminPkh
+
+  return $ mconcat [spendOracle, lockOracle, requireAdminSig]
+
+-- | Apply an admin action delta to current oracle params to produce new params.
+applyAdminAction :: AdminActionType -> OracleParams -> OracleParams
+applyAdminAction PauseProtocolAction params = params {opPaused = True}
+applyAdminAction UnpauseProtocolAction params = params {opPaused = False}
+applyAdminAction (SetFeesAction mFeeConfig) params = params {opFeeConfig = mFeeConfig}
+applyAdminAction (SetMinLovelaceAction minLv) params = params {opMinOutputLovelace = minLv}

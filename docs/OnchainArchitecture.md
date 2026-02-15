@@ -4,6 +4,7 @@
 - [Onchain Architecture Documentation](#onchain-architecture-documentation)
   - [Overview](#overview)
   - [Script Dependencies & Parameterization](#script-dependencies--parameterization)
+  - [Oracle Hub for Parameters](#oracle-hub-for-parameters)
   - [Minting Policy](#minting-policy)
   - [Profiles Validator](#profiles-validator)
   - [Ranks Validator](#ranks-validator)
@@ -18,12 +19,14 @@
 
 The Decentralized BJJ Belt System implements a comprehensive smart contract architecture for managing Brazilian Jiu-Jitsu (BJJ) practitioner profiles, rank promotions, and organization memberships on the Cardano blockchain. 
 
-The system consists of four main validators that work together to manage the complete BJJ belt system:
+The system consists of five main validators and an oracle hub that work together to manage the complete BJJ belt system:
 
-1. **Minting Policy** - Controls token creation and validates promotions/memberships at creation time
-2. **Profiles Validator** - Manages profile updates and validates promotion acceptance
-3. **Ranks Validator** - Handles promotion consumption with consent validation
-4. **Memberships Validator** - Manages membership histories and intervals for organization-practitioner relationships
+1. **Oracle Validator** - Guards the oracle UTxO containing dynamic protocol parameters
+2. **Oracle NFT Policy** - One-shot minting policy to create the unique oracle identifier
+3. **Minting Policy** - Controls token creation and validates promotions/memberships at creation time; reads oracle parameters via reference input
+4. **Profiles Validator** - Manages profile updates and validates promotion acceptance
+5. **Ranks Validator** - Handles promotion consumption with consent validation
+6. **Memberships Validator** - Manages membership histories and intervals for organization-practitioner relationships
 
 **Immutability Principle**: Profiles are permanent by design. BJJ belt records are historical facts that should not be erasable, preserving lineage integrity and verification.
 
@@ -43,20 +46,22 @@ The BJJ Belt System uses a carefully designed script dependency architecture tha
 
 ### Deployment Order
 
-Scripts must be deployed in a specific order due to hash dependencies:
+Scripts must be deployed in a specific order due to hash and oracle dependencies:
 
 ```
 1. ProfilesValidator (unparameterized) → hash known
 2. RanksValidator (unparameterized) → hash known
 3. MembershipsValidator (unparameterized) → hash known
-4. MintingPolicy (parameterized by all 3 hashes) → compiled with ProtocolParams
+4. OracleValidator (unparameterized) → deployed as reference script
+5. Mint Oracle NFT (via OracleNFTPolicy one-shot) → lock OracleParams at OracleValidator
+6. MintingPolicy (parameterized by ProtocolParams including oracle AssetClass) → compiled and deployed
 ```
 
 ### ProtocolParams Structure
 
 ```haskell
-newtype ProtocolParams = ProtocolParams (ScriptHash, ScriptHash, ScriptHash)
--- Tuple: (RanksValidatorHash, ProfilesValidatorHash, MembershipsValidatorHash)
+data ProtocolParams = ProtocolParams ScriptHash ScriptHash ScriptHash AssetClass
+-- Fields: RanksValidatorHash, ProfilesValidatorHash, MembershipsValidatorHash, OracleToken
 ```
 
 The `ProtocolParams` is embedded in:
@@ -64,14 +69,18 @@ The `ProtocolParams` is embedded in:
 - **OnchainProfile datum**: Via `protocolParams :: ProtocolParams` field
 - **OnchainRank datum**: Via `rankProtocolParams` / `promotionProtocolParams` field
 
+The `oracleToken` field (an `AssetClass`) is used by the MintingPolicy to locate the oracle UTxO in the transaction's reference inputs at runtime.
+
 ### Why This Design?
 
 | Script | Parameterized? | How It Gets Cross-Validator Addresses |
 |--------|----------------|--------------------------------------|
-| MintingPolicy | Yes (by ProtocolParams) | Directly from compiled-in params |
+| MintingPolicy | Yes (by ProtocolParams incl. oracle token) | Directly from compiled-in params; reads oracle via reference input |
 | ProfilesValidator | No | From profile datum's `protocolParams` |
 | RanksValidator | No | From rank datum's `promotionProtocolParams` |
 | MembershipsValidator | No | No cross-validator lookups needed (authorization via User NFTs) |
+| OracleValidator | No | N/A (guards oracle UTxO; admin-gated) |
+| OracleNFTPolicy | Yes (by seed TxOutRef) | N/A (one-shot minting; ensures oracle NFT uniqueness) |
 
 **Benefits**:
 
@@ -118,10 +127,104 @@ Note: Rank, Promotion, and Membership tokens are **not distinguishable by TokenN
 - MembershipHistoriesListNode vs MembershipInterval: by the `MembershipDatum` wrapper (`ListNodeDatum` vs `IntervalDatum`) at the MembershipsValidator address
 
 
+## Oracle Hub for Parameters
+
+The Oracle Hub provides dynamic, updatable protocol parameters without requiring validator redeployment. It consists of two on-chain scripts and a datum type.
+
+### Core Design Decision
+
+Keep BJJ rules, belt hierarchy, and metadata limits hardcoded. Oracle-ize only things an operator would need to change at runtime: pause, fees, min lovelace, and admin identity.
+
+**Rationale**: BJJ rules are domain invariants — if IBJJF changes belt requirements in 10 years, you deploy a new MintingPolicy (new `CurrencySymbol` = new protocol version). That's the right semantic boundary. But pausing the protocol or adjusting fees during an incident must happen in minutes, not hours of recompilation and redeployment.
+
+### Architecture
+
+```
+OracleNFTPolicy (one-shot, parameterized by TxOutRef)
+    ↓ mints unique NFT
+OracleValidator (unparameterized, admin-gated)
+    ↓ guards UTxO containing
+OracleParams datum (inline datum with operational parameters)
+    ↓ read via reference input by
+MintingPolicy (has oracle AssetClass compiled in)
+```
+
+### OracleParams
+
+```haskell
+data OracleParams = OracleParams
+  { opAdminPkh          :: PubKeyHash      -- admin who can update oracle
+  , opPaused            :: Bool             -- global pause gate
+  , opFeeConfig         :: Maybe FeeConfig  -- optional fee configuration
+  , opMinOutputLovelace :: Integer          -- minimum lovelace for datum outputs
+  }
+
+data FeeConfig = FeeConfig
+  { fcFeeAddress         :: Address   -- where fees are sent
+  , fcProfileCreationFee :: Integer   -- fee for creating a profile
+  , fcPromotionFee       :: Integer   -- fee for creating a promotion
+  , fcMembershipFee      :: Integer   -- fee for membership operations
+  }
+```
+
+### OracleValidator
+
+Unparameterized spending validator. Rules:
+- The admin (`opAdminPkh` from the **current** datum) must sign the transaction
+- The oracle UTxO must be returned to the **same address** with the **same value**
+- The new datum is accepted freely (allows updating all oracle parameters including admin key rotation)
+
+### OracleNFTPolicy
+
+One-shot minting policy parameterized by a `TxOutRef` (seed UTxO):
+- Must spend the seed `TxOutRef` (ensures uniqueness across all time)
+- Must mint exactly 1 token
+
+The resulting `AssetClass` is embedded in `ProtocolParams` and used by the `MintingPolicy` to locate the oracle UTxO at runtime via `txInfoReferenceInputs`.
+
+### How the MintingPolicy Uses the Oracle
+
+At runtime, every minting transaction must include the oracle UTxO as a reference input. The MintingPolicy:
+
+1. Reads `oracleToken` from its compiled-in `ProtocolParams`
+2. Calls `readOracleParams oracleToken txInfoReferenceInputs` to find and parse the oracle datum
+3. Checks `opPaused` — if `True`, the transaction fails with "Protocol is paused"
+4. Uses `opMinOutputLovelace` for minimum output value calculations
+5. Calls `checkFee oracle feeSelector txInfoOutputs` per redeemer to validate fee payment (if fees are configured)
+
+### Protocol Operational Parameters
+
+| Parameter | Effect | Default |
+|-----------|--------|---------|
+| `opAdminPkh` | Who can update the oracle | Deployer's PubKeyHash |
+| `opPaused` | Blocks all minting operations when True | False |
+| `opFeeConfig` | Optional per-action fee configuration | Nothing (no fees) |
+| `opMinOutputLovelace` | Minimum lovelace attached to datum outputs | 3,500,000 |
+
+### Admin CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `pause-protocol` | Set `opPaused = True` |
+| `unpause-protocol` | Set `opPaused = False` |
+| `set-fees --fee-address ADDR --profile-fee N --promotion-fee N --membership-fee N` | Configure fees |
+| `set-fees --clear-fees` | Remove fee configuration |
+| `query-oracle` | Display current oracle parameters |
+
+### Security Considerations
+
+- The oracle NFT is unique (one-shot policy ensures exactly one exists)
+- Only the current admin can update oracle parameters (signature check on `opAdminPkh`)
+- Admin key rotation is possible (update `opAdminPkh` in the datum)
+- The oracle UTxO value cannot be changed (output must preserve address + value)
+- The MintingPolicy reads the oracle as a reference input (non-destructive; no contention)
+- If fees are enabled, fee payment is validated on-chain in every minting transaction
+
+
 ## Minting Policy
 
 **Purpose**: 
-Governs the rules for issuing new profiles, ranks, promotions, and membership tokens. It is **parameterized by `ProtocolParams`** (containing ProfilesValidator, RanksValidator, and MembershipsValidator script hashes), enabling secure cross-validator communication. It handles:
+Governs the rules for issuing new profiles, ranks, promotions, and membership tokens. It is **parameterized by `ProtocolParams`** (containing ProfilesValidator, RanksValidator, MembershipsValidator script hashes, and the oracle NFT `AssetClass`), enabling secure cross-validator communication and dynamic parameter reading. At runtime, it reads `OracleParams` from the oracle UTxO (via reference input) to enforce the global pause gate, fee payments, and minimum output lovelace. It handles:
 - Profile creation with CIP-68 standard metadata 
 - Initial rank assignment for practitioners
 - **Organization profile creation with membership histories root**
@@ -654,13 +757,19 @@ The output index is provided by the off-chain code but validated on-chain:
 | Double membership acceptance | `acceptMembershipInterval` fails if `isAck` is already `True` |
 | Foreign token injection | `hasCurrencySymbol` validates all referenced AssetClasses belong to the protocol |
 | Datum type confusion at MV | `MembershipDatum` sum type ensures correct parsing; validator pattern-matches on constructor |
+| Unauthorized oracle update | `opAdminPkh` signature check; only current admin can modify oracle |
+| Oracle value theft | Oracle output must preserve same address + same value |
+| Oracle NFT duplication | One-shot minting policy (seed TxOutRef consumed) prevents duplicate NFTs |
+| Missing oracle reference input | `readOracleParams` fails if oracle NFT not found in reference inputs |
+| Protocol pause bypass | MintingPolicy checks `opPaused` on every mint; cannot be skipped |
+| Fee evasion | `checkFee` validates fee payment output on-chain per redeemer |
 
 ### Reference Input Usage
 
 | Transaction | Reference Inputs | Purpose |
 |-------------|-----------------|---------|
-| Create Profile | None | - |
-| Create Promotion | Student profile, student rank, master profile, master rank | Validate BJJ rules |
+| Create Profile | Oracle UTxO | Read pause gate, fees, minLovelace |
+| Create Promotion | Student profile, student rank, master profile, master rank, Oracle UTxO | Validate BJJ rules + oracle params |
 | Accept Promotion | Student's current rank | Validate state is still valid |
 | Update Profile | None | User NFT sufficient for authorization |
 | New Membership History | Right node (if insert-between) | Validate linked list ordering |

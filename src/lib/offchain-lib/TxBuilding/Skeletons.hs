@@ -12,7 +12,6 @@ import PlutusLedgerApi.V3 qualified as V3
 import TxBuilding.Exceptions (ProfileException (..))
 import TxBuilding.Lookups (getUTxOWithNFT, getUtxoWithTokenAtAddresses)
 import TxBuilding.Utils
-import TxBuilding.Validators
 
 
 ------------------------------------------------------------------------------------------------
@@ -35,13 +34,13 @@ getRefScriptUTxO refScript = do
 
 ------------------------------------------------------------------------------------------------
 
-gyGenerateRefAndUserAC :: (GYTxUserQueryMonad m) => GYTxOutRef -> m (GYAssetClass, GYAssetClass)
-gyGenerateRefAndUserAC seedTxOutRef = do
+gyGenerateRefAndUserAC :: (GYTxUserQueryMonad m) => GYScript 'PlutusV3 -> GYTxOutRef -> m (GYAssetClass, GYAssetClass)
+gyGenerateRefAndUserAC mpScript seedTxOutRef = do
   let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
   let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
   let (pRefTN, pUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRefPlutus
-  let refAC = AssetClass (mintingPolicyCurrencySymbol mintingPolicyGY, pRefTN)
-  let userAC = AssetClass (mintingPolicyCurrencySymbol mintingPolicyGY, pUserTN)
+  let refAC = AssetClass (mintingPolicyCurrencySymbol mpScript, pRefTN)
+  let userAC = AssetClass (mintingPolicyCurrencySymbol mpScript, pUserTN)
   gyRefAC <- assetClassFromPlutus' refAC
   gyUserAC <- assetClassFromPlutus' userAC
   return (gyRefAC, gyUserAC)

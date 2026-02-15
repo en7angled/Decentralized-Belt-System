@@ -154,14 +154,19 @@ fi
 print_section "BJJ Belt System - Testnet Data Population"
 print_info "This script populates the testnet with sample profiles and promotions"
 print_info "for testing and demonstration purposes."
+print_info ""
+print_info "The deploy-reference-scripts command now includes the full oracle deployment flow:"
+print_info "  1. Deploy OracleValidator, ProfilesValidator, RanksValidator as reference scripts"
+print_info "  2. Mint oracle NFT and lock initial OracleParams at oracle validator"
+print_info "  3. Compile MintingPolicy with oracle NFT and deploy as reference script"
 
 # ============================================================================
 # STEP 1: Deploy reference scripts (if not already deployed)
 # ============================================================================
-print_section "Step 1: Deploy Reference Scripts"
+print_section "Step 1: Deploy Reference Scripts (includes Oracle)"
 
 if [ ! -f "$REPO_ROOT/config/config_bjj_validators.json" ]; then
-    print_info "Deploying reference scripts..."
+    print_info "Deploying reference scripts and oracle..."
     # Use direct command for deploy (it outputs informational messages we shouldn't treat as errors)
     deploy_output=""
     deploy_exit=0
@@ -180,11 +185,56 @@ if [ ! -f "$REPO_ROOT/config/config_bjj_validators.json" ]; then
         exit 1
     fi
     
-    print_success "Reference scripts deployed successfully"
+    print_success "Reference scripts and oracle deployed successfully"
 else
     print_info "Reference scripts config found (config_bjj_validators.json exists)"
     print_info "If you see deployment errors below, delete config_bjj_validators.json and re-run this script."
 fi
+
+# ============================================================================
+# STEP 1b: Query Oracle (verify deployment)
+# ============================================================================
+print_subsection "Verify Oracle Deployment"
+print_info "Querying oracle parameters..."
+oracle_output=""
+oracle_exit=0
+oracle_output=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit=$?
+
+if [ "$oracle_exit" -ne 0 ]; then
+    print_warning "Could not query oracle (exit code $oracle_exit). Continuing anyway..."
+else
+    print_success "Oracle is accessible"
+    echo "$oracle_output" | grep -E "(Paused|Min Output|Fee Config)" | while read -r line; do
+        print_info "  $line"
+    done
+fi
+
+# ============================================================================
+# STEP 1c: Test Oracle Admin Actions
+# ============================================================================
+print_subsection "Test Oracle Admin Actions"
+
+print_info "Setting fee configuration..."
+run_admin_cmd_no_output set-fees \
+    --fee-address "addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp" \
+    --profile-fee 2000000 \
+    --promotion-fee 3000000 \
+    --membership-fee 1500000
+print_success "Fee configuration set"
+
+print_info "Querying oracle after fee update..."
+oracle_output2=""
+oracle_exit2=0
+oracle_output2=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit2=$?
+if [ "$oracle_exit2" -eq 0 ]; then
+    echo "$oracle_output2" | grep -E "(Paused|Min Output|Fee Config|Fee Address|Profile Creation Fee|Promotion Fee|Membership Fee)" | while read -r line; do
+        print_info "  $line"
+    done
+fi
+
+print_info "Clearing fee configuration (running without fees for testnet population)..."
+run_admin_cmd_no_output set-fees --clear-fees
+print_success "Fees cleared for testnet population"
 
 # ============================================================================
 # Timestamps for profile creation and promotions

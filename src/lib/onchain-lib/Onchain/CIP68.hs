@@ -53,7 +53,7 @@ data CIP68Datum plutusData = CIP68Datum
     version :: Integer, -- ^ Version of CIP-68 Datum Metadata Standard.
     extra :: plutusData -- ^ Plutus data
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''CIP68Datum [('CIP68Datum, 0)]
@@ -64,7 +64,7 @@ data MetadataFields
     metadataDescription :: BuiltinByteString,
     metadataImageURI :: BuiltinByteString
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''MetadataFields [('Metadata222, 0)]

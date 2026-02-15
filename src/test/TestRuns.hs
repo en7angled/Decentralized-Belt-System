@@ -1,9 +1,21 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module TestRuns where
+module TestRuns
+  ( deployBJJValidators,
+    bjjInteraction,
+    adminInteraction,
+    userPlutusPkh,
+    logPractitionerProfileInformation,
+    getProfileAndRank,
+    maliciousAcceptPromotionTX,
+    maliciousBjjAcceptPromotion,
+  )
+where
 
+import Control.Monad (void)
 import Control.Monad.Reader
+import Data.Maybe (fromMaybe)
 import Data.Foldable.Extra
 import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
@@ -17,7 +29,10 @@ import Onchain.CIP68
 import Onchain.ProfilesValidator (ProfilesRedeemer (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId, promoteProfile)
 import Onchain.Protocol qualified as Onchain
+import Onchain.Protocol.Types (OracleParams (..))
+import PlutusLedgerApi.V1.Tx qualified as V1
 import PlutusLedgerApi.V3
+import PlutusLedgerApi.V3.Tx qualified as V3
 import TxBuilding.Context
 import TxBuilding.Interactions
 import TxBuilding.Lookups
@@ -44,24 +59,99 @@ deployReferenceScriptRun validator fromWallet toWallet = asUser fromWallet $ do
 
 deployBJJValidators :: (GYTxGameMonad m, HasCallStack) => User -> m DeployedScriptsContext
 deployBJJValidators w = do
+  -- Step 1: Deploy spending validators as reference scripts
   (pVhash, refProfilesValidator) <- deployReferenceScriptRun profilesValidatorGY w w
   (rVhash, refRanksValidator) <- deployReferenceScriptRun ranksValidatorGY w w
-  (mphash, refMintingPolicy) <- deployReferenceScriptRun mintingPolicyGY w w
+  (ovHash, refOracleValidator) <- deployReferenceScriptRun oracleValidatorGY w w
+
+  -- Step 2: Mint oracle NFT and lock initial OracleParams at oracle validator
+  oracleNFTAC <- mintTestOracleNFT w
+
+  -- Step 3: Compile minting policy with the oracle NFT asset class and deploy
+  let mpGY = compileMintingPolicy (assetClassToPlutus oracleNFTAC)
+  (mphash, refMintingPolicy) <- deployReferenceScriptRun mpGY w w
 
   -- Log deployed script sizes for reporting
   gyLogInfo' ("SCRIPTSIZE" :: GYLogNamespace) $ cyanColorString $
     "SCRIPT_SIZES:\n" <>
-    "  MintingPolicy: " <> show mintingPolicySize <> " bytes\n" <>
     "  ProfilesValidator: " <> show profilesValidatorSize <> " bytes\n" <>
     "  RanksValidator: " <> show ranksValidatorSize <> " bytes\n" <>
+    "  OracleValidator: " <> show oracleValidatorSize <> " bytes\n" <>
     "  MembershipsValidator: " <> show membershipsValidatorSize <> " bytes"
 
   return
     DeployedScriptsContext
       { profilesValidatorHashAndRef = (pVhash, refProfilesValidator),
         ranksValidatorHashAndRef = (rVhash, refRanksValidator),
-        mintingPolicyHashAndRef = (mphash, refMintingPolicy)
+        mintingPolicyHashAndRef = (mphash, refMintingPolicy),
+        oracleValidatorHashAndRef = (ovHash, refOracleValidator),
+        oracleNFTAssetClass = oracleNFTAC
       }
+
+-- | Helper to convert GYTxOutRef to Plutus V3 TxOutRef (same as in Transactions.hs).
+txOutRefToV3Plutus :: GYTxOutRef -> V3.TxOutRef
+txOutRefToV3Plutus gyRef =
+  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus gyRef
+   in V3.TxOutRef (V3.TxId bs) i
+
+-- | Derive the Plutus PubKeyHash from a GeniusYield User's change address.
+userPlutusPkh :: User -> PubKeyHash
+userPlutusPkh u =
+  case addressToPlutus (User.userChangeAddress u) of
+    Address (PubKeyCredential pkh) _ -> pkh
+    _ -> error "userPlutusPkh: expected PubKeyCredential"
+
+-- | Mint the oracle NFT in the test environment and lock initial OracleParams at the oracle validator.
+mintTestOracleNFT :: (GYTxGameMonad m, HasCallStack) => User -> m GYAssetClass
+mintTestOracleNFT w = asUser w $ do
+  -- Find a seed UTxO
+  seedGYRef <- someUTxOWithoutRefScript
+  let seedPlutus = txOutRefToV3Plutus seedGYRef
+
+  -- Compile the one-shot oracle NFT policy
+  let oracleNFTPolicyGY = compileOracleNFTPolicy seedPlutus
+  let oracleNFTMPId = mintingPolicyId oracleNFTPolicyGY
+  let oracleNFTTN = ""  -- empty token name
+  let theOracleNFTAC = GYToken oracleNFTMPId oracleNFTTN
+
+  -- Build initial oracle params using the deployer wallet's real PubKeyHash.
+  -- The oracle validator checks admin signature on-chain, so this must match
+  -- a real wallet that can sign transactions.
+  let adminPkh = userPlutusPkh w
+  let initialOracleParams =
+        OracleParams
+          { opAdminPkh = adminPkh
+          , opPaused = False
+          , opFeeConfig = Nothing
+          , opMinOutputLovelace = 3500000
+          }
+
+  oracleAddr <- scriptAddress oracleValidatorGY
+
+  -- Spend seed UTxO
+  let spendSeed = mustHaveInput (GYTxIn seedGYRef GYTxInWitnessKey)
+
+  -- Mint oracle NFT
+  let mp = GYMintScript @'PlutusV3 oracleNFTPolicyGY
+  let gyRedeemer = redeemerFromPlutusData ()
+  let mintNFT = mustMint mp gyRedeemer oracleNFTTN 1
+
+  -- Lock oracle NFT + datum at oracle validator address
+  let lockOutput =
+        mustHaveOutput
+          GYTxOut
+            { gyTxOutAddress = oracleAddr
+            , gyTxOutDatum = Just (datumFromPlutusData initialOracleParams, GYTxOutUseInlineDatum)
+            , gyTxOutValue = valueSingleton theOracleNFTAC 1 <> valueFromLovelace 3500000
+            , gyTxOutRefS = Nothing
+            }
+
+  void $ sendSkeleton' $ mconcat [spendSeed, mintNFT, lockOutput]
+
+  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $
+    "Oracle NFT minted and locked: " <> show theOracleNFTAC
+
+  return theOracleNFTAC
 
 bjjInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> ProfileActionType -> Maybe GYAddress -> m (GYTxId, GYAssetClass)
 bjjInteraction txBuildingContext user actionType mrecipient = asUser user $ do
@@ -71,7 +161,8 @@ bjjInteraction txBuildingContext user actionType mrecipient = asUser user $ do
             userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
             recipient = mrecipient
           }
-  (skeleton, gyAC) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
+  (skeleton, mGyAC) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
+  let gyAC = fromMaybe (error "bjjInteraction: ProfileAction returned Nothing for asset class") mGyAC
   (gyTxBody, gyTxId) <- sendSkeleton' skeleton
   
   -- Log execution units / script budget information
@@ -79,6 +170,23 @@ bjjInteraction txBuildingContext user actionType mrecipient = asUser user $ do
   logTxBudget gyTxBody
   
   return (gyTxId, gyAC)
+
+-- | Execute an admin action (oracle update) through the Interaction pipeline.
+adminInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> AdminActionType -> m GYTxId
+adminInteraction txBuildingContext user adminAction = asUser user $ do
+  let interaction =
+        Interaction
+          { action = AdminAction adminAction,
+            userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
+            recipient = Nothing
+          }
+  (skeleton, _) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
+  (gyTxBody, gyTxId) <- sendSkeleton' skeleton
+
+  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $ "ADMIN INTERACTION: \n" <> show interaction
+  logTxBudget gyTxBody
+
+  return gyTxId
 
 -- | Log transaction budget information including fee and script execution units
 logTxBudget :: (GYTxQueryMonad m) => GYTxBody -> m ()

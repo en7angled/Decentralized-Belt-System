@@ -11,8 +11,10 @@ import Data.Set qualified as Set
 import Onchain.CIP68 (CIP68Datum)
 import Onchain.MembershipsValidator (MembershipsRedeemer, membershipsCompile)
 import Onchain.MintingPolicy (MintingRedeemer, mintingPolicyCompile)
+import Onchain.OracleValidator (oracleCompile)
 import Onchain.ProfilesValidator (ProfilesRedeemer, profilesCompile)
 import Onchain.Protocol (OnchainProfile, OnchainRank, ProtocolParams)
+import Onchain.Protocol.Types (FeeConfig, OracleParams)
 import Onchain.RanksValidator (RanksRedeemer, ranksCompile)
 import PlutusLedgerApi.V3 (serialiseCompiledCode)
 import PlutusTx.Blueprint
@@ -28,12 +30,14 @@ contractBlueprint mp =
           [ mintingPolicyValidatorBlueprint mp,
             profilesValidatorBlueprint mp,
             ranksValidatorBlueprint mp,
-            membershipsValidatorBlueprint mp
+            membershipsValidatorBlueprint mp,
+            oracleValidatorBlueprint
           ],
       -- Note: MembershipDatum is excluded from deriveDefinitions because it transitively contains
       -- NodeDatum (polymorphic type from LinkedList.hs) which cannot derive HasBlueprintSchema
       -- for concrete type parameter instantiations. The MembershipsValidator datum uses @() as a placeholder.
-      contractDefinitions = deriveDefinitions @[ProtocolParams, CIP68Datum OnchainProfile, OnchainRank, MintingRedeemer, ProfilesRedeemer, RanksRedeemer, MembershipsRedeemer]
+      -- OracleParams and FeeConfig are included for the oracle hub.
+      contractDefinitions = deriveDefinitions @[ProtocolParams, CIP68Datum OnchainProfile, OnchainRank, OracleParams, FeeConfig, MintingRedeemer, ProfilesRedeemer, RanksRedeemer, MembershipsRedeemer]
     }
 
 myPreamble :: Preamble
@@ -156,6 +160,37 @@ membershipsValidatorBlueprint _mp =
         Just $
           compiledValidator PlutusV3 (fromShort $ serialiseCompiledCode membershipsCompile)
     }
+
+-- | Oracle Validator Blueprint
+oracleValidatorBlueprint :: ValidatorBlueprint referencedTypes
+oracleValidatorBlueprint =
+  MkValidatorBlueprint
+    { validatorTitle = "BJJ Belt System Oracle Validator",
+      validatorDescription = Just "Unparameterized spending validator that guards the oracle UTxO containing OracleParams. The admin (identified by opAdminPkh in the current datum) must sign each update. The oracle UTxO must be returned to the same address with the same value; only the datum may change. This enables dynamic protocol configuration (pause, fees, minLovelace, admin key rotation) without redeploying validators.",
+      validatorParameters = [], -- Unparameterized
+      validatorRedeemer =
+        MkArgumentBlueprint
+          { argumentTitle = Just "Oracle Redeemer",
+            argumentDescription = Just "Unit redeemer — the oracle validator only checks admin signature and output preservation.",
+            argumentPurpose = Set.fromList [Spend],
+            argumentSchema = definitionRef @()
+          },
+      validatorDatum =
+        Just
+          MkArgumentBlueprint
+            { argumentTitle = Just "Oracle Params Datum",
+              argumentDescription = Just "Inline datum containing operational parameters: admin public key hash (opAdminPkh), pause flag (opPaused), optional fee configuration (opFeeConfig with fee address and per-action fees), and minimum output lovelace (opMinOutputLovelace).",
+              argumentPurpose = Set.singleton Spend,
+              argumentSchema = definitionRef @OracleParams
+            },
+      validatorCompiled =
+        Just $
+          compiledValidator PlutusV3 (fromShort $ serialiseCompiledCode oracleCompile)
+    }
+
+-- Note: OracleNFTPolicy is not included in the blueprint because it is a one-shot
+-- minting policy parameterized by a TxOutRef that is only known at deployment time.
+-- Each deployment produces a unique policy, making a static blueprint impractical.
 
 -- | Legacy function for backward compatibility
 {-# DEPRECATED mintingPolicyBlueprint "Use contractBlueprint instead" #-}

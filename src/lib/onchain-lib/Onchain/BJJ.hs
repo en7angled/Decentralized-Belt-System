@@ -204,7 +204,7 @@ data BeltSnapshot = BeltSnapshot
   { belt :: BJJBelt,
     beltDate :: POSIXTime
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''BeltSnapshot [('BeltSnapshot, 0)]

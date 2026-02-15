@@ -18,17 +18,19 @@ data ProfileException
   | InvalidProfileData
   | InsufficientFunds
   | InvalidMetadata
-  | InvalidAssetClass 
+  | InvalidAssetClass
   | RankNotFound
   | WrongProfileType
   | ScriptNotFound
   | WrongRankDataType
+  | OracleNotFound
+  | ProtocolPaused
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
 
 instance Exception ProfileException where
   displayException :: ProfileException -> Prelude.String
   displayException ProfileNotFound = "Profile not found"
-  displayException WrongProfileType = "Wrong profile type"  
+  displayException WrongProfileType = "Wrong profile type"
   displayException ProfileAlreadyExists = "Profile already exists"
   displayException InvalidProfileData = "Invalid profile data"
   displayException InsufficientFunds = "Insufficient funds"
@@ -37,5 +39,7 @@ instance Exception ProfileException where
   displayException RankNotFound = "Rank not found"
   displayException WrongRankDataType = "Wrong rank data type"
   displayException ScriptNotFound = "Script not found"
+  displayException OracleNotFound = "Oracle UTxO not found"
+  displayException ProtocolPaused = "Protocol is paused"
 
 instance IsGYApiError ProfileException 

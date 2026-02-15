@@ -6,7 +6,7 @@
 From `docs/OnchainSecurityAudit.md`:
 
 - [ ] **Admin Cleanup redeemer (dust/griefing mitigation)**
-  - Add `adminPubKeyHash :: PubKeyHash` to `ProtocolParams`
+  - The `adminPubKeyHash` is now available via `OracleParams.opAdminPkh` (read from the oracle datum as a reference input)
   - Add `AdminCleanup` redeemer to ProfilesValidator, RanksValidator, and MembershipsValidator
   - Validation: admin signs tx + spent UTxO must NOT contain protocol CurrencySymbol tokens
   - Update deployment order and documentation
@@ -28,4 +28,4 @@ From `docs/OnchainSecurityAudit.md`:
 ## New Features
 
 - [ ] **Full onchain + offchain for Achievements** — design and implement on-chain validator(s), data types, minting logic, off-chain transaction building, API endpoints, and chain-sync support for the achievements system
-- [ ] **Oracle Hub for Parameters** — implement an oracle-based parameter hub for protocol configuration (belt requirements, time constraints, fees, etc.) that can be updated without redeploying validators
+- [x] **Oracle Hub for Parameters** — implemented oracle-based parameter hub with `OracleValidator`, `OracleNFTPolicy`, `OracleParams`/`FeeConfig` types, pause gate, fee enforcement, and dynamic `minOutputLovelace`. Admin CLI commands: `pause-protocol`, `unpause-protocol`, `set-fees`, `query-oracle`. The `adminPkh` is now sourced from the oracle datum instead of `ProtocolParams`.

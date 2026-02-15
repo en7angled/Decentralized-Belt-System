@@ -9,12 +9,14 @@ import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
 import Data.Swagger.Internal.Schema ()
 import Data.Swagger.ParamSchema
 import Data.Swagger.SchemaOptions (fromAesonOptions)
+import Data.Proxy (Proxy (..))
 import Data.Text hiding (init, tail)
 import Deriving.Aeson
 import DomainTypes.Core.Types
 import GHC.Generics ()
 import GeniusYield.Types.Time
 import DomainTypes.Core.BJJ (BJJBelt)
+import Onchain.Protocol.Types (FeeConfig)
 
 -------------------------------------------------------------------------------
 
@@ -70,3 +72,40 @@ data ProfileActionType
         belt :: BJJBelt
       }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+
+-------------------------------------------------------------------------------
+
+-- * Admin Actions (oracle management)
+
+-------------------------------------------------------------------------------
+
+-- | Admin actions for managing protocol parameters via the oracle.
+-- These modify the oracle UTxO datum and require the admin signing key.
+--
+-- Note: These actions are only constructed programmatically (admin CLI),
+-- never deserialized from JSON. The ToJSON/FromJSON/ToSchema instances
+-- are minimal stubs required because ActionType is embedded in Interaction
+-- which needs full JSON support for the REST API.
+data AdminActionType
+  = PauseProtocolAction
+  | UnpauseProtocolAction
+  | SetFeesAction (Maybe FeeConfig)  -- ^ Nothing = clear fees, Just fc = set fees
+  | SetMinLovelaceAction Integer     -- ^ Update minimum output lovelace
+  deriving (Show, Generic)
+
+instance ToJSON AdminActionType where
+  toJSON PauseProtocolAction = object ["tag" .= ("PauseProtocolAction" :: Text)]
+  toJSON UnpauseProtocolAction = object ["tag" .= ("UnpauseProtocolAction" :: Text)]
+  toJSON (SetFeesAction _) = object ["tag" .= ("SetFeesAction" :: Text)]
+  toJSON (SetMinLovelaceAction n) = object ["tag" .= ("SetMinLovelaceAction" :: Text), "value" .= n]
+
+instance FromJSON AdminActionType where
+  parseJSON = withObject "AdminActionType" $ \o -> do
+    tag <- o .: "tag"
+    case (tag :: Text) of
+      "PauseProtocolAction" -> pure PauseProtocolAction
+      "UnpauseProtocolAction" -> pure UnpauseProtocolAction
+      _ -> fail "AdminActionType: unsupported action for JSON deserialization"
+
+instance ToSchema AdminActionType where
+  declareNamedSchema _ = declareNamedSchema (Proxy :: Proxy Text)

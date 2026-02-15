@@ -13,11 +13,16 @@ import Prelude
 
 ------------------------------------------------------------------------------------------------
 
--- | Context for deployed scripts transaction building operations
+-- | Context for deployed scripts transaction building operations.
+-- Includes the oracle validator reference script and the oracle NFT asset class.
+-- The oracle datum UTxO is looked up dynamically at the oracle validator address
+-- using 'oracleNFTAssetClass' — its TxOutRef changes on every update.
 data DeployedScriptsContext = DeployedScriptsContext
   { mintingPolicyHashAndRef :: (GYScriptHash, GYTxOutRef),
     profilesValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
-    ranksValidatorHashAndRef :: (GYScriptHash, GYTxOutRef)
+    ranksValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
+    oracleValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
+    oracleNFTAssetClass :: GYAssetClass
   }
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (ToJSON, FromJSON)
@@ -30,6 +35,9 @@ getProfilesValidatorRef ctx = snd $ profilesValidatorHashAndRef ctx
 
 getRanksValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getRanksValidatorRef ctx = snd $ ranksValidatorHashAndRef ctx
+
+getOracleValidatorRef :: DeployedScriptsContext -> GYTxOutRef
+getOracleValidatorRef ctx = snd $ oracleValidatorHashAndRef ctx
 
 ------------------------------------------------------------------------------------------------
 
@@ -87,8 +95,8 @@ runTx ::
   GYAddress ->
   -- | Browser wallet's reserved collateral (if set).
   Maybe GYTxOutRefCbor ->
-  GYTxBuilderMonadIO (GYTxSkeleton 'PlutusV3, GYAssetClass) ->
-  IO (GYTxBody, GYAssetClass)
+  GYTxBuilderMonadIO (GYTxSkeleton 'PlutusV3, Maybe GYAssetClass) ->
+  IO (GYTxBody, Maybe GYAssetClass)
 runTx ctx addrs addr collateral skeleton = do
   let nid = cfgNetworkId $ ctxCoreCfg ctx
       providers = ctxProviders ctx

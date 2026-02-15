@@ -1,6 +1,59 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.0.0 -- 2026-02-15
+
+### Oracle Hub for Parameters
+
+Implemented a dynamic protocol parameter system via an on-chain oracle, enabling runtime configuration changes (pause, fees, min lovelace, admin rotation) without redeploying validators.
+
+#### New On-chain Components
+- **`OracleValidator`** — Unparameterized spending validator guarding the oracle UTxO; enforces admin signature and value preservation
+- **`OracleNFTPolicy`** — One-shot minting policy for the unique oracle NFT identifier
+- **`OracleParams` / `FeeConfig`** — New data types for mutable operational parameters (admin PKH, pause flag, fee configuration, min output lovelace)
+
+#### Core Design Decision
+BJJ rules, belt hierarchy, and metadata limits remain hardcoded (domain invariants). Only runtime-operational parameters are oracle-ized: pause, fees, min lovelace, and admin identity.
+
+#### MintingPolicy Oracle Integration
+- MintingPolicy now reads `OracleParams` from a reference input at runtime
+- Enforces global pause gate (`opPaused`), fee payments (`checkFee`), and minimum output lovelace
+- `ProtocolParams` extended with `oracleToken :: AssetClass` field
+
+#### Off-chain Architecture: AdminAction Pipeline
+- **`AdminActionType`** added to `DomainTypes.Core.Actions` with constructors: `PauseProtocolAction`, `UnpauseProtocolAction`, `SetFeesAction`, `SetMinLovelaceAction`
+- **`ActionType`** extended from newtype to sum type: `ProfileAction | AdminAction`
+- **`updateOracleTX`** in `Operations.hs` — skeleton-based oracle update with `mustBeSignedBy` for admin signature
+- **`interactionToTxSkeleton`** returns `Maybe GYAssetClass` (profile actions return `Just`, admin actions return `Nothing`)
+- Admin CLI commands (`pause-protocol`, `unpause-protocol`, `set-fees`, `query-oracle`) now route through the shared `Interaction` pipeline via `runBJJActionWithPK`
+- Removed standalone `updateOracleParams` from `Transactions.hs`
+
+#### Multi-step Deployment Flow
+```
+1. Deploy OracleValidator (reference script)
+2. Mint Oracle NFT + lock initial OracleParams
+3. Deploy ProfilesValidator, RanksValidator (reference scripts)
+4. Compile MintingPolicy with oracle AssetClass, deploy (reference script)
+```
+
+#### Tests
+- **Oracle admin unit tests**: pause/unpause, set/clear fees, update min lovelace, sequential admin actions interleaved with profile interactions
+- **Serialization roundtrip property tests**: Added 18 new tests for all datum types (BJJBelt, BeltSnapshot, OnchainProfile, OnchainRank, membership types, CIP-68 types, NodeDatum)
+- **`Eq` instances** added to 10 on-chain types for test assertions
+- **Real admin PKH** in test oracle (derived from wallet address via `addressToPlutus`)
+
+#### Documentation & Scripts
+- Updated `OnchainArchitecture.md` with Oracle Hub section, deployment order, security model
+- Updated `to-do-tasks.md` with oracle completion status
+- Updated CIP-57 blueprint with `OracleValidator` and new type definitions
+- Updated `populate_testnet.sh`, `test_black_promotes_white_to_blue.sh` with admin action steps
+- Updated `test_exunits.sh` with Type/Action columns and ASCII table rendering
+
+#### Cabal Dependencies
+- Added `plutus-tx` to test suite, `mtl` to admin executable
+
+---
+
 ## 0.2.9.0 -- 2026-02-15
 
 ### Memberships Onchain & Code Quality

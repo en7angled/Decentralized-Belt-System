@@ -14,7 +14,7 @@ import PlutusLedgerApi.V1 (AssetClass (..))
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
-import Prelude qualified (Show (..))
+import Prelude qualified
 
 -- | A generic linked list node datum that can hold any data type and use any key type.
 --
@@ -30,7 +30,7 @@ data NodeDatum plutusData = NodeDatum
     -- | the application-specific data
     nodeData :: plutusData
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 instance (Eq AssetClass, Eq plutusData) => Eq (NodeDatum plutusData) where

@@ -2,21 +2,24 @@
 
 module TxBuilding.Validators where
 
+import Constants qualified
 import Data.ByteString.Short qualified as SBS
 import GeniusYield.Types
+import Onchain.MembershipsValidator qualified as MembershipsValidator (membershipsCompile)
 import Onchain.MintingPolicy qualified as MintingPolicy (mintingPolicyCompile)
+import Onchain.OracleNFTPolicy qualified as OracleNFTPolicy (oracleNFTPolicyCompile)
+import Onchain.OracleValidator qualified as OracleValidator (oracleCompile)
 import Onchain.ProfilesValidator qualified as ProfilesValidator (profilesCompile)
 import Onchain.Protocol
 import Onchain.RanksValidator qualified as RanksValidator (ranksCompile)
-import Onchain.MembershipsValidator qualified as MembershipsValidator (membershipsCompile)
+import PlutusLedgerApi.V1.Value qualified as V1
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude hiding (($))
-import qualified Constants
 
 ------------------------------------------------------------------------------------------------
 
--- *  Define Profile Validator
+-- * Define Profile Validator
 
 ------------------------------------------------------------------------------------------------
 
@@ -32,10 +35,9 @@ profilesValidatorHashGY = validatorHash profilesValidatorGY
 profilesValidatorHashPlutus :: ScriptHash
 profilesValidatorHashPlutus = validatorHashToPlutus profilesValidatorHashGY
 
-
 ------------------------------------------------------------------------------------------------
 
--- *  Define Ranks Validator
+-- * Define Ranks Validator
 
 ------------------------------------------------------------------------------------------------
 
@@ -51,10 +53,9 @@ ranksValidatorHashGY = validatorHash ranksValidatorGY
 ranksValidatorHashPlutus :: ScriptHash
 ranksValidatorHashPlutus = validatorHashToPlutus ranksValidatorHashGY
 
-
 ------------------------------------------------------------------------------------------------
 
--- *  Define Memberships Validator
+-- * Define Memberships Validator
 
 ------------------------------------------------------------------------------------------------
 
@@ -70,44 +71,76 @@ membershipsValidatorHashGY = validatorHash membershipsValidatorGY
 membershipsValidatorHashPlutus :: ScriptHash
 membershipsValidatorHashPlutus = validatorHashToPlutus membershipsValidatorHashGY
 
+------------------------------------------------------------------------------------------------
 
+-- * Define Oracle Validator (unparameterized)
 
 ------------------------------------------------------------------------------------------------
 
--- *  Protocol Parameters
+oracleValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
+oracleValidatorPlutus = OracleValidator.oracleCompile
+
+oracleValidatorGY :: GYScript 'PlutusV3
+oracleValidatorGY = validatorFromPlutus oracleValidatorPlutus
+
+oracleValidatorHashGY :: GYScriptHash
+oracleValidatorHashGY = validatorHash oracleValidatorGY
 
 ------------------------------------------------------------------------------------------------
 
-defaultProtocolParams :: ProtocolParams
-defaultProtocolParams = ProtocolParams (ranksValidatorHashPlutus, profilesValidatorHashPlutus, membershipsValidatorHashPlutus)
+-- * Define Oracle NFT Policy (parameterized by seed TxOutRef)
 
 ------------------------------------------------------------------------------------------------
 
--- *  Define Minting Policy
+-- | Compile the one-shot oracle NFT minting policy for a given seed UTxO.
+compileOracleNFTPolicy :: TxOutRef -> GYScript 'PlutusV3
+compileOracleNFTPolicy seedRef =
+  validatorFromPlutus (OracleNFTPolicy.oracleNFTPolicyCompile seedRef)
 
 ------------------------------------------------------------------------------------------------
 
-mintingPolicyPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
-mintingPolicyPlutus = MintingPolicy.mintingPolicyCompile defaultProtocolParams
-
-mintingPolicyGY :: GYScript 'PlutusV3
-mintingPolicyGY = validatorFromPlutus mintingPolicyPlutus
-
-mintingPolicyHashGY :: GYScriptHash
-mintingPolicyHashGY = validatorHash mintingPolicyGY
+-- * Protocol Parameters
 
 ------------------------------------------------------------------------------------------------
 
--- *  Script Sizes (flat-encoded bytes)
+-- | Build 'ProtocolParams' given the oracle NFT 'AssetClass'.
+-- The oracle token is dynamic (depends on the oracle NFT minting tx)
+-- so this cannot be a top-level constant.
+mkProtocolParams :: V1.AssetClass -> ProtocolParams
+mkProtocolParams oracleAC =
+  ProtocolParams
+    ranksValidatorHashPlutus
+    profilesValidatorHashPlutus
+    membershipsValidatorHashPlutus
+    oracleAC
+
+-- | Protocol params with a placeholder oracle token, for blueprint generation only.
+-- The actual oracle token is determined at deployment time.
+blueprintProtocolParams :: ProtocolParams
+blueprintProtocolParams = mkProtocolParams (V1.AssetClass (V1.CurrencySymbol "", V1.TokenName ""))
+
+------------------------------------------------------------------------------------------------
+
+-- * Define Minting Policy (parameterized by oracle token)
+
+------------------------------------------------------------------------------------------------
+
+-- | Compile the minting policy with the given oracle NFT 'AssetClass'.
+-- The minting policy depends on 'ProtocolParams' which includes the oracle token,
+-- so it must be compiled after the oracle NFT has been minted.
+compileMintingPolicy :: V1.AssetClass -> GYScript 'PlutusV3
+compileMintingPolicy oracleAC =
+  validatorFromPlutus (MintingPolicy.mintingPolicyCompile (mkProtocolParams oracleAC))
+
+------------------------------------------------------------------------------------------------
+
+-- * Script Sizes (flat-encoded bytes)
 
 ------------------------------------------------------------------------------------------------
 
 -- | Size of a compiled script in bytes (flat-encoded, as deployed on-chain)
 compiledCodeSize :: CompiledCode a -> Int
 compiledCodeSize cc = SBS.length (serialiseCompiledCode cc)
-
-mintingPolicySize :: Int
-mintingPolicySize = compiledCodeSize mintingPolicyPlutus
 
 profilesValidatorSize :: Int
 profilesValidatorSize = compiledCodeSize profilesValidatorPlutus
@@ -118,9 +151,12 @@ ranksValidatorSize = compiledCodeSize ranksValidatorPlutus
 membershipsValidatorSize :: Int
 membershipsValidatorSize = compiledCodeSize membershipsValidatorPlutus
 
+oracleValidatorSize :: Int
+oracleValidatorSize = compiledCodeSize oracleValidatorPlutus
+
 ------------------------------------------------------------------------------------------------
 
--- *  Export Validators
+-- * Export Validators
 
 ------------------------------------------------------------------------------------------------
 
@@ -130,12 +166,11 @@ exportProfilesValidator = writeScript @'PlutusV3 Constants.defaultProfilesValida
 exportRanksValidator :: IO ()
 exportRanksValidator = writeScript @'PlutusV3 Constants.defaultRanksValidatorFile $ validatorToScript ranksValidatorGY
 
-exportMintingPolicy :: IO ()
-exportMintingPolicy = writeScript @'PlutusV3 Constants.defaultMintingPolicyFile $ mintingPolicyToScript mintingPolicyGY
-
+exportOracleValidator :: IO ()
+exportOracleValidator = writeScript @'PlutusV3 Constants.defaultOracleValidatorFile $ validatorToScript oracleValidatorGY
 
 exportValidators :: IO ()
 exportValidators = do
   exportProfilesValidator
   exportRanksValidator
-  exportMintingPolicy
+  exportOracleValidator

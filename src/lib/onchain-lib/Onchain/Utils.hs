@@ -2,7 +2,8 @@
 
 -- | On-chain utility functions shared across validators.
 -- Provides helpers for untyped lambda conversion, datum/value lookups,
--- output validation, and the shared minimum lovelace constant.
+-- output validation, oracle reading, fee checking, and the shared minimum
+-- lovelace constant.
 module Onchain.Utils
   ( -- * Shared Constants
     minLovelaceValue,
@@ -10,6 +11,10 @@ module Onchain.Utils
     -- * Helper Functions
     mkUntypedLambda,
     nameFromTxOutRef,
+
+    -- * Oracle Helpers
+    readOracleParams,
+    checkFee,
 
     -- * Datum Helper Functions
     checkTxOutAtIndexWithDatumValueAndAddress,
@@ -27,6 +32,7 @@ module Onchain.Utils
   )
 where
 
+import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
@@ -120,6 +126,48 @@ checkAndGetInlineDatum :: TxOut -> BuiltinData
 checkAndGetInlineDatum out = case txOutDatum out of
   OutputDatum da -> getDatum da
   _ -> traceError "Invalid output: expected inline datum"
+
+-------------------------------------------------------------------------------
+
+-- * Oracle Helpers
+
+-------------------------------------------------------------------------------
+
+-- | Read 'OracleParams' from the oracle UTxO identified by its NFT 'AssetClass'
+-- in the transaction's reference inputs. Fails if the oracle UTxO is not found
+-- or the datum cannot be decoded.
+{-# INLINEABLE readOracleParams #-}
+readOracleParams :: AssetClass -> [TxInInfo] -> OracleParams
+readOracleParams oracleAC refInputs =
+  case PlutusTx.List.find hasOracleNFT refInputs of
+    Just (TxInInfo _ TxOut {txOutDatum}) -> case txOutDatum of
+      OutputDatum (Datum bd) -> case fromBuiltinData @OracleParams bd of
+        Just params -> params
+        Nothing -> traceError "Cannot decode oracle datum"
+      _ -> traceError "Oracle UTxO must have inline datum"
+    Nothing -> traceError "Oracle UTxO not found in reference inputs"
+  where
+    hasOracleNFT (TxInInfo _ TxOut {txOutValue}) =
+      V1.assetClassValueOf txOutValue oracleAC == 1
+
+-- | Check that a fee payment is included in the transaction outputs.
+-- If 'opFeeConfig' is 'Nothing', no fee is required and the check passes.
+-- If 'opFeeConfig' is 'Just', validates that at least one output pays
+-- >= the required fee (extracted via the selector) to 'fcFeeAddress'.
+{-# INLINEABLE checkFee #-}
+checkFee :: OracleParams -> (FeeConfig -> Integer) -> [TxOut] -> Bool
+checkFee oracle feeSelector outputs = case opFeeConfig oracle of
+  Nothing -> True
+  Just feeConfig ->
+    let requiredFee = feeSelector feeConfig
+        feeAddr = fcFeeAddress feeConfig
+        feeValue = V1.lovelaceValue (V1.Lovelace requiredFee)
+     in traceIfFalse "Must pay required fee to fee address"
+          $ any
+            ( \TxOut {txOutValue = v, txOutAddress = a} ->
+                a == feeAddr && v `geq` feeValue
+            )
+            outputs
 
 -------------------------------------------------------------------------------
 

@@ -50,9 +50,10 @@ data UserAddresses = UserAddresses
   }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
-newtype ActionType = ProfileAction ProfileActionType
-  deriving (Show, Generic)
-  deriving newtype (FromJSON, ToJSON, ToSchema)
+data ActionType
+  = ProfileAction ProfileActionType
+  | AdminAction AdminActionType
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 data Interaction
   = Interaction
@@ -68,14 +69,14 @@ data Interaction
 interactionToTxSkeleton ::
   (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
   Interaction ->
-  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
+  m (GYTxSkeleton 'PlutusV3, Maybe GYAssetClass)
 interactionToTxSkeleton Interaction {..} = do
   let changeAddr = changeAddress userAddresses
   let usedAddrs = usedAddresses userAddresses
   let receiveAddr = fromMaybe changeAddr recipient
   case action of
     ProfileAction actionType -> do
-      case actionType of
+      fmap (fmap Just) $ case actionType of
         CreateProfileWithRankAction profileData profileType creationDate belt -> do
           createProfileWithRankTX
             receiveAddr
@@ -99,3 +100,6 @@ interactionToTxSkeleton Interaction {..} = do
           promoteProfileTX promotedProfileId promotedByProfileId (timeToPlutus achievementDate) belt usedAddrs
         AcceptPromotionAction promotionId ->
           acceptPromotionTX promotionId usedAddrs
+    AdminAction adminActionType -> do
+      skeleton <- updateOracleTX adminActionType
+      return (skeleton, Nothing)
