@@ -243,7 +243,7 @@ maliciousAcceptPromotionTX gyPromotionId = do
   -- Output 1: Updated rank state locked at ranksValidator
   let profileOutputIdx = 0 :: Integer
 
-  let gySpendProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ AcceptPromotion (assetClassToPlutus gyPromotionId) profileOutputIdx
+  let gySpendProfileRedeemer = redeemerFromPlutusData $ AcceptPromotion (assetClassToPlutus gyPromotionId) profileOutputIdx
   spendsStudentProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyStudentProfileRefAC gySpendProfileRedeemer profilesValidatorGY
 
   (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyStudentProfileRefAC

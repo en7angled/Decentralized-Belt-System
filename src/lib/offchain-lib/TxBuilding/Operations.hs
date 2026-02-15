@@ -145,7 +145,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   let profileOutputIdx = 0 :: Integer
   let rankOrMembershipHistoriesRootOutputIdx = 2 :: Integer
   let redeemer = CreateProfile seedTxOutRefPlutus metadata profileType creationDate (beltToInt belt) profileOutputIdx rankOrMembershipHistoriesRootOutputIdx
-  let gyCreateProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
+  let gyCreateProfileRedeemer = redeemerFromPlutusData $ redeemer
 
   isMintingProfileCIP68UserAndRef <- txMustMintCIP68UserAndRef mpRef mpGY gyCreateProfileRedeemer gyProfileRefAC
 
@@ -224,7 +224,7 @@ updateProfileTX gyProfileRefAC newImageURI ownAddrs = do
 
   (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyProfileRefAC
   let updateRedeemer = UpdateProfileImage newImageURI profileOutputIdx
-  let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ updateRedeemer
+  let gyRedeemer = redeemerFromPlutusData $ updateRedeemer
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyProfileRefAC gyRedeemer profilesValidatorGY
   gyProfileUserAC <- gyDeriveUserFromRefAC gyProfileRefAC
   spendsProfileUserNFT <- txMustSpendFromAddress gyProfileUserAC ownAddrs
@@ -294,7 +294,7 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
   let pendingRankOutputIdx = 0 :: Integer
 
   let redeemer = Promote seedTxOutRefPlutus (assetClassToPlutus gyPromotedProfileId) (assetClassToPlutus gyPromotedByProfileId) achievementDate (beltToInt belt) pendingRankOutputIdx
-  let gyRedeemer = redeemerFromPlutus' . toBuiltinData $ redeemer
+  let gyRedeemer = redeemerFromPlutusData $ redeemer
   gyPromotionRankAC <- assetClassFromPlutus' $ derivePromotionRankId seedTxOutRefPlutus (mintingPolicyCurrencySymbol mpGY)
   isMintingPromotionRank <- txMustMintWithMintRef True mpRef mpGY gyRedeemer gyPromotionRankAC
 
@@ -367,7 +367,7 @@ acceptPromotionTX gyPromotionId ownAddrs = do
   let profileOutputIdx = 0 :: Integer
   let rankOutputIdx = 1 :: Integer -- Used by RanksValidator redeemer (PV no longer needs this — R2 removed)
 
-  let gySpendProfileRedeemer = redeemerFromPlutus' . toBuiltinData $ AcceptPromotion (assetClassToPlutus gyPromotionId) profileOutputIdx
+  let gySpendProfileRedeemer = redeemerFromPlutusData $ AcceptPromotion (assetClassToPlutus gyPromotionId) profileOutputIdx
   spendsStudentProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyStudentProfileRefAC gySpendProfileRedeemer profilesValidatorGY
 
   (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyStudentProfileRefAC
@@ -385,7 +385,7 @@ acceptPromotionTX gyPromotionId ownAddrs = do
   -- Output 1: Updated rank state
   isLockingUpdatedRank <- txMustLockStateWithInlineDatumAndValue ranksValidatorGY plutuStudentUpdatedRankDatum gyRankValue
 
-  let gySpendPromotionRedeemer = redeemerFromPlutus' . toBuiltinData $ PromotionAcceptance profileOutputIdx rankOutputIdx
+  let gySpendPromotionRedeemer = redeemerFromPlutusData $ PromotionAcceptance profileOutputIdx rankOutputIdx
   spendsPromotionRank <- txMustSpendStateFromRefScriptWithRedeemer rvRef gyPromotionId gySpendPromotionRedeemer ranksValidatorGY
 
   -- Reference the student's current rank for acceptance-time validation
