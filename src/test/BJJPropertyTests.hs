@@ -423,7 +423,6 @@ genOracleParamsNoFee =
     <$> genPubKeyHash
     <*> Gen.bool
     <*> pure Nothing
-    <*> Gen.integral (Range.linear 1000000 10000000)
 
 genOracleParamsWithFee :: Gen OracleParams
 genOracleParamsWithFee =
@@ -431,7 +430,6 @@ genOracleParamsWithFee =
     <$> genPubKeyHash
     <*> Gen.bool
     <*> (Just <$> genFeeConfig)
-    <*> Gen.integral (Range.linear 1000000 10000000)
 
 -- =============================================================================
 -- Generators — Core Datum Types

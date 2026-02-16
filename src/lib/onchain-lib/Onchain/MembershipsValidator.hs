@@ -40,8 +40,10 @@ import Onchain.Protocol
     unsafeGetListNodeDatumAndValue,
     unsafeGetMembershipHistory,
     unsafeGetMembershipInterval,
+    updateMembershipIntervalEndDate,
     updateNodeMembershipHistory,
   )
+import Onchain.Protocol.Id (deriveMembershipIntervalId)
 import Onchain.Utils (mkUntypedLambda)
 import Onchain.Utils qualified as Utils
 import PlutusLedgerApi.V1 qualified as V1
@@ -78,6 +80,12 @@ data MembershipsRedeemer
     AcceptInterval
       { updatedIntervalTxOutIdx :: Integer -- ˆ The output index of the updated interval
       }
+  | -- | Update the end date of a membership interval (org: any future; practitioner: shorten/close accepted only)
+    UpdateEndDate
+      { membershipHistoryNodeId :: MembershipHistoriesListNodeId,
+        newEndDate :: POSIXTime,
+        updatedIntervalTxOutIdx :: Integer
+      }
   | -- | Permissionless dust/griefing cleanup. Anyone can spend a UTxO at the
     -- validator address if its datum is absent or does not parse as a valid
     -- protocol datum. Legitimate protocol UTxOs (with valid datums) are rejected.
@@ -85,7 +93,7 @@ data MembershipsRedeemer
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''MembershipsRedeemer [('InsertNodeToMHList, 0), ('UpdateNodeInMHList, 1), ('AcceptInterval, 2), ('Cleanup, 3)]
+makeIsDataSchemaIndexed ''MembershipsRedeemer [('InsertNodeToMHList, 0), ('UpdateNodeInMHList, 1), ('AcceptInterval, 2), ('Cleanup, 3), ('UpdateEndDate, 4)]
 
 -------------------------------------------------------------------------------
 
@@ -104,27 +112,29 @@ membershipsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bsredeemer) script
             Nothing -> True
             Just (Datum bd) -> case fromBuiltinData @MembershipDatum bd of
               Nothing -> True
-              Just _ -> traceError "k" -- Cannot cleanup UTxO with valid protocol datum
+              Just _ -> traceError "V0" -- Cannot cleanup UTxO with valid protocol datum (V0)
           _ ->
             let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
                 ownValue = txOutValue ownInput
                 ownAddress = txOutAddress ownInput
              in case mdatum of
-                  Nothing -> traceError "l" -- No datum
+                  Nothing -> traceError "V1" -- No datum (V1)
                   Just (Datum bdatum) -> case fromBuiltinData bdatum of
-                    Nothing -> traceError "m" -- Invalid datum
+                    Nothing -> traceError "V1" -- Invalid datum (V1)
                     Just (datum :: MembershipDatum) -> case datum of
                       ListNodeDatum spendingNode -> case redeemer of
                         InsertNodeToMHList {maybeRightNodeId, insertedMembershipHistory, updatedLeftNodeTxOutIdx, insertedNodeTxOutIdx} ->
                           handleInsertNode txInfo ownValue ownAddress spendingNode maybeRightNodeId insertedMembershipHistory updatedLeftNodeTxOutIdx insertedNodeTxOutIdx
                         UpdateNodeInMHList {lastIntervalId, startDate, endDate, updatedNodeTxOutIdx} ->
                           handleUpdateNode txInfo ownValue ownAddress spendingNode lastIntervalId startDate endDate updatedNodeTxOutIdx
-                        _otherRedeemer -> traceError "n" -- Invalid redeemer for ListNodeDatum
-                      IntervalDatum unacceptedInterval -> case redeemer of
+                        _otherRedeemer -> traceError "V2" -- Invalid redeemer for ListNodeDatum (V2)
+                      IntervalDatum interval -> case redeemer of
                         AcceptInterval {updatedIntervalTxOutIdx} ->
-                          handleAcceptInterval txInfo ownValue ownAddress unacceptedInterval updatedIntervalTxOutIdx
-                        _otherRedeemer -> traceError "o" -- Invalid redeemer for IntervalDatum
-        _ -> traceError "p" -- Invalid purpose
+                          handleAcceptInterval txInfo ownValue ownAddress interval updatedIntervalTxOutIdx
+                        UpdateEndDate {membershipHistoryNodeId, newEndDate, updatedIntervalTxOutIdx} ->
+                          handleUpdateEndDate txInfo ownValue ownAddress interval membershipHistoryNodeId newEndDate updatedIntervalTxOutIdx
+                        _otherRedeemer -> traceError "V3" -- Invalid redeemer for IntervalDatum (V3)
+        _ -> traceError "V4" -- Invalid purpose (V4)
 
 -------------------------------------------------------------------------------
 
@@ -163,12 +173,13 @@ handleInsertNode txInfo@TxInfo {..} ownValue ownAddress oldLeftNode maybeRightNo
           let insertedNodeDatum' = mkMembershipHistoriesListNode insertedMembershipHistory Nothing
               updatedLeftNode' = appendMembershipHistory (oldLeftNode, insertedNodeDatum')
            in (insertedNodeDatum', updatedLeftNode')
-   in and
-        [ traceIfFalse "q" $ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1, -- Must spend org User NFT
-          traceIfFalse "r" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedLeftNodeTxOutIdx (ListNodeDatum updatedLeftNode) ownValue ownAddress txInfoOutputs, -- Lock updated left node
-          traceIfFalse "s" $ mintValueMinted txInfoMint == (insertedNodeNFT + newIntervalNFT), -- Exact mint check
-          traceIfFalse "t" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress insertedNodeTxOutIdx (ListNodeDatum insertedNodeDatum) (insertedNodeNFT + Utils.minLovelaceValue) ownAddress txInfoOutputs -- Lock inserted node
-        ]
+   in traceIfFalse "V5" -- Insert node handler failed (V5)
+        $ and
+          [ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1, -- Must spend org User NFT
+            Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedLeftNodeTxOutIdx (ListNodeDatum updatedLeftNode) ownValue ownAddress txInfoOutputs, -- Lock updated left node
+            mintValueMinted txInfoMint == (insertedNodeNFT + newIntervalNFT), -- Exact mint check
+            Utils.checkTxOutAtIndexWithDatumValueAndAddress insertedNodeTxOutIdx (ListNodeDatum insertedNodeDatum) (insertedNodeNFT + Utils.protocolMinLovelaceValue) ownAddress txInfoOutputs -- Lock inserted node
+          ]
 
 {-# INLINEABLE handleUpdateNode #-}
 handleUpdateNode ::
@@ -190,11 +201,12 @@ handleUpdateNode txInfo@TxInfo {..} ownValue ownAddress spendingNode lastInterva
       newIntervalId = membershipIntervalId newInterval
       newIntervalNFT = V1.assetClassValue newIntervalId 1
       updatedNode = updateNodeMembershipHistory spendingNode newHistory
-   in and
-        [ traceIfFalse "u" $ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1, -- Must spend org User NFT
-          traceIfFalse "v" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- Lock updated node
-          traceIfFalse "w" $ mintValueMinted txInfoMint == newIntervalNFT -- Exact mint check
-        ]
+   in traceIfFalse "V6" -- Update node handler failed (V6)
+        $ and
+          [ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1, -- Must spend org User NFT
+            Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- Lock updated node
+            mintValueMinted txInfoMint == newIntervalNFT -- Exact mint check
+          ]
 
 {-# INLINEABLE handleAcceptInterval #-}
 handleAcceptInterval ::
@@ -207,10 +219,42 @@ handleAcceptInterval ::
 handleAcceptInterval txInfo@TxInfo {..} ownValue ownAddress unacceptedInterval updatedIntervalTxOutIdx =
   let acceptedInterval = acceptMembershipInterval unacceptedInterval
       profileUserAssetClass = deriveUserFromRefAC (membershipIntervalPractitionerId acceptedInterval)
-   in and
-        [ traceIfFalse "x" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedIntervalTxOutIdx (IntervalDatum acceptedInterval) ownValue ownAddress txInfoOutputs, -- Lock updated interval
-          traceIfFalse "y" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1 -- Must spend practitioner User NFT
-        ]
+   in traceIfFalse "V7" -- Accept interval handler failed (V7)
+        $ and
+          [ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedIntervalTxOutIdx (IntervalDatum acceptedInterval) ownValue ownAddress txInfoOutputs, -- Lock updated interval
+            V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1 -- Must spend practitioner User NFT
+          ]
+
+{-# INLINEABLE handleUpdateEndDate #-}
+handleUpdateEndDate ::
+  TxInfo ->
+  Value ->
+  Address ->
+  OnchainMembershipInterval ->
+  MembershipHistoriesListNodeId ->
+  POSIXTime ->
+  Integer ->
+  Bool
+handleUpdateEndDate txInfo@TxInfo {..} ownValue ownAddress interval membershipHistoryNodeId newEndDate updatedIntervalTxOutIdx =
+  let (_historyNodeValue, historyNode) = unsafeGetListNodeDatumAndValue membershipHistoryNodeId ownAddress txInfoReferenceInputs
+      history = unsafeGetMembershipHistory historyNode
+      -- Interval must belong to this history (practitioner match + O(1) ID binding)
+      intervalBelongsToHistory =
+        membershipHistoryPractitionerId history == membershipIntervalPractitionerId interval
+          && membershipIntervalId interval == deriveMembershipIntervalId (membershipHistoryId history) (membershipIntervalNumber interval)
+      orgUserAC = deriveUserFromRefAC (membershipHistoryOrganizationId history)
+      practitionerUserAC = deriveUserFromRefAC (membershipIntervalPractitionerId interval)
+      spentOrg = V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1
+      spentPractitioner = V1.assetClassValueOf (valueSpent txInfo) practitionerUserAC == 1
+      isOrganization = spentOrg && not spentPractitioner
+      mustSpendOneUserNFT = spentOrg /= spentPractitioner -- exactly one of org or practitioner
+      updatedInterval = updateMembershipIntervalEndDate isOrganization interval newEndDate txInfoValidRange
+   in traceIfFalse "V8" -- UpdateEndDate handler failed (V8)
+        $ and
+          [ intervalBelongsToHistory,
+            mustSpendOneUserNFT,
+            Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedIntervalTxOutIdx (IntervalDatum updatedInterval) ownValue ownAddress txInfoOutputs
+          ]
 
 -------------------------------------------------------------------------------
 

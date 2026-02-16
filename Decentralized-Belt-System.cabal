@@ -45,8 +45,8 @@ common plinth-ghc-options
 
   -- Compiler flags (defaults): no-remove-trace keeps traces; preserve-logging
   -- prevents optimization from removing trace messages (see Plutus troubleshooting).
-  ghc-options:        -fplugin-opt PlutusTx.Plugin:no-remove-trace
   ghc-options:        -fplugin-opt PlutusTx.Plugin:preserve-logging
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:no-remove-trace
   ghc-options:        -fplugin-opt PlutusTx.Plugin:optimize
 
 library onchain-lib

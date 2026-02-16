@@ -87,6 +87,11 @@ data ProfileActionType
   | AcceptMembershipIntervalAction
       { aci_interval_id :: GYAssetClass
       }
+  | UpdateEndDateAction
+      { ude_membership_interval_id :: GYAssetClass,
+        ude_membership_history_node_id :: GYAssetClass,
+        ude_new_end_date :: GYTime
+      }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 -------------------------------------------------------------------------------
@@ -120,14 +125,12 @@ data AdminActionType
   = PauseProtocolAction
   | UnpauseProtocolAction
   | SetFeesAction (Maybe FeeConfig)  -- ^ Nothing = clear fees, Just fc = set fees
-  | SetMinLovelaceAction Integer     -- ^ Update minimum output lovelace
   deriving (Show, Generic)
 
 instance ToJSON AdminActionType where
   toJSON PauseProtocolAction = object ["tag" .= ("PauseProtocolAction" :: Text)]
   toJSON UnpauseProtocolAction = object ["tag" .= ("UnpauseProtocolAction" :: Text)]
   toJSON (SetFeesAction _) = object ["tag" .= ("SetFeesAction" :: Text)]
-  toJSON (SetMinLovelaceAction n) = object ["tag" .= ("SetMinLovelaceAction" :: Text), "value" .= n]
 
 instance FromJSON AdminActionType where
   parseJSON = withObject "AdminActionType" $ \o -> do

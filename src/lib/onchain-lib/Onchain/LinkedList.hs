@@ -54,7 +54,7 @@ checkIfValidNodeDatum node = case nodeKey node of
   Just key -> case nextNodeKey node of
     Nothing -> True -- Last node
     Just nextKey ->
-      traceIfFalse "B" $ assetClassCurrencySymbol key == assetClassCurrencySymbol nextKey -- CS mismatch
+      assetClassCurrencySymbol key == assetClassCurrencySymbol nextKey -- CS mismatch
   where
     assetClassCurrencySymbol (AssetClass (cs, _)) = cs
 
@@ -70,15 +70,15 @@ checkInputsAndInsertInBetweenNodes (oldLeftNode, rightNode, insertedNode) =
     then
       updatedLeftNode
     else
-      traceError "C" -- Insert invariant violated
+      traceError "L0" -- Insert invariant violated (L0)
   where
     updatedLeftNode = oldLeftNode {nextNodeKey = nodeKey insertedNode}
     validInputs =
       and
-        [ traceIfFalse "D" $ nextNodeKey oldLeftNode == nodeKey rightNode, -- adjacent
-          traceIfFalse "E" $ nodeKey oldLeftNode < nodeKey insertedNode, -- left < inserted
-          traceIfFalse "F" $ nodeKey rightNode > nodeKey insertedNode, -- right > inserted
-          traceIfFalse "G" $ nextNodeKey insertedNode == nodeKey rightNode, -- inserted -> right
+        [ nextNodeKey oldLeftNode == nodeKey rightNode, -- adjacent
+          nodeKey oldLeftNode < nodeKey insertedNode, -- left < inserted
+          nodeKey rightNode > nodeKey insertedNode, -- right > inserted
+          nextNodeKey insertedNode == nodeKey rightNode, -- inserted -> right
           all checkIfValidNodeDatum [oldLeftNode, rightNode, insertedNode]
         ]
 
@@ -93,14 +93,14 @@ checkInputsAndAppendNode (lastNode, appendedNode) =
     then
       updatedLastNode
     else
-      traceError "H" -- Append invariant violated
+      traceError "L1" -- Append invariant violated (L1)
   where
     updatedLastNode = lastNode {nextNodeKey = nodeKey appendedNode}
     validInputs =
       and
-        [ traceIfFalse "I" $ isNothing (nextNodeKey lastNode), -- last has no next
-          traceIfFalse "J" $ isJust (nodeKey appendedNode), -- appended has key
-          traceIfFalse "K" $ isNothing (nextNodeKey appendedNode), -- appended has no next
-          traceIfFalse "L" $ nodeKey appendedNode > nodeKey lastNode, -- appended > last
+        [ isNothing (nextNodeKey lastNode), -- last has no next
+          isJust (nodeKey appendedNode), -- appended has key
+          isNothing (nextNodeKey appendedNode), -- appended has no next
+          nodeKey appendedNode > nodeKey lastNode, -- appended > last
           all checkIfValidNodeDatum [lastNode, appendedNode]
         ]

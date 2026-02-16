@@ -118,7 +118,7 @@ The system seeks to:
 > - **Backend**  
 >   - **Interaction API Service**: Builds and submits transactions for promotions, achievements, membership. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth).  
 >   - **Query API Service**: Provides queries for profiles, promotions, and belts. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth). Supports `?liveprojection=true` to read directly from chain vs projected DB.  
->   - **Chain Sync Service** : Monitors the Cardano blockchain and projects data into SQLite.  
+>   - **Chain Sync Service** : Monitors the Cardano blockchain and projects data into PostgreSQL.  
 >     - Exposes a probe API: `GET /health`, `GET /ready` (default port 8084)
 >     - Health returns sync metrics including `chain_sync_state`
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
@@ -253,7 +253,7 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
 
 ![Sequence-UpdateProfile](../out/puml/SequenceDiagram-UpdateProfile/UpdateProfile.png)
 
-3. **Accept Achievement**  
+3. **Accept Achievement** *(Not yet implemented)*  
    - **Goal**: Accept an achievement (competition medals,diplomas etc.)  
    - **Precondition**: Organization has awarded the achievement.  
    - **Postcondition**: Practitioner’s achievements list is updated.
@@ -270,7 +270,7 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
    - **Precondition**: Organization has granted membership.
    - **Postcondition**: Practitioner’s membership list is updated.
 
-6. **Request Membership**  
+6. **Request Membership** *(Not yet implemented)*  
    - **Goal**: Request membership to an Organization. 
    - **Precondition**: Practitioner has an existing profile.  
    - **Postcondition**: Membership request is reflected on-chain.
@@ -309,7 +309,7 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
    - **Postcondition**: Membership is marked as ended, with the end date on-chain.
 
 
-5. **Award Achievement**  
+5. **Award Achievement** *(Not yet implemented)*  
    - **Goal**: Grant achievements (seminars, camps, medals, etc.). 
    - **Precondition**: Organisation exists, member's profile exists. 
    - **Postcondition**: Practitioner’s achievement list is updated.
@@ -400,7 +400,7 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
      - Practitioner accepts the promotion.  
      - Rank record is updated on the practitioner’s profile.
 
-3. **Award Achievements**  
+3. **Award Achievements** *(Not yet implemented)*  
    - **As a master**, I want to award stripes or other achievements to students so their progress is recognized between belt promotions.  
    - **Acceptance Criteria**:  
      - Master creates an achievement record.  
@@ -428,13 +428,13 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
      - Practitioner accepts.  
      - Membership details (start date, membership type) are added to the practitioner’s profile.
 
-5. **Accept Membership Request**  
+5. **Accept Membership Request** *(Not yet implemented)*  
    - **As an organization**, I want to approve membership requests of practitioners so that they can officially be affiliated with my academy.  
    - **Acceptance Criteria**:  
      - Membership is accepted by the organisation
      - Membership details (start date, membership type) are added to the practitioner’s profile.
 
-6. **Award Achievements**  
+6. **Award Achievements** *(Not yet implemented)*  
    - **As an organization**, I want to grant achievements (eg. medals , diplomas) so that practitioners can record them.  
    - **Acceptance Criteria**:  
      - Organisation creates an achievement record.  
@@ -448,13 +448,14 @@ This **Decentralized Belt System** aims to bring **trust, transparency, and sust
 
 
 > **Current Status**  
-> - **On-chain implementations complete**: Minting policy, profiles validator, ranks validator with full security review
+> - **On-chain implementations complete**: Minting policy, profiles validator, ranks validator, memberships validator with full security review
 > - **Off-chain infrastructure complete**: Admin CLI, Interaction API, Query API, Chain Sync Service
+> - **Memberships fully implemented**: On-chain, off-chain, API, and tests
 > - **Testnet deployments available**: Scripts provided for testing (`populate_testnet.sh`, `test_black_promotes_white_to_blue.sh`)
 >
 > **Next Steps**  
 > - Finalize the BJJ Decentralized Belt System **Frontend Website**  
-> - Implement membership and achievement features
+> - Implement achievement features
 > - Onboard pilot academies/masters to validate real-world usage
 
 **End of Document**
@@ -496,7 +497,7 @@ The promotion mechanism for belts and stripes considers:
 ### Granting Rights
 
 - **Anyone** → White Belt  
-- **Brown Belt** → Stripes for (White – Purple) belts  
+- **Brown Belt** → Stripes for (White – Purple) belts *(Not yet implemented — stripes are not currently modeled on-chain)*  
 - **Black Belt** → Belt promotions from Blue up to Brown, plus stripes at all those belt levels  
 
 > _(Exact rules for stripes, promotions, and time-in-rank can be adjusted in the final protocol parameters.)_

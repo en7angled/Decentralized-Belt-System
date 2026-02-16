@@ -119,7 +119,7 @@ intToBelt n =
                                                         else
                                                           if n == 14
                                                             then Red10
-                                                            else traceError "a" -- Invalid belt (expected 0-14)
+                                                            else traceError "B0" -- Belt invariant: invalid belt 0-14 (B0)
 
 instance Eq BJJBelt where
   (==) :: BJJBelt -> BJJBelt -> Bool
@@ -139,10 +139,10 @@ instance Prelude.Ord BJJBelt where
 
 instance Enum BJJBelt where
   succ :: BJJBelt -> BJJBelt
-  succ Red10 = traceError "b" -- Cannot succ a red 10 belt
+  succ Red10 = traceError "B0" -- Belt invariant: cannot succ red10 (B0)
   succ belt = intToBelt . (+ 1) . beltToInt $ belt
   pred :: BJJBelt -> BJJBelt
-  pred White = traceError "c" -- Cannot pred a white belt
+  pred White = traceError "B0" -- Belt invariant: cannot pred white (B0)
   pred belt = intToBelt . (+ (-1)) . beltToInt $ belt
   toEnum :: Integer -> BJJBelt
   toEnum = intToBelt
@@ -219,17 +219,21 @@ makeIsDataSchemaIndexed ''BeltSnapshot [('BeltSnapshot, 0)]
 validatePromotion :: BeltSnapshot -> BeltSnapshot -> BeltSnapshot -> Bool
 validatePromotion master studentCurrent studentNext =
   case belt master of
-    r | r < Black -> traceIfFalse "d" False -- Belts lower than black are not allowed to promote
-    r | r == Black1 -> traceIfFalse "e" $ belt studentNext < Black && generalRules -- Only 2 degree black belts can promote to black
+    r | r < Black -> False -- Belts lower than black are not allowed to promote
+    r | r == Black1 -> belt studentNext < Black && generalRules -- Only 2 degree black belts can promote to black
     _ -> generalRules
   where
+    -- Master belt must be greater than the student's next belt
+    -- Master belt date must be before the student's next belt date
+    -- Student's next belt must be greater than the student's current belt
+    -- Student Next belt date must be after the student's current belt date
+    -- Time in the current belt must be greater than the minimum time for the next belt
     generalRules =
-      traceIfFalse "f" (belt master > belt studentNext) -- Master belt must be greater than the student's next belt
-        && traceIfFalse "g" (beltDate master < beltDate studentNext) -- Master belt date must be before the student's next belt date
-        && traceIfFalse "h" (belt studentNext > belt studentCurrent) -- Student's next belt must be greater than the student's current belt
-        && traceIfFalse "i" (beltDate studentNext > beltDate studentCurrent) -- Student Next belt date must be after the student's current belt date
-        && traceIfFalse "j" -- Time in the current belt must be greater than the minimum time for the next belt
-          ( beltDate studentNext
-              - beltDate studentCurrent
-              > monthsToPosixTime (minMonthsForBelt (belt studentCurrent))
-          )
+      (belt master > belt studentNext)
+        && (beltDate master < beltDate studentNext)
+        && (belt studentNext > belt studentCurrent)
+        && (beltDate studentNext > beltDate studentCurrent)
+        && ( beltDate studentNext
+               - beltDate studentCurrent
+               > monthsToPosixTime (minMonthsForBelt (belt studentCurrent))
+           )

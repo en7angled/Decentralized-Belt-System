@@ -6,7 +6,8 @@
 -- lovelace constant.
 module Onchain.Utils
   ( -- * Shared Constants
-    minLovelaceValue,
+    protocolMinLovelaceValue,
+    protocolMinLovelace,
 
     -- * Helper Functions
     mkUntypedLambda,
@@ -46,10 +47,14 @@ import PlutusTx.Prelude
 
 -------------------------------------------------------------------------------
 
+protocolMinLovelace :: Integer
+protocolMinLovelace = 3_500_000
+{-# INLINEABLE protocolMinLovelace #-}
+
 -- | Minimum lovelace value required for UTxO outputs.
-{-# INLINEABLE minLovelaceValue #-}
-minLovelaceValue :: Value
-minLovelaceValue = V1.lovelaceValue 3_500_000
+{-# INLINEABLE protocolMinLovelaceValue #-}
+protocolMinLovelaceValue :: Value
+protocolMinLovelaceValue = V1.lovelaceValue (Lovelace protocolMinLovelace)
 
 -------------------------------------------------------------------------------
 
@@ -62,7 +67,7 @@ minLovelaceValue = V1.lovelaceValue 3_500_000
 mkUntypedLambda ::
   (ScriptContext -> Bool) ->
   (BuiltinData -> BuiltinUnit)
-mkUntypedLambda f c = check $ f (parseData c "S") -- Invalid context
+mkUntypedLambda f c = check $ f (parseData c "U0") -- Invalid context (U0)
   where
     parseData mdata message = case fromBuiltinData mdata of
       Just d -> d
@@ -106,7 +111,7 @@ unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs =
   let i = PlutusTx.List.find (\TxInInfo {txInInfoOutRef} -> txInInfoOutRef == spendingTxOutRef) txInfoInputs
    in case i of
         Just (TxInInfo _inOutRef inOut) -> inOut
-        Nothing -> traceError "T" -- Cannot find own input by TxOutRef
+        Nothing -> traceError "U1" -- Cannot find own input by TxOutRef (U1)
 
 -------------------------------------------------------------------------------
 
@@ -119,13 +124,13 @@ checkAndGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -
 checkAndGetCurrentStateDatumAndValue stateToken addr outs =
   case filter (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress})) -> (txOutValue `geq` V1.assetClassValue stateToken 1) && (addr == txOutAddress)) outs of
     [TxInInfo _inOutRef out] -> (txOutValue out, checkAndGetInlineDatum out)
-    _ -> traceError "U" -- Cannot find state NFT at expected address
+    _ -> traceError "U2" -- Cannot find state NFT at expected address (U2)
 
 {-# INLINEABLE checkAndGetInlineDatum #-}
 checkAndGetInlineDatum :: TxOut -> BuiltinData
 checkAndGetInlineDatum out = case txOutDatum out of
   OutputDatum da -> getDatum da
-  _ -> traceError "V" -- Invalid output: expected inline datum
+  _ -> traceError "U3" -- Invalid output: expected inline datum (U3)
 
 -------------------------------------------------------------------------------
 
@@ -143,9 +148,9 @@ readOracleParams oracleAC refInputs =
     Just (TxInInfo _ TxOut {txOutDatum}) -> case txOutDatum of
       OutputDatum (Datum bd) -> case fromBuiltinData @OracleParams bd of
         Just params -> params
-        Nothing -> traceError "W" -- Cannot decode oracle datum
-      _ -> traceError "X" -- Oracle UTxO must have inline datum
-    Nothing -> traceError "Y" -- Oracle UTxO not found in reference inputs
+        Nothing -> traceError "U4" -- Oracle read failed: cannot decode datum (U4)
+      _ -> traceError "U4" -- Oracle read failed: must have inline datum (U4)
+    Nothing -> traceError "U4" -- Oracle read failed: UTxO not found (U4)
   where
     hasOracleNFT (TxInInfo _ TxOut {txOutValue}) =
       V1.assetClassValueOf txOutValue oracleAC == 1
@@ -162,7 +167,7 @@ checkFee oracle feeSelector outputs = case opFeeConfig oracle of
     let requiredFee = feeSelector feeConfig
         feeAddr = fcFeeAddress feeConfig
         feeValue = V1.lovelaceValue (V1.Lovelace requiredFee)
-     in traceIfFalse "Z" -- Must pay required fee
+     in traceIfFalse "U5" -- Must pay required fee (U5)
           $ any
             ( \TxOut {txOutValue = v, txOutAddress = a} ->
                 a == feeAddr && v `geq` feeValue

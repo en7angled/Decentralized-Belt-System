@@ -86,11 +86,11 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
             Nothing -> True
             Just (Datum bd) -> case fromBuiltinData @(CIP68Datum OnchainProfile) bd of
               Nothing -> True
-              Just _ -> traceError "3" -- Cannot cleanup valid datum
+              Just _ -> traceError "P0" -- Cannot cleanup valid datum (P0)
           _ -> case mdatum of
-            Nothing -> traceError "4" -- No datum
+            Nothing -> traceError "P0" -- No datum (P0)
             Just (Datum bdatum) -> case fromBuiltinData bdatum of
-              Nothing -> traceError "5" -- Invalid datum
+              Nothing -> traceError "P0" -- Invalid datum (P0)
               Just profileDatum@(CIP68Datum _metadata _version (profile :: OnchainProfile)) ->
                 let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
                     ownValue = txOutValue ownInput
@@ -102,7 +102,7 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
                         handleUpdateProfileImage txInfo ownValue ownAddress profileRefAssetClass profileDatum newImageURI profileOutputIdx
                       (AcceptPromotion promotionId profileOutputIdx) ->
                         handleAcceptPromotion txInfo ownValue ownAddress profileRefAssetClass mintingPolicyCurrencySymbol profile profileDatum promotionId profileOutputIdx
-        _ -> traceError "6" -- Invalid purpose
+        _ -> traceError "P1" -- Invalid purpose (P1)
 
 -------------------------------------------------------------------------------
 
@@ -124,10 +124,10 @@ handleUpdateProfileImage txInfo@TxInfo {..} ownValue ownAddress profileRefAssetC
   let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum
       profileUserAssetClass = deriveUserFromRefAC profileRefAssetClass
    in and
-        [ traceIfFalse "7" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT
-          traceIfFalse "8" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT
-          validateImageURI newImageURI,
-          traceIfFalse "9" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile
+        [ traceIfFalse "P2" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT (P2)
+          traceIfFalse "P3" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT (P3)
+          traceIfFalse "P4" $ validateImageURI newImageURI, -- Image URI validation failed (P4)
+          traceIfFalse "P5" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile (P5)
         ]
 
 {-# INLINEABLE handleAcceptPromotion #-}
@@ -159,9 +159,9 @@ handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass minti
 
       isPromotionStillValid =
         and
-          [ traceIfFalse "A" isValidPromotionId, -- Promotion ID CS check
-            traceIfFalse "B" $ nextBelt > currentBelt, -- Already at or past this rank
-            traceIfFalse "C" $ nextBeltDate > currentBeltDate -- Date must be after current
+          [ traceIfFalse "P6" isValidPromotionId, -- Promotion ID CS check (P6)
+            traceIfFalse "P7" $ nextBelt > currentBelt, -- Already at or past this rank (P7)
+            traceIfFalse "P8" $ nextBeltDate > currentBeltDate -- Date must be after current (P8)
           ]
 
       -- R4 optimization: use promoteProfileDatum instead of promoteProfile
@@ -182,9 +182,9 @@ handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass minti
       -- and it has no alternative code path. Removing this also eliminates
       -- the rankOutputIdx parameter from the AcceptPromotion redeemer.
       and
-        [ traceIfFalse "D" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT
+        [ traceIfFalse "P9" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT (accept) (P9)
           isPromotionStillValid,
-          traceIfFalse "E" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile
+          traceIfFalse "Pa" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile (accept) (Pa)
         ]
 
 -------------------------------------------------------------------------------

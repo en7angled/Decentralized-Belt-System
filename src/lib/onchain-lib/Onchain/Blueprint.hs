@@ -142,7 +142,7 @@ membershipsValidatorBlueprint _mp =
       validatorRedeemer =
         MkArgumentBlueprint
           { argumentTitle = Just "Memberships Redeemer",
-            argumentDescription = Just "Redeemer for membership operations: InsertNodeToMHList (inserts a new membership history node into the sorted linked list), UpdateNodeInMHList (adds a new interval to an existing membership history), or AcceptInterval (practitioner acknowledges a membership interval). InsertNodeToMHList and UpdateNodeInMHList require organization User NFT authorization; AcceptInterval requires practitioner User NFT.",
+            argumentDescription = Just "Redeemer for membership operations: InsertNodeToMHList (inserts a new membership history node into the sorted linked list), UpdateNodeInMHList (adds a new interval to an existing membership history), AcceptInterval (practitioner acknowledges a membership interval), or UpdateEndDate (org or practitioner updates interval end date; org may set any future end date, practitioner may only shorten or close accepted intervals). InsertNodeToMHList and UpdateNodeInMHList require organization User NFT; AcceptInterval requires practitioner User NFT; UpdateEndDate requires exactly one of org or practitioner User NFT.",
             argumentPurpose = Set.fromList [Spend],
             argumentSchema = definitionRef @MembershipsRedeemer
           },
@@ -179,7 +179,7 @@ oracleValidatorBlueprint =
         Just
           MkArgumentBlueprint
             { argumentTitle = Just "Oracle Params Datum",
-              argumentDescription = Just "Inline datum containing operational parameters: admin public key hash (opAdminPkh), pause flag (opPaused), optional fee configuration (opFeeConfig with fee address and per-action fees), and minimum output lovelace (opMinOutputLovelace).",
+              argumentDescription = Just "Inline datum containing operational parameters: admin public key hash (opAdminPkh), pause flag (opPaused), and optional fee configuration (opFeeConfig with fee address and per-action fees).",
               argumentPurpose = Set.singleton Spend,
               argumentSchema = definitionRef @OracleParams
             },

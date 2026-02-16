@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 {-# HLINT ignore "Use &&" #-}
 
 -- | Oracle validator for the BJJ Belt protocol.
@@ -38,16 +39,16 @@ oracleLambda (ScriptContext TxInfo {..} _ scriptInfo) =
   case scriptInfo of
     SpendingScript spendingRef (Just (Datum bdatum)) ->
       case fromBuiltinData @OracleParams bdatum of
-        Nothing -> traceError "0" -- Invalid oracle datum
+        Nothing -> traceError "O0" -- Invalid oracle datum (O0)
         Just currentParams ->
           let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingRef txInfoInputs
               ownValue = txOutValue ownInput
               ownAddr = txOutAddress ownInput
            in and
-                [ traceIfFalse "1" $ elem (opAdminPkh currentParams) txInfoSignatories, -- Must be signed by admin
-                  traceIfFalse "2" $ any (\TxOut {txOutValue = v, txOutAddress = a} -> a == ownAddr && v == ownValue) txInfoOutputs -- Must return oracle UTxO
+                [ traceIfFalse "O1" $ elem (opAdminPkh currentParams) txInfoSignatories, -- Must be signed by admin (O1)
+                  traceIfFalse "O2" $ any (\TxOut {txOutValue = v, txOutAddress = a} -> a == ownAddr && v == ownValue) txInfoOutputs -- Must return oracle UTxO (O2)
                 ]
-    _ -> traceError "3" -- Invalid script purpose
+    _ -> traceError "O3" -- Invalid script purpose (O3)
 
 -------------------------------------------------------------------------------
 

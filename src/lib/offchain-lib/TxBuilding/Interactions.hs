@@ -108,6 +108,9 @@ interactionToTxSkeleton Interaction {..} = do
         AcceptMembershipIntervalAction intervalId -> do
           skeleton <- acceptMembershipIntervalTX intervalId usedAddrs
           return (skeleton, intervalId)
+        UpdateEndDateAction intervalId historyNodeId newEndDate -> do
+          skeleton <- updateEndDateTX intervalId historyNodeId newEndDate usedAddrs Nothing
+          return (skeleton, intervalId)
     ProtocolAction protocolActionType -> case protocolActionType of
       CleanupDustAction -> do
         (skeleton, _dustCount) <- cleanupDustTX

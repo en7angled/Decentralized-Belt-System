@@ -5,6 +5,7 @@ module UnitTests where
 
 import Control.Monad
 import Control.Monad.Reader (runReaderT)
+import Data.Foldable (toList)
 import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
 import GHC.Stack
@@ -16,10 +17,14 @@ import GeniusYield.Types
 import Onchain.BJJ
 import Onchain.Protocol.Id qualified
 import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
+import PlutusLedgerApi.V3 (POSIXTime (POSIXTime), getPOSIXTime)
 import Test.Tasty
 import TestRuns (adminInteraction, bjjInteraction, deployBJJValidators, logPractitionerProfileInformation, protocolInteraction, sendDustToValidator)
 import TxBuilding.Context (DeployedScriptsContext)
 import TxBuilding.Lookups (queryOracleParams)
+import TxBuilding.Operations (updateEndDateTX)
+import TxBuilding.Skeletons (isValidBetween)
+import TxBuilding.Utils (gySlotFromPOSIXTime)
 import TxBuilding.Validators (profilesValidatorGY, ranksValidatorGY)
 import PlutusTx.Prelude (isNothing)
 
@@ -58,11 +63,9 @@ oracleDeploymentTests =
       (oracleParams, oracleRef, _oracleValue) <- runReaderT queryOracleParams txBuildingContext
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Oracle UTxO ref: " <> show oracleRef
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Oracle paused: " <> show (opPaused oracleParams)
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Oracle minOutputLovelace: " <> show (opMinOutputLovelace oracleParams)
 
       -- Verify initial oracle params are as expected
       assert (not (opPaused oracleParams))
-      assert (opMinOutputLovelace oracleParams == 3500000)
       assert (isNothing (opFeeConfig oracleParams))
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Oracle deployment and query successful!"
@@ -84,7 +87,6 @@ oracleAdminTests =
     "Oracle Admin Tests"
     [ mkTestFor "Test Case 0.2: Pause and unpause protocol" pauseAndUnpause,
       mkTestFor "Test Case 0.3: Set fees and clear fees" setAndClearFees,
-      mkTestFor "Test Case 0.4: Update min output lovelace" updateMinLovelace,
       mkTestFor "Test Case 0.5: Sequential admin actions with profile interactions" sequentialAdminWithProfiles
     ]
   where
@@ -169,29 +171,6 @@ oracleAdminTests =
 
       return ()
 
-    -- Test Case 0.4: Update min output lovelace
-    updateMinLovelace :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
-    updateMinLovelace TestInfo {..} = do
-      waitNSlots_ 1000
-      ctx <- deployBJJValidators (w1 testWallets)
-      waitNSlots_ 1000
-
-      -- Verify initial state
-      params0 <- queryOracle ctx
-      assert (opMinOutputLovelace params0 == 3500000)
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Initial minOutputLovelace: " <> show (opMinOutputLovelace params0)
-
-      -- Update to 5 ADA
-      _ <- adminInteraction ctx (w1 testWallets) (SetMinLovelaceAction 5000000)
-      waitNSlots_ 1
-
-      -- Verify updated
-      params1 <- queryOracle ctx
-      assert (opMinOutputLovelace params1 == 5000000)
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Updated minOutputLovelace: " <> show (opMinOutputLovelace params1)
-
-      return ()
-
     -- Test Case 0.5: Sequential admin actions interleaved with profile interactions
     sequentialAdminWithProfiles :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
     sequentialAdminWithProfiles TestInfo {..} = do
@@ -241,17 +220,13 @@ oracleAdminTests =
       _ <- adminInteraction ctx (w1 testWallets) (SetFeesAction (Just testFeeConfig))
       waitNSlots_ 1
 
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 5: Updating min output lovelace..."
-      _ <- adminInteraction ctx (w1 testWallets) (SetMinLovelaceAction 5000000)
-      waitNSlots_ 1
-
       -- 5. Unpause the protocol
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 6: Unpausing protocol..."
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 5: Unpausing protocol..."
       _ <- adminInteraction ctx (w1 testWallets) UnpauseProtocolAction
       waitNSlots_ 1
 
       -- 6. Create another profile after unpause (should succeed)
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 7: Creating profile after unpause..."
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 6: Creating profile after unpause..."
       let profileData2 = ProfileData "Admin Test User 2" "Second test profile" "ipfs://QmTest2"
       (_txId, profileAC2) <-
         bjjInteraction
@@ -262,16 +237,14 @@ oracleAdminTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Profile created after unpause: " <> show profileAC2
 
       -- 7. Verify final oracle state
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 8: Verifying final oracle state..."
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 7: Verifying final oracle state..."
       paramsFinal <- queryOracle ctx
       assert (not (opPaused paramsFinal))
       assert (opFeeConfig paramsFinal == Just testFeeConfig)
-      assert (opMinOutputLovelace paramsFinal == 5000000)
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "=== Final Oracle State ==="
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "  Paused: " <> show (opPaused paramsFinal)
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "  FeeConfig: " <> show (opFeeConfig paramsFinal)
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "  MinOutputLovelace: " <> show (opMinOutputLovelace paramsFinal)
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sequential admin actions with profile interactions completed successfully!"
 
       return ()
@@ -610,7 +583,14 @@ membershipTests =
       mkTestFor "Test Case 4.2: Practitioner accepts a membership interval" acceptMembershipIntervalTest,
       mkTestFor "Test Case 4.3: Full membership lifecycle (create history, accept, add interval, accept)" fullMembershipLifecycleTest,
       mkTestFor "Test Case 4.4: Organization has 3 membership histories for 3 practitioners" orgThreeMembershipHistoriesTest,
-      mkTestFor "Test Case 4.5: 3 practitioners with membership histories; one updates (adds) membership interval" orgThreeHistoriesOneUpdatesIntervalTest
+      mkTestFor "Test Case 4.5: 3 practitioners with membership histories; one updates (adds) membership interval" orgThreeHistoriesOneUpdatesIntervalTest,
+      mkTestFor "Test Case 4.6: Organization updates interval end date (UpdateEndDate)" updateEndDateByOrgTest,
+      mkTestFor "Test Case 4.7: Practitioner shortens accepted interval end date (UpdateEndDate)" updateEndDateByPractitionerTest,
+      mkTestFor "Test Case 4.8: Create membership history with endDate > startDate succeeds" endDateValidationCreationSucceedsTest,
+      mkTestFor "Test Case 4.9: UpdateEndDate fails when newEndDate outside tx validity (TD)" updateEndDateTDFailTest,
+      mkTestFor "Test Case 4.10: UpdateEndDate fails when practitioner updates unaccepted interval (TE)" updateEndDateTEFailTest,
+      mkTestFor "Test Case 4.11: UpdateEndDate fails when practitioner extends end date (TB)" updateEndDateTBFailTest,
+      mkTestFor "Test Case 4.12: UpdateEndDate fails when interval does not belong to referenced history node (V8)" updateEndDateWrongHistoryNodeFailTest
     ]
   where
     orgProfileData :: ProfileData
@@ -1043,6 +1023,426 @@ membershipTests =
       waitNSlots_ 1
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "3 practitioners, one updates interval test passed!"
+      return ()
+
+    -- Test Case 4.6: Organization updates interval end date (UpdateEndDate)
+    updateEndDateByOrgTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateEndDateByOrgTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+      (_txId, historyAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
+            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+            0
+      gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
+      -- Org sets end date to a future time (closing the open interval; validator requires newEndDate not before txInfoValidRange)
+      now <- slotToBeginTime =<< slotOfCurrentBlock
+      let newEndDate = timeFromPOSIX (timeToPOSIX now + 60000)
+      void $
+        bjjInteraction ctx (w1 testWallets)
+          ( UpdateEndDateAction
+              { ude_membership_interval_id = gyFirstIntervalAC,
+                ude_membership_history_node_id = historyAC,
+                ude_new_end_date = newEndDate
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "UpdateEndDate by org test passed!"
+      return ()
+
+    -- Test Case 4.7: Practitioner shortens accepted interval end date (UpdateEndDate)
+    updateEndDateByPractitionerTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateEndDateByPractitionerTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+          membershipEndDate = timeFromPOSIX $ timeToPOSIX membershipStartDate + 10000
+      (_txId, historyAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Just membershipEndDate
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
+            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+            0
+      gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
+      void $
+        bjjInteraction ctx (w2 testWallets)
+          (AcceptMembershipIntervalAction gyFirstIntervalAC)
+          Nothing
+      waitNSlots_ 1
+
+      -- Practitioner shortens end date (must be <= current end date and in the future)
+      now <- slotToBeginTime =<< slotOfCurrentBlock
+      let shortened = timeToPOSIX membershipStartDate + 5000
+          inFuture = timeToPOSIX now + 1000
+          shorterEndDate = timeFromPOSIX (max shortened inFuture)
+      void $
+        bjjInteraction ctx (w2 testWallets)
+          ( UpdateEndDateAction
+              { ude_membership_interval_id = gyFirstIntervalAC,
+                ude_membership_history_node_id = historyAC,
+                ude_new_end_date = shorterEndDate
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "UpdateEndDate by practitioner test passed!"
+      return ()
+
+    -- Test Case 4.9: UpdateEndDate fails when newEndDate is outside tx validity (TD)
+    updateEndDateTDFailTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateEndDateTDFailTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+      (_txId, historyAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
+            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+            0
+      gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
+      now <- slotOfCurrentBlock
+      nowTime <- slotToBeginTime now
+      let newEndDateGY = timeFromPOSIX (timeToPOSIX nowTime + 60000)
+      let newEndDatePlutus = timeToPlutus newEndDateGY
+      let validUntilMs = getPOSIXTime newEndDatePlutus - 10 * 60 * 1000
+      validUntilSlot <- gySlotFromPOSIXTime (POSIXTime validUntilMs)
+      let badValidity = isValidBetween now validUntilSlot
+
+      skeleton <-
+        runReaderT
+          ( updateEndDateTX
+              gyFirstIntervalAC
+              historyAC
+              newEndDateGY
+              (toList $ User.userAddresses (w1 testWallets))
+              (Just badValidity)
+          )
+          ctx
+      mustFail $ asUser (w1 testWallets) $ void $ sendSkeleton' skeleton
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "UpdateEndDate TD fail test passed!"
+
+    -- Test Case 4.10: UpdateEndDate fails when practitioner updates unaccepted interval (TE)
+    updateEndDateTEFailTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateEndDateTEFailTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+      (_txId, historyAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
+            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+            0
+      gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
+      now <- slotToBeginTime =<< slotOfCurrentBlock
+      let newEndDate = timeFromPOSIX (timeToPOSIX now + 60000)
+      mustFail $
+        void $
+          bjjInteraction ctx (w2 testWallets)
+            ( UpdateEndDateAction
+                { ude_membership_interval_id = gyFirstIntervalAC,
+                  ude_membership_history_node_id = historyAC,
+                  ude_new_end_date = newEndDate
+                }
+            )
+            Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "UpdateEndDate TE fail test passed!"
+
+    -- Test Case 4.11: UpdateEndDate fails when practitioner extends end date (TB)
+    updateEndDateTBFailTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateEndDateTBFailTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+          membershipEndDate = timeFromPOSIX $ timeToPOSIX membershipStartDate + 10000
+      (_txId, historyAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Just membershipEndDate
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
+            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+            0
+      gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
+      void $
+        bjjInteraction ctx (w2 testWallets)
+          (AcceptMembershipIntervalAction gyFirstIntervalAC)
+          Nothing
+      waitNSlots_ 1
+
+      -- Practitioner tries to extend (newEndDate > current end date)
+      let extendedEndDate = timeFromPOSIX (timeToPOSIX membershipEndDate + 50000)
+      mustFail $
+        void $
+          bjjInteraction ctx (w2 testWallets)
+            ( UpdateEndDateAction
+                { ude_membership_interval_id = gyFirstIntervalAC,
+                  ude_membership_history_node_id = historyAC,
+                  ude_new_end_date = extendedEndDate
+                }
+            )
+            Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "UpdateEndDate TB fail test passed!"
+
+    -- Test Case 4.12: UpdateEndDate fails when interval does not belong to referenced history node (V8)
+    updateEndDateWrongHistoryNodeFailTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateEndDateWrongHistoryNodeFailTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+      let practitionerB =
+            ProfileData
+              { profileDataName = "Practitioner B",
+                profileDataDescription = "Second practitioner",
+                profileDataImageURI = "ipfs://QmPractitionerB"
+              }
+      (_txId, practitionerAC1) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC2) <-
+        bjjInteraction ctx (w3 testWallets)
+          (InitProfileAction practitionerB Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+      (_txId, _historyAC1) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC1,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+      (_txId, historyAC2) <-
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC2,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      let firstIntervalId1 = Onchain.Protocol.Id.deriveMembershipIntervalId
+            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC1))
+            0
+      gyFirstIntervalAC1 <- assetClassFromPlutus' firstIntervalId1
+      now <- slotToBeginTime =<< slotOfCurrentBlock
+      let newEndDate = timeFromPOSIX (timeToPOSIX now + 60000)
+      -- Pass interval of history 1 but history node of history 2 (wrong node)
+      mustFail $
+        void $
+          bjjInteraction ctx (w1 testWallets)
+            ( UpdateEndDateAction
+                { ude_membership_interval_id = gyFirstIntervalAC1,
+                  ude_membership_history_node_id = historyAC2,
+                  ude_new_end_date = newEndDate
+                }
+            )
+            Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "UpdateEndDate wrong history node fail test passed!"
+
+    -- Test Case 4.8: Create membership history with endDate > startDate succeeds (TC validation)
+    endDateValidationCreationSucceedsTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    endDateValidationCreationSucceedsTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let startDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+          endDate = timeFromPOSIX $ timeToPOSIX startDate + 5000
+      void $
+        bjjInteraction ctx (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = startDate,
+                cmh_end_date = Just endDate
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "endDate > startDate creation test passed!"
       return ()
 
 -- ------------------------------------------------------------------------------------------------

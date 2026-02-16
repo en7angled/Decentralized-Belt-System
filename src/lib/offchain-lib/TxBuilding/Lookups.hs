@@ -14,7 +14,7 @@ import Onchain.CIP68 (CIP68Datum (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Id (deriveMembershipHistoryId)
-import PlutusLedgerApi.V1.Value (AssetClass (..), CurrencySymbol, Value, flattenValue)
+import PlutusLedgerApi.V1.Value (CurrencySymbol, Value, flattenValue)
 import PlutusTx (fromBuiltinData)
 import TxBuilding.Context (DeployedScriptsContext (..))
 import TxBuilding.Exceptions (TxBuildingException (..))

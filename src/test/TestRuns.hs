@@ -122,7 +122,6 @@ mintTestOracleNFT w = asUser w $ do
           { opAdminPkh = adminPkh
           , opPaused = False
           , opFeeConfig = Nothing
-          , opMinOutputLovelace = 3500000
           }
 
   -- Spend seed UTxO

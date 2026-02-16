@@ -22,6 +22,7 @@ module Onchain.RanksValidator
   )
 where
 
+import GHC.Generics (Generic)
 import Onchain.CIP68 (deriveUserFromRefAC)
 import Onchain.Protocol (OnchainRank (..), profilesValidatorScriptHash, promoteProfile, unsafeGetProfileDatumAndValue)
 import Onchain.Utils (mkUntypedLambda)
@@ -29,7 +30,6 @@ import Onchain.Utils qualified as Utils
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Contexts
-import GHC.Generics (Generic)
 import PlutusTx
 import PlutusTx.Blueprint
 import PlutusTx.Prelude
@@ -73,11 +73,11 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
             Nothing -> True
             Just (Datum bd) -> case fromBuiltinData @OnchainRank bd of
               Nothing -> True
-              Just _ -> traceError "3" -- Cannot cleanup valid datum
+              Just _ -> traceError "R0" -- Cannot cleanup valid datum (R0)
           _ -> case mdatum of
-            Nothing -> traceError "4" -- No datum
+            Nothing -> traceError "R0" -- No datum (R0)
             Just (Datum bdatum) -> case fromBuiltinData bdatum of
-              Nothing -> traceError "5" -- Invalid datum
+              Nothing -> traceError "R0" -- Invalid datum (R0)
               Just (promotionRankDatum :: OnchainRank) ->
                 case redeemer of
                   (PromotionAcceptance profileOutputIdx rankOutputIdx) ->
@@ -103,11 +103,11 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
                         -- Additionally, the MintingPolicy only ever mints exactly 1 of each profile
                         -- NFT, so >= 1 implies == 1. PV also independently checks this.
                         and
-                          [ traceIfFalse "7" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT
-                            traceIfFalse "8" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs, -- Lock profile at PV
-                            traceIfFalse "9" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs -- Lock rank at RV
+                          [ traceIfFalse "R2" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT (R2)
+                            traceIfFalse "R3" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs, -- Lock profile at PV (R3)
+                            traceIfFalse "R4" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs -- Lock rank at RV (R4)
                           ]
-        _ -> traceError "6" -- Invalid script info
+        _ -> traceError "R1" -- Invalid script info (R1)
 
 -------------------------------------------------------------------------------
 

@@ -173,8 +173,7 @@ mintOracleNFTAndLockDatum providerCtx skey adminPKH = do
           OracleParams
             { opAdminPkh = paymentKeyHashToPlutus adminPKH,
               opPaused = False,
-              opFeeConfig = Nothing,
-              opMinOutputLovelace = 3500000
+              opFeeConfig = Nothing
             }
 
     -- Spend seed UTxO

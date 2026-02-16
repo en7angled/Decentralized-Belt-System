@@ -56,6 +56,7 @@ data Command
   | CreateMembershipHistory CreateMembershipHistoryArgs
   | AddMembershipInterval AddMembershipIntervalArgs
   | AcceptMembershipInterval AcceptMembershipIntervalArgs
+  | UpdateEndDate UpdateEndDateArgs
   | CleanupDust
   deriving (Show)
 
@@ -128,6 +129,14 @@ data AddMembershipIntervalArgs = AddMembershipIntervalArgs
 data AcceptMembershipIntervalArgs = AcceptMembershipIntervalArgs
   { amiaIntervalId :: GYAssetClass,
     amiaAcceptOutputId :: Bool
+  }
+  deriving (Show)
+
+data UpdateEndDateArgs = UpdateEndDateArgs
+  { uedaIntervalId :: GYAssetClass,
+    uedaHistoryNodeId :: GYAssetClass,
+    uedaNewEndDate :: GYTime,
+    uedaOutputId :: Bool
   }
   deriving (Show)
 
@@ -412,6 +421,19 @@ commandParser =
               (progDesc "Accept a membership interval (practitioner acknowledges membership)")
           )
         <> command
+          "update-end-date"
+          ( info
+              ( UpdateEndDate
+                  <$> ( UpdateEndDateArgs
+                          <$> option (maybeReader parseAssetClass) (long "interval-id" <> short 'i' <> metavar "INTERVAL_ID" <> help "Membership interval asset class")
+                          <*> option (maybeReader parseAssetClass) (long "history-node-id" <> metavar "HISTORY_NODE_ID" <> help "Membership history node asset class (reference input)")
+                          <*> posixTimeParser
+                          <*> outputIdParser
+                      )
+              )
+              (progDesc "Update membership interval end date (org or practitioner; new end date must be in the future)")
+          )
+        <> command
           "cleanup-dust"
           ( info
               (pure CleanupDust)
@@ -451,6 +473,10 @@ addMembershipIntervalToActionType AddMembershipIntervalArgs {amiaOrgProfileId, a
 acceptMembershipIntervalToActionType :: AcceptMembershipIntervalArgs -> ActionType
 acceptMembershipIntervalToActionType AcceptMembershipIntervalArgs {amiaIntervalId} =
   ProfileAction $ AcceptMembershipIntervalAction amiaIntervalId
+
+updateEndDateToActionType :: UpdateEndDateArgs -> ActionType
+updateEndDateToActionType UpdateEndDateArgs {uedaIntervalId, uedaHistoryNodeId, uedaNewEndDate} =
+  ProfileAction $ UpdateEndDateAction uedaIntervalId uedaHistoryNodeId uedaNewEndDate
 
 -- | Convert SetFeesArgs to the AdminActionType for the Interaction pipeline
 setFeesToAdminAction :: SetFeesArgs -> AdminActionType
@@ -514,7 +540,6 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     printGreen $ "  Value:              " <> show oracleVal
     printGreen $ "  Admin PKH:          " <> show (opAdminPkh oracleParams)
     printGreen $ "  Paused:             " <> show (opPaused oracleParams)
-    printGreen $ "  Min Output Lovelace:" <> show (opMinOutputLovelace oracleParams)
     case opFeeConfig oracleParams of
       Nothing -> printGreen "  Fee Config:          None"
       Just fc -> do
@@ -585,6 +610,14 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
     printGreen "Membership interval accepted successfully!"
     if amiaAcceptOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Interval ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  UpdateEndDate args -> do
+    printYellow "Updating membership interval end date..."
+    let actionType = updateEndDateToActionType args
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    printGreen "Membership interval end date updated successfully!"
+    if uedaOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
       else printGreen $ "Interval ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
   CleanupDust -> do

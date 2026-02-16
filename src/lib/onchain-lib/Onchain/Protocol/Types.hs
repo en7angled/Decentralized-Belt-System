@@ -80,7 +80,6 @@ data OracleParams = OracleParams
   { opAdminPkh :: PubKeyHash         -- ^ Admin public key hash (can rotate itself)
   , opPaused :: Bool                  -- ^ Protocol pause switch
   , opFeeConfig :: Maybe FeeConfig   -- ^ Optional fee configuration
-  , opMinOutputLovelace :: Integer    -- ^ Minimum lovelace for protocol UTxO outputs
   }
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)

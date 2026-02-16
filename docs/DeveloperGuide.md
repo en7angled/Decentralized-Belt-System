@@ -294,7 +294,7 @@ Every minting transaction reads the oracle via reference input:
 ```haskell
 -- Read oracle params (in MintingPolicy or any tx that needs them)
 let oracle = readOracleParams oracleToken (txInfoReferenceInputs txInfo)
-    minLv  = opMinOutputLovelace oracle
+    minLv  = Utils.minLovelaceValue  -- fixed constant, not from oracle
 
 -- Check pause gate
 traceIfFalse "Protocol is paused" (not $ opPaused oracle)
@@ -506,7 +506,7 @@ myOperationTX param1 param2 ownAddrs = do
 
   -- 2. Get oracle params (if minting)
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
-  let minLv = opMinOutputLovelace oracleParams
+  let minLv = protocolMinLovelace  -- fixed constant in Operations.hs
   feeSkeleton <- getFeeSkeleton oracleParams fcSomeFee
 
   -- 3. Look up existing state

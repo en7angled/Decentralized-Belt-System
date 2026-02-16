@@ -7,6 +7,7 @@
 
 - **Protocol.hs**: `updateMembershipIntervalEndDate` now enforces TD (new end date within tx validity range), TE (practitioner only on accepted intervals), and TB (practitioner cannot extend). Previously TD and TE were dead code (`let _ = traceIfFalse ...`).
 - **Off-chain**: Added `updateEndDateWithoutValidations` (interval with new end date only); `updateEndDateTX` uses it to build the output datum so that invalid attempts (e.g. practitioner extend) are submitted and rejected on-chain instead of throwing during skeleton build. Security tests 4.9 (TD), 4.10 (TE), 4.11 (TB), 4.12 (V8) now pass.
+- **test_exunits.sh**: TX BUDGET section bound at `TxScriptValidity` (end of GYTxBody) so `exUnitsMem'`/`exUnitsSteps'` from `DebugPlutusFailure` in the same block are not counted; fixes spurious 4-script / 155% row when a `mustFail` test follows a CreateMembershipHistory.
 - **Docs**: `OnchainArchitecture.md` Phase 3 updated with TD/TE/TB and off-chain build note; `OnchainSecurityAudit.md` implementation note for `updateEndDateWithoutValidations`.
 
 ### On-chain trace codes: globally unique and minimal
@@ -15,6 +16,7 @@
 - **Consolidations**: Merged redundant traces: Protocol O/Q/R → k (OnchainProfile has no rank); RanksValidator and ProfilesValidator datum branches (3,4,5) → O and T; MembershipsValidator l,m → o; Protocol.Lookup 0,1 → y; BJJ a,b,c → u (belt invariant); Utils W,X,Y → I (oracle read failed); MintingPolicy Practitioner 4,5,6 → 4 and Organization 7,8,9 → 5; membership history G–L → C and interval M–R → D.
 - **BJJ**: `validatePromotion` now returns a plain `Bool` (no trace); promotion validation failure is reported as code **B** in MintingPolicy only.
 - **Docs**: `docs/onchain-trace-codes.md` replaced with a single global map (code → script, description); 61 codes in use.
+- **Codebase**: Validators (Memberships, MintingPolicy, Oracle, OracleNFT, Profiles, Ranks), Protocol, BJJ, Utils, Protocol.Lookup/Types, TxBuilding (Operations, Lookups, Skeletons, Interactions, Transactions), Actions, admin Main, tests (UnitTests, TestRuns, BJJPropertyTests), cabal, DeveloperGuide, Documentation, to-do-tasks updated for new trace codes and related edits.
 
 
 ## 0.3.1.4 -- 2026-02-15

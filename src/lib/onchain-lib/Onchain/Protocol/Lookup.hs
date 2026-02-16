@@ -55,7 +55,7 @@ unsafeGetListNodeDatumAndValue listNodeId addr txins =
   let (v, b) = checkAndGetCurrentStateDatumAndValue listNodeId addr txins
    in case unsafeFromBuiltinData b :: MembershipDatum of
         ListNodeDatum node -> (v, node)
-        _ -> traceError "0"
+        _ -> traceError "K0"
 
 -- | Look up a membership interval datum and its UTxO value from transaction inputs. Fails if not found.
 {-# INLINEABLE unsafeGetMembershipInterval #-}
@@ -64,4 +64,4 @@ unsafeGetMembershipInterval intervalId addr txins =
   let (v, b) = checkAndGetCurrentStateDatumAndValue intervalId addr txins
    in case unsafeFromBuiltinData b :: MembershipDatum of
         IntervalDatum interval -> (v, interval)
-        _ -> traceError "1"
+        _ -> traceError "K0"

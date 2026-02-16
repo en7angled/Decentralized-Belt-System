@@ -11,9 +11,9 @@ From `docs/OnchainSecurityAudit.md`:
   - Off-chain: `cleanupDustTX` operation, `ProtocolAction CleanupDustAction` in interaction API, `cleanup-dust` admin CLI command
   - Tests: dust at PV only, dust at RV only, dust at both validators, cleanup safety with legitimate protocol state
   - See `docs/OnchainSecurityAudit.md` "LOW (Resolved): Dust/Griefing" for full design rationale
-- [ ] **`UpdateEndDate` time validation** — not yet implemented
-- [ ] **`endDate` validation on creation** — not yet implemented
-- [ ] **MV redeemer data integrity** — remaining LOW item from audit
+- [x] **`UpdateEndDate` time validation** — implemented: `UpdateEndDate` redeemer (MV index 4) with dual-authorization (org/practitioner), `newEndDate` validated against `txInfoValidRange` (must be in future); Protocol `updateMembershipIntervalEndDate` is role-based (TB for practitioner extend)
+- [x] **`endDate` validation on creation** — implemented: `initMembershipHistory` and `addMembershipIntervalToHistory` require `endDate > startDate` when provided (trace TC)
+- [x] **MV redeemer data integrity** — documented as safe-by-design in `OnchainSecurityAudit.md` (exact mint, MP time validation, validLastInterval anchor)
 
 ## Memberships Integration
 

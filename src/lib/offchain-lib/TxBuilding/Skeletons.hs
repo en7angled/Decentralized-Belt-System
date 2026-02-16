@@ -1,5 +1,6 @@
 module TxBuilding.Skeletons where
 
+import Data.Word (Word64)
 import GeniusYield.Examples.Limbo
 import GeniusYield.TxBuilder
 import GeniusYield.Types
@@ -10,7 +11,6 @@ import PlutusLedgerApi.V3
 import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Lookups (getUTxOWithNFT, getUtxoWithTokenAtAddresses)
 import TxBuilding.Utils
-
 
 ------------------------------------------------------------------------------------------------
 
@@ -50,6 +50,23 @@ gyDeriveUserFromRefAC _ = throwError (GYApplicationException InvalidAssetClass)
 
 gyDeriveUserFromRefTN :: (GYTxUserQueryMonad m) => GYTokenName -> m GYTokenName
 gyDeriveUserFromRefTN gyProfileRefTN = tokenNameFromPlutus' $ deriveUserFromRefTN (tokenNameToPlutus gyProfileRefTN)
+
+------------------------------------------------------------------------------------------------
+
+-- * Transaction validity
+
+------------------------------------------------------------------------------------------------
+
+-- | Minimum validity window in seconds (~7h) when building validity range for UpdateEndDate.
+safeEraTime :: Word64
+safeEraTime = 25920
+
+-- | Transaction valid only in the slot range [s1, s2] (inclusive).
+-- Implemented as invalid before s1 and invalid after s2.
+isValidBetween :: GYSlot -> GYSlot -> GYTxSkeleton 'PlutusV3
+isValidBetween s1 s2 = mconcat [isInvalidBefore s1, isInvalidAfter s2]
+
+
 
 ------------------------------------------------------------------------------------------------
 
