@@ -156,7 +156,6 @@ data OracleParams = OracleParams
   { opAdminPkh          :: PubKeyHash      -- admin who can update oracle
   , opPaused            :: Bool             -- global pause gate
   , opFeeConfig         :: Maybe FeeConfig  -- optional fee configuration
-  , opMinOutputLovelace :: Integer          -- minimum lovelace for datum outputs
   }
 
 data FeeConfig = FeeConfig
@@ -189,8 +188,9 @@ At runtime, every minting transaction must include the oracle UTxO as a referenc
 1. Reads `oracleToken` from its compiled-in `ProtocolParams`
 2. Calls `readOracleParams oracleToken txInfoReferenceInputs` to find and parse the oracle datum
 3. Checks `opPaused` — if `True`, the transaction fails with "Protocol is paused"
-4. Uses `opMinOutputLovelace` for minimum output value calculations
-5. Calls `checkFee oracle feeSelector txInfoOutputs` per redeemer to validate fee payment (if fees are configured)
+4. Calls `checkFee oracle feeSelector txInfoOutputs` per redeemer to validate fee payment (if fees are configured)
+
+Minimum output lovelace for protocol UTxO outputs is a fixed constant (3,500,000) in `Onchain.Utils.minLovelaceValue`, not configurable via the oracle.
 
 ### Protocol Operational Parameters
 
@@ -199,7 +199,6 @@ At runtime, every minting transaction must include the oracle UTxO as a referenc
 | `opAdminPkh` | Who can update the oracle | Deployer's PubKeyHash |
 | `opPaused` | Blocks all minting operations when True | False |
 | `opFeeConfig` | Optional per-action fee configuration | Nothing (no fees) |
-| `opMinOutputLovelace` | Minimum lovelace attached to datum outputs | 3,500,000 |
 
 ### Admin CLI Commands
 
@@ -336,6 +335,7 @@ Note: Profile deletion is intentionally NOT supported to preserve lineage integr
 **Redeemers**:
 - `UpdateProfileImage ImageURI Integer` - Update the profile's image URI (newImageURI, profileOutputIdx). The profile identity is derived from the spent UTxO's datum, not passed as a redeemer parameter.
 - `AcceptPromotion RankId Integer` - Accept a pending promotion (rankId, profileOutputIdx). Rank output validation is delegated to RanksValidator (R2 redundancy removed — see OnchainSecurityAudit.md).
+- `Cleanup` - Permissionless dust cleanup: anyone can spend a UTxO at this address if its datum is absent or does not parse as a valid profile datum.
 
 **Cross-Validator Communication**:
 The ProfilesValidator is **not parameterized**. Instead, it retrieves the RanksValidator address from the profile datum's embedded `protocolParams`:
@@ -385,6 +385,7 @@ Handles the consumption of pending promotions with minimal validation. Since ful
 
 **Redeemers**:
 - `PromotionAcceptance Integer Integer` - Accept a pending promotion (profileOutputIdx, rankOutputIdx)
+- `Cleanup` - Permissionless dust cleanup: anyone can spend a UTxO at this address if its datum is absent or does not parse as a valid rank datum.
 
 **Not Parameterized**: The RanksValidator is unparameterized. It extracts the ProfilesValidator address from the datum's `promotionProtocolParams` and all needed identity information from the `OnchainRank` datum:
 ```haskell
@@ -460,6 +461,8 @@ data OnchainMembershipInterval = OnchainMembershipInterval
 - `InsertNodeToMHList { maybeRightNodeId, insertedMembershipHistory, updatedLeftNodeTxOutIdx, insertedNodeTxOutIdx }` - Insert a new membership history node into the sorted linked list when a new member joins an organization
 - `UpdateNodeInMHList { lastIntervalId, startDate, endDate, updatedNodeTxOutIdx }` - Update a membership history node when adding a new interval to an existing member
 - `AcceptInterval { updatedIntervalTxOutIdx }` - Accept a membership interval (practitioner consent, Variant A: same NFT, datum update only)
+- `UpdateEndDate { membershipHistoryNodeId, newEndDate, updatedIntervalTxOutIdx }` - Update the end date of a membership interval (org: any future; practitioner: shorten/close accepted only)
+- `Cleanup` - Permissionless dust cleanup: anyone can spend a UTxO at this address if its datum is absent or does not parse as a valid `MembershipDatum`.
 
 **Design Decisions**:
 - **Sorted Linked List**: Membership histories are stored in a sorted linked list (by `practitionerId`) per organization, enabling deterministic insertion and preventing duplicates
@@ -499,6 +502,8 @@ The root is created atomically with the organization profile (`CreateProfile Org
 4. Practitioner must spend their User NFT (consent)
 5. Locks updated interval with `IntervalDatum` wrapper at own address with same value (tokens never leave the validator)
 6. No minting/burning occurs
+
+**Datum–redeemer restrictions**: `ListNodeDatum` accepts only `InsertNodeToMHList` or `UpdateNodeInMHList`; `IntervalDatum` accepts only `AcceptInterval` or `UpdateEndDate`; `Cleanup` applies when the datum is absent or does not parse as a valid `MembershipDatum`.
 
 **Security Considerations**:
 - Tokens locked at the validator never leave (output checks guarantee same address + same value)
@@ -610,13 +615,15 @@ Note: No minting or burning occurs in this phase. This is "Variant A" from the d
 
 **Who pays**: The organization or practitioner
 
-**Transaction involves one script**: `MembershipsValidator` (`UpdateEndDate` — *not yet implemented*)
+**Transaction involves one script**: `MembershipsValidator` (`UpdateEndDate`)
 
-1. Organization or practitioner spends their User token
-2. MV spends the active interval UTxO
-3. MV validates the new end date is in the future (>= current time from validity range)
-4. If an end date already exists, the new end date must be >= existing end date
+1. Organization or practitioner spends their User token (exactly one; MV enforces)
+2. MV spends the active interval UTxO and references the membership history node (to derive org and validate interval belongs to history)
+3. MV validates the new end date is within the transaction validity range (trace TD if outside)
+4. **Organization**: may set any future end date. **Practitioner**: may only update **accepted** intervals (trace TE if unaccepted) and may only shorten or close (`newEndDate <= currentEndDate`); trace TB if they try to extend
 5. MV locks the updated interval (wrapped in `IntervalDatum`) at the same address
+
+**Off-chain build**: The transaction builder computes the output datum using `updateEndDateWithoutValidations` (interval with `membershipIntervalEndDate = Just newEndDate`) so that the requested update is always buildable. The validator enforces TD/TE/TB via `updateMembershipIntervalEndDate`; invalid attempts (e.g. practitioner extend or unaccepted interval) are submitted and rejected on-chain.
 
 **Result**: Interval datum updated with `membershipIntervalEndDate = Just newEndDate`
 
@@ -637,7 +644,7 @@ The system enforces authentic BJJ promotion rules on-chain via `validatePromotio
 
 ### Belt Hierarchy
 
-| Index | Belt | Min Time at Previous |
+| Index | Belt | More Than (months) |
 |-------|------|---------------------|
 | 0 | White | - |
 | 1 | Blue | 12 months |
@@ -660,7 +667,7 @@ The `validatePromotion` function enforces:
 4. **Date Ordering**: Master's belt date must precede the promotion date
 5. **Sequential Promotion**: Target belt must be exactly one level above current belt
 6. **Date Progression**: Promotion date must be after current belt date
-7. **Time-in-Belt**: Student must have held current belt for the minimum required duration
+7. **Time-in-Belt**: Student must have held current belt for more than the required duration (strict `>`)
 
 ### Organization Handling
 
@@ -704,6 +711,8 @@ Off-chain transaction builders track output indices and include them in redeemer
 | NewMembershipHistory | Updated left node | Inserted MH node | First interval | - |
 | NewMembershipInterval | Updated MH node | New interval | - | - |
 | AcceptInterval | Updated interval | - | - | - |
+| UpdateEndDate | Updated interval | - | - | - |
+| CleanupDust | (dust UTxOs consumed; ADA to caller) | - | - | - |
 
 ### Benefits
 

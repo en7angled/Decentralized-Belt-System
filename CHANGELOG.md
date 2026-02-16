@@ -1,6 +1,22 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.5 -- 2026-02-16
+
+### UpdateEndDate security: TD/TE/TB enforced on-chain; off-chain build fix
+
+- **Protocol.hs**: `updateMembershipIntervalEndDate` now enforces TD (new end date within tx validity range), TE (practitioner only on accepted intervals), and TB (practitioner cannot extend). Previously TD and TE were dead code (`let _ = traceIfFalse ...`).
+- **Off-chain**: Added `updateEndDateWithoutValidations` (interval with new end date only); `updateEndDateTX` uses it to build the output datum so that invalid attempts (e.g. practitioner extend) are submitted and rejected on-chain instead of throwing during skeleton build. Security tests 4.9 (TD), 4.10 (TE), 4.11 (TB), 4.12 (V8) now pass.
+- **Docs**: `OnchainArchitecture.md` Phase 3 updated with TD/TE/TB and off-chain build note; `OnchainSecurityAudit.md` implementation note for `updateEndDateWithoutValidations`.
+
+### On-chain trace codes: globally unique and minimal
+
+- **Globally unique codes**: Reassigned all `traceError` / `traceIfFalse` codes so each character (0-9, A-Z, a-z) is used at most once across the codebase. Debugging no longer requires script hash to disambiguate.
+- **Consolidations**: Merged redundant traces: Protocol O/Q/R → k (OnchainProfile has no rank); RanksValidator and ProfilesValidator datum branches (3,4,5) → O and T; MembershipsValidator l,m → o; Protocol.Lookup 0,1 → y; BJJ a,b,c → u (belt invariant); Utils W,X,Y → I (oracle read failed); MintingPolicy Practitioner 4,5,6 → 4 and Organization 7,8,9 → 5; membership history G–L → C and interval M–R → D.
+- **BJJ**: `validatePromotion` now returns a plain `Bool` (no trace); promotion validation failure is reported as code **B** in MintingPolicy only.
+- **Docs**: `docs/onchain-trace-codes.md` replaced with a single global map (code → script, description); 61 codes in use.
+
+
 ## 0.3.1.4 -- 2026-02-15
 
 ### Scripts: memberships and exUnits
@@ -100,7 +116,7 @@ BJJ rules, belt hierarchy, and metadata limits remain hardcoded (domain invarian
 - `ProtocolParams` extended with `oracleToken :: AssetClass` field
 
 #### Off-chain Architecture: AdminAction Pipeline
-- **`AdminActionType`** added to `DomainTypes.Core.Actions` with constructors: `PauseProtocolAction`, `UnpauseProtocolAction`, `SetFeesAction`, `SetMinLovelaceAction`
+- **`AdminActionType`** added to `DomainTypes.Core.Actions` with constructors: `PauseProtocolAction`, `UnpauseProtocolAction`, `SetFeesAction`
 - **`ActionType`** extended from newtype to sum type: `ProfileAction | AdminAction`
 - **`updateOracleTX`** in `Operations.hs` — skeleton-based oracle update with `mustBeSignedBy` for admin signature
 - **`interactionToTxSkeleton`** returns `Maybe GYAssetClass` (profile actions return `Just`, admin actions return `Nothing`)

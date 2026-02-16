@@ -55,7 +55,7 @@ Anyone can send a UTxO to any script address on Cardano (validators only run whe
      case filter (\(TxInInfo _ (TxOut {txOutValue, txOutAddress})) ->
        (txOutValue `geq` assetClassValue stateToken 1) && (addr == txOutAddress)) outs of
        [TxInInfo _ out] -> (txOutValue out, checkAndGetInlineDatum out)
-       _ -> traceError "state nft not found"
+       _ -> traceError "U2"
    ```
    A forged UTxO without the genuine protocol NFT (correct CurrencySymbol) will **never** be returned by this function.
 
@@ -140,19 +140,31 @@ traceIfFalse "Start date must be before tx validity range"
 
 ## Remaining Items
 
-### LOW: `updateMembershipIntervalEndDate` Needs Time Validation in Validator
+### LOW (Resolved): `UpdateEndDate` Time Validation and Role-Based Rules
 
-**Location**: `Protocol.hs`, `updateMembershipIntervalEndDate` pure function
+**Location**: `Protocol.hs`, `MembershipsValidator.hs`
 
-**Description**: The `idei` specification states: *"Când este setat (Close), valoarea este doar în viitor (>= current time)."* The pure function only validates `newEndDate >= currentEndDate`, not `newEndDate >= currentTime`. A pure function cannot access the transaction context.
+**Description**: The `UpdateEndDate` redeemer was implemented with time validation and dual-authorization. The validator requires the new end date to lie **within** the transaction validity interval (after its lower bound and before its upper bound), using PlutusLedgerApi.V1.Interval `contains` on a singleton interval (trace TD). The UpdateEndDate transaction is built with `isValidBetween now validUntil` where **validUntil > newEndDate**, so the new end date lies inside the validity range and the on-chain check is meaningful. Role-based rules: organization (spends org User NFT) may set any future end date; practitioner (spends practitioner User NFT) may only shorten or close an accepted interval (trace TB if they try to extend). The history node is supplied as a reference input so the validator can derive the org and enforce the correct User NFT.
 
-**Impact**: Not currently exploitable because the `UpdateEndDate` redeemer is not yet implemented.
+**Implementation note**: Off-chain, the output datum is built with `updateEndDateWithoutValidations` (no TD/TE/TB checks) so that invalid attempts (e.g. practitioner extend) can be submitted; the validator then runs `updateMembershipIntervalEndDate` and rejects with TD/TE/TB as appropriate.
 
-**Recommendation**: When implementing the `UpdateEndDate` redeemer in `MembershipsValidator.hs`, add a check against `txInfoValidRange`:
-```haskell
-traceIfFalse "End date must be in the future"
-    $ newEndDate `after` lowerBoundOfValidRange
-```
+**Status**: **RESOLVED** (UpdateEndDate redeemer index 4, handleUpdateEndDate, Protocol `updateMembershipIntervalEndDate` with TD/TE/TB; off-chain `updateEndDateWithoutValidations`).
+
+---
+
+### LOW (Resolved): MV Redeemer Data Integrity — Safe-by-Design
+
+**Location**: `MembershipsValidator.hs`, `UpdateNodeInMHList` redeemer
+
+**Description**: The `UpdateNodeInMHList` redeemer carries `startDate`/`endDate` which the MV uses for validation but does not independently time-validate. This is **safe-by-design** because:
+
+1. **Exact mint check**: `mintValueMinted == newIntervalNFT` forces the correct MintingPolicy to run in the same transaction; the MP validates startDate against the tx validity range and (after the TC fix) `endDate > startDate` when provided.
+2. **Dual computation**: Both MP and MV independently compute `addMembershipIntervalToHistory`; the interval datum is enforced by the MP output check, the history node datum by the MV output check — both outputs must exist in the same tx.
+3. **validLastInterval anchor**: The `validLastInterval` check ties MV logic to on-chain data (the current head and last interval), not to redeemer data alone.
+
+No change to the redeemer format is required; the design is documented here as resolved.
+
+**Status**: **RESOLVED** (documented).
 
 ---
 
@@ -193,6 +205,8 @@ traceIfFalse "End date must be in the future"
 
 A systematic review of all multi-script transactions to identify which validations are duplicated across scripts, which can be safely eliminated, and which are essential despite appearing redundant.
 
+**Note:** Line references in this section are from the original audit and may have shifted due to subsequent changes (Cleanup redeemer, UpdateEndDate, R2/R3 removal).
+
 #### Transaction: AcceptPromotion (ProfilesValidator + RanksValidator)
 
 Both validators **must** run: PV reads the promotion from `txInfoInputs` (forcing RV to run), and RV reads the profile from `txInfoInputs` (forcing PV to run).
@@ -219,7 +233,7 @@ R1 is the **sole enforcement** that when a promotion is consumed at RV, the prof
 
 **R2 — ProfilesValidator L124-125: Rank output check — REMOVED**
 
-Unlike PV, **RV has only one redeemer** (`PromotionAcceptance`). When PV forces the promotion to be in `txInfoInputs`, RV must run, and it has no alternative code path. RV always validates the rank output (L77-78). Therefore PV's rank output check was genuinely redundant.
+Unlike PV, **RV has only one redeemer that operates on valid protocol datums** (`PromotionAcceptance`); the permissionless `Cleanup` redeemer only handles absent/unparseable datums. When PV forces the promotion to be in `txInfoInputs`, RV must run, and it has no alternative code path for valid rank datums. RV always validates the rank output (L77-78). Therefore PV's rank output check was genuinely redundant.
 
 Removing R2 also removed the `rankOutputIdx` parameter from PV's `AcceptPromotion` redeemer, reducing redeemer size and PV script cost.
 
@@ -333,7 +347,7 @@ For each multi-script transaction, we enumerate all possible alternative redeeme
 | `AcceptPromotion` | `PromotionAcceptance` | **Intended flow** — both validators agree on outputs |
 | `UpdateProfileImage` | `PromotionAcceptance` | **Blocked by R1** — RV's profile output check rejects image-updated datum |
 
-RV has only one redeemer (`PromotionAcceptance`), so there are no alternative RV paths to analyze.
+RV has only one redeemer that operates on valid protocol datums (`PromotionAcceptance`); the permissionless `Cleanup` redeemer only handles absent/unparseable datums. So there are no alternative RV paths to analyze for the AcceptPromotion flow.
 
 **Conclusion**: The AcceptPromotion flow is secure. R1 is the critical cross-validator coupling that prevents redeemer mismatch attacks.
 

@@ -9,23 +9,23 @@ import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (BJJBelt (White), beltToInt)
 import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
-import Onchain.MintingPolicy
-import Onchain.MembershipsValidator (MembershipsRedeemer (..))
-
-import Onchain.ProfilesValidator (ProfilesRedeemer (UpdateProfileImage, AcceptPromotion))
-import Onchain.ProfilesValidator qualified (ProfilesRedeemer (Cleanup))
-import Onchain.Protocol (OnchainRank (..), deriveMembershipHistoriesListId, derivePromotionRankId, initEmptyMembershipHistoriesList, insertMembershipHistoryInBetween, mkMembershipHistoriesListNode, mkOrganizationProfile, mkPromotion, mkPractitionerProfile, promoteProfile, appendMembershipHistory, updateNodeMembershipHistory, initMembershipHistory, addMembershipIntervalToHistory, acceptMembershipInterval)
-import Onchain.Protocol qualified as Onchain
-import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..), MembershipDatum (..), MembershipHistoriesListNode (..), OnchainMembershipHistory (..), OnchainMembershipInterval (..))
 import Onchain.LinkedList (NodeDatum (..))
+import Onchain.MembershipsValidator (MembershipsRedeemer (..))
+import Onchain.MintingPolicy
+import Onchain.ProfilesValidator (ProfilesRedeemer (AcceptPromotion, UpdateProfileImage))
+import Onchain.ProfilesValidator qualified (ProfilesRedeemer (Cleanup))
+import Onchain.Protocol (OnchainRank (..), acceptMembershipInterval, addMembershipIntervalToHistory, appendMembershipHistory, deriveMembershipHistoriesListId, derivePromotionRankId, initEmptyMembershipHistoriesList, initMembershipHistory, insertMembershipHistoryInBetween, mkMembershipHistoriesListNode, mkOrganizationProfile, mkPractitionerProfile, mkPromotion, promoteProfile, updateNodeMembershipHistory, updateEndDateWithoutValidations)
+import Onchain.Protocol qualified as Onchain
+import Onchain.Protocol.Types (FeeConfig (..), MembershipDatum (..), MembershipHistoriesListNode (..), OnchainMembershipHistory (..), OnchainMembershipInterval (..), OracleParams (..))
 import Onchain.RanksValidator (RanksRedeemer (PromotionAcceptance))
 import Onchain.RanksValidator qualified (RanksRedeemer (Cleanup))
+import Onchain.Utils (protocolMinLovelace)
 import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getMembershipsValidatorRef, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
 import TxBuilding.Exceptions (TxBuildingException (..))
-import TxBuilding.Lookups (findInsertPointForNewMembership, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDataAndValue, getRankStateDataAndValue, queryOracleParams)
+import TxBuilding.Lookups (findInsertPointForNewMembership, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDataAndValue, getRankStateDataAndValue, getUtxoWithTokenAtAddresses, queryOracleParams)
 import TxBuilding.Skeletons
-import TxBuilding.Utils (txOutRefToV3Plutus)
+import TxBuilding.Utils (gySlotFromPOSIXTime, pPOSIXTimeFromGYSlot, txOutRefToV3Plutus)
 import TxBuilding.Validators
 
 -- | Get the compiled minting policy from the oracle NFT in context.
@@ -139,7 +139,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
 
   -- Oracle reference input + params (for minLovelace and fee)
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
-  let minLv = opMinOutputLovelace oracleParams
+  let minLv = protocolMinLovelace
   feeSkeleton <- getFeeSkeleton oracleParams fcProfileCreationFee
 
   mpRef <- asks getMintingPolicyRef
@@ -191,7 +191,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
       isLockingMembershipHistoriesRootState <-
         txMustLockStateWithInlineDatumAndValue
           membershipsValidatorGY
-          (ListNodeDatum membershipHistoriesRootDatum)  -- Must wrap in MembershipDatum for on-chain validation
+          (ListNodeDatum membershipHistoriesRootDatum) -- Must wrap in MembershipDatum for on-chain validation
           (valueSingleton gyMembershipHistoriesRootAC 1 <> valueFromLovelace minLv)
       return $
         mconcat
@@ -283,7 +283,7 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
 
   -- Oracle reference input + params (for minLovelace and fee)
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
-  let minLv = opMinOutputLovelace oracleParams
+  let minLv = protocolMinLovelace
   feeSkeleton <- getFeeSkeleton oracleParams fcPromotionFee
 
   mpRef <- asks getMintingPolicyRef
@@ -387,7 +387,6 @@ acceptPromotionTX gyPromotionId ownAddrs = do
   -- Output 1: Updated rank state locked at ranksValidator
   let profileOutputIdx = 0 :: Integer
   let rankOutputIdx = 1 :: Integer -- Used by RanksValidator redeemer (PV no longer needs this — R2 removed)
-
   let gySpendProfileRedeemer = redeemerFromPlutusData $ AcceptPromotion (assetClassToPlutus gyPromotionId) profileOutputIdx
   spendsStudentProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyStudentProfileRefAC gySpendProfileRedeemer profilesValidatorGY
 
@@ -445,11 +444,16 @@ acceptPromotionTX gyPromotionId ownAddrs = do
 --   Output 3 (optional): Fee payment
 createMembershipHistoryTX ::
   (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
-  GYAssetClass ->  -- ^ Organization profile Ref AC
-  GYAssetClass ->  -- ^ Practitioner profile Ref AC
-  POSIXTime ->     -- ^ Start date
-  Maybe POSIXTime -> -- ^ Optional end date
-  [GYAddress] ->   -- ^ Organization's wallet addresses (to spend User NFT)
+  -- | Organization profile Ref AC
+  GYAssetClass ->
+  -- | Practitioner profile Ref AC
+  GYAssetClass ->
+  -- | Start date
+  POSIXTime ->
+  -- | Optional end date
+  Maybe POSIXTime ->
+  -- | Organization's wallet addresses (to spend User NFT)
+  [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate mEndDate ownAddrs = do
   mpGY <- asks getMintingPolicyFromCtx
@@ -460,7 +464,7 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
 
   -- Oracle reference input + params (for minLovelace and fee)
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
-  let minLv = opMinOutputLovelace oracleParams
+  let minLv = protocolMinLovelace
   feeSkeleton <- getFeeSkeleton oracleParams fcMembershipFee
 
   -- Spend organization User NFT
@@ -499,15 +503,18 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
   let insertedNodeTxOutIdx = 1 :: Integer
   let firstIntervalOutputIdx = 2 :: Integer
 
-  let mvRedeemer = redeemerFromPlutusData $ InsertNodeToMHList
-        { maybeRightNodeId = maybeRightNodeIdPlutus
-        , insertedMembershipHistory = newHistory
-        , updatedLeftNodeTxOutIdx = updatedLeftNodeTxOutIdx
-        , insertedNodeTxOutIdx = insertedNodeTxOutIdx
-        }
+  let mvRedeemer =
+        redeemerFromPlutusData $
+          InsertNodeToMHList
+            { maybeRightNodeId = maybeRightNodeIdPlutus,
+              insertedMembershipHistory = newHistory,
+              updatedLeftNodeTxOutIdx = updatedLeftNodeTxOutIdx,
+              insertedNodeTxOutIdx = insertedNodeTxOutIdx
+            }
 
-  let mintRedeemer = redeemerFromPlutusData $
-        NewMembershipHistory plutusOrgRefAC plutusPractitionerRefAC startDate mEndDate (assetClassToPlutus leftNodeAC) firstIntervalOutputIdx
+  let mintRedeemer =
+        redeemerFromPlutusData $
+          NewMembershipHistory plutusOrgRefAC plutusPractitionerRefAC startDate mEndDate (assetClassToPlutus leftNodeAC) firstIntervalOutputIdx
 
   spendsLeftNode <- txMustSpendStateFromRefScriptWithRedeemer mvRef leftNodeAC mvRedeemer membershipsValidatorGY
 
@@ -540,17 +547,17 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
 
   return
     ( mconcat
-        [ spendsOrgUserNFT
-        , spendsLeftNode
-        , isInvalidBeforeNow
-        , oracleRefSkeleton
-        , refRightNodeSkeleton
-        , isMintingHistoryNFT
-        , isMintingIntervalNFT
-        , isLockingUpdatedLeftNode
-        , isLockingInsertedNode
-        , isLockingFirstInterval
-        , feeSkeleton
+        [ spendsOrgUserNFT,
+          spendsLeftNode,
+          isInvalidBeforeNow,
+          oracleRefSkeleton,
+          refRightNodeSkeleton,
+          isMintingHistoryNFT,
+          isMintingIntervalNFT,
+          isLockingUpdatedLeftNode,
+          isLockingInsertedNode,
+          isLockingFirstInterval,
+          feeSkeleton
         ],
       gyMembershipHistoryAC
     )
@@ -564,11 +571,16 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
 --   Output 2 (optional): Fee payment
 addMembershipIntervalTX ::
   (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
-  GYAssetClass ->  -- ^ Organization profile Ref AC
-  GYAssetClass ->  -- ^ Membership history node NFT AC
-  POSIXTime ->     -- ^ Start date
-  Maybe POSIXTime -> -- ^ Optional end date
-  [GYAddress] ->   -- ^ Organization's wallet addresses (to spend User NFT)
+  -- | Organization profile Ref AC
+  GYAssetClass ->
+  -- | Membership history node NFT AC
+  GYAssetClass ->
+  -- | Start date
+  POSIXTime ->
+  -- | Optional end date
+  Maybe POSIXTime ->
+  -- | Organization's wallet addresses (to spend User NFT)
+  [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate ownAddrs = do
   mpGY <- asks getMintingPolicyFromCtx
@@ -579,7 +591,7 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
 
   -- Oracle reference input + params (for minLovelace and fee)
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
-  let minLv = opMinOutputLovelace oracleParams
+  let minLv = protocolMinLovelace
   feeSkeleton <- getFeeSkeleton oracleParams fcMembershipFee
 
   -- Spend organization User NFT
@@ -613,17 +625,20 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
   let intervalOutputIdx = 1 :: Integer
 
   -- Build MembershipsValidator redeemer for spending the history node
-  let mvRedeemer = redeemerFromPlutusData $ UpdateNodeInMHList
-        { lastIntervalId = lastIntervalAC
-        , startDate = startDate
-        , endDate = mEndDate
-        , updatedNodeTxOutIdx = updatedNodeTxOutIdx
-        }
+  let mvRedeemer =
+        redeemerFromPlutusData $
+          UpdateNodeInMHList
+            { lastIntervalId = lastIntervalAC,
+              startDate = startDate,
+              endDate = mEndDate,
+              updatedNodeTxOutIdx = updatedNodeTxOutIdx
+            }
 
   -- Build MintingPolicy redeemer
   let plutusOrgRefAC = assetClassToPlutus gyOrgProfileRefAC
-  let mintRedeemer = redeemerFromPlutusData $
-        NewMembershipInterval plutusOrgRefAC (assetClassToPlutus gyMembershipNodeAC) startDate mEndDate intervalOutputIdx
+  let mintRedeemer =
+        redeemerFromPlutusData $
+          NewMembershipInterval plutusOrgRefAC (assetClassToPlutus gyMembershipNodeAC) startDate mEndDate intervalOutputIdx
 
   -- Spend the membership history node from memberships validator
   spendsHistoryNode <- txMustSpendStateFromRefScriptWithRedeemer mvRef gyMembershipNodeAC mvRedeemer membershipsValidatorGY
@@ -651,15 +666,15 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
 
   return
     ( mconcat
-        [ spendsOrgUserNFT,           -- Input (no output index)
-        spendsHistoryNode,           -- Input (no output index)
-        isInvalidBeforeNow,          -- Validity (no output index)
-        oracleRefSkeleton,           -- Reference input: oracle UTxO
-        referencesLastInterval,      -- Reference input: last interval
-        isMintingIntervalNFT,        -- Mint (no output index)
-        isLockingUpdatedHistoryNode, -- Output 0: Updated history node
-        isLockingNewInterval,        -- Output 1: New interval
-        feeSkeleton                  -- Output 2 (optional): Fee payment
+        [ spendsOrgUserNFT, -- Input (no output index)
+          spendsHistoryNode, -- Input (no output index)
+          isInvalidBeforeNow, -- Validity (no output index)
+          oracleRefSkeleton, -- Reference input: oracle UTxO
+          referencesLastInterval, -- Reference input: last interval
+          isMintingIntervalNFT, -- Mint (no output index)
+          isLockingUpdatedHistoryNode, -- Output 0: Updated history node
+          isLockingNewInterval, -- Output 1: New interval
+          feeSkeleton -- Output 2 (optional): Fee payment
         ],
       gyNewIntervalAC
     )
@@ -671,8 +686,10 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
 --   Output 0: Updated interval with isAck = True
 acceptMembershipIntervalTX ::
   (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
-  GYAssetClass ->  -- ^ Interval NFT AC
-  [GYAddress] ->   -- ^ Practitioner's wallet addresses (to spend User NFT)
+  -- | Interval NFT AC
+  GYAssetClass ->
+  -- | Practitioner's wallet addresses (to spend User NFT)
+  [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3)
 acceptMembershipIntervalTX gyIntervalAC ownAddrs = do
   mvRef <- asks getMembershipsValidatorRef
@@ -696,9 +713,11 @@ acceptMembershipIntervalTX gyIntervalAC ownAddrs = do
   let updatedIntervalTxOutIdx = 0 :: Integer
 
   -- Build MembershipsValidator redeemer
-  let mvRedeemer = redeemerFromPlutusData $ AcceptInterval
-        { updatedIntervalTxOutIdx = updatedIntervalTxOutIdx
-        }
+  let mvRedeemer =
+        redeemerFromPlutusData $
+          AcceptInterval
+            { updatedIntervalTxOutIdx = updatedIntervalTxOutIdx
+            }
 
   -- Spend the interval from memberships validator
   spendsInterval <- txMustSpendStateFromRefScriptWithRedeemer mvRef gyIntervalAC mvRedeemer membershipsValidatorGY
@@ -713,10 +732,103 @@ acceptMembershipIntervalTX gyIntervalAC ownAddrs = do
 
   return $
     mconcat
-      [ spendsPractitionerUserNFT,   -- Input (no output index)
-        spendsInterval,              -- Input (no output index)
-        isLockingUpdatedInterval     -- Output 0: Updated interval
+      [ spendsPractitionerUserNFT, -- Input (no output index)
+        spendsInterval, -- Input (no output index)
+        isLockingUpdatedInterval -- Output 0: Updated interval
       ]
+
+-- | Update the end date of a membership interval (org or practitioner).
+-- Corresponds to 'UpdateEndDate' spending (no minting, no fee).
+-- Caller must have either the organization User NFT or the practitioner User NFT.
+--
+-- Output index layout:
+--   Output 0: Updated interval with new end date
+--
+-- When 'validityOverride' is 'Just' a skeleton, it is used as the tx validity
+-- instead of 'validitySkeletonForNewEndDate'. Used only by tests (e.g. to trigger TD failure).
+updateEndDateTX ::
+  (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  -- | Interval NFT AC
+  GYAssetClass ->
+  -- | Membership history node NFT AC (reference input)
+  GYAssetClass ->
+  -- | New end date (must be in the future)
+  GYTime ->
+  -- | Org or practitioner wallet addresses (to spend User NFT)
+  [GYAddress] ->
+  -- | Optional validity override (test-only; Nothing = use validitySkeletonForNewEndDate)
+  Maybe (GYTxSkeleton 'PlutusV3) ->
+  m (GYTxSkeleton 'PlutusV3)
+updateEndDateTX gyIntervalAC gyHistoryNodeAC newEndDateGY ownAddrs validityOverride = do
+  mvRef <- asks getMembershipsValidatorRef
+
+  (interval, intervalValue) <- getMembershipIntervalDatumAndValue gyIntervalAC
+  (historyNode, _historyNodeValue) <- getMembershipListNodeDatumAndValue gyHistoryNodeAC
+
+  history <- case nodeData (nodeInfo historyNode) of
+    Just h -> return h
+    Nothing -> throwError (GYApplicationException MembershipListNodeNotFound)
+  gyOrgRef <- assetClassFromPlutus' (membershipHistoryOrganizationId history)
+  orgUserAC <- gyDeriveUserFromRefAC gyOrgRef
+  gyPractitionerRef <- assetClassFromPlutus' (membershipIntervalPractitionerId interval)
+  practitionerUserAC <- gyDeriveUserFromRefAC gyPractitionerRef
+
+  -- User must have either org or practitioner User NFT (validator enforces exactly one)
+  hasOrg <- catchError (True <$ getUtxoWithTokenAtAddresses orgUserAC ownAddrs) (const $ return False)
+  hasPractitioner <- catchError (True <$ getUtxoWithTokenAtAddresses practitionerUserAC ownAddrs) (const $ return False)
+  spendUserNFT <- do
+    case (hasOrg, hasPractitioner) of
+      (True, False) -> txMustSpendFromAddress orgUserAC ownAddrs
+      (False, True) -> txMustSpendFromAddress practitionerUserAC ownAddrs
+      _ -> throwError (GYApplicationException ProfileNotFound) -- must have org or practitioner User NFT
+  let newEndDate = timeToPlutus newEndDateGY
+  let updatedInterval = updateEndDateWithoutValidations interval newEndDate
+  let updatedIntervalTxOutIdx = 0 :: Integer
+  let mvRedeemer =
+        redeemerFromPlutusData $
+          UpdateEndDate
+            { membershipHistoryNodeId = assetClassToPlutus gyHistoryNodeAC,
+              newEndDate = newEndDate,
+              updatedIntervalTxOutIdx = updatedIntervalTxOutIdx
+            }
+
+  spendsInterval <- txMustSpendStateFromRefScriptWithRedeemer mvRef gyIntervalAC mvRedeemer membershipsValidatorGY
+  referencesHistoryNode <- txMustHaveUTxOsAsRefInputs [gyHistoryNodeAC]
+
+  -- Tx validity: use validityOverride if provided, otherwise isValidBetween now validUntil with validUntil > newEndDate so the on-chain TD check enforces "within range".
+  (now, validUntilSlot) <- validitySkeletonForNewEndDate
+  let validitySkeleton = case validityOverride of
+        Just override -> override
+        Nothing -> isValidBetween now validUntilSlot
+
+  gyIntervalValue <- valueFromPlutus' intervalValue
+  isLockingUpdatedInterval <-
+    txMustLockStateWithInlineDatumAndValue
+      membershipsValidatorGY
+      (IntervalDatum updatedInterval)
+      gyIntervalValue
+
+  return $
+    mconcat
+      [ spendUserNFT,
+        spendsInterval,
+        referencesHistoryNode,
+        validitySkeleton,
+        isLockingUpdatedInterval
+      ]
+  where
+    validitySkeletonForNewEndDate :: (GYTxQueryMonad m) => m (GYSlot, GYSlot)
+    validitySkeletonForNewEndDate = do
+      now <- slotOfCurrentBlock
+      nowPlutus <- pPOSIXTimeFromGYSlot now
+      let newEndDatePlutus = timeToPlutus newEndDateGY
+      let nowMs = getPOSIXTime nowPlutus
+      let newEndDateMs = getPOSIXTime newEndDatePlutus
+      let bufferMs = 1000 -- 1 second
+      let safeEraMs = fromIntegral safeEraTime * 1000
+      let validUntilMs = max (newEndDateMs + bufferMs) (nowMs + safeEraMs)
+      validUntilSlot <- gySlotFromPOSIXTime (POSIXTime validUntilMs)
+      return (now, validUntilSlot)
 
 ------------------------------------------------------------------------------------------------
 
@@ -758,7 +870,6 @@ applyAdminAction :: AdminActionType -> OracleParams -> OracleParams
 applyAdminAction PauseProtocolAction params = params {opPaused = True}
 applyAdminAction UnpauseProtocolAction params = params {opPaused = False}
 applyAdminAction (SetFeesAction mFeeConfig) params = params {opFeeConfig = mFeeConfig}
-applyAdminAction (SetMinLovelaceAction minLv) params = params {opMinOutputLovelace = minLv}
 
 ------------------------------------------------------------------------------------------------
 
