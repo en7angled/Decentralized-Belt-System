@@ -18,6 +18,7 @@ import PlutusLedgerApi.V3 (CurrencySymbol, TokenName (TokenName), TxOutRef)
 import PlutusTx.Builtins (ByteOrder (BigEndian), appendByteString, blake2b_224, integerToByteString)
 import PlutusTx.Prelude (Integer)
 
+
 -- | Generate a deterministic rank ID from a profile ID and rank number.
 {-# INLINEABLE deriveRankId #-}
 deriveRankId :: ProfileId -> Integer -> RankId

@@ -13,7 +13,7 @@
 
 -- | Profiles validator governing profile lifecycle, image updates,
 -- and promotion acceptance.
-module Onchain.ProfilesValidator
+module Onchain.Validators.ProfilesValidator
   ( -- * Profiles Redeemer
     ProfilesRedeemer (..),
     ProfilesDatum,

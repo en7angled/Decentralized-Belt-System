@@ -416,6 +416,8 @@ genFeeConfig =
     <*> Gen.integral (Range.linear 1000000 100000000)
     <*> Gen.integral (Range.linear 1000000 100000000)
     <*> Gen.integral (Range.linear 1000000 100000000)
+    <*> Gen.integral (Range.linear 1000000 100000000)
+    <*> Gen.integral (Range.linear 1000000 100000000)
 
 genOracleParamsNoFee :: Gen OracleParams
 genOracleParamsNoFee =
@@ -445,6 +447,7 @@ genProtocolParams :: Gen ProtocolParams
 genProtocolParams =
   ProtocolParams
     <$> genScriptHash
+    <*> genScriptHash
     <*> genScriptHash
     <*> genScriptHash
     <*> genAssetClass

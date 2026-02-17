@@ -10,7 +10,7 @@
 {-# HLINT ignore "Use &&" #-}
 
 -- | Ranks validator enforcing promotion acceptance and rank state transitions.
-module Onchain.RanksValidator
+module Onchain.Validators.RanksValidator
   ( -- * Ranks Redeemer
     RanksRedeemer (..),
 
@@ -95,8 +95,7 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
                         profilesValidatorAddress = V1.scriptHashAddress $ profilesValidatorScriptHash $ promotionProtocolParams promotionRankDatum
                         studentProfileId = promotionAwardedTo promotionRankDatum -- Fails if trying to spend a rank instead of a promotion
                         profileUserAssetClass = deriveUserFromRefAC studentProfileId
-                     in -- NOTE (R3 redundancy removed — see OnchainSecurityAudit.md):
-                        -- The "Profile Ref NFT == 1" check was removed because
+                     in -- The "Profile Ref NFT == 1" check was removed because
                         -- unsafeGetProfileDatumAndValue uses checkAndGetCurrentStateDatumAndValue,
                         -- which filters by `geq assetClassValue stateToken 1` and demands exactly
                         -- one matching UTxO. If the lookup succeeds, the NFT is guaranteed present.

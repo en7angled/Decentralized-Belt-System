@@ -45,8 +45,8 @@ common plinth-ghc-options
 
   -- Compiler flags (defaults): no-remove-trace keeps traces; preserve-logging
   -- prevents optimization from removing trace messages (see Plutus troubleshooting).
-  ghc-options:        -fplugin-opt PlutusTx.Plugin:preserve-logging
-  ghc-options:        -fplugin-opt PlutusTx.Plugin:no-remove-trace
+  -- ghc-options:        -fplugin-opt PlutusTx.Plugin:preserve-logging
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:remove-trace
   ghc-options:        -fplugin-opt PlutusTx.Plugin:optimize
 
 library onchain-lib
@@ -58,17 +58,19 @@ library onchain-lib
     Onchain.Blueprint
     Onchain.CIP68
     Onchain.LinkedList
-    Onchain.MembershipsValidator
-    Onchain.MintingPolicy
-    Onchain.OracleNFTPolicy
-    Onchain.OracleValidator
-    Onchain.ProfilesValidator
     Onchain.Protocol
+    Onchain.Protocol.Core
     Onchain.Protocol.Id
     Onchain.Protocol.Lookup
     Onchain.Protocol.Types
-    Onchain.RanksValidator
     Onchain.Utils
+    Onchain.Validators.AchievementsValidator
+    Onchain.Validators.MembershipsValidator
+    Onchain.Validators.MintingPolicy
+    Onchain.Validators.OracleNFTPolicy
+    Onchain.Validators.OracleValidator
+    Onchain.Validators.ProfilesValidator
+    Onchain.Validators.RanksValidator
 
   if !(impl(ghcjs) || os(ghcjs))
     build-depends: plutus-tx-plugin

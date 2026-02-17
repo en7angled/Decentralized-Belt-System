@@ -10,15 +10,15 @@ import GeniusYield.Types
 import Onchain.BJJ (BJJBelt (White), beltToInt)
 import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.LinkedList (NodeDatum (..))
-import Onchain.MembershipsValidator (MembershipsRedeemer (..))
-import Onchain.MintingPolicy
-import Onchain.ProfilesValidator (ProfilesRedeemer (AcceptPromotion, UpdateProfileImage))
-import Onchain.ProfilesValidator qualified (ProfilesRedeemer (Cleanup))
 import Onchain.Protocol (OnchainRank (..), acceptMembershipInterval, addMembershipIntervalToHistory, appendMembershipHistory, deriveMembershipHistoriesListId, derivePromotionRankId, initEmptyMembershipHistoriesList, initMembershipHistory, insertMembershipHistoryInBetween, mkMembershipHistoriesListNode, mkOrganizationProfile, mkPractitionerProfile, mkPromotion, promoteProfile, updateNodeMembershipHistory, updateEndDateWithoutValidations)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types (FeeConfig (..), MembershipDatum (..), MembershipHistoriesListNode (..), OnchainMembershipHistory (..), OnchainMembershipInterval (..), OracleParams (..))
-import Onchain.RanksValidator (RanksRedeemer (PromotionAcceptance))
-import Onchain.RanksValidator qualified (RanksRedeemer (Cleanup))
+import Onchain.Validators.MembershipsValidator (MembershipsRedeemer (..))
+import Onchain.Validators.MintingPolicy
+import Onchain.Validators.ProfilesValidator (ProfilesRedeemer (AcceptPromotion, UpdateProfileImage))
+import Onchain.Validators.ProfilesValidator qualified (ProfilesRedeemer (Cleanup))
+import Onchain.Validators.RanksValidator (RanksRedeemer (PromotionAcceptance))
+import Onchain.Validators.RanksValidator qualified (RanksRedeemer (Cleanup))
 import Onchain.Utils (protocolMinLovelace)
 import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getMembershipsValidatorRef, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
@@ -155,7 +155,7 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
   let plutusProfile = case profileType of
         Onchain.Practitioner -> fst $ mkPractitionerProfile profileRefAC creationDate pp (beltToInt belt)
         Onchain.Organization -> mkOrganizationProfile profileRefAC pp
-  let plutusProfileCIP68Datum = mkCIP68Datum plutusProfile metadata
+  let plutusProfileCIP68Datum = mkCIP68Datum plutusProfile metadata []
 
   -- ============================================================
   -- Output index tracking (order must match skeleton mconcat order)
@@ -465,7 +465,7 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
   -- Oracle reference input + params (for minLovelace and fee)
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
   let minLv = protocolMinLovelace
-  feeSkeleton <- getFeeSkeleton oracleParams fcMembershipFee
+  feeSkeleton <- getFeeSkeleton oracleParams fcMembershipHistoryFee
 
   -- Spend organization User NFT
   gyOrgUserAC <- gyDeriveUserFromRefAC gyOrgProfileRefAC
@@ -592,7 +592,7 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
   -- Oracle reference input + params (for minLovelace and fee)
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
   let minLv = protocolMinLovelace
-  feeSkeleton <- getFeeSkeleton oracleParams fcMembershipFee
+  feeSkeleton <- getFeeSkeleton oracleParams fcMembershipHistoryFee
 
   -- Spend organization User NFT
   gyOrgUserAC <- gyDeriveUserFromRefAC gyOrgProfileRefAC
@@ -908,9 +908,9 @@ cleanupDustTX = do
     throwError (GYApplicationException NoDustFound)
 
   -- Build spend skeletons for each dust UTxO using the Cleanup redeemer
-  let pvCleanupRedeemer = redeemerFromPlutusData Onchain.ProfilesValidator.Cleanup
-      rvCleanupRedeemer = redeemerFromPlutusData Onchain.RanksValidator.Cleanup
-      mvCleanupRedeemer = redeemerFromPlutusData Onchain.MembershipsValidator.Cleanup
+  let pvCleanupRedeemer = redeemerFromPlutusData Onchain.Validators.ProfilesValidator.Cleanup
+      rvCleanupRedeemer = redeemerFromPlutusData Onchain.Validators.RanksValidator.Cleanup
+      mvCleanupRedeemer = redeemerFromPlutusData Onchain.Validators.MembershipsValidator.Cleanup
 
   let profileSpends = map (\utxo -> txMustSpendUTxOFromRefScript pvRef utxo pvCleanupRedeemer profilesValidatorGY) profilesDust
       rankSpends = map (\utxo -> txMustSpendUTxOFromRefScript rvRef utxo rvCleanupRedeemer ranksValidatorGY) ranksDust

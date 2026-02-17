@@ -6,6 +6,7 @@ Trace codes are **two-character** and **globally unique**. The first character i
 
 | Prefix | Module |
 |--------|--------|
+| `A` | AchievementsValidator |
 | `M` | MintingPolicy |
 | `U` | Utils |
 | `O` | OracleValidator |
@@ -37,12 +38,18 @@ Trace codes are **two-character** and **globally unique**. The first character i
 | Mc | MintingPolicy | Must pass promotion validation rules |
 | Md | MintingPolicy | Membership history mint check failed |
 | Me | MintingPolicy | Membership interval mint check failed |
+| Mf | MintingPolicy | Must spend awarded-by user NFT |
+| Mg | MintingPolicy | Profiles must have correct currency symbol (awardedTo/awardedBy) |
+| Mh | MintingPolicy | Must spend seed for uniqueness (achievement) |
+| Mj | MintingPolicy | Tx must mint JUST achievement NFT |
+| Mk | MintingPolicy | Lock achievement at AchievementsValidator |
+| A0 | AchievementsValidator | Cannot cleanup valid datum / no datum / invalid datum |
+| A1 | AchievementsValidator | Accept achievement check failed (lock updated achievement; must spend practitioner user NFT) |
+| A2 | AchievementsValidator | Invalid script info |
 | U0 | Utils | Invalid context (script context parse failed) |
 | U1 | Utils | Cannot find own input by TxOutRef |
 | U2 | Utils | Cannot find state NFT at expected address |
 | U3 | Utils | Invalid output: expected inline datum |
-| U4 | Utils | Oracle read failed (decode / inline datum / not found) |
-| U5 | Utils | Must pay required fee |
 | O0 | OracleValidator | Invalid oracle datum |
 | O1 | OracleValidator | Must be signed by admin |
 | O2 | OracleValidator | Must return oracle UTxO |
@@ -77,6 +84,7 @@ Trace codes are **two-character** and **globally unique**. The first character i
 | T7 | Protocol | OnchainProfile has no rank (promoteProfileDatum / promoteProfile) |
 | T8 | Protocol | Cannot accept: not pending |
 | T9 | Protocol | getCurrentRankId: OnchainProfile has no rank |
+| TA | Protocol | Cannot accept achievement: already accepted |
 | V0 | MembershipsValidator | Cannot cleanup UTxO with valid protocol datum |
 | V1 | MembershipsValidator | Datum missing or invalid (no datum / invalid) |
 | V2 | MembershipsValidator | Invalid redeemer for ListNodeDatum |
@@ -92,3 +100,5 @@ Trace codes are **two-character** and **globally unique**. The first character i
 | N0 | OracleNFTPolicy | Must spend seed UTxO |
 | N1 | OracleNFTPolicy | Invalid script purpose |
 | K0 | Protocol.Lookup | Invalid datum type (expected ListNodeDatum or IntervalDatum) |
+| K1 | Protocol.Lookup | Oracle read failed (decode / inline datum / not found) |
+| K2 | Protocol.Lookup | Must pay required fee |

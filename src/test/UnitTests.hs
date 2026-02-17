@@ -150,7 +150,9 @@ oracleAdminTests =
             { fcFeeAddress = feeAddr
             , fcProfileCreationFee = 2000000
             , fcPromotionFee = 3000000
-            , fcMembershipFee = 1500000
+            , fcMembershipHistoryFee = 1500000
+            , fcMembershipIntervalFee = 1500000
+            , fcAchievementFee = 1500000
             }
       _ <- adminInteraction ctx (w1 testWallets) (SetFeesAction (Just testFeeConfig))
       waitNSlots_ 1
@@ -215,7 +217,9 @@ oracleAdminTests =
             { fcFeeAddress = feeAddr
             , fcProfileCreationFee = 2000000
             , fcPromotionFee = 3000000
-            , fcMembershipFee = 1500000
+            , fcMembershipHistoryFee = 1500000
+            , fcMembershipIntervalFee = 1500000
+            , fcAchievementFee = 1500000
             }
       _ <- adminInteraction ctx (w1 testWallets) (SetFeesAction (Just testFeeConfig))
       waitNSlots_ 1

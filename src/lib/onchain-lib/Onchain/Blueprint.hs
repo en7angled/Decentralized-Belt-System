@@ -9,13 +9,13 @@ where
 import Data.ByteString.Short (fromShort)
 import Data.Set qualified as Set
 import Onchain.CIP68 (CIP68Datum)
-import Onchain.MembershipsValidator (MembershipsRedeemer, membershipsCompile)
-import Onchain.MintingPolicy (MintingRedeemer, mintingPolicyCompile)
-import Onchain.OracleValidator (oracleCompile)
-import Onchain.ProfilesValidator (ProfilesRedeemer, profilesCompile)
 import Onchain.Protocol (OnchainProfile, OnchainRank, ProtocolParams)
 import Onchain.Protocol.Types (FeeConfig, OracleParams)
-import Onchain.RanksValidator (RanksRedeemer, ranksCompile)
+import Onchain.Validators.MembershipsValidator (MembershipsRedeemer, membershipsCompile)
+import Onchain.Validators.MintingPolicy (MintingRedeemer, mintingPolicyCompile)
+import Onchain.Validators.OracleValidator (oracleCompile)
+import Onchain.Validators.ProfilesValidator (ProfilesRedeemer, profilesCompile)
+import Onchain.Validators.RanksValidator (RanksRedeemer, ranksCompile)
 import PlutusLedgerApi.V3 (serialiseCompiledCode)
 import PlutusTx.Blueprint
 

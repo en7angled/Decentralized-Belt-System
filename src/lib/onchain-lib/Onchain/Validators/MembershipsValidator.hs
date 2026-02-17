@@ -6,7 +6,7 @@
 
 -- | Memberships validator managing membership histories and intervals
 -- in a sorted linked list.
-module Onchain.MembershipsValidator
+module Onchain.Validators.MembershipsValidator
   ( -- * Memberships Redeemer
     MembershipsRedeemer (..),
 

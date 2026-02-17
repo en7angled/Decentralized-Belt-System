@@ -8,7 +8,7 @@
 -- Only the current admin (from the datum) can update the oracle.
 -- The oracle UTxO must be returned to the same address with the same value,
 -- ensuring the NFT remains locked and the oracle remains available.
-module Onchain.OracleValidator
+module Onchain.Validators.OracleValidator
   ( -- * Validator
     oracleLambda,
 

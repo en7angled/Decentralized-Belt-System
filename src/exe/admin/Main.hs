@@ -66,7 +66,9 @@ data SetFeesArgs
       { sfaFeeAddress :: String,
         sfaProfileCreationFee :: Integer,
         sfaPromotionFee :: Integer,
-        sfaMembershipFee :: Integer
+        sfaMembershipHistoryFee :: Integer,
+        sfaMembershipIntervalFee :: Integer,
+        sfaAchievementFee :: Integer
       }
   deriving (Show)
 
@@ -270,7 +272,9 @@ setFeesParser =
               <$> strOption (long "fee-address" <> metavar "ADDRESS" <> help "Bech32 address to receive fees")
               <*> option auto (long "profile-fee" <> metavar "LOVELACE" <> help "Profile creation fee in lovelace")
               <*> option auto (long "promotion-fee" <> metavar "LOVELACE" <> help "Promotion fee in lovelace")
-              <*> option auto (long "membership-fee" <> metavar "LOVELACE" <> help "Membership fee in lovelace")
+              <*> option auto (long "membership-history-fee" <> metavar "LOVELACE" <> help "Membership history fee in lovelace")
+              <*> option auto (long "membership-interval-fee" <> metavar "LOVELACE" <> help "Membership interval fee in lovelace")
+              <*> option auto (long "achievement-fee" <> metavar "LOVELACE" <> help "Achievement fee in lovelace")
           )
 
 -- Main command parser
@@ -490,7 +494,9 @@ setFeesToAdminAction UpdateFees {..} =
             { fcFeeAddress = plutusAddr,
               fcProfileCreationFee = sfaProfileCreationFee,
               fcPromotionFee = sfaPromotionFee,
-              fcMembershipFee = sfaMembershipFee
+              fcMembershipHistoryFee = sfaMembershipHistoryFee,
+              fcMembershipIntervalFee = sfaMembershipIntervalFee,
+              fcAchievementFee = sfaAchievementFee
             }
 
 -- Execute command function
@@ -547,7 +553,9 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
         printGreen $ "    Fee Address:         " <> show (fcFeeAddress fc)
         printGreen $ "    Profile Creation Fee: " <> show (fcProfileCreationFee fc) <> " lovelace"
         printGreen $ "    Promotion Fee:        " <> show (fcPromotionFee fc) <> " lovelace"
-        printGreen $ "    Membership Fee:       " <> show (fcMembershipFee fc) <> " lovelace"
+        printGreen $ "    Membership History Fee: " <> show (fcMembershipHistoryFee fc) <> " lovelace"
+        printGreen $ "    Membership Interval Fee: " <> show (fcMembershipIntervalFee fc) <> " lovelace"
+        printGreen $ "    Achievement Fee:       " <> show (fcAchievementFee fc) <> " lovelace"
   -- Profile commands — routed through the Interaction pipeline
   InitProfile args -> do
     printYellow "Initializing profile..."

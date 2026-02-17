@@ -3,7 +3,7 @@
 -- | One-shot minting policy for the oracle NFT.
 -- Parameterized by a 'TxOutRef' (seed UTxO) to guarantee that exactly one
 -- oracle NFT can ever be minted. The seed must be spent in the transaction.
-module Onchain.OracleNFTPolicy
+module Onchain.Validators.OracleNFTPolicy
   ( -- * Policy
     oracleNFTPolicyLambda,
 

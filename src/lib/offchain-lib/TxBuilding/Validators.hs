@@ -5,13 +5,14 @@ module TxBuilding.Validators where
 import Constants qualified
 import Data.ByteString.Short qualified as SBS
 import GeniusYield.Types
-import Onchain.MembershipsValidator qualified as MembershipsValidator (membershipsCompile)
-import Onchain.MintingPolicy qualified as MintingPolicy (mintingPolicyCompile)
-import Onchain.OracleNFTPolicy qualified as OracleNFTPolicy (oracleNFTPolicyCompile)
-import Onchain.OracleValidator qualified as OracleValidator (oracleCompile)
-import Onchain.ProfilesValidator qualified as ProfilesValidator (profilesCompile)
 import Onchain.Protocol
-import Onchain.RanksValidator qualified as RanksValidator (ranksCompile)
+import Onchain.Validators.AchievementsValidator qualified as AchievementsValidator (achievementsCompile)
+import Onchain.Validators.MembershipsValidator qualified as MembershipsValidator (membershipsCompile)
+import Onchain.Validators.MintingPolicy qualified as MintingPolicy (mintingPolicyCompile)
+import Onchain.Validators.OracleNFTPolicy qualified as OracleNFTPolicy (oracleNFTPolicyCompile)
+import Onchain.Validators.OracleValidator qualified as OracleValidator (oracleCompile)
+import Onchain.Validators.ProfilesValidator qualified as ProfilesValidator (profilesCompile)
+import Onchain.Validators.RanksValidator qualified as RanksValidator (ranksCompile)
 import PlutusLedgerApi.V1.Value qualified as V1
 import PlutusLedgerApi.V3
 import PlutusTx
@@ -73,6 +74,24 @@ membershipsValidatorHashPlutus = validatorHashToPlutus membershipsValidatorHashG
 
 ------------------------------------------------------------------------------------------------
 
+-- * Define Achievements Validator
+
+------------------------------------------------------------------------------------------------
+
+achievementsValidatorPlutus :: CompiledCode (BuiltinData -> BuiltinUnit)
+achievementsValidatorPlutus = AchievementsValidator.achievementsCompile
+
+achievementsValidatorGY :: GYScript 'PlutusV3
+achievementsValidatorGY = validatorFromPlutus achievementsValidatorPlutus
+
+achievementsValidatorHashGY :: GYScriptHash
+achievementsValidatorHashGY = validatorHash achievementsValidatorGY
+
+achievementsValidatorHashPlutus :: ScriptHash
+achievementsValidatorHashPlutus = validatorHashToPlutus achievementsValidatorHashGY
+
+------------------------------------------------------------------------------------------------
+
 -- * Define Oracle Validator (unparameterized)
 
 ------------------------------------------------------------------------------------------------
@@ -107,10 +126,12 @@ compileOracleNFTPolicy seedRef =
 -- The oracle token is dynamic (depends on the oracle NFT minting tx)
 -- so this cannot be a top-level constant.
 mkProtocolParams :: V1.AssetClass -> ProtocolParams
-mkProtocolParams = ProtocolParams
+mkProtocolParams =
+  ProtocolParams
     ranksValidatorHashPlutus
     profilesValidatorHashPlutus
     membershipsValidatorHashPlutus
+    achievementsValidatorHashPlutus
 
 -- | Protocol params with a placeholder oracle token, for blueprint generation only.
 -- The actual oracle token is determined at deployment time.

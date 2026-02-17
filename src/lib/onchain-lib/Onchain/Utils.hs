@@ -13,14 +13,9 @@ module Onchain.Utils
     mkUntypedLambda,
     nameFromTxOutRef,
 
-    -- * Oracle Helpers
-    readOracleParams,
-    checkFee,
-
     -- * Datum Helper Functions
     checkTxOutAtIndexWithDatumValueAndAddress,
     isTxOutAtIndexWithDatumValueAndAddress,
-    hasTxInAtAddressWithNFT,
     isGivenInlineDatum,
     unsafeFindOwnInputByTxOutRef,
 
@@ -30,10 +25,13 @@ module Onchain.Utils
 
     -- * Asset Class Helpers
     hasCurrencySymbol,
+
+    -- * Inputs Spend TxOutRef Helper Functions
+    hasTxInAtAddressWithNFT,
+    inputsSpendTxOutRef,
   )
 where
 
-import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
@@ -99,6 +97,10 @@ isTxOutAtIndexWithDatumValueAndAddress datum value address TxOut {txOutValue, tx
 hasTxInAtAddressWithNFT :: AssetClass -> Address -> [TxInInfo] -> Bool
 hasTxInAtAddressWithNFT ac address = any (\(TxInInfo _inOutRef (TxOut {txOutAddress, txOutValue})) -> (address == txOutAddress) && (V1.assetClassValueOf txOutValue ac == 1))
 
+{-# INLINEABLE inputsSpendTxOutRef #-}
+inputsSpendTxOutRef :: TxOutRef -> [TxInInfo] -> Bool
+inputsSpendTxOutRef spendingTxOutRef = any ((== spendingTxOutRef) . txInInfoOutRef)
+
 {-# INLINEABLE isGivenInlineDatum #-}
 isGivenInlineDatum :: (ToData a) => a -> OutputDatum -> Bool
 isGivenInlineDatum datum outdat = case outdat of
@@ -131,48 +133,6 @@ checkAndGetInlineDatum :: TxOut -> BuiltinData
 checkAndGetInlineDatum out = case txOutDatum out of
   OutputDatum da -> getDatum da
   _ -> traceError "U3" -- Invalid output: expected inline datum (U3)
-
--------------------------------------------------------------------------------
-
--- * Oracle Helpers
-
--------------------------------------------------------------------------------
-
--- | Read 'OracleParams' from the oracle UTxO identified by its NFT 'AssetClass'
--- in the transaction's reference inputs. Fails if the oracle UTxO is not found
--- or the datum cannot be decoded.
-{-# INLINEABLE readOracleParams #-}
-readOracleParams :: AssetClass -> [TxInInfo] -> OracleParams
-readOracleParams oracleAC refInputs =
-  case PlutusTx.List.find hasOracleNFT refInputs of
-    Just (TxInInfo _ TxOut {txOutDatum}) -> case txOutDatum of
-      OutputDatum (Datum bd) -> case fromBuiltinData @OracleParams bd of
-        Just params -> params
-        Nothing -> traceError "U4" -- Oracle read failed: cannot decode datum (U4)
-      _ -> traceError "U4" -- Oracle read failed: must have inline datum (U4)
-    Nothing -> traceError "U4" -- Oracle read failed: UTxO not found (U4)
-  where
-    hasOracleNFT (TxInInfo _ TxOut {txOutValue}) =
-      V1.assetClassValueOf txOutValue oracleAC == 1
-
--- | Check that a fee payment is included in the transaction outputs.
--- If 'opFeeConfig' is 'Nothing', no fee is required and the check passes.
--- If 'opFeeConfig' is 'Just', validates that at least one output pays
--- >= the required fee (extracted via the selector) to 'fcFeeAddress'.
-{-# INLINEABLE checkFee #-}
-checkFee :: OracleParams -> (FeeConfig -> Integer) -> [TxOut] -> Bool
-checkFee oracle feeSelector outputs = case opFeeConfig oracle of
-  Nothing -> True
-  Just feeConfig ->
-    let requiredFee = feeSelector feeConfig
-        feeAddr = fcFeeAddress feeConfig
-        feeValue = V1.lovelaceValue (V1.Lovelace requiredFee)
-     in traceIfFalse "U5" -- Must pay required fee (U5)
-          $ any
-            ( \TxOut {txOutValue = v, txOutAddress = a} ->
-                a == feeAddr && v `geq` feeValue
-            )
-            outputs
 
 -------------------------------------------------------------------------------
 

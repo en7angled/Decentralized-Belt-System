@@ -28,8 +28,8 @@ import GeniusYield.TxBuilder hiding (userAddresses)
 import GeniusYield.TxBuilder.User qualified as User
 import GeniusYield.Types
 import Onchain.CIP68
-import Onchain.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.RanksValidator (RanksRedeemer (..))
+import Onchain.Validators.ProfilesValidator (ProfilesRedeemer (..))
+import Onchain.Validators.RanksValidator (RanksRedeemer (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId, promoteProfile)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types (OracleParams (..))
