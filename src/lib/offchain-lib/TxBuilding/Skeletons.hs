@@ -1,19 +1,17 @@
+-- | Reusable transaction skeleton components (CIP-68, validity, ref inputs, state locks, mints).
 module TxBuilding.Skeletons where
 
+import Data.Word (Word64)
 import GeniusYield.Examples.Limbo
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.CIP68 (deriveUserFromRefTN, generateRefAndUserTN)
 import Onchain.Utils (nameFromTxOutRef)
-import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import PlutusLedgerApi.V3 qualified as V3
-import TxBuilding.Exceptions (ProfileException (..))
-import TxBuilding.Lookups (getUTxOWithNFT, getUtxoWithTokenAtAddresses)
-import TxBuilding.Utils
-import TxBuilding.Validators
-
+import TxBuilding.Exceptions (TxBuildingException (..))
+import TxBuilding.Lookups (getUTxOWithNFT, getUTxOWithTokenAtAddresses)
+import TxBuilding.Utils (getInlineDatumAndValue, getInlineDatumAndValueOrThrow, tnFromGYAssetClass, txOutRefToV3Plutus)
 
 ------------------------------------------------------------------------------------------------
 
@@ -21,8 +19,8 @@ import TxBuilding.Validators
 
 ------------------------------------------------------------------------------------------------
 
-getRefScriptUTxO :: (GYTxQueryMonad m) => GYTxOutRef -> m GYAnyScript
-getRefScriptUTxO refScript = do
+getRefScriptAtTxOutRef :: (GYTxQueryMonad m) => GYTxOutRef -> m GYAnyScript
+getRefScriptAtTxOutRef refScript = do
   utxo <- utxoAtTxOutRef refScript
   let ms = utxoRefScript =<< utxo
   case ms of
@@ -35,13 +33,12 @@ getRefScriptUTxO refScript = do
 
 ------------------------------------------------------------------------------------------------
 
-gyGenerateRefAndUserAC :: (GYTxUserQueryMonad m) => GYTxOutRef -> m (GYAssetClass, GYAssetClass)
-gyGenerateRefAndUserAC seedTxOutRef = do
-  let (V1.TxOutRef (V1.TxId bs) i) = txOutRefToPlutus seedTxOutRef
-  let seedTxOutRefPlutus = V3.TxOutRef (V3.TxId bs) i
+gyGenerateRefAndUserAC :: (GYTxUserQueryMonad m) => GYScript 'PlutusV3 -> GYTxOutRef -> m (GYAssetClass, GYAssetClass)
+gyGenerateRefAndUserAC mpScript seedTxOutRef = do
+  let seedTxOutRefPlutus = txOutRefToV3Plutus seedTxOutRef
   let (pRefTN, pUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRefPlutus
-  let refAC = AssetClass (mintingPolicyCurrencySymbol mintingPolicyGY, pRefTN)
-  let userAC = AssetClass (mintingPolicyCurrencySymbol mintingPolicyGY, pUserTN)
+  let refAC = AssetClass (mintingPolicyCurrencySymbol mpScript, pRefTN)
+  let userAC = AssetClass (mintingPolicyCurrencySymbol mpScript, pUserTN)
   gyRefAC <- assetClassFromPlutus' refAC
   gyUserAC <- assetClassFromPlutus' userAC
   return (gyRefAC, gyUserAC)
@@ -57,12 +54,29 @@ gyDeriveUserFromRefTN gyProfileRefTN = tokenNameFromPlutus' $ deriveUserFromRefT
 
 ------------------------------------------------------------------------------------------------
 
+-- * Transaction validity
+
+------------------------------------------------------------------------------------------------
+
+-- | Minimum validity window in seconds (~7h) when building validity range for UpdateEndDate.
+safeEraTime :: Word64
+safeEraTime = 25920
+
+-- | Transaction valid only in the slot range [s1, s2] (inclusive).
+-- Implemented as invalid before s1 and invalid after s2.
+isValidBetween :: GYSlot -> GYSlot -> GYTxSkeleton 'PlutusV3
+isValidBetween s1 s2 = mconcat [isInvalidBefore s1, isInvalidAfter s2]
+
+
+
+------------------------------------------------------------------------------------------------
+
 -- * Construct Transaction Components
 
 ------------------------------------------------------------------------------------------------
 
-txIsPayingValueToAddress :: (GYTxUserQueryMonad m) => GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
-txIsPayingValueToAddress recipient gyValue = do
+txMustPayValueToAddress :: (GYTxQueryMonad m) => GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
+txMustPayValueToAddress recipient gyValue = do
   return $
     mustHaveOutput
       GYTxOut
@@ -72,57 +86,39 @@ txIsPayingValueToAddress recipient gyValue = do
           gyTxOutRefS = Nothing
         }
 
-txIsPayingValueToAddressWithInlineDatum :: (GYTxUserQueryMonad m) => GYDatum -> GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
-txIsPayingValueToAddressWithInlineDatum gyDatum recipient gyValue = do
-  return $
-    mustHaveOutput
-      GYTxOut
-        { gyTxOutAddress = recipient,
-          gyTxOutDatum = Just (gyDatum, GYTxOutUseInlineDatum),
-          gyTxOutValue = gyValue,
-          gyTxOutRefS = Nothing
-        }
-
-isValidBetween :: GYSlot -> GYSlot -> GYTxSkeleton 'PlutusV3
-isValidBetween s1 s2 =
-  mconcat
-    [ isInvalidBefore s1,
-      isInvalidAfter s2
-    ]
-
-safeEraTime :: Natural
-safeEraTime = 25920 -- ~7h in seconds (era safe zone)
-
--- txIsValidByDDL :: (GYTxQueryMonad m) => POSIXTime -> m (GYTxSkeleton 'PlutusV3)
--- txIsValidByDDL ddl = do
---   now <- slotOfCurrentBlock
---   afterSafeEraSlot <- advanceSlot' now safeEraTime
---   afterSafeEraTime <- pPOSIXTimeFromGYSlot afterSafeEraSlot
---   validUntil <- gySlotFromPOSIXTime (min ddl afterSafeEraTime)
---   return $ isValidBetween now validUntil
-
-txIsValidForSafeEra :: (GYTxQueryMonad m) => m (GYTxSkeleton 'PlutusV3)
-txIsValidForSafeEra = do
-  now <- slotOfCurrentBlock
-  afterSafeEraSlot <- advanceSlot' now safeEraTime
-  afterSafeEraTime <- pPOSIXTimeFromGYSlot afterSafeEraSlot
-  validUntil <- gySlotFromPOSIXTime afterSafeEraTime
-  return $ isValidBetween now validUntil
-
 txMustSpendStateFromRefScriptWithRedeemer :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYAssetClass -> GYRedeemer -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyValidator =
   do
     stateUTxO <- getUTxOWithNFT stateTokenId
-    (gyDatum, _v) <- gyGetInlineDatumAndValue' stateUTxO
+    (gyDatum, _v) <- getInlineDatumAndValueOrThrow stateUTxO
     return $
       mustHaveInput
         GYTxIn
           { gyTxInTxOutRef = utxoRef stateUTxO,
             gyTxInWitness = GYTxInWitnessScript (GYInReference refScript $ validatorToScript gyValidator) (Just gyDatum) gyRedeemer
           }
-  where
-    gyGetInlineDatumAndValue' :: (MonadError GYTxMonadException m) => GYUTxO -> m (GYDatum, GYValue)
-    gyGetInlineDatumAndValue' utxo = maybe (throwError (GYApplicationException ProfileNotFound)) return $ getInlineDatumAndValue utxo
+
+-- | Build a spend skeleton for a UTxO whose ref and datum are already known (e.g. from a prior query).
+-- Unlike 'txMustSpendStateFromRefScriptWithRedeemer', this does not look up the UTxO by NFT.
+txMustSpendFromRefScriptWithKnownDatum :: GYTxOutRef -> GYTxOutRef -> GYDatum -> GYRedeemer -> GYScript 'PlutusV3 -> GYTxSkeleton 'PlutusV3
+txMustSpendFromRefScriptWithKnownDatum refScript utxoRef' gyDatum gyRedeemer gyValidator =
+  mustHaveInput
+    GYTxIn
+      { gyTxInTxOutRef = utxoRef',
+        gyTxInWitness = GYTxInWitnessScript (GYInReference refScript $ validatorToScript gyValidator) (Just gyDatum) gyRedeemer
+      }
+
+-- | Build a spend skeleton for a dust/griefing UTxO that may lack a valid datum.
+-- Extracts the inline datum if present; passes 'Nothing' if the UTxO has no datum.
+-- Used by the permissionless 'Cleanup' redeemer to sweep non-protocol UTxOs.
+txMustSpendUTxOFromRefScript :: GYTxOutRef -> GYUTxO -> GYRedeemer -> GYScript 'PlutusV3 -> GYTxSkeleton 'PlutusV3
+txMustSpendUTxOFromRefScript refScript utxo gyRedeemer gyValidator =
+  let maybeDatum = fst <$> getInlineDatumAndValue utxo
+   in mustHaveInput
+        GYTxIn
+          { gyTxInTxOutRef = utxoRef utxo,
+            gyTxInWitness = GYTxInWitnessScript (GYInReference refScript $ validatorToScript gyValidator) maybeDatum gyRedeemer
+          }
 
 txMustHaveUTxOAsRefInput :: (GYTxUserQueryMonad m) => GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustHaveUTxOAsRefInput gyAC = do
@@ -134,16 +130,15 @@ txMustHaveUTxOsAsRefInputs gyACs = mconcat <$> mapM txMustHaveUTxOAsRefInput gyA
 
 txMustSpendFromAddress :: (GYTxUserQueryMonad m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendFromAddress tokenId addrs = do
-  do
-    tokenUtxo <- getUtxoWithTokenAtAddresses tokenId addrs
-    return $
-      mustHaveInput
-        GYTxIn
-          { gyTxInTxOutRef = utxoRef tokenUtxo,
-            gyTxInWitness = GYTxInWitnessKey
-          }
+  tokenUtxo <- getUTxOWithTokenAtAddresses tokenId addrs
+  return $
+    mustHaveInput
+      GYTxIn
+        { gyTxInTxOutRef = utxoRef tokenUtxo,
+          gyTxInWitness = GYTxInWitnessKey
+        }
 
-txMustLockStateWithInlineDatumAndValue :: (GYTxUserQueryMonad m, ToData a) => GYScript 'PlutusV3 -> a -> GYValue -> m (GYTxSkeleton 'PlutusV3)
+txMustLockStateWithInlineDatumAndValue :: (GYTxQueryMonad m, ToData a) => GYScript 'PlutusV3 -> a -> GYValue -> m (GYTxSkeleton 'PlutusV3)
 txMustLockStateWithInlineDatumAndValue validator todata value = do
   validatorAddressGY <- scriptAddress validator
 
@@ -180,6 +175,7 @@ txCIP68UserAndRef mintOrBurn mpRefScript mpScript gyRedeemer gyProfileRefAC = do
 txMustMintCIP68UserAndRef :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustMintCIP68UserAndRef = txCIP68UserAndRef True
 
+-- | Reserved for future profile deletion support.
 txMustBurnCIP68UserAndRef :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustBurnCIP68UserAndRef = txCIP68UserAndRef False
 

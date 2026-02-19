@@ -18,7 +18,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Database.Persist.Sql (ConnectionPool, runSqlPool)
-import GeniusYield.Types (GYNetworkId (..))
+import GeniusYield.Types (GYNetworkId)
 import KupoClient (KupoCheckpoint (..), KupoMatch (..), runKupoCheckpointBySlot, runKupoCheckpointsList, runKupoMatches)
 import Storage (ChainCursor (..), getCursorValue, putCursor, putMatchAndProjections)
 
@@ -78,8 +78,8 @@ getBlockchainTip kupoUrl = do
       getBlockchainTip kupoUrl
     Right cks -> return (head cks)
 
-fetchingMatches :: MVar SyncMetrics -> String -> T.Text -> T.Text -> ConnectionPool -> Integer -> Integer -> Integer -> IO ()
-fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool start end batch_size =
+fetchingMatches :: MVar SyncMetrics -> String -> T.Text -> T.Text -> GYNetworkId -> ConnectionPool -> Integer -> Integer -> Integer -> IO ()
+fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batch_size =
   if end <= start
     then do
       liftIO $ putStrLn "No more matches to fetch"
@@ -110,13 +110,13 @@ fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool start end bat
           liftIO $ putStrLn ("Kupo client error: " <> show err)
           liftIO $ putStrLn "Retrying in 10 seconds"
           liftIO $ threadDelay 10000000
-          fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool start end batch_size
+          fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batch_size
         Right matches -> do
-          applyMatches GYTestnetPreview pool matches
+          applyMatches networkId pool matches
           now <- getCurrentTime
           modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = endInterval, smLastSyncTime = now}
 
-      fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool endInterval end batch_size
+      fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool endInterval end batch_size
 
 applyMatches :: GYNetworkId -> ConnectionPool -> [KupoMatch] -> IO ()
 applyMatches _networkId _pool [] = return ()

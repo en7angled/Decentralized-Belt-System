@@ -11,6 +11,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Function to print colored output
@@ -27,20 +29,104 @@ print_warning() {
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+print_section() {
+    echo ""
+    echo -e "${MAGENTA}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${MAGENTA}  $1${NC}"
+    echo -e "${MAGENTA}════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+}
+
+print_subsection() {
+    echo -e "${CYAN}────────────────────────────────────────${NC}"
+    echo -e "${CYAN}  $1${NC}"
+    echo -e "${CYAN}────────────────────────────────────────${NC}"
 }
 
 # Resolve repo root (script may be run from anywhere)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "SCRIPT_DIR: $SCRIPT_DIR"
-echo "REPO_ROOT: $REPO_ROOT"
+print_info "SCRIPT_DIR: $SCRIPT_DIR"
+print_info "REPO_ROOT: $REPO_ROOT"
 
-# Determine how to run the admin CLI
-
+# Admin CLI command
 ADMIN="cabal run admin --"
 
+# Helper function to run admin command and extract profile/promotion ID
+# Suppresses verbose output, only shows errors on failure
+run_admin_cmd() {
+    local output
+    local exit_code=0
+    output=$(cd "$REPO_ROOT" && $ADMIN "$@" 2>&1) || exit_code=$?
+    
+    # Check for exit code failure
+    if [ "$exit_code" -ne 0 ]; then
+        print_error "Command failed (exit code $exit_code): $ADMIN $*"
+        echo "$output" >&2
+        exit 1
+    fi
+    
+    # Check for known error messages in output (CLI doesn't always use exit codes)
+    if echo "$output" | grep -q "Please run 'deploy-reference-scripts' first"; then
+        print_error "Reference scripts not properly deployed. Run: $ADMIN deploy-reference-scripts"
+        echo "$output" >&2
+        exit 1
+    fi
+    
+    if echo "$output" | grep -q "No transaction building context found"; then
+        print_error "No transaction building context. Run: $ADMIN deploy-reference-scripts"
+        echo "$output" >&2
+        exit 1
+    fi
+    
+    # Extract the last non-empty line (the ID)
+    # Profile/Rank IDs look like: "abc123def456.tokenname"
+    local last_line
+    last_line=$(echo "$output" | grep -v "^$" | tail -n 1)
+    
+    # Validate it looks like an asset ID (contains a dot)
+    if ! echo "$last_line" | grep -q '\.'; then
+        print_error "Unexpected output from command. Expected asset ID (format: hexhash.tokenname), got:"
+        echo "Last line: '$last_line'" >&2
+        echo "" >&2
+        echo "Full output:" >&2
+        echo "$output" >&2
+        exit 1
+    fi
+    
+    echo "$last_line"
+}
+
+# For commands that don't return an ID (like accept-promotion)
+run_admin_cmd_no_output() {
+    local output
+    local exit_code=0
+    output=$(cd "$REPO_ROOT" && $ADMIN "$@" 2>&1) || exit_code=$?
+    
+    # Check for exit code failure
+    if [ "$exit_code" -ne 0 ]; then
+        print_error "Command failed (exit code $exit_code): $ADMIN $*"
+        echo "$output" >&2
+        exit 1
+    fi
+    
+    # Check for known error messages in output
+    if echo "$output" | grep -q "Please run 'deploy-reference-scripts' first"; then
+        print_error "Reference scripts not properly deployed. Run: $ADMIN deploy-reference-scripts"
+        echo "$output" >&2
+        exit 1
+    fi
+    
+    if echo "$output" | grep -q "No transaction building context found"; then
+        print_error "No transaction building context. Run: $ADMIN deploy-reference-scripts"
+        echo "$output" >&2
+        exit 1
+    fi
+}
 
 # Pre-flight checks for required files
 if [ ! -f "$REPO_ROOT/config/config_atlas.json" ]; then
@@ -53,72 +139,283 @@ if [ ! -f "$REPO_ROOT/operation.prv" ]; then
     exit 1
 fi
 
-print_info "Starting BJJ Belt System - Simple Black Promotes White to Blue Test"
+print_section "BJJ Belt System - Black Promotes White to Blue Test"
 print_info "This script reproduces the core part of blackPromotesWhiteToBlue test from UnitTests.hs"
 
+# ============================================================================
 # Step 1: Deploy reference scripts (if not already deployed)
-print_info "Step 1: Deploying reference scripts..."
+# ============================================================================
+print_section "Step 1: Deploy Reference Scripts"
+
 if [ ! -f "$REPO_ROOT/config/config_bjj_validators.json" ]; then
-    (cd "$REPO_ROOT" && $ADMIN deploy-reference-scripts)
+    print_info "Deploying reference scripts (Profiles, Ranks, Memberships, Achievements, Oracle)..."
+    # Use direct command for deploy (it outputs informational messages we shouldn't treat as errors)
+    deploy_output=""
+    deploy_exit=0
+    deploy_output=$(cd "$REPO_ROOT" && $ADMIN deploy-reference-scripts 2>&1) || deploy_exit=$?
+    
+    if [ "$deploy_exit" -ne 0 ]; then
+        print_error "Failed to deploy reference scripts (exit code $deploy_exit)"
+        echo "$deploy_output" >&2
+        exit 1
+    fi
+    
+    # Verify the config file was created
+    if [ ! -f "$REPO_ROOT/config/config_bjj_validators.json" ]; then
+        print_error "deploy-reference-scripts completed but config_bjj_validators.json was not created"
+        echo "$deploy_output" >&2
+        exit 1
+    fi
+    
     print_success "Reference scripts deployed successfully"
 else
-    print_info "Reference scripts already deployed (config_bjj_validators.json exists)"
+    print_info "Reference scripts config found (config_bjj_validators.json exists)"
+    print_info "If you see deployment errors below, delete config_bjj_validators.json and re-run this script."
 fi
 
-# Get current timestamp for creation dates
+# ============================================================================
+# Step 1b: Query and verify oracle
+# ============================================================================
+print_subsection "Verify Oracle"
+print_info "Querying oracle parameters..."
+oracle_output=""
+oracle_exit=0
+oracle_output=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit=$?
+if [ "$oracle_exit" -eq 0 ]; then
+    print_success "Oracle is accessible"
+    echo "$oracle_output" | grep -E "(Paused|Min Output|Fee Config)" | while read -r line; do
+        print_info "  $line"
+    done
+else
+    print_warning "Could not query oracle (exit code $oracle_exit). Continuing..."
+fi
+
+# ============================================================================
+# Timestamps for profile creation and promotions
+# ============================================================================
+
+ORG_CREATION_TIME=1666819105000
 STUDENT_PROFILE_CREATION_TIME=1666819105000
 MASTER_PROFILE_CREATION_TIME=1752441505000
 BLUE_PROMOTION_TIME=1752623616000
+MEMBERSHIP_START=1752441505000
+MEMBERSHIP_FIRST_END=1783977505000
+MEMBERSHIP_SECOND_END=1815513505000
 
+print_info "Organization creation time: $ORG_CREATION_TIME"
 print_info "Student profile creation time: $STUDENT_PROFILE_CREATION_TIME"
 print_info "Master profile creation time: $MASTER_PROFILE_CREATION_TIME"
+print_info "Blue promotion time: $BLUE_PROMOTION_TIME"
 
-# Step 2: Create master profile with Black belt
-print_info "Step 2: Creating master profile with Black belt..."
-MASTER_PROFILE_ID=$(cd "$REPO_ROOT" && $ADMIN create-profile-with-rank \
+# ============================================================================
+# Step 2: Create organization (for membership)
+# ============================================================================
+print_section "Step 2: Create Organization"
+
+print_info "Creating organization (academy)..."
+ORG_PROFILE_ID=$(run_admin_cmd init-profile \
+    --name "Test Academy" \
+    --description "Test BJJ academy for script" \
+    --image-uri "https://example.com/academy.png" \
+    --organization \
+    --posix "$ORG_CREATION_TIME" \
+    --output-id)
+print_success "Organization created: $ORG_PROFILE_ID"
+
+# ============================================================================
+# Step 3: Create master profile with Black belt
+# ============================================================================
+print_section "Step 3: Create Master Profile"
+
+print_info "Creating master profile with Black belt..."
+MASTER_PROFILE_ID=$(run_admin_cmd create-profile-with-rank \
     --name "Master" \
     --description "Master is a master" \
     --image-uri "https://github.com/en7angled/Decentralized-Belt-System/blob/main/out/puml/CARDANO-BJJ-BANNER.jpeg?raw=true" \
     --practitioner \
     --posix "$MASTER_PROFILE_CREATION_TIME" \
     --belt Black \
-    --output-id | tee /dev/tty | tail -n 1)
+    --output-id)
+print_success "Master profile created: $MASTER_PROFILE_ID"
 
-print_success "Master profile created with ID: $MASTER_PROFILE_ID"
+# ============================================================================
+# Step 4: Create student profile with White belt (initially)
+# ============================================================================
+print_section "Step 4: Create Student Profile"
 
-# Step 3: Create student profile with White belt (initially)
-print_info "Step 3: Creating student profile with White belt..."
-STUDENT_PROFILE_ID=$(cd "$REPO_ROOT" && $ADMIN init-profile \
+print_info "Creating student profile (White belt)..."
+STUDENT_PROFILE_ID=$(run_admin_cmd init-profile \
     --name "John Doe" \
     --description "John Doe is a student" \
     --image-uri "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk" \
     --practitioner \
     --posix "$STUDENT_PROFILE_CREATION_TIME" \
-    --output-id | tee /dev/tty | tail -n 1)
+    --output-id)
+print_success "Student profile created: $STUDENT_PROFILE_ID"
 
-print_success "Student profile created with ID: $STUDENT_PROFILE_ID"
+# ============================================================================
+# Step 5: Promote student from White to Blue belt
+# ============================================================================
+print_section "Step 5: Create Promotion"
 
-# Step 4: Promote student from White to Blue belt
-print_info "Step 4: Promoting student from White to Blue belt..."
-BLUE_PROMOTION_ID=$(cd "$REPO_ROOT" && $ADMIN promote-profile \
+print_info "Master promoting student from White to Blue belt..."
+BLUE_PROMOTION_ID=$(run_admin_cmd promote-profile \
     --promoted-profile-id "$STUDENT_PROFILE_ID" \
     --promoted-by-profile-id "$MASTER_PROFILE_ID" \
     --posix "$BLUE_PROMOTION_TIME" \
     --belt Blue \
-    --output-id | tee /dev/tty | tail -n 1)
+    --output-id)
+print_success "Blue belt promotion created: $BLUE_PROMOTION_ID"
 
-print_success "Blue belt promotion created with ID: $BLUE_PROMOTION_ID"
+# ============================================================================
+# Step 6: Accept the Blue belt promotion
+# ============================================================================
+print_section "Step 6: Accept Promotion"
 
-# Step 5: Accept the Blue belt promotion
-print_info "Step 5: Accepting Blue belt promotion..."
-(cd "$REPO_ROOT" && $ADMIN accept-promotion --asset-class "$BLUE_PROMOTION_ID")
-print_success "Blue belt promotion accepted"
+print_info "Student accepting Blue belt promotion..."
+run_admin_cmd_no_output accept-promotion --asset-class "$BLUE_PROMOTION_ID"
+print_success "Blue belt promotion accepted!"
 
-print_success "Test completed successfully!"
-print_info "Summary:"
-print_info "  - Master profile (Black belt): $MASTER_PROFILE_ID"
-print_info "  - Student profile: $STUDENT_PROFILE_ID"
-print_info "  - Blue belt promotion: $BLUE_PROMOTION_ID"
-print_info "  - Student progressed from White → Blue belt"
+# ============================================================================
+# Step 7: Memberships (student at organization)
+# ============================================================================
+print_section "Step 7: Memberships"
 
-print_success "🎉  Black Promotes White to Blue test completed successfully!  🎉 "
+print_info "Creating membership history (student at academy)..."
+MEMBERSHIP_ID=$(run_admin_cmd create-membership-history \
+    --org-profile-id "$ORG_PROFILE_ID" \
+    --practitioner-profile-id "$STUDENT_PROFILE_ID" \
+    --posix "$MEMBERSHIP_START" \
+    --end-posix "$MEMBERSHIP_FIRST_END" \
+    --output-id)
+print_success "Membership history created: $MEMBERSHIP_ID"
+
+print_info "Adding second membership interval..."
+INTERVAL_ID=$(run_admin_cmd add-membership-interval \
+    --org-profile-id "$ORG_PROFILE_ID" \
+    --membership-node-id "$MEMBERSHIP_ID" \
+    --posix "$MEMBERSHIP_FIRST_END" \
+    --end-posix "$MEMBERSHIP_SECOND_END" \
+    --output-id)
+print_success "Second interval created: $INTERVAL_ID"
+
+print_info "Accepting membership interval..."
+run_admin_cmd_no_output accept-membership-interval --interval-id "$INTERVAL_ID"
+print_success "Membership interval accepted!"
+
+# ============================================================================
+# Step 7b: Achievements
+# ============================================================================
+print_section "Step 7b: Award and Accept Achievement"
+
+ACHIEVEMENT_TIME=$MEMBERSHIP_START
+
+print_info "Master awarding training achievement to student..."
+ACHIEVEMENT_ID=$(run_admin_cmd award-achievement \
+    --awarded-to-profile-id "$STUDENT_PROFILE_ID" \
+    --awarded-by-profile-id "$MASTER_PROFILE_ID" \
+    --name "Training Achievement" \
+    --description "Completed advanced training program" \
+    --image-uri "ipfs://QmTrainingAchievement" \
+    --posix "$ACHIEVEMENT_TIME" \
+    --output-id)
+print_success "Achievement awarded: $ACHIEVEMENT_ID"
+
+print_info "Student accepting achievement..."
+run_admin_cmd_no_output accept-achievement --achievement-id "$ACHIEVEMENT_ID"
+print_success "Achievement accepted!"
+
+# ============================================================================
+# Step 8: Test Oracle Admin Actions
+# ============================================================================
+print_section "Step 8: Oracle Admin Actions"
+
+print_info "Pausing protocol..."
+run_admin_cmd_no_output pause-protocol
+print_success "Protocol paused"
+
+print_info "Querying oracle (should show Paused: True)..."
+oracle_output2=""
+oracle_exit2=0
+oracle_output2=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit2=$?
+if [ "$oracle_exit2" -eq 0 ]; then
+    echo "$oracle_output2" | grep -E "(Paused|Min Output|Fee Config)" | while read -r line; do
+        print_info "  $line"
+    done
+fi
+
+print_info "Unpausing protocol..."
+run_admin_cmd_no_output unpause-protocol
+print_success "Protocol unpaused"
+
+print_info "Setting fee configuration..."
+run_admin_cmd_no_output set-fees \
+    --fee-address "addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp" \
+    --profile-fee 2000000 \
+    --promotion-fee 3000000 \
+    --membership-history-fee 1500000 \
+    --membership-interval-fee 1500000 \
+    --achievement-fee 1000000
+print_success "Fee configuration set"
+
+print_info "Clearing fees..."
+run_admin_cmd_no_output set-fees --clear-fees
+print_success "Fees cleared"
+
+print_info "Querying oracle (final state)..."
+oracle_output3=""
+oracle_exit3=0
+oracle_output3=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit3=$?
+if [ "$oracle_exit3" -eq 0 ]; then
+    echo "$oracle_output3" | grep -E "(Paused|Min Output|Fee Config)" | while read -r line; do
+        print_info "  $line"
+    done
+fi
+
+# ============================================================================
+# Step 9: Test Dust Cleanup (Permissionless)
+# ============================================================================
+print_section "Step 9: Dust Cleanup"
+
+print_info "Running cleanup-dust (will report if no dust found, which is expected on a clean testnet)..."
+cleanup_output=""
+cleanup_exit=0
+cleanup_output=$(cd "$REPO_ROOT" && $ADMIN cleanup-dust 2>&1) || cleanup_exit=$?
+if [ "$cleanup_exit" -eq 0 ]; then
+    print_success "Dust cleanup completed"
+else
+    # NoDustFound is expected on a clean testnet — not an error
+    if echo "$cleanup_output" | grep -q "No dust UTxOs found"; then
+        print_info "No dust UTxOs found (expected on a clean testnet)"
+    else
+        print_warning "Dust cleanup returned exit code $cleanup_exit"
+    fi
+fi
+
+# ============================================================================
+# Summary
+# ============================================================================
+print_section "Test Completed Successfully!"
+
+echo ""
+echo -e "${GREEN}Results:${NC}"
+echo -e "  - Organization:                 ${CYAN}$ORG_PROFILE_ID${NC}"
+echo -e "  - Master profile (Black belt):  ${CYAN}$MASTER_PROFILE_ID${NC}"
+echo -e "  - Student profile:              ${CYAN}$STUDENT_PROFILE_ID${NC}"
+echo -e "  - Blue belt promotion:          ${CYAN}$BLUE_PROMOTION_ID${NC}"
+echo -e "  - Membership history:           ${CYAN}$MEMBERSHIP_ID${NC}"
+echo -e "  - Membership interval accepted: ${CYAN}$INTERVAL_ID${NC}"
+echo -e "  - Achievement (accepted):       ${CYAN}$ACHIEVEMENT_ID${NC}"
+echo ""
+echo -e "${GREEN}Progression:${NC} Student White belt -> Blue belt; membership at academy (create, add interval, accept); achievement (award, accept)"
+echo ""
+echo -e "${GREEN}Admin Actions Tested:${NC}"
+echo -e "  1. Pause protocol"
+echo -e "  2. Unpause protocol"
+echo -e "  3. Set fees"
+echo -e "  4. Clear fees"
+echo -e "  5. Query oracle"
+echo -e "  6. Cleanup dust"
+echo ""
+
+print_success "Black Promotes White to Blue + Memberships + Achievements + Admin Actions test completed successfully!"

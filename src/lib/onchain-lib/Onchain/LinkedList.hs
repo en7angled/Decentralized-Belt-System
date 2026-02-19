@@ -1,0 +1,106 @@
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use &&" #-}
+{-# HLINT ignore "Use isNothing" #-}
+
+-- | Generic sorted linked list implementation for on-chain use.
+-- Provides node datum types and validated insert/append operations
+-- with ordering and adjacency invariants.
+module Onchain.LinkedList where
+
+import GHC.Generics (Generic)
+import PlutusLedgerApi.V1 (AssetClass (..))
+import PlutusTx
+import PlutusTx.Blueprint
+import PlutusTx.Prelude
+import Prelude qualified
+
+-- | A generic linked list node datum that can hold any data type and use any key type.
+--
+--   Note: This type does NOT derive HasBlueprintDefinition or HasBlueprintSchema because
+--   the PlutusTx TH macros don't support polymorphic types with blueprint constraints.
+--   When you instantiate this type with concrete types (e.g., NodeDatum MyData BuiltinByteString),
+--   you can create type aliases and use makeIsDataSchemaIndexed on those concrete types for blueprints.
+data NodeDatum plutusData = NodeDatum
+  { -- | Nothing for root node
+    nodeKey :: Maybe AssetClass,
+    -- | "pointer" to the next node (by key)
+    nextNodeKey :: Maybe AssetClass,
+    -- | the application-specific data
+    nodeData :: plutusData
+  }
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
+  deriving anyclass (HasBlueprintDefinition)
+
+instance (Eq AssetClass, Eq plutusData) => Eq (NodeDatum plutusData) where
+  (==) left right =
+    and
+      [ nodeKey left == nodeKey right,
+        nextNodeKey left == nextNodeKey right,
+        nodeData left == nodeData right
+      ]
+
+-- Generate ToData/FromData instances for serialization
+makeIsDataIndexed ''NodeDatum [('NodeDatum, 0)]
+
+-- * Operations Functions
+
+-- | If not root or last it should have same currency symbol for the key and next key
+{-# INLINEABLE checkIfValidNodeDatum #-}
+checkIfValidNodeDatum :: NodeDatum plutusData -> Bool
+checkIfValidNodeDatum node = case nodeKey node of
+  Nothing -> True -- Root node
+  Just key -> case nextNodeKey node of
+    Nothing -> True -- Last node
+    Just nextKey ->
+      assetClassCurrencySymbol key == assetClassCurrencySymbol nextKey -- CS mismatch
+  where
+    assetClassCurrencySymbol (AssetClass (cs, _)) = cs
+
+-- | This function validates the inputs and outputs of the insert operation
+-- when inserting a node between two existing nodes
+{-# INLINEABLE checkInputsAndInsertInBetweenNodes #-}
+checkInputsAndInsertInBetweenNodes ::
+  (Ord AssetClass) =>
+  (NodeDatum plutusData, NodeDatum plutusData, NodeDatum plutusData) ->
+  NodeDatum plutusData
+checkInputsAndInsertInBetweenNodes (oldLeftNode, rightNode, insertedNode) =
+  if validInputs
+    then
+      updatedLeftNode
+    else
+      traceError "L0" -- Insert invariant violated (L0)
+  where
+    updatedLeftNode = oldLeftNode {nextNodeKey = nodeKey insertedNode}
+    validInputs =
+      and
+        [ nextNodeKey oldLeftNode == nodeKey rightNode, -- adjacent
+          nodeKey oldLeftNode < nodeKey insertedNode, -- left < inserted
+          nodeKey rightNode > nodeKey insertedNode, -- right > inserted
+          nextNodeKey insertedNode == nodeKey rightNode, -- inserted -> right
+          all checkIfValidNodeDatum [oldLeftNode, rightNode, insertedNode]
+        ]
+
+-- | This function validates the inputs and outputs of the append operation
+-- when appending a node to the end of the list
+{-# INLINEABLE checkInputsAndAppendNode #-}
+checkInputsAndAppendNode ::
+  (NodeDatum plutusData, NodeDatum plutusData) ->
+  NodeDatum plutusData
+checkInputsAndAppendNode (lastNode, appendedNode) =
+  if validInputs
+    then
+      updatedLastNode
+    else
+      traceError "L1" -- Append invariant violated (L1)
+  where
+    updatedLastNode = lastNode {nextNodeKey = nodeKey appendedNode}
+    validInputs =
+      and
+        [ isNothing (nextNodeKey lastNode), -- last has no next
+          isJust (nodeKey appendedNode), -- appended has key
+          isNothing (nextNodeKey appendedNode), -- appended has no next
+          nodeKey appendedNode > nodeKey lastNode, -- appended > last
+          all checkIfValidNodeDatum [lastNode, appendedNode]
+        ]

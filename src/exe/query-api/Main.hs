@@ -31,11 +31,11 @@ main = do
   atlasConfig <- Data.Maybe.fromMaybe (error "Atlas configuration failed") <$> decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
 
   withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do
-    let providersContext = ProviderCtx atlasConfig providers
+    let providerContext = ProviderCtx atlasConfig providers
     authContext <- getBasicAuthFromEnv
     connStr <- fromMaybe defaultConnStr <$> lookupEnv "PG_CONN_STR"
     pool <- runStdoutLoggingT $ createPostgresqlPool (T.encodeUtf8 (T.pack connStr)) 10
-    let appContext = QueryAppContext authContext providersContext pool
+    let appContext = QueryAppContext authContext providerContext pool
     let host = "0.0.0.0"
     port <- getPortFromEnvOrDefault 8083
 

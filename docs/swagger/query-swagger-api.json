@@ -1,5 +1,47 @@
 {
     "definitions": {
+        "Achievement": {
+            "properties": {
+                "awarded_by": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "awarded_to": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "is_accepted": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "awarded_to",
+                "awarded_by",
+                "date",
+                "is_accepted",
+                "name",
+                "description",
+                "image_uri"
+            ],
+            "type": "object"
+        },
         "BJJBelt": {
             "enum": [
                 "White",
@@ -24,6 +66,72 @@
             "description": "This is an asset class, i.e. either \"lovelace\" or some other token with its minting policy and token name delimited by dot (.).",
             "example": "ff80aaaf03a273b8f5c558168dc0e2377eea810badbae6eceefc14ef.474f4c44",
             "type": "string"
+        },
+        "MembershipHistoryInformation": {
+            "properties": {
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "intervals": {
+                    "items": {
+                        "$ref": "#/definitions/MembershipIntervalInformation"
+                    },
+                    "type": "array"
+                },
+                "organization_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "practitioner_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                }
+            },
+            "required": [
+                "id",
+                "practitioner_id",
+                "organization_id",
+                "intervals"
+            ],
+            "type": "object"
+        },
+        "MembershipIntervalInformation": {
+            "properties": {
+                "end_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "is_accepted": {
+                    "type": "boolean"
+                },
+                "number": {
+                    "type": "integer"
+                },
+                "organization_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "practitioner_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "start_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "start_date",
+                "is_accepted",
+                "practitioner_id",
+                "number",
+                "organization_id"
+            ],
+            "type": "object"
         },
         "OrganizationProfileInformation": {
             "properties": {
@@ -201,7 +309,7 @@
         }
     },
     "info": {
-        "description": "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, and belts",
+        "description": "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, belts, membership histories and intervals, and achievements",
         "license": {
             "name": "GPL-3.0 license"
         },
@@ -209,6 +317,202 @@
         "version": "1.0"
     },
     "paths": {
+        "/achievements": {
+            "get": {
+                "description": "Get achievements with optional filters",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "achievement",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_to",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_by",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "is_accepted",
+                        "required": false,
+                        "type": "boolean"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "from",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "to",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "date",
+                            "awarded_to",
+                            "awarded_by",
+                            "name"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/Achievement"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `to` or `from` or `is_accepted` or `awarded_by` or `awarded_to` or `achievement` or `offset` or `limit`"
+                    }
+                },
+                "summary": "Get Achievements"
+            }
+        },
+        "/achievements/count": {
+            "get": {
+                "description": "Get count of achievements",
+                "parameters": [
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "achievement",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_to",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_by",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "is_accepted",
+                        "required": false,
+                        "type": "boolean"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "from",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "to",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection` or `to` or `from` or `is_accepted` or `awarded_by` or `awarded_to` or `achievement`"
+                    }
+                },
+                "summary": "Get Achievements Count"
+            }
+        },
         "/belts": {
             "get": {
                 "description": "Get Belts",
@@ -235,7 +539,7 @@
                         "items": {
                             "type": "string"
                         },
-                        "name": "profile",
+                        "name": "rank",
                         "type": "array"
                     },
                     {
@@ -315,7 +619,7 @@
                             "desc"
                         ],
                         "in": "query",
-                        "name": "order",
+                        "name": "sort_order",
                         "required": false,
                         "type": "string"
                     },
@@ -341,7 +645,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `rank` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Belts"
@@ -352,28 +656,12 @@
                 "description": "Get Belts Count",
                 "parameters": [
                     {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "limit",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "offset",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
                         "collectionFormat": "multi",
                         "in": "query",
                         "items": {
                             "type": "string"
                         },
-                        "name": "profile",
+                        "name": "rank",
                         "type": "array"
                     },
                     {
@@ -455,7 +743,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `rank`"
                     }
                 },
                 "summary": "Get Belts Count"
@@ -520,6 +808,262 @@
                     }
                 },
                 "summary": "Health Check"
+            }
+        },
+        "/membership-histories": {
+            "get": {
+                "description": "Get membership histories with optional filters",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "organization",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "practitioner",
+                        "type": "array"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "created_at",
+                            "practitioner",
+                            "organization"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/MembershipHistoryInformation"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `practitioner` or `organization` or `offset` or `limit`"
+                    }
+                },
+                "summary": "Get Membership Histories"
+            }
+        },
+        "/membership-histories/count": {
+            "get": {
+                "description": "Get count of membership histories",
+                "parameters": [
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "organization",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "practitioner",
+                        "type": "array"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection` or `practitioner` or `organization`"
+                    }
+                },
+                "summary": "Get Membership Histories Count"
+            }
+        },
+        "/membership-intervals": {
+            "get": {
+                "description": "Get membership intervals with optional filters",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "practitioner",
+                        "type": "array"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "start_date",
+                            "interval_number",
+                            "practitioner"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/MembershipIntervalInformation"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `practitioner` or `offset` or `limit`"
+                    }
+                },
+                "summary": "Get Membership Intervals"
+            }
+        },
+        "/membership-intervals/count": {
+            "get": {
+                "description": "Get count of membership intervals",
+                "parameters": [
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "practitioner",
+                        "type": "array"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection` or `practitioner`"
+                    }
+                },
+                "summary": "Get Membership Intervals Count"
             }
         },
         "/organization/{profile-id}": {
@@ -681,6 +1225,100 @@
                 "summary": "Get Profiles"
             }
         },
+        "/profiles/count": {
+            "get": {
+                "description": "Get Profiles Count",
+                "parameters": [
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
+                        "enum": [
+                            "Practitioner",
+                            "Organization"
+                        ],
+                        "in": "query",
+                        "name": "profile_type",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection` or `profile_type` or `profile`"
+                    }
+                },
+                "summary": "Get Profiles Count"
+            }
+        },
+        "/profiles/frequency": {
+            "get": {
+                "description": "Get Profiles Frequency by Type",
+                "parameters": [
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "items": [
+                                    {
+                                        "$ref": "#/definitions/ProfileType"
+                                    },
+                                    {
+                                        "maximum": 9223372036854775807,
+                                        "minimum": -9223372036854775808,
+                                        "type": "integer"
+                                    }
+                                ],
+                                "maxItems": 2,
+                                "minItems": 2,
+                                "type": "array"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection`"
+                    }
+                },
+                "summary": "Get Profiles Frequency"
+            }
+        },
         "/promotions": {
             "get": {
                 "description": "Get Pending Promotions",
@@ -707,7 +1345,7 @@
                         "items": {
                             "type": "string"
                         },
-                        "name": "profile",
+                        "name": "promotion",
                         "type": "array"
                     },
                     {
@@ -799,10 +1437,138 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `awarded_by` or `achieved_by` or `belt` or `promotion` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Pending Promotions"
+            }
+        },
+        "/promotions/count": {
+            "get": {
+                "description": "Get Promotions Count",
+                "parameters": [
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "promotion",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "enum": [
+                                "White",
+                                "Blue",
+                                "Purple",
+                                "Brown",
+                                "Black",
+                                "Black1",
+                                "Black2",
+                                "Black3",
+                                "Black4",
+                                "Black5",
+                                "Black6",
+                                "RedAndBlack",
+                                "RedAndWhite",
+                                "Red",
+                                "Red10"
+                            ],
+                            "type": "string"
+                        },
+                        "name": "belt",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "achieved_by",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_by",
+                        "type": "array"
+                    },
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection` or `awarded_by` or `achieved_by` or `belt` or `promotion`"
+                    }
+                },
+                "summary": "Get Promotions Count"
+            }
+        },
+        "/promotions/frequency": {
+            "get": {
+                "description": "Get Promotions Frequency by Belt",
+                "parameters": [
+                    {
+                        "allowEmptyValue": true,
+                        "default": false,
+                        "in": "query",
+                        "name": "liveprojection",
+                        "type": "boolean"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "items": [
+                                    {
+                                        "$ref": "#/definitions/BJJBelt"
+                                    },
+                                    {
+                                        "maximum": 9223372036854775807,
+                                        "minimum": -9223372036854775808,
+                                        "type": "integer"
+                                    }
+                                ],
+                                "maxItems": 2,
+                                "minItems": 2,
+                                "type": "array"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `liveprojection`"
+                    }
+                },
+                "summary": "Get Promotions Frequency"
             }
         },
         "/ready": {

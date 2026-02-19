@@ -3,6 +3,7 @@
 
 module QueryAppMonad where
 
+import Constants qualified
 import Control.Monad.Reader
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Text hiding (elem, reverse, take)
@@ -53,7 +54,7 @@ verifyProjectionDbConnection = QueryAppMonad $ do
         ServiceProbeStatus
           { status = "ready" :: Text,
             service = "query-api",
-            version = "1.0.0",
+            version = pack Constants.appVersion,
             timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
           }
     Left err ->
@@ -65,7 +66,7 @@ verifyProjectionDbConnection = QueryAppMonad $ do
                   ServiceProbeStatus
                     { status = "db not ready: " <> pack (show err),
                       service = "query-api",
-                      version = "1.0.0",
+                      version = pack Constants.appVersion,
                       timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
                     }
           }

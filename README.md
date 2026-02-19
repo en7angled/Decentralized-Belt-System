@@ -24,9 +24,10 @@ The **Decentralized Belt System** aims to bring **transparency** and **trust** t
 
 ## 2. Key Features
 
-- **Immutable Rank Tracking**: Every rank promotion is recorded on-chain along with the awarding authority.  
+- **Immutable Rank Tracking**: Every rank promotion is recorded on-chain along with the awarding authority. Profiles are permanent by design, preserving lineage integrity.
 - **Ensure transparency** in rank progression and lineage  
-- **Achievements & Memberships**: Practitioners can showcase achievements, and organizational memberships in one place.  
+- **Achievements & Memberships**: Practitioners can showcase achievements, and organizational memberships in one place.
+- **Full Security Model**: Two-layer validation with BJJ rule enforcement at mint time and consent verification at acceptance.  
 
 ---
 
@@ -84,6 +85,9 @@ For more details, see :
 ├── docs/                            # Documentation, specifications, diagrams
 ├── puml/                            # Plantuml diagrams
 ├── out/                             # Images of plantuml diagrams
+├── scripts/                         # Test and utility scripts
+│   ├── test_black_promotes_white_to_blue.sh  # Core promotion test
+│   └── populate_testnet.sh          # Testnet data population
 └── README.md                        # This file
 ```
 
@@ -192,23 +196,60 @@ Usage: admin COMMAND
 
   A command-line tool for managing Brazilian Jiu Jitsu profiles, belt
   promotions, and achievements on the Cardano blockchain. Supports deploying
-  reference scripts, initializing and updating profiles, handling promotions,
-  and more.
+  reference scripts, writing CIP-57 blueprints, initializing and updating
+  profiles, handling promotions, and more.
 
 Available options:
   -h,--help                Show this help text
 
 Available commands:
   deploy-reference-scripts Deploy reference scripts for the BJJ belt system
-  init-profile             Initialize a new profile
+  write-blueprint          Write the CIP-57 contract blueprint JSON to a file
+  init-profile             Initialize a new profile (White belt)
   update-profile-image     Update profile image
-  delete-profile           Delete a profile
   promote-profile          Promote a profile to a new belt
   accept-promotion         Accept a promotion
-  create-profile-with-rank Create a profile with initial rank
+  create-profile-with-rank Create a profile with initial rank (for masters)
 ```
 
-### 6.2 API Services
+> **Note**: Profile deletion is intentionally not supported. BJJ belt records are permanent historical facts that preserve lineage integrity.
+
+### 6.2 Testnet Scripts
+
+Two shell scripts are provided for testnet testing and demonstrations:
+
+#### **Test Script** - `scripts/test_black_promotes_white_to_blue.sh`
+
+A focused test that demonstrates the core promotion flow:
+1. Creates a master profile with Black belt
+2. Creates a student profile (White belt)
+3. Master promotes student to Blue belt
+4. Student accepts the promotion
+
+```bash
+./scripts/test_black_promotes_white_to_blue.sh
+```
+
+#### **Population Script** - `scripts/populate_testnet.sh`
+
+A comprehensive script that populates the testnet with realistic sample data:
+- 2 Organizations (Gracie Barra Academy, Alliance Jiu-Jitsu)
+- 1 Grand Master (Red belt)
+- 2 Masters (Black belts)
+- 4 Students (White to Purple belts)
+- Multiple promotion scenarios
+
+```bash
+./scripts/populate_testnet.sh
+```
+
+Both scripts:
+- Automatically deploy reference scripts if needed
+- Show clean progress output with colored indicators
+- Display detailed summaries with all created IDs
+- Handle errors gracefully with clear messages
+
+### 6.3 API Services
 
 The system provides two independent API services:
 
@@ -226,7 +267,7 @@ The system provides two independent API services:
 - **Authentication**: All endpoints require HTTP Basic Auth (same defaults). Swagger UI is public.
 - **Projection mode**: add `?liveprojection=true` to query live data; otherwise the projected SQLite DB is used. Standard `limit`, `offset`, filter params are available per Swagger.
 
-### 6.3 Executables & Local Run
+### 6.4 Executables & Local Run
 
 Executables produced by the build:
 
