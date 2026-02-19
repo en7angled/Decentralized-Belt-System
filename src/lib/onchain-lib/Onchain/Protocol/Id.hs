@@ -6,6 +6,8 @@ module Onchain.Protocol.Id
   ( deriveRankId,
     derivePromotionRankId,
     deriveMembershipHistoryId,
+    deriveMembershipHistoryIdFromHistory,
+    deriveIntervalsHeadId,
     deriveMembershipIntervalId,
     deriveMembershipHistoriesListId,
   )
@@ -41,6 +43,18 @@ deriveMembershipHistoryId (AssetClass (cs, TokenName orgId)) (AssetClass (_cs, T
 deriveMembershipIntervalId :: MembershipHistoryId -> Integer -> MembershipIntervalId
 deriveMembershipIntervalId (AssetClass (cs, TokenName bs)) i =
   AssetClass (cs, TokenName (blake2b_224 (bs `appendByteString` integerToByteString BigEndian 0 i)))
+
+-- | Derive the membership history NFT ID from the history's own datum fields.
+{-# INLINEABLE deriveMembershipHistoryIdFromHistory #-}
+deriveMembershipHistoryIdFromHistory :: OnchainMembershipHistory -> MembershipHistoryId
+deriveMembershipHistoryIdFromHistory h =
+  deriveMembershipHistoryId (membershipHistoryOrganizationId h) (membershipHistoryPractitionerId h)
+
+-- | Derive the head (most recent) interval's NFT ID from a membership history.
+{-# INLINEABLE deriveIntervalsHeadId #-}
+deriveIntervalsHeadId :: OnchainMembershipHistory -> MembershipIntervalId
+deriveIntervalsHeadId h =
+  deriveMembershipIntervalId (deriveMembershipHistoryIdFromHistory h) (membershipHistoryIntervalsHeadNumber h)
 
 -- | Derive a unique membership histories list ID from a profile ID as the hash of the profile ID.
 {-# INLINEABLE deriveMembershipHistoriesListId #-}

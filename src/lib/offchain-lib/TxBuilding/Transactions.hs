@@ -133,6 +133,7 @@ deployReferenceScripts providerCtx skey = do
   pv <- deployReferenceScript providerCtx profilesValidatorGY skey
   rv <- deployReferenceScript providerCtx ranksValidatorGY skey
   mv <- deployReferenceScript providerCtx membershipsValidatorGY skey
+  av <- deployReferenceScript providerCtx achievementsValidatorGY skey
 
   -- Step 4: Compile and deploy the minting policy (parameterized by oracle NFT)
   putStrLn $ yellowColorString "=== Step 4: Compile and Deploy Minting Policy ==="
@@ -145,6 +146,7 @@ deployReferenceScripts providerCtx skey = do
         profilesValidatorHashAndRef = pv,
         ranksValidatorHashAndRef = rv,
         membershipsValidatorHashAndRef = mv,
+        achievementsValidatorHashAndRef = av,
         oracleValidatorHashAndRef = ov,
         oracleNFTAssetClass = oracleNFTAC
       }

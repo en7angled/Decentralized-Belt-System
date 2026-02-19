@@ -12,7 +12,7 @@ import Onchain.Protocol.Types (MembershipDatum (..), MembershipHistoriesListNode
 import Onchain.LinkedList (NodeDatum (..))
 import TxBuilding.Functors
 import TxBuilding.Utils
-import TxBuilding.Validators
+import TxBuilding.Validators (achievementsValidatorHashGY, membershipsValidatorHashGY, profilesValidatorHashGY, ranksValidatorHashGY)
 
 data ChainEventProjection
   = RankEvent Rank
@@ -20,6 +20,7 @@ data ChainEventProjection
   | PromotionEvent Promotion
   | MembershipHistoryEvent MembershipHistory
   | MembershipIntervalEvent MembershipInterval
+  | AchievementEvent Achievement
   | NoEvent AtlasMatch
   deriving (Show)
 
@@ -56,8 +57,17 @@ projectChainEvent nid am@AtlasMatch {..} =
                 history <- onchainMembershipHistoryToMembershipHistory onchainHistory
                 return $ MembershipHistoryEvent history
           Just (IntervalDatum onchainInterval) -> do
-            interval <- onchainMembershipIntervalToMembershipInterval onchainInterval
-            return $ MembershipIntervalEvent interval
+            case extractNFTAssetClass amValue of
+              Nothing -> return $ NoEvent am
+              Just gyIntervalId -> do
+                interval <- onchainMembershipIntervalToMembershipInterval gyIntervalId onchainInterval
+                return $ MembershipIntervalEvent interval
+      add | add == addressFromScriptHash nid achievementsValidatorHashGY -> do
+        case achievementFromGYOutDatum amDatum of
+          Nothing -> return $ NoEvent am
+          Just onchainAchievement -> do
+            achievement <- onchainAchievementToAchievement onchainAchievement
+            return $ AchievementEvent achievement
       _ -> return $ NoEvent am
 
 --- No need to delete profile projections since the profile cannot be deleted onchain;

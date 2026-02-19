@@ -410,18 +410,19 @@ All datums at validator addresses are created by the MintingPolicy, which embeds
 
 ---
 
-### `validLastInterval` TODO Resolution
+### `validLastInterval` and `validRedeemerId` Resolution
 
-**Location**: `Protocol.hs` L357
+**Location**: `Protocol/Core.hs` (`addMembershipIntervalToHistory`) and `MembershipsValidator.hs` (`handleUpdateNode`)
 
-```haskell
-validLastInterval = membershipHistoryIntervalsHeadId currentHistory == membershipIntervalId lastInterval
--- TODO: tbc if this check is required considering the validator logic
-```
+After the membership datum optimization (derive IDs at runtime instead of storing them), the head-bypass prevention is split into two complementary checks:
 
-**Answer: YES, this check is REQUIRED.** Without it, the MV's `UpdateNodeInMHList` redeemer could provide an arbitrary `lastIntervalId` pointing to an old, already-closed interval deep in the chain (not the actual head). The lookup via `unsafeGetMembershipInterval` would find it, and the "is closed" / "is accepted" checks would pass on that old interval, allowing creation of a new interval even though the actual head might not be closed or accepted.
+1. **`validLastInterval`** (in `addMembershipIntervalToHistory`): Compares `membershipHistoryIntervalsHeadNumber` against `membershipIntervalNumber lastInterval`. This is a number comparison (no hashing) that verifies the interval's sequential number matches the history's expected head.
 
-This check anchors the validation to the **actual head** of the interval chain, preventing head-bypass attacks.
+2. **`validRedeemerId`** (in MembershipsValidator `handleUpdateNode`): Derives `deriveIntervalsHeadId(oldHistory)` and verifies it equals the redeemer-provided `lastIntervalId`. This ensures the redeemer points to the actual head and prevents cross-history attacks (where an interval from a different history with a matching number could be substituted).
+
+In the MintingPolicy path, the head interval ID is derived directly (not from the redeemer), so `validRedeemerId` is not needed — the lookup is correct by construction.
+
+**Answer: YES, both checks are REQUIRED.** `validLastInterval` prevents head-bypass within the same history; `validRedeemerId` prevents cross-history substitution in the MembershipsValidator path.
 
 ---
 

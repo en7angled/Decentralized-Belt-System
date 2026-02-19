@@ -65,6 +65,7 @@ deployBJJValidators w = do
   (pVhash, refProfilesValidator) <- deployReferenceScriptRun profilesValidatorGY w w
   (rVhash, refRanksValidator) <- deployReferenceScriptRun ranksValidatorGY w w
   (mVhash, refMembershipsValidator) <- deployReferenceScriptRun membershipsValidatorGY w w
+  (aVhash, refAchievementsValidator) <- deployReferenceScriptRun achievementsValidatorGY w w
   (ovHash, refOracleValidator) <- deployReferenceScriptRun oracleValidatorGY w w
 
   -- Step 2: Mint oracle NFT and lock initial OracleParams at oracle validator
@@ -80,6 +81,7 @@ deployBJJValidators w = do
     "  ProfilesValidator: " <> show profilesValidatorSize <> " bytes\n" <>
     "  RanksValidator: " <> show ranksValidatorSize <> " bytes\n" <>
     "  MembershipsValidator: " <> show membershipsValidatorSize <> " bytes\n" <>
+    "  AchievementsValidator: " <> show achievementsValidatorSize <> " bytes\n" <>
     "  OracleValidator: " <> show oracleValidatorSize <> " bytes\n" <>
     "  MintingPolicy: " <> show (mintingPolicySize (assetClassToPlutus oracleNFTAC)) <> " bytes"
 
@@ -88,6 +90,7 @@ deployBJJValidators w = do
       { profilesValidatorHashAndRef = (pVhash, refProfilesValidator),
         ranksValidatorHashAndRef = (rVhash, refRanksValidator),
         membershipsValidatorHashAndRef = (mVhash, refMembershipsValidator),
+        achievementsValidatorHashAndRef = (aVhash, refAchievementsValidator),
         mintingPolicyHashAndRef = (mphash, refMintingPolicy),
         oracleValidatorHashAndRef = (ovHash, refOracleValidator),
         oracleNFTAssetClass = oracleNFTAC

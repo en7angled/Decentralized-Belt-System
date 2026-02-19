@@ -18,6 +18,9 @@ defaultMembershipsValidatorFile = "docs/validators/memberships_validator.plutus"
 defaultMintingPolicyFile :: FilePath
 defaultMintingPolicyFile = "docs/validators/minting_policy.plutus"
 
+defaultAchievementsValidatorFile :: FilePath
+defaultAchievementsValidatorFile = "docs/validators/achievements_validator.plutus"
+
 defaultOracleValidatorFile :: FilePath
 defaultOracleValidatorFile = "docs/validators/oracle_validator.plutus"
 

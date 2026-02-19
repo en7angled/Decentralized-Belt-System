@@ -196,6 +196,76 @@ getPromotionsCount maybePromotionFilter = do
     pure (maybe 0 unValue cnt)
     ) pool
 
+getAchievements :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.AchievementFilter -> Maybe (AchievementsOrderBy, SortOrder) -> m [Achievement]
+getAchievements maybeLimitOffset maybeAchievementFilter maybeOrder = do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
+    rows <- select $ do
+      ap <- from $ table @AchievementProjection
+      case maybeAchievementFilter of
+        Nothing -> pure ()
+        Just C.AchievementFilter {..} -> do
+          for_ achievementFilterId (\ids -> where_ (ap ^. AchievementProjectionAchievementId `in_` valList ids))
+          for_ achievementFilterAwardedToProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedToProfileId `in_` valList ids))
+          for_ achievementFilterAwardedByProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedByProfileId `in_` valList ids))
+          for_ achievementFilterIsAccepted (\ac -> where_ (ap ^. AchievementProjectionIsAccepted ==. val ac))
+          case achievementFilterDateInterval of
+            (Nothing, Nothing) -> pure ()
+            (Just f, Nothing) -> where_ (ap ^. AchievementProjectionAchievementDate >=. val f)
+            (Nothing, Just to) -> where_ (ap ^. AchievementProjectionAchievementDate <=. val to)
+            (Just f, Just to) -> where_ (ap ^. AchievementProjectionAchievementDate >=. val f &&. ap ^. AchievementProjectionAchievementDate <=. val to)
+      case maybeOrder of
+        Nothing -> pure ()
+        Just (ob, so) ->
+          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
+           in case ob of
+                AchievementsOrderById -> orderBy [dir (ap ^. AchievementProjectionAchievementId)]
+                AchievementsOrderByDate -> orderBy [dir (ap ^. AchievementProjectionAchievementDate)]
+                AchievementsOrderByAwardedTo -> orderBy [dir (ap ^. AchievementProjectionAwardedToProfileId)]
+                AchievementsOrderByAwardedBy -> orderBy [dir (ap ^. AchievementProjectionAwardedByProfileId)]
+                AchievementsOrderByName -> orderBy [dir (ap ^. AchievementProjectionAchievementName)]
+      case maybeLimitOffset of
+        Nothing -> pure ()
+        Just (l, o) -> do
+          offset (fromIntegral o)
+          limit (fromIntegral l)
+      pure ap
+    let toAchievement ap =
+          Achievement
+            { achievementId = achievementProjectionAchievementId ap,
+              achievementAwardedTo = achievementProjectionAwardedToProfileId ap,
+              achievementAwardedBy = achievementProjectionAwardedByProfileId ap,
+              achievementDate = achievementProjectionAchievementDate ap,
+              achievementIsAccepted = achievementProjectionIsAccepted ap,
+              achievementName = achievementProjectionAchievementName ap,
+              achievementDescription = achievementProjectionAchievementDescription ap,
+              achievementImageURI = achievementProjectionAchievementImageURI ap
+            }
+    pure (Prelude.map (toAchievement . entityVal) rows)
+    ) pool
+
+getAchievementsCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.AchievementFilter -> m Int
+getAchievementsCount maybeAchievementFilter = do
+  pool <- asks pgPool
+  liftIO $ runSqlPool (do
+    cnt <- selectOne $ do
+      ap <- from $ table @AchievementProjection
+      case maybeAchievementFilter of
+        Nothing -> pure countRows
+        Just C.AchievementFilter {..} -> do
+          for_ achievementFilterId (\ids -> where_ (ap ^. AchievementProjectionAchievementId `in_` valList ids))
+          for_ achievementFilterAwardedToProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedToProfileId `in_` valList ids))
+          for_ achievementFilterAwardedByProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedByProfileId `in_` valList ids))
+          for_ achievementFilterIsAccepted (\ac -> where_ (ap ^. AchievementProjectionIsAccepted ==. val ac))
+          case achievementFilterDateInterval of
+            (Nothing, Nothing) -> pure ()
+            (Just f, Nothing) -> where_ (ap ^. AchievementProjectionAchievementDate >=. val f)
+            (Nothing, Just to) -> where_ (ap ^. AchievementProjectionAchievementDate <=. val to)
+            (Just f, Just to) -> where_ (ap ^. AchievementProjectionAchievementDate >=. val f &&. ap ^. AchievementProjectionAchievementDate <=. val to)
+          pure countRows
+    pure (maybe 0 unValue cnt)
+    ) pool
+
 getRanks :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.RankFilter -> Maybe (RanksOrderBy, SortOrder) -> m [Rank]
 getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
   pool <- asks pgPool

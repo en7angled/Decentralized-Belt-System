@@ -7,7 +7,7 @@ import Data.Text.IO qualified
 import GeniusYield.TxBuilder.Class (enclosingSlotFromTime', slotToBeginTime)
 import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import GeniusYield.TxBuilder.Query.Class (GYTxQueryMonad)
-import GeniusYield.Types (GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYPaymentKeyHash, GYSlot, GYTokenName, GYTxOutRef, GYUTxO, GYValue, paymentKeyHash, txOutRefToPlutus, utxoOutDatum, utxoValue, valueToPlutus)
+import GeniusYield.Types (GYAddress, GYAssetClass (..), GYDatum, GYExtendedPaymentSigningKey, GYNetworkId (..), GYOutDatum (..), GYPaymentKeyHash, GYSlot, GYTokenName, GYTxOutRef, GYUTxO, GYValue, mintingPolicyIdFromCurrencySymbol, paymentKeyHash, tokenNameFromPlutus, txOutRefToPlutus, utxoOutDatum, utxoValue, valueToPlutus)
 import GeniusYield.Types.Address (addressFromPaymentKeyHash)
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
@@ -16,9 +16,9 @@ import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
 import GeniusYield.Types.Wallet
 import Onchain.CIP68 (CIP68Datum)
 import Onchain.Protocol qualified as Onchain
-import Onchain.Protocol.Types (MembershipDatum)
+import Onchain.Protocol.Types (MembershipDatum, OnchainAchievement)
 import PlutusLedgerApi.V1.Tx qualified as V1
-import PlutusLedgerApi.V1.Value
+import PlutusLedgerApi.V1.Value ( flattenValue)
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Tx qualified as V3
 import System.Directory.Extra
@@ -39,6 +39,17 @@ pkhFromExtendedSkey skey =
 
 addressFromPaymentSigningKey :: GYNetworkId -> GYExtendedPaymentSigningKey -> GYAddress
 addressFromPaymentSigningKey nid skey = addressFromPaymentKeyHash nid (pkhFromExtendedSkey skey)
+
+-- | Extract the single non-ADA asset class from a GYValue (protocol UTxOs
+-- hold exactly one NFT + ADA). Returns 'Nothing' if there is no non-ADA asset.
+extractNFTAssetClass :: GYValue -> Maybe GYAssetClass
+extractNFTAssetClass v =
+  case [(cs, tn) | (cs, tn, _) <- flattenValue (valueToPlutus v), cs /= adaSymbol] of
+    [(cs, tn)] ->
+      case (mintingPolicyIdFromCurrencySymbol cs, tokenNameFromPlutus tn) of
+        (Right mpid, Just tn') -> Just (GYToken mpid tn')
+        _ -> Nothing
+    _ -> Nothing
 
 pPOSIXTimeFromSlotInteger :: (GYTxQueryMonad m) => Integer -> m POSIXTime
 pPOSIXTimeFromSlotInteger = (timeToPlutus <$>) . slotToBeginTime . unsafeSlotFromInteger
@@ -137,3 +148,18 @@ membershipDatumFromDatum gyDatum =
 membershipDatumFromGYOutDatum :: GYOutDatum -> Maybe MembershipDatum
 membershipDatumFromGYOutDatum (GYOutDatumInline gyDatum) = membershipDatumFromDatum gyDatum
 membershipDatumFromGYOutDatum _ = Nothing
+
+achievementDatumFromDatum :: GYDatum -> Maybe (CIP68Datum OnchainAchievement)
+achievementDatumFromDatum gyDatum =
+  fromBuiltinData (datumToPlutus' gyDatum)
+
+achievementFromGYOutDatum :: GYOutDatum -> Maybe (CIP68Datum OnchainAchievement)
+achievementFromGYOutDatum (GYOutDatumInline gyDatum) = achievementDatumFromDatum gyDatum
+achievementFromGYOutDatum _ = Nothing
+
+achievementAndValueFromUTxO :: GYUTxO -> Maybe (CIP68Datum OnchainAchievement, Value)
+achievementAndValueFromUTxO utxo = do
+  (gyDatum, gyValue) <- getInlineDatumAndValue utxo
+  datum <- achievementDatumFromDatum gyDatum
+  let pVal = valueToPlutus gyValue
+  return (datum, pVal)

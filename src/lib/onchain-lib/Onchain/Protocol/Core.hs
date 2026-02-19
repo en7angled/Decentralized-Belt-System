@@ -157,65 +157,58 @@ initMembershipHistory practitionerId organizationId startDate endDate =
         then (membershipHistory, firstInterval)
         else traceError "TC" -- End date must be after start date (TC)
   where
-    membershipHistoryId = deriveMembershipHistoryId organizationId practitionerId
     firstIntervalNumber = 0
-    firstMembershipIntervalId = deriveMembershipIntervalId membershipHistoryId firstIntervalNumber
     firstInterval =
       OnchainMembershipInterval
-        { membershipIntervalId = firstMembershipIntervalId,
-          membershipIntervalStartDate = startDate,
+        { membershipIntervalStartDate = startDate,
           membershipIntervalEndDate = endDate,
-          membershipIntervalIsAck = False, -- False (when interval is created by organization)
-          membershipIntervalPrevId = Nothing, -- Nothing for first interval
+          membershipIntervalIsAck = False,
           membershipIntervalNumber = firstIntervalNumber,
           membershipIntervalPractitionerId = practitionerId
         }
     membershipHistory =
       OnchainMembershipHistory
-        { membershipHistoryId = membershipHistoryId,
-          membershipHistoryPractitionerId = practitionerId,
+        { membershipHistoryPractitionerId = practitionerId,
           membershipHistoryOrganizationId = organizationId,
-          membershipHistoryIntervalsHeadId = firstMembershipIntervalId -- First interval ID
+          membershipHistoryIntervalsHeadNumber = firstIntervalNumber
         }
 
 {-# INLINEABLE addMembershipIntervalToHistory #-}
 addMembershipIntervalToHistory :: OnchainMembershipHistory -> OnchainMembershipInterval -> POSIXTime -> Maybe POSIXTime -> (OnchainMembershipHistory, OnchainMembershipInterval)
 addMembershipIntervalToHistory currentHistory lastInterval startDate maybeEndDate =
-  let lastIntervalId = membershipHistoryIntervalsHeadId currentHistory
-      lastIntervalPractitionerId = membershipIntervalPractitionerId lastInterval
-      lastIntervalNumber = membershipIntervalNumber lastInterval
-      newIntervalNumber = lastIntervalNumber + 1
-      newIntervalId = deriveMembershipIntervalId (membershipHistoryId currentHistory) newIntervalNumber
+  let lastIntervalPractitionerId = membershipIntervalPractitionerId lastInterval
+      newIntervalNumber = membershipIntervalNumber lastInterval + 1
       newInterval =
         OnchainMembershipInterval
-          { membershipIntervalId = newIntervalId,
-            membershipIntervalStartDate = startDate,
+          { membershipIntervalStartDate = startDate,
             membershipIntervalEndDate = maybeEndDate,
             membershipIntervalIsAck = False,
-            membershipIntervalPrevId = Just lastIntervalId,
             membershipIntervalNumber = newIntervalNumber,
             membershipIntervalPractitionerId = lastIntervalPractitionerId
           }
-      newHistory = currentHistory {membershipHistoryIntervalsHeadId = newIntervalId}
+      newHistory = currentHistory {membershipHistoryIntervalsHeadNumber = newIntervalNumber}
    in if addMembershipsValidations
         then (newHistory, newInterval)
         else traceError "T3" -- Cannot add interval: validation failed (T3)
   where
     addMembershipsValidations =
       and
-        [ validLastInterval, -- last interval is not the head
-          lastIntervalIsClosed, -- last interval not closed
-          lastIntervalIsAccepted, -- last interval not accepted
-          traceIfFalse "TC" validEndDate -- end date must be after start date (TC)
+        [ validLastInterval,
+          lastIntervalIsClosed,
+          lastIntervalIsAccepted,
+          traceIfFalse "TC" validEndDate
         ]
     validEndDate = case maybeEndDate of
       Just ed -> ed > startDate
       Nothing -> True
-    validLastInterval = membershipHistoryIntervalsHeadId currentHistory == membershipIntervalId lastInterval -- Required: prevents head-bypass attacks (see OnchainSecurityAudit.md)
+    -- Compares head number against last interval's number.
+    -- The caller (MP or MV) is responsible for verifying that the interval
+    -- looked up by the derived head ID actually has a matching number.
+    validLastInterval = membershipHistoryIntervalsHeadNumber currentHistory == membershipIntervalNumber lastInterval
     lastIntervalIsAccepted = membershipIntervalIsAck lastInterval
     lastIntervalIsClosed = case membershipIntervalEndDate lastInterval of
       Just lastIntervalEndDate -> startDate >= lastIntervalEndDate
-      Nothing -> False -- If the last interval is not closed, we can add a new interval
+      Nothing -> False
 
 -- | Update the end date of a membership interval with role-based rules.
 -- Organization (isOrganization = True): can set endDate to any value.

@@ -57,6 +57,8 @@ data Command
   | AddMembershipInterval AddMembershipIntervalArgs
   | AcceptMembershipInterval AcceptMembershipIntervalArgs
   | UpdateEndDate UpdateEndDateArgs
+  | AwardAchievement AwardAchievementArgs
+  | AcceptAchievement AcceptAchievementArgs
   | CleanupDust
   deriving (Show)
 
@@ -139,6 +141,20 @@ data UpdateEndDateArgs = UpdateEndDateArgs
     uedaHistoryNodeId :: GYAssetClass,
     uedaNewEndDate :: GYTime,
     uedaOutputId :: Bool
+  }
+  deriving (Show)
+
+data AwardAchievementArgs = AwardAchievementArgs
+  { awaAwardedToProfileId :: GYAssetClass,
+    awaAwardedByProfileId :: GYAssetClass,
+    awaProfileData :: ProfileData,
+    awaAchievementDate :: GYTime,
+    awaOutputId :: Bool
+  }
+  deriving (Show)
+
+newtype AcceptAchievementArgs = AcceptAchievementArgs
+  { acaAchievementId :: GYAssetClass
   }
   deriving (Show)
 
@@ -438,6 +454,26 @@ commandParser =
               (progDesc "Update membership interval end date (org or practitioner; new end date must be in the future)")
           )
         <> command
+          "award-achievement"
+          ( info
+              ( AwardAchievement
+                  <$> ( AwardAchievementArgs
+                          <$> option (maybeReader parseAssetClass) (long "awarded-to-profile-id" <> metavar "AWARDED_TO_PROFILE_ID" <> help "Profile ID of the practitioner receiving the achievement")
+                          <*> option (maybeReader parseAssetClass) (long "awarded-by-profile-id" <> metavar "AWARDED_BY_PROFILE_ID" <> help "Profile ID of the awarder (org or practitioner)")
+                          <*> profileDataParser
+                          <*> posixTimeParser
+                          <*> outputIdParser
+                      )
+              )
+              (progDesc "Award an achievement to a practitioner")
+          )
+        <> command
+          "accept-achievement"
+          ( info
+              (AcceptAchievement . AcceptAchievementArgs <$> option (maybeReader parseAssetClass) (long "achievement-id" <> short 'i' <> metavar "ACHIEVEMENT_ID" <> help "Achievement asset class"))
+              (progDesc "Accept an achievement (practitioner acknowledges)")
+          )
+        <> command
           "cleanup-dust"
           ( info
               (pure CleanupDust)
@@ -481,6 +517,14 @@ acceptMembershipIntervalToActionType AcceptMembershipIntervalArgs {amiaIntervalI
 updateEndDateToActionType :: UpdateEndDateArgs -> ActionType
 updateEndDateToActionType UpdateEndDateArgs {uedaIntervalId, uedaHistoryNodeId, uedaNewEndDate} =
   ProfileAction $ UpdateEndDateAction uedaIntervalId uedaHistoryNodeId uedaNewEndDate
+
+awardAchievementToActionType :: AwardAchievementArgs -> ActionType
+awardAchievementToActionType AwardAchievementArgs {awaAwardedToProfileId, awaAwardedByProfileId, awaProfileData, awaAchievementDate} =
+  ProfileAction $ AwardAchievementAction awaAwardedToProfileId awaAwardedByProfileId awaProfileData [] awaAchievementDate
+
+acceptAchievementToActionType :: AcceptAchievementArgs -> ActionType
+acceptAchievementToActionType AcceptAchievementArgs {acaAchievementId} =
+  ProfileAction $ AcceptAchievementAction acaAchievementId
 
 -- | Convert SetFeesArgs to the AdminActionType for the Interaction pipeline
 setFeesToAdminAction :: SetFeesArgs -> AdminActionType
@@ -628,6 +672,21 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     if uedaOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
       else printGreen $ "Interval ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  -- Achievement commands — routed through the Interaction pipeline
+  AwardAchievement args -> do
+    printYellow "Awarding achievement..."
+    let actionType = awardAchievementToActionType args
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    printGreen "Achievement awarded successfully!"
+    if awaOutputId args
+      then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
+      else printGreen $ "Achievement ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  AcceptAchievement args -> do
+    printYellow "Accepting achievement..."
+    let actionType = acceptAchievementToActionType args
+    (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
+    printGreen "Achievement accepted successfully!"
+    printGreen $ "Achievement ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
   CleanupDust -> do
     printYellow "Sweeping dust UTxOs from validator addresses..."
     let actionType = ProtocolAction CleanupDustAction

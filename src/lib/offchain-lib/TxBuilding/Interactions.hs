@@ -111,6 +111,12 @@ interactionToTxSkeleton Interaction {..} = do
         UpdateEndDateAction intervalId historyNodeId newEndDate -> do
           skeleton <- updateEndDateTX intervalId historyNodeId newEndDate usedAddrs Nothing
           return (skeleton, intervalId)
+        AwardAchievementAction awardedToId awardedById profileData otherMeta achievementDate -> do
+          let otherMetadataPlutus = map (\(k, v) -> (textToBuiltinByteString k, textToBuiltinByteString v)) otherMeta
+          awardAchievementTX awardedToId awardedById (profileDataToMetadataFields profileData) otherMetadataPlutus (timeToPlutus achievementDate) usedAddrs
+        AcceptAchievementAction achievementId -> do
+          skeleton <- acceptAchievementTX achievementId usedAddrs
+          return (skeleton, achievementId)
     ProtocolAction protocolActionType -> case protocolActionType of
       CleanupDustAction -> do
         (skeleton, _dustCount) <- cleanupDustTX

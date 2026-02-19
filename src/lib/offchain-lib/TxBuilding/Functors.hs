@@ -8,7 +8,8 @@ import GeniusYield.Types
 import Onchain.BJJ (intToBelt)
 import Onchain.CIP68 (MetadataFields (..), getMetadataFields, extra, CIP68Datum)
 import Onchain.Protocol qualified as Onchain
-import Onchain.Protocol.Types (OnchainMembershipHistory (..), OnchainMembershipInterval (..))
+import Onchain.Protocol.Id (deriveMembershipHistoryIdFromHistory, deriveMembershipIntervalId)
+import Onchain.Protocol.Types (OnchainAchievement (..), OnchainMembershipHistory (..), OnchainMembershipInterval (..))
 import PlutusLedgerApi.V3
 import PlutusTx.Builtins (decodeUtf8)
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteStringUtf8)
@@ -105,8 +106,8 @@ profileDatumToProfile datum = do
 ------------------------------------------------------------------------------------------------
 
 onchainMembershipHistoryToMembershipHistory :: (MonadError GYTxMonadException m) => OnchainMembershipHistory -> m MembershipHistory
-onchainMembershipHistoryToMembershipHistory OnchainMembershipHistory {..} = do
-  gyHistoryId <- assetClassFromPlutus' membershipHistoryId
+onchainMembershipHistoryToMembershipHistory history@OnchainMembershipHistory {..} = do
+  gyHistoryId <- assetClassFromPlutus' (deriveMembershipHistoryIdFromHistory history)
   gyPractitionerId <- assetClassFromPlutus' membershipHistoryPractitionerId
   gyOrganizationId <- assetClassFromPlutus' membershipHistoryOrganizationId
   return
@@ -116,9 +117,9 @@ onchainMembershipHistoryToMembershipHistory OnchainMembershipHistory {..} = do
         membershipHistoryOrganizationId = gyOrganizationId
       }
 
-onchainMembershipIntervalToMembershipInterval :: (MonadError GYTxMonadException m) => OnchainMembershipInterval -> m MembershipInterval
-onchainMembershipIntervalToMembershipInterval OnchainMembershipInterval {..} = do
-  gyIntervalId <- assetClassFromPlutus' membershipIntervalId
+-- | Convert with a pre-computed interval GYAssetClass (from UTxO value or derivation).
+onchainMembershipIntervalToMembershipInterval :: (MonadError GYTxMonadException m) => GYAssetClass -> OnchainMembershipInterval -> m MembershipInterval
+onchainMembershipIntervalToMembershipInterval gyIntervalId OnchainMembershipInterval {..} = do
   gyPractitionerId <- assetClassFromPlutus' membershipIntervalPractitionerId
   return
     MembershipInterval
@@ -128,4 +129,37 @@ onchainMembershipIntervalToMembershipInterval OnchainMembershipInterval {..} = d
         membershipIntervalIsAccepted = membershipIntervalIsAck,
         membershipIntervalPractitionerId = gyPractitionerId,
         membershipIntervalNumber = membershipIntervalNumber
+      }
+
+-- | Derive the interval ID from the organization's ProfileId and convert.
+onchainMembershipIntervalToMembershipIntervalWithOrgId :: (MonadError GYTxMonadException m) => Onchain.ProfileId -> OnchainMembershipInterval -> m MembershipInterval
+onchainMembershipIntervalToMembershipIntervalWithOrgId orgId interval@OnchainMembershipInterval {..} = do
+  let historyId = Onchain.deriveMembershipHistoryId orgId membershipIntervalPractitionerId
+      intervalId = deriveMembershipIntervalId historyId membershipIntervalNumber
+  gyIntervalId <- assetClassFromPlutus' intervalId
+  onchainMembershipIntervalToMembershipInterval gyIntervalId interval
+
+------------------------------------------------------------------------------------------------
+
+-- * Achievement Conversions
+
+------------------------------------------------------------------------------------------------
+
+onchainAchievementToAchievement :: (MonadError GYTxMonadException m) => CIP68Datum OnchainAchievement -> m Achievement
+onchainAchievementToAchievement datum = do
+  let OnchainAchievement {..} = extra datum
+      ProfileData {..} = metadataFieldsToProfileData (getMetadataFields datum)
+  gyAchievementId <- assetClassFromPlutus' achievementId
+  gyAwardedTo <- assetClassFromPlutus' achievementAwardedTo
+  gyAwardedBy <- assetClassFromPlutus' achievementAwardedBy
+  return
+    Achievement
+      { achievementId = gyAchievementId,
+        achievementAwardedTo = gyAwardedTo,
+        achievementAwardedBy = gyAwardedBy,
+        achievementDate = timeFromPlutus achievementDate,
+        achievementIsAccepted = achievementIsAccepted,
+        achievementName = profileDataName,
+        achievementDescription = profileDataDescription,
+        achievementImageURI = profileDataImageURI
       }

@@ -22,6 +22,7 @@ data DeployedScriptsContext = DeployedScriptsContext
     profilesValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
     ranksValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
     membershipsValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
+    achievementsValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
     oracleValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
     oracleNFTAssetClass :: GYAssetClass
   }
@@ -42,6 +43,9 @@ getRanksValidatorRef ctx = snd $ ranksValidatorHashAndRef ctx
 
 getMembershipsValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getMembershipsValidatorRef ctx = snd $ membershipsValidatorHashAndRef ctx
+
+getAchievementsValidatorRef :: DeployedScriptsContext -> GYTxOutRef
+getAchievementsValidatorRef ctx = snd $ achievementsValidatorHashAndRef ctx
 
 getOracleValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getOracleValidatorRef ctx = snd $ oracleValidatorHashAndRef ctx

@@ -48,6 +48,14 @@ data MembershipIntervalFilter = MembershipIntervalFilter
   { membershipIntervalFilterPractitionerProfileId :: Maybe [ProfileRefAC]
   }
 
+data AchievementFilter = AchievementFilter
+  { achievementFilterId :: Maybe [AchievementAC],
+    achievementFilterAwardedToProfileId :: Maybe [ProfileRefAC],
+    achievementFilterAwardedByProfileId :: Maybe [ProfileRefAC],
+    achievementFilterIsAccepted :: Maybe Bool,
+    achievementFilterDateInterval :: (Maybe GYTime, Maybe GYTime)
+  }
+
 -- Abstraction for retrieving the projection DB connection info from an environment
 class HasProjectionDB r where
   getProjectionDbPath :: r -> Text

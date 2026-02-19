@@ -157,14 +157,14 @@ makeIsDataSchemaIndexed ''OnchainRank [('Rank, 0), ('Promotion, 1)]
 -------------------------------------------------------------------------------
 
 data OnchainMembershipHistory = OnchainMembershipHistory
-  { -- | AssetClass of the membership history NFT
-    membershipHistoryId :: MembershipHistoryId,
-    -- | Practitioner ProfileId
+  { -- | Practitioner ProfileId
     membershipHistoryPractitionerId :: ProfileId,
     -- | Organization ProfileId
     membershipHistoryOrganizationId :: ProfileId,
-    -- | AssetClass of the head of the intervals list
-    membershipHistoryIntervalsHeadId :: MembershipIntervalId
+    -- | Sequential number of the head (most recent) interval (0-based).
+    -- The head interval's NFT ID is derived at runtime via
+    -- @deriveMembershipIntervalId (deriveMembershipHistoryIdFromHistory h) headNumber@.
+    membershipHistoryIntervalsHeadNumber :: Integer
   }
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
@@ -172,19 +172,17 @@ data OnchainMembershipHistory = OnchainMembershipHistory
 makeIsDataSchemaIndexed ''OnchainMembershipHistory [('OnchainMembershipHistory, 0)]
 
 data OnchainMembershipInterval = OnchainMembershipInterval
-  { -- | AssetClass of the membership interval NFT
-    membershipIntervalId :: MembershipIntervalId,
-    -- | Start date of the membership interval
+  { -- | Start date of the membership interval
     membershipIntervalStartDate :: POSIXTime,
     -- | End date of the membership interval
     membershipIntervalEndDate :: Maybe POSIXTime,
     -- | Is the membership interval accepted
     membershipIntervalIsAck :: Bool,
-    -- | Maybe AssetClass of the previous interval, Nothing for the first interval
-    membershipIntervalPrevId :: Maybe MembershipIntervalId,
-    -- | Number of the membership interval (starts from 0)
+    -- | Sequential number within the history (0-based).
+    -- The interval's NFT ID is derived at runtime via
+    -- @deriveMembershipIntervalId historyId number@.
     membershipIntervalNumber :: Integer,
-    -- | Practitioner ProfileId
+    -- | Practitioner ProfileId (for User NFT derivation in AcceptInterval)
     membershipIntervalPractitionerId :: ProfileId
   }
   deriving stock (Generic, Prelude.Show, Prelude.Eq)

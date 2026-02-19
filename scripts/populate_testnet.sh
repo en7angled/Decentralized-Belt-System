@@ -22,6 +22,11 @@
 #   - Emma at Alliance: create history, add interval, accept
 #   - John at Alliance (second org): create history only
 #   - Master Ricardo at Gracie Barra (instructor): create history
+#
+# Achievement scenarios:
+#   - John: Gold Medal (awarded by Gracie Barra, accepted)
+#   - Maria: Seminar Certificate (awarded by Alliance, accepted)
+#   - Carlos: Training Camp (awarded by Master Ricardo, pending)
 
 set -e # Exit on any error
 set -o pipefail
@@ -164,7 +169,7 @@ print_info "This script populates the testnet with sample profiles and promotion
 print_info "for testing and demonstration purposes."
 print_info ""
 print_info "The deploy-reference-scripts command now includes the full oracle and validators flow:"
-print_info "  1. Deploy OracleValidator, ProfilesValidator, RanksValidator, MembershipsValidator as reference scripts"
+print_info "  1. Deploy OracleValidator, ProfilesValidator, RanksValidator, MembershipsValidator, AchievementsValidator as reference scripts"
 print_info "  2. Mint oracle NFT and lock initial OracleParams at oracle validator"
 print_info "  3. Compile MintingPolicy with oracle NFT and deploy as reference script"
 
@@ -227,7 +232,9 @@ run_admin_cmd_no_output set-fees \
     --fee-address "addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp" \
     --profile-fee 2000000 \
     --promotion-fee 3000000 \
-    --membership-fee 1500000
+    --membership-history-fee 1500000 \
+    --membership-interval-fee 1500000 \
+    --achievement-fee 1000000
 print_success "Fee configuration set"
 
 print_info "Querying oracle after fee update..."
@@ -582,9 +589,67 @@ MEMBERSHIP_MASTER_RICARDO_ID=$(run_admin_cmd create-membership-history \
 print_success "Membership history created: $MEMBERSHIP_MASTER_RICARDO_ID"
 
 # ============================================================================
-# STEP 7: Dust Cleanup (Permissionless Maintenance)
+# STEP 7: Achievements
 # ============================================================================
-print_section "Step 7: Dust Cleanup"
+print_section "Step 7: Award and Accept Achievements"
+
+# Timestamps for achievements (in the past)
+ACHIEVEMENT1_TIME=1672531200000  # 2023-01-01 (John wins gold medal at tournament)
+ACHIEVEMENT2_TIME=1675209600000  # 2023-02-01 (Maria completes seminar)
+ACHIEVEMENT3_TIME=1677628800000  # 2023-03-01 (Carlos attends camp)
+
+# --- Achievement 1: Gracie Barra awards John a tournament gold medal ---
+print_subsection "Achievement 1: John - Tournament Gold Medal"
+print_info "Gracie Barra awarding gold medal to John..."
+ACHIEVEMENT1_ID=$(run_admin_cmd award-achievement \
+    --awarded-to-profile-id "$STUDENT1_ID" \
+    --awarded-by-profile-id "$ORG1_ID" \
+    --name "Gold Medal - Regional Championship" \
+    --description "Won gold medal in the purple belt division at the 2023 Regional BJJ Championship" \
+    --image-uri "ipfs://QmGoldMedalJohnMartinez2023" \
+    --posix "$ACHIEVEMENT1_TIME" \
+    --output-id)
+print_success "Achievement awarded: $ACHIEVEMENT1_ID"
+
+print_info "John accepting gold medal achievement..."
+run_admin_cmd_no_output accept-achievement --achievement-id "$ACHIEVEMENT1_ID"
+print_success "John accepted gold medal achievement!"
+
+# --- Achievement 2: Alliance awards Maria a seminar certificate ---
+print_subsection "Achievement 2: Maria - Seminar Certificate"
+print_info "Alliance awarding seminar certificate to Maria..."
+ACHIEVEMENT2_ID=$(run_admin_cmd award-achievement \
+    --awarded-to-profile-id "$STUDENT2_ID" \
+    --awarded-by-profile-id "$ORG2_ID" \
+    --name "Guard Passing Seminar" \
+    --description "Completed advanced guard passing seminar with visiting instructor. 8 hours of intensive training." \
+    --image-uri "ipfs://QmSeminarCertMaria2023" \
+    --posix "$ACHIEVEMENT2_TIME" \
+    --output-id)
+print_success "Achievement awarded: $ACHIEVEMENT2_ID"
+
+print_info "Maria accepting seminar achievement..."
+run_admin_cmd_no_output accept-achievement --achievement-id "$ACHIEVEMENT2_ID"
+print_success "Maria accepted seminar achievement!"
+
+# --- Achievement 3: Master Ricardo awards Carlos a camp completion ---
+print_subsection "Achievement 3: Carlos - Training Camp Completion"
+print_info "Master Ricardo awarding training camp completion to Carlos..."
+ACHIEVEMENT3_ID=$(run_admin_cmd award-achievement \
+    --awarded-to-profile-id "$STUDENT3_ID" \
+    --awarded-by-profile-id "$MASTER1_ID" \
+    --name "Summer Training Camp 2023" \
+    --description "Completed the intensive 2-week summer training camp. Demonstrated excellent technique and dedication." \
+    --image-uri "ipfs://QmCampCompletionCarlos2023" \
+    --posix "$ACHIEVEMENT3_TIME" \
+    --output-id)
+print_success "Achievement awarded: $ACHIEVEMENT3_ID"
+# Note: Carlos has NOT accepted this achievement yet (pending state)
+
+# ============================================================================
+# STEP 8: Dust Cleanup (Permissionless Maintenance)
+# ============================================================================
+print_section "Step 8: Dust Cleanup"
 
 print_info "Running cleanup-dust to sweep any dust UTxOs from validator addresses..."
 cleanup_output=""
@@ -636,6 +701,11 @@ echo -e "  • Carlos at Gracie Barra:     history ${CYAN}$MEMBERSHIP_CARLOS_ID$
 echo -e "  • Emma at Alliance:           history ${CYAN}$MEMBERSHIP_EMMA_ID${NC}, interval accepted ${CYAN}$INTERVAL_EMMA_ID${NC}"
 echo -e "  • John at Alliance (2nd org):  history ${CYAN}$MEMBERSHIP_JOHN_ALLIANCE_ID${NC}"
 echo -e "  • Master Ricardo at Gracie B: history ${CYAN}$MEMBERSHIP_MASTER_RICARDO_ID${NC}"
+echo ""
+echo -e "${GREEN}Achievements:${NC}"
+echo -e "  • John: Gold Medal (accepted): ${CYAN}$ACHIEVEMENT1_ID${NC}"
+echo -e "  • Maria: Seminar Cert (accepted): ${CYAN}$ACHIEVEMENT2_ID${NC}"
+echo -e "  • Carlos: Training Camp (pending): ${CYAN}$ACHIEVEMENT3_ID${NC}"
 echo ""
 
 print_success "Testnet successfully populated with sample BJJ data!"

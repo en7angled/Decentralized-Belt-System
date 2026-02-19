@@ -22,7 +22,7 @@ where
 import GHC.Generics (Generic)
 import Onchain.BJJ (BeltSnapshot (..), intToBelt, validatePromotion)
 import Onchain.CIP68 (MetadataFields, deriveUserFromRefAC, generateRefAndUserTN, mkCIP68Datum, validateMetadataFields)
-import Onchain.Protocol (addMembershipIntervalToHistory, deriveMembershipHistoriesListId, derivePromotionRankId, getCurrentRankId, initEmptyMembershipHistoriesList, initMembershipHistory, mkOrganizationProfile, mkPractitionerProfile, mkPromotion, unsafeGetListNodeDatumAndValue, unsafeGetMembershipHistory, unsafeGetMembershipInterval, unsafeGetProfile, unsafeGetRank)
+import Onchain.Protocol (addMembershipIntervalToHistory, deriveIntervalsHeadId, deriveMembershipHistoriesListId, deriveMembershipHistoryIdFromHistory, deriveMembershipIntervalId, derivePromotionRankId, getCurrentRankId, initEmptyMembershipHistoriesList, initMembershipHistory, mkOrganizationProfile, mkPractitionerProfile, mkPromotion, unsafeGetListNodeDatumAndValue, unsafeGetMembershipHistory, unsafeGetMembershipInterval, unsafeGetProfile, unsafeGetRank)
 import Onchain.Protocol.Lookup (checkFee, readOracleParams)
 import Onchain.Protocol.Types
 import Onchain.Utils (hasCurrencySymbol)
@@ -259,8 +259,10 @@ handleNewMembershipHistory txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx or
 
       (newHistory, fstInterval) = initMembershipHistory practitionerId organizationProfileId startDate endDate
 
-      membershipHistoryNFT = V1.assetClassValue (membershipHistoryId newHistory) 1
-      fstIntervalNFT = V1.assetClassValue (membershipIntervalId fstInterval) 1
+      historyId = deriveMembershipHistoryIdFromHistory newHistory
+      membershipHistoryNFT = V1.assetClassValue historyId 1
+      fstIntervalId = deriveIntervalsHeadId newHistory
+      fstIntervalNFT = V1.assetClassValue fstIntervalId 1
    in -- Must spend user NFT of the organization profile who is creating the membership history -- enforced here
       -- Must spend the UTxO of the left node of the membership history list (containing LeftNodeId NFT) from membershipsValidator address -- enforced here
       -- Must lock the updated left node with inline datum at membershipsValidator address (output idx) -- enforced by membershipsValidator
@@ -300,11 +302,12 @@ handleNewMembershipInterval txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx o
       (_, membershipNodeDatum) = unsafeGetListNodeDatumAndValue membershipNodeId membershipsValidatorAddress txInfoInputs
       oldHistory = unsafeGetMembershipHistory membershipNodeDatum
 
-      lastIntervalId = membershipHistoryIntervalsHeadId oldHistory
+      historyId = deriveMembershipHistoryIdFromHistory oldHistory
+      lastIntervalId = deriveIntervalsHeadId oldHistory
       (_lastIntervalValue, lastIntervalDatum) = unsafeGetMembershipInterval lastIntervalId membershipsValidatorAddress txInfoReferenceInputs
 
       (_newHistory, newInterval) = addMembershipIntervalToHistory oldHistory lastIntervalDatum startDate mEndDate
-      newIntervalId = membershipIntervalId newInterval
+      newIntervalId = deriveMembershipIntervalId historyId (membershipIntervalNumber newInterval)
       newIntervalNFT = V1.assetClassValue newIntervalId 1
    in -- Must spend user NFT of the organization profile who is creating the membership interval -- enforced here
       -- Must spend the UTxO of the updated membership history (with ListNodeDatum) -- enforced here
@@ -357,7 +360,9 @@ handleNewAchievement txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOu
           }
 
       achievementDatum = mkCIP68Datum achievementInfo metadata otherMetdataEncoded
-   in traceIfFalse "Mf" (V1.assetClassValueOf (valueSpent txInfo) (deriveUserFromRefAC awardedBy) == 1) -- Must spend awarded by user NFT (Mf)
+   in traceIfFalse "Ml" (achievementDate `before` txInfoValidRange) -- Achievement date before validity (Ml)
+        && traceIfFalse "Mm" (validateMetadataFields metadata) -- Metadata fields validation failed (Mm)
+        && traceIfFalse "Mf" (V1.assetClassValueOf (valueSpent txInfo) (deriveUserFromRefAC awardedBy) == 1) -- Must spend awarded by user NFT (Mf)
         && traceIfFalse "Mg" (isAwardedToValid && isAwardedByValid) -- Profiles must have correct currency symbol (Mg)
         && traceIfFalse "Mh" (Utils.inputsSpendTxOutRef seedTxOutRef txInfoInputs) -- Must spend seed for uniqueness (Mh)
         && traceIfFalse "Mj" (mintValueMinted txInfoMint == achievementNFT) -- Tx must mint JUST achievement NFT (Mj)

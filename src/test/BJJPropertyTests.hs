@@ -490,17 +490,14 @@ genOnchainMembershipHistory =
   OnchainMembershipHistory
     <$> genAssetClass
     <*> genAssetClass
-    <*> genAssetClass
-    <*> genAssetClass
+    <*> Gen.integral (Range.linear 0 100)
 
 genOnchainMembershipInterval :: Gen OnchainMembershipInterval
 genOnchainMembershipInterval =
   OnchainMembershipInterval
-    <$> genAssetClass
-    <*> genPOSIXTime
+    <$> genPOSIXTime
     <*> Gen.maybe genPOSIXTime
     <*> Gen.bool
-    <*> Gen.maybe genAssetClass
     <*> Gen.integral (Range.linear 0 100)
     <*> genAssetClass
 

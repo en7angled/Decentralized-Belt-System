@@ -173,3 +173,104 @@ getPromotionBeltTotals = do
   let allBelts = Prelude.map promotionBelt allPromotions
   let beltTotals = toOccurList . fromList $ allBelts
   return beltTotals
+
+getAchievements :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe AchievementFilter -> Maybe (AchievementsOrderBy, SortOrder) -> m [Achievement]
+getAchievements maybeLimitOffset maybeAchievementFilter maybeOrder = do
+  providerCtx <- asks providerContext
+  allAchievements <- liftIO $ runQuery providerCtx (getAllAchievements (getNetworkId providerCtx))
+  return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyAchievementFilter maybeAchievementFilter allAchievements
+  where
+    applyOrdering Nothing achievements = achievements
+    applyOrdering (Just (orderBy, order)) achievements =
+      case (orderBy, order) of
+        (AchievementsOrderById, Types.Asc) -> L.sortOn achievementId achievements
+        (AchievementsOrderById, Types.Desc) -> L.sortOn (Down . achievementId) achievements
+        (AchievementsOrderByDate, Types.Asc) -> L.sortOn achievementDate achievements
+        (AchievementsOrderByDate, Types.Desc) -> L.sortOn (Down . achievementDate) achievements
+        (AchievementsOrderByAwardedTo, Types.Asc) -> L.sortOn achievementAwardedTo achievements
+        (AchievementsOrderByAwardedTo, Types.Desc) -> L.sortOn (Down . achievementAwardedTo) achievements
+        (AchievementsOrderByAwardedBy, Types.Asc) -> L.sortOn achievementAwardedBy achievements
+        (AchievementsOrderByAwardedBy, Types.Desc) -> L.sortOn (Down . achievementAwardedBy) achievements
+        (AchievementsOrderByName, Types.Asc) -> L.sortOn achievementName achievements
+        (AchievementsOrderByName, Types.Desc) -> L.sortOn (Down . achievementName) achievements
+
+    applyAchievementFilter Nothing achievements = achievements
+    applyAchievementFilter (Just AchievementFilter {..}) achievements =
+      let idFilter = case achievementFilterId of
+            Just ids -> Prelude.filter ((`elem` ids) . achievementId)
+            Nothing -> id
+          awardedToFilter = case achievementFilterAwardedToProfileId of
+            Just ids -> Prelude.filter ((`elem` ids) . achievementAwardedTo)
+            Nothing -> id
+          awardedByFilter = case achievementFilterAwardedByProfileId of
+            Just ids -> Prelude.filter ((`elem` ids) . achievementAwardedBy)
+            Nothing -> id
+          isAcceptedFilter = case achievementFilterIsAccepted of
+            Just ac -> Prelude.filter ((== ac) . achievementIsAccepted)
+            Nothing -> id
+          dateFilter = case achievementFilterDateInterval of
+            (Just from, Just to) -> Prelude.filter (\a -> achievementDate a >= from && achievementDate a <= to)
+            (Nothing, Just to) -> Prelude.filter (\a -> achievementDate a <= to)
+            (Just from, Nothing) -> Prelude.filter (\a -> achievementDate a >= from)
+            (Nothing, Nothing) -> id
+       in idFilter . awardedToFilter . awardedByFilter . isAcceptedFilter . dateFilter $ achievements
+
+getAchievementsCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe AchievementFilter -> m Int
+getAchievementsCount maybeAchievementFilter = Prelude.length <$> getAchievements Nothing maybeAchievementFilter Nothing
+
+getMembershipHistories :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe MembershipHistoryFilter -> Maybe (MembershipHistoriesOrderBy, SortOrder) -> m [MembershipHistory]
+getMembershipHistories maybeLimitOffset maybeFilter maybeOrder = do
+  providerCtx <- asks providerContext
+  allHistories <- liftIO $ runQuery providerCtx (getAllMembershipHistories (getNetworkId providerCtx))
+  return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyMembershipHistoryFilter maybeFilter allHistories
+  where
+    applyOrdering Nothing histories = histories
+    applyOrdering (Just (orderBy, order)) histories =
+      case (orderBy, order) of
+        (MembershipHistoriesOrderById, Types.Asc) -> L.sortOn membershipHistoryId histories
+        (MembershipHistoriesOrderById, Types.Desc) -> L.sortOn (Down . membershipHistoryId) histories
+        (MembershipHistoriesOrderByPractitioner, Types.Asc) -> L.sortOn membershipHistoryPractitionerId histories
+        (MembershipHistoriesOrderByPractitioner, Types.Desc) -> L.sortOn (Down . membershipHistoryPractitionerId) histories
+        (MembershipHistoriesOrderByOrganization, Types.Asc) -> L.sortOn membershipHistoryOrganizationId histories
+        (MembershipHistoriesOrderByOrganization, Types.Desc) -> L.sortOn (Down . membershipHistoryOrganizationId) histories
+        (MembershipHistoriesOrderByCreatedAt, _) -> histories
+
+    applyMembershipHistoryFilter Nothing histories = histories
+    applyMembershipHistoryFilter (Just MembershipHistoryFilter {..}) histories =
+      let orgFilter = case membershipHistoryFilterOrganizationProfileId of
+            Just ids -> Prelude.filter ((`elem` ids) . membershipHistoryOrganizationId)
+            Nothing -> id
+          practFilter = case membershipHistoryFilterPractitionerProfileId of
+            Just ids -> Prelude.filter ((`elem` ids) . membershipHistoryPractitionerId)
+            Nothing -> id
+       in orgFilter . practFilter $ histories
+
+getMembershipHistoriesCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe MembershipHistoryFilter -> m Int
+getMembershipHistoriesCount maybeFilter = Prelude.length <$> getMembershipHistories Nothing maybeFilter Nothing
+
+getMembershipIntervals :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe MembershipIntervalFilter -> Maybe (MembershipIntervalsOrderBy, SortOrder) -> m [MembershipInterval]
+getMembershipIntervals maybeLimitOffset maybeFilter maybeOrder = do
+  providerCtx <- asks providerContext
+  allIntervals <- liftIO $ runQuery providerCtx (getAllMembershipIntervals (getNetworkId providerCtx))
+  return $ applyLimits maybeLimitOffset $ applyOrdering maybeOrder $ applyMembershipIntervalFilter maybeFilter allIntervals
+  where
+    applyOrdering Nothing intervals = intervals
+    applyOrdering (Just (orderBy, order)) intervals =
+      case (orderBy, order) of
+        (MembershipIntervalsOrderById, Types.Asc) -> L.sortOn membershipIntervalId intervals
+        (MembershipIntervalsOrderById, Types.Desc) -> L.sortOn (Down . membershipIntervalId) intervals
+        (MembershipIntervalsOrderByStartDate, Types.Asc) -> L.sortOn membershipIntervalStartDate intervals
+        (MembershipIntervalsOrderByStartDate, Types.Desc) -> L.sortOn (Down . membershipIntervalStartDate) intervals
+        (MembershipIntervalsOrderByIntervalNumber, Types.Asc) -> L.sortOn membershipIntervalNumber intervals
+        (MembershipIntervalsOrderByIntervalNumber, Types.Desc) -> L.sortOn (Down . membershipIntervalNumber) intervals
+        (MembershipIntervalsOrderByPractitioner, Types.Asc) -> L.sortOn membershipIntervalPractitionerId intervals
+        (MembershipIntervalsOrderByPractitioner, Types.Desc) -> L.sortOn (Down . membershipIntervalPractitionerId) intervals
+
+    applyMembershipIntervalFilter Nothing intervals = intervals
+    applyMembershipIntervalFilter (Just MembershipIntervalFilter {..}) intervals =
+      case membershipIntervalFilterPractitionerProfileId of
+        Just ids -> Prelude.filter ((`elem` ids) . membershipIntervalPractitionerId) intervals
+        Nothing -> intervals
+
+getMembershipIntervalsCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe MembershipIntervalFilter -> m Int
+getMembershipIntervalsCount maybeFilter = Prelude.length <$> getMembershipIntervals Nothing maybeFilter Nothing

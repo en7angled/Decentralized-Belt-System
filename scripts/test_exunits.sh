@@ -142,6 +142,10 @@ foreach my $block (@blocks) {
         $action = "AcceptMembershipInterval";
     } elsif ($block =~ /UpdateEndDateAction/) {
         $action = "UpdateEndDate";
+    } elsif ($block =~ /AwardAchievementAction/) {
+        $action = "AwardAchievement";
+    } elsif ($block =~ /AcceptAchievementAction/) {
+        $action = "AcceptAchievement";
     } elsif ($block =~ /CleanupDustAction/) {
         $action = "CleanupDust";
     } elsif ($block =~ /PauseProtocolAction/) {

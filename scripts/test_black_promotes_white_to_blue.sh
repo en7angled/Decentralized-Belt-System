@@ -148,7 +148,7 @@ print_info "This script reproduces the core part of blackPromotesWhiteToBlue tes
 print_section "Step 1: Deploy Reference Scripts"
 
 if [ ! -f "$REPO_ROOT/config/config_bjj_validators.json" ]; then
-    print_info "Deploying reference scripts (Profiles, Ranks, Memberships, Oracle)..."
+    print_info "Deploying reference scripts (Profiles, Ranks, Memberships, Achievements, Oracle)..."
     # Use direct command for deploy (it outputs informational messages we shouldn't treat as errors)
     deploy_output=""
     deploy_exit=0
@@ -304,6 +304,28 @@ run_admin_cmd_no_output accept-membership-interval --interval-id "$INTERVAL_ID"
 print_success "Membership interval accepted!"
 
 # ============================================================================
+# Step 7b: Achievements
+# ============================================================================
+print_section "Step 7b: Award and Accept Achievement"
+
+ACHIEVEMENT_TIME=$MEMBERSHIP_START
+
+print_info "Master awarding training achievement to student..."
+ACHIEVEMENT_ID=$(run_admin_cmd award-achievement \
+    --awarded-to-profile-id "$STUDENT_PROFILE_ID" \
+    --awarded-by-profile-id "$MASTER_PROFILE_ID" \
+    --name "Training Achievement" \
+    --description "Completed advanced training program" \
+    --image-uri "ipfs://QmTrainingAchievement" \
+    --posix "$ACHIEVEMENT_TIME" \
+    --output-id)
+print_success "Achievement awarded: $ACHIEVEMENT_ID"
+
+print_info "Student accepting achievement..."
+run_admin_cmd_no_output accept-achievement --achievement-id "$ACHIEVEMENT_ID"
+print_success "Achievement accepted!"
+
+# ============================================================================
 # Step 8: Test Oracle Admin Actions
 # ============================================================================
 print_section "Step 8: Oracle Admin Actions"
@@ -331,7 +353,9 @@ run_admin_cmd_no_output set-fees \
     --fee-address "addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp" \
     --profile-fee 2000000 \
     --promotion-fee 3000000 \
-    --membership-fee 1500000
+    --membership-history-fee 1500000 \
+    --membership-interval-fee 1500000 \
+    --achievement-fee 1000000
 print_success "Fee configuration set"
 
 print_info "Clearing fees..."
@@ -381,8 +405,9 @@ echo -e "  - Student profile:              ${CYAN}$STUDENT_PROFILE_ID${NC}"
 echo -e "  - Blue belt promotion:          ${CYAN}$BLUE_PROMOTION_ID${NC}"
 echo -e "  - Membership history:           ${CYAN}$MEMBERSHIP_ID${NC}"
 echo -e "  - Membership interval accepted: ${CYAN}$INTERVAL_ID${NC}"
+echo -e "  - Achievement (accepted):       ${CYAN}$ACHIEVEMENT_ID${NC}"
 echo ""
-echo -e "${GREEN}Progression:${NC} Student White belt -> Blue belt; membership at academy (create, add interval, accept)"
+echo -e "${GREEN}Progression:${NC} Student White belt -> Blue belt; membership at academy (create, add interval, accept); achievement (award, accept)"
 echo ""
 echo -e "${GREEN}Admin Actions Tested:${NC}"
 echo -e "  1. Pause protocol"
@@ -393,4 +418,4 @@ echo -e "  5. Query oracle"
 echo -e "  6. Cleanup dust"
 echo ""
 
-print_success "Black Promotes White to Blue + Memberships + Admin Actions test completed successfully!"
+print_success "Black Promotes White to Blue + Memberships + Achievements + Admin Actions test completed successfully!"

@@ -43,6 +43,8 @@ Trace codes are **two-character** and **globally unique**. The first character i
 | Mh | MintingPolicy | Must spend seed for uniqueness (achievement) |
 | Mj | MintingPolicy | Tx must mint JUST achievement NFT |
 | Mk | MintingPolicy | Lock achievement at AchievementsValidator |
+| Ml | MintingPolicy | Achievement date must be before tx validity range |
+| Mm | MintingPolicy | Metadata fields validation failed (achievement) |
 | A0 | AchievementsValidator | Cannot cleanup valid datum / no datum / invalid datum |
 | A1 | AchievementsValidator | Accept achievement check failed (lock updated achievement; must spend practitioner user NFT) |
 | A2 | AchievementsValidator | Invalid script info |

@@ -163,6 +163,48 @@ instance FromHttpApiData RanksOrderBy where
       "date" -> Right RanksOrderByDate
       _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
 
+data AchievementsOrderBy
+  = AchievementsOrderById
+  | AchievementsOrderByDate
+  | AchievementsOrderByAwardedTo
+  | AchievementsOrderByAwardedBy
+  | AchievementsOrderByName
+  deriving (Show, Generic, Eq)
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripPrefix "AchievementsOrderBy", CamelToSnake]] AchievementsOrderBy
+
+instance ToSchema AchievementsOrderBy where
+  declareNamedSchema = genericDeclareNamedSchema achievementsOrderBySchemaOptions
+    where
+      achievementsOrderBySchemaOptions :: SchemaOptions
+      achievementsOrderBySchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.constructorTagModifier = camelTo2 '_' . dropPrefix "AchievementsOrderBy"
+            }
+
+instance ToParamSchema AchievementsOrderBy where
+  toParamSchema _ =
+    mempty
+      & type_
+        ?~ SwaggerString
+      & enum_
+        ?~ [ Aeson.String (T.pack "id"),
+             Aeson.String (T.pack "date"),
+             Aeson.String (T.pack "awarded_to"),
+             Aeson.String (T.pack "awarded_by"),
+             Aeson.String (T.pack "name")
+           ]
+
+instance FromHttpApiData AchievementsOrderBy where
+  parseQueryParam t =
+    case T.toLower t of
+      "id" -> Right AchievementsOrderById
+      "date" -> Right AchievementsOrderByDate
+      "awarded_to" -> Right AchievementsOrderByAwardedTo
+      "awarded_by" -> Right AchievementsOrderByAwardedBy
+      "name" -> Right AchievementsOrderByName
+      _ -> Left "Invalid order by. Use 'id', 'date', 'awarded_to', 'awarded_by', or 'name'"
+
 data MembershipHistoriesOrderBy
   = MembershipHistoriesOrderById
   | MembershipHistoriesOrderByCreatedAt

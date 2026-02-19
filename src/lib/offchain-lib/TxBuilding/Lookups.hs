@@ -11,19 +11,20 @@ import GeniusYield.Types.Address
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Value
 import Onchain.CIP68 (CIP68Datum (..))
+import Onchain.LinkedList (NodeDatum (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Id (deriveMembershipHistoryId)
+import Onchain.Protocol.Types (MembershipDatum (..), MembershipHistoriesListNode (..), OnchainAchievement, OracleParams (..))
+import Onchain.Protocol.Types qualified as OnchainTypes
 import PlutusLedgerApi.V1.Value (CurrencySymbol, Value, flattenValue)
 import PlutusTx (fromBuiltinData)
 import TxBuilding.Context (DeployedScriptsContext (..))
 import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Functors
 import TxBuilding.Utils
-import Onchain.Protocol.Types (MembershipDatum (..), MembershipHistoriesListNode (..), OracleParams (..))
-import Onchain.Protocol.Types qualified as OnchainTypes
-import Onchain.LinkedList (NodeDatum (..))
-import TxBuilding.Validators (oracleValidatorGY, profilesValidatorHashGY, ranksValidatorHashGY, membershipsValidatorHashGY)
+import TxBuilding.Validators (achievementsValidatorHashGY, oracleValidatorGY, profilesValidatorHashGY, ranksValidatorHashGY, membershipsValidatorHashGY)
+import Data.Bifunctor (Bifunctor(..))
 
 ------------------------------------------------------------------------------------------------
 
@@ -94,6 +95,8 @@ getAllParsedDatumsAtValidator nid scriptHash parser = do
   let addr = addressFromScriptHash nid scriptHash
   allDatums <- fmap snd <$> utxosAtAddressesWithDatums [addr]
   return $ mapMaybe parser (catMaybes allDatums)
+
+
 
 getAllOnchainValidRanks :: (GYTxQueryMonad m) => GYNetworkId -> m [OnchainRank]
 getAllOnchainValidRanks nid = getAllParsedDatumsAtValidator nid ranksValidatorHashGY rankDatumFromDatum
@@ -319,9 +322,53 @@ getMembershipHistoriesForOrganization nid orgProfileAC = do
         then return (Just mh)
         else return Nothing
 
+-- | Get all membership histories at the validator (unfiltered).
+getAllMembershipHistories :: (GYTxQueryMonad m) => GYNetworkId -> m [MembershipHistory]
+getAllMembershipHistories nid = do
+  allDatums <- getAllMembershipDatums nid
+  let histories =
+        [ hist
+          | ListNodeDatum MembershipHistoriesListNode {nodeInfo} <- allDatums,
+            Just hist <- [nodeData nodeInfo]
+        ]
+  mapM onchainMembershipHistoryToMembershipHistory histories
+
 -- | Get all membership intervals at the validator.
+-- Derives each interval's NFT ID from its UTxO value.
 getAllMembershipIntervals :: (GYTxQueryMonad m) => GYNetworkId -> m [MembershipInterval]
 getAllMembershipIntervals nid = do
-  allDatums <- getAllMembershipDatums nid
-  let intervals = [iv | IntervalDatum iv <- allDatums]
-  mapM onchainMembershipIntervalToMembershipInterval intervals
+  let addr = addressFromScriptHash nid membershipsValidatorHashGY
+  allUtxos <- utxosAtAddressesWithDatums [addr]
+  let intervalPairs =
+        [ (iv, extractNFTAssetClass (utxoValue utxo))
+          | (utxo, Just gyDatum) <- allUtxos,
+            Just (IntervalDatum iv) <- [fromBuiltinData (datumToPlutus' gyDatum)]
+        ]
+  sequence
+    [ onchainMembershipIntervalToMembershipInterval gyId iv
+      | (iv, Just gyId) <- intervalPairs
+    ]
+
+------------------------------------------------------------------------------------------------
+
+-- * Achievement Lookup Functions
+
+------------------------------------------------------------------------------------------------
+
+-- | Get an achievement CIP68 datum and value by its NFT asset class.
+getAchievementDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (CIP68Datum OnchainAchievement, Value)
+getAchievementDatumAndValue achievementAC = do
+  utxo <- getUTxOWithNFT achievementAC
+  case achievementAndValueFromUTxO utxo of
+    Just (datum, value) -> return (datum, value)
+    Nothing -> throwError (GYApplicationException AchievementNotFound)
+
+   
+
+-- | Get all achievements at the achievements validator address.
+getAllAchievements :: (GYTxQueryMonad m) => GYNetworkId -> m [Achievement]
+getAllAchievements nid = do
+  allDatums <- getAllParsedDatumsAtValidator nid achievementsValidatorHashGY achievementDatumFromDatum
+  catMaybes <$> mapM safeConvert allDatums
+  where
+    safeConvert datum = catchError (Just <$> onchainAchievementToAchievement datum) (const $ return Nothing)

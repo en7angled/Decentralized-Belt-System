@@ -26,6 +26,8 @@ data TxBuildingException
   | MembershipHistoryNotFound
   | MembershipIntervalNotFound
   | MembershipListNodeNotFound
+    -- * Achievement Errors
+  | AchievementNotFound
     -- * Oracle Errors
   | OracleNotFound
   | OracleDatumInvalid
@@ -52,6 +54,7 @@ instance Exception TxBuildingException where
   displayException MembershipHistoryNotFound = "Membership history not found"
   displayException MembershipIntervalNotFound = "Membership interval not found"
   displayException MembershipListNodeNotFound = "Membership list node not found"
+  displayException AchievementNotFound = "Achievement not found"
   displayException OracleNotFound = "Oracle UTxO not found"
   displayException OracleDatumInvalid = "Oracle datum invalid or unparseable"
   displayException ProtocolPaused = "Protocol is paused"
@@ -80,6 +83,7 @@ txBuildingExceptionToHttpStatus PromotionNotFound = 404
 txBuildingExceptionToHttpStatus MembershipHistoryNotFound = 404
 txBuildingExceptionToHttpStatus MembershipIntervalNotFound = 404
 txBuildingExceptionToHttpStatus MembershipListNodeNotFound = 404
+txBuildingExceptionToHttpStatus AchievementNotFound = 404
 txBuildingExceptionToHttpStatus OracleNotFound = 404
 txBuildingExceptionToHttpStatus DeployedScriptsNotReady = 503
 txBuildingExceptionToHttpStatus ProtocolPaused = 503

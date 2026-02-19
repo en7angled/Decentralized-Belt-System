@@ -28,6 +28,8 @@ type MembershipHistoryAC = GYAssetClass
 
 type MembershipIntervalAC = GYAssetClass
 
+type AchievementAC = GYAssetClass
+
 -- | Profile type
 data ProfileType = Practitioner | Organization
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, ToParamSchema, Eq, Ord)
@@ -222,4 +224,45 @@ instance ToSchema MembershipInterval where
         fromAesonOptions $
           AesonTypes.defaultOptions
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "membershipInterval"
+            }
+
+-- | An achievement awarded to a practitioner.
+data Achievement = Achievement
+  { achievementId :: AchievementAC,
+    achievementAwardedTo :: ProfileRefAC,
+    achievementAwardedBy :: ProfileRefAC,
+    achievementDate :: GYTime,
+    achievementIsAccepted :: Bool,
+    achievementName :: Text,
+    achievementDescription :: Text,
+    achievementImageURI :: Text
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "achievement", CamelToSnake]] Achievement
+
+derivePersistFieldJSON "Achievement"
+
+instance Show Achievement where
+  show :: Achievement -> String
+  show (Achievement {..}) =
+    Prelude.init $
+      Prelude.unlines
+        [ "┌─────────────────────────────────────────────────────────────",
+          "│ Achievement ID: " <> stringFromJSON achievementId,
+          "│ Name: " <> stringFromJSON achievementName,
+          "│ Awarded To: " <> stringFromJSON achievementAwardedTo,
+          "│ Awarded By: " <> stringFromJSON achievementAwardedBy,
+          "│ Date: " <> stringFromJSON achievementDate,
+          "│ Accepted: " <> show achievementIsAccepted,
+          "└─────────────────────────────────────────────────────────────"
+        ]
+
+instance ToSchema Achievement where
+  declareNamedSchema = genericDeclareNamedSchema achievementSchemaOptions
+    where
+      achievementSchemaOptions :: SchemaOptions
+      achievementSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "achievement"
             }

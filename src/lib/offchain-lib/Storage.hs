@@ -119,6 +119,21 @@ MembershipIntervalProjection
     insertedAt                UTCTime
     UniqueMembershipIntervalProjection membershipIntervalId
     deriving Show
+
+AchievementProjection
+    createdAtSlot             Integer
+    createdAtHash             Text
+    achievementId             GYAssetClass
+    awardedToProfileId        GYAssetClass
+    awardedByProfileId        GYAssetClass
+    achievementDate           GYTime
+    isAccepted                Bool
+    achievementName           Text
+    achievementDescription    Text
+    achievementImageURI       Text
+    insertedAt                UTCTime
+    UniqueAchievementProjection achievementId
+    deriving Show
 |]
 
 runMigrations :: (MonadIO m) => SqlPersistT m ()
@@ -164,6 +179,7 @@ putMatchAndProjections networkId km = do
           PromotionEvent pr -> putPromotionProjection slotNoInt header pr
           MembershipHistoryEvent mh -> putMembershipHistoryProjection slotNoInt header mh
           MembershipIntervalEvent mi -> putMembershipIntervalProjection slotNoInt header mi
+          AchievementEvent a -> putAchievementProjection slotNoInt header a
           NoEvent _ -> pure ()
 
 putKupoMatch :: (MonadIO m) => KupoMatch -> SqlPersistT m ()
@@ -251,6 +267,24 @@ putMembershipIntervalProjection createdSlot createdHash mi = do
           now
   upsertByUnique (UniqueMembershipIntervalProjection . membershipIntervalProjectionMembershipIntervalId) ev
 
+putAchievementProjection :: (MonadIO m) => Integer -> Text -> Achievement -> SqlPersistT m ()
+putAchievementProjection createdSlot createdHash a = do
+  now <- liftIO getCurrentTime
+  let ev =
+        AchievementProjection
+          createdSlot
+          createdHash
+          (achievementId a)
+          (achievementAwardedTo a)
+          (achievementAwardedBy a)
+          (achievementDate a)
+          (achievementIsAccepted a)
+          (achievementName a)
+          (achievementDescription a)
+          (achievementImageURI a)
+          now
+  upsertByUnique (UniqueAchievementProjection . achievementProjectionAchievementId) ev
+
 -- | Rollback all stored events and projections strictly beyond the given slot,
 --   and any rows at the slot with a mismatching block header hash.
 rollbackTo :: (MonadIO m) => Integer -> Text -> SqlPersistT m ()
@@ -274,3 +308,6 @@ rollbackTo slotNo headerHash = do
 
   deleteWhere [MembershipIntervalProjectionCreatedAtSlot >. slotNo]
   deleteWhere [MembershipIntervalProjectionCreatedAtSlot ==. slotNo, MembershipIntervalProjectionCreatedAtHash !=. headerHash]
+
+  deleteWhere [AchievementProjectionCreatedAtSlot >. slotNo]
+  deleteWhere [AchievementProjectionCreatedAtSlot ==. slotNo, AchievementProjectionCreatedAtHash !=. headerHash]

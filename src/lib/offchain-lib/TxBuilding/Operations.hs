@@ -8,11 +8,11 @@ import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (BJJBelt (White), beltToInt)
-import Onchain.CIP68 (ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
+import Onchain.CIP68 (CIP68Datum (..), ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.LinkedList (NodeDatum (..))
-import Onchain.Protocol (OnchainRank (..), acceptMembershipInterval, addMembershipIntervalToHistory, appendMembershipHistory, deriveMembershipHistoriesListId, derivePromotionRankId, initEmptyMembershipHistoriesList, initMembershipHistory, insertMembershipHistoryInBetween, mkMembershipHistoriesListNode, mkOrganizationProfile, mkPractitionerProfile, mkPromotion, promoteProfile, updateNodeMembershipHistory, updateEndDateWithoutValidations)
+import Onchain.Protocol (OnchainRank (..), acceptAchievement, acceptMembershipInterval, addMembershipIntervalToHistory, appendMembershipHistory, deriveIntervalsHeadId, deriveMembershipHistoriesListId, deriveMembershipHistoryIdFromHistory, deriveMembershipIntervalId, derivePromotionRankId, initEmptyMembershipHistoriesList, initMembershipHistory, insertMembershipHistoryInBetween, mkMembershipHistoriesListNode, mkOrganizationProfile, mkPractitionerProfile, mkPromotion, promoteProfile, updateNodeMembershipHistory, updateEndDateWithoutValidations)
 import Onchain.Protocol qualified as Onchain
-import Onchain.Protocol.Types (FeeConfig (..), MembershipDatum (..), MembershipHistoriesListNode (..), OnchainMembershipHistory (..), OnchainMembershipInterval (..), OracleParams (..))
+import Onchain.Protocol.Types (FeeConfig (..), MembershipDatum (..), MembershipHistoriesListNode (..), OnchainAchievement (..), OnchainMembershipHistory (..), OnchainMembershipInterval (..), OracleParams (..))
 import Onchain.Validators.MembershipsValidator (MembershipsRedeemer (..))
 import Onchain.Validators.MintingPolicy
 import Onchain.Validators.ProfilesValidator (ProfilesRedeemer (AcceptPromotion, UpdateProfileImage))
@@ -21,9 +21,10 @@ import Onchain.Validators.RanksValidator (RanksRedeemer (PromotionAcceptance))
 import Onchain.Validators.RanksValidator qualified (RanksRedeemer (Cleanup))
 import Onchain.Utils (protocolMinLovelace)
 import PlutusLedgerApi.V3
-import TxBuilding.Context (DeployedScriptsContext (..), getMembershipsValidatorRef, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
+import Onchain.Validators.AchievementsValidator (AchievementsRedeemer (..))
+import TxBuilding.Context (DeployedScriptsContext (..), getAchievementsValidatorRef, getMembershipsValidatorRef, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getRanksValidatorRef)
 import TxBuilding.Exceptions (TxBuildingException (..))
-import TxBuilding.Lookups (findInsertPointForNewMembership, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDataAndValue, getRankStateDataAndValue, getUtxoWithTokenAtAddresses, queryOracleParams)
+import TxBuilding.Lookups (findInsertPointForNewMembership, getAchievementDatumAndValue, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDataAndValue, getRankStateDataAndValue, getUtxoWithTokenAtAddresses, queryOracleParams)
 import TxBuilding.Skeletons
 import TxBuilding.Utils (gySlotFromPOSIXTime, pPOSIXTimeFromGYSlot, txOutRefToV3Plutus)
 import TxBuilding.Validators
@@ -78,6 +79,7 @@ verifyDeployedScriptsAreReady = do
   pvRef <- asks getProfilesValidatorRef
   rvRef <- asks getRanksValidatorRef
   mvRef <- asks getMembershipsValidatorRef
+  avRef <- asks getAchievementsValidatorRef
   ovRef <- asks getOracleValidatorRef
 
   mintingPolicyUTxO <- utxoAtTxOutRef mpRef
@@ -92,10 +94,13 @@ verifyDeployedScriptsAreReady = do
   membershipsValidatorUTxO <- utxoAtTxOutRef mvRef
   let membershipsValidatorHasRefScript = utxoRefScript =<< membershipsValidatorUTxO
 
+  achievementsValidatorUTxO <- utxoAtTxOutRef avRef
+  let achievementsValidatorHasRefScript = utxoRefScript =<< achievementsValidatorUTxO
+
   oracleValidatorUTxO <- utxoAtTxOutRef ovRef
   let oracleValidatorHasRefScript = utxoRefScript =<< oracleValidatorUTxO
 
-  return $ all isJust [mintingPolicyHasRefScript, profilesValidatorHasRefScript, ranksValidatorHasRefScript, membershipsValidatorHasRefScript, oracleValidatorHasRefScript]
+  return $ all isJust [mintingPolicyHasRefScript, profilesValidatorHasRefScript, ranksValidatorHasRefScript, membershipsValidatorHasRefScript, achievementsValidatorHasRefScript, oracleValidatorHasRefScript]
 
 -- | Like 'verifyDeployedScriptsAreReady' but throws 'DeployedScriptsNotReady' when scripts are not ready.
 ensureDeployedScriptsAreReady ::
@@ -496,8 +501,10 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
       return (newNode', updatedLeftNode', Just (assetClassToPlutus rightNodeAC))
 
   -- Derive GY asset classes for the newly created tokens
-  gyMembershipHistoryAC <- assetClassFromPlutus' $ membershipHistoryId newHistory
-  gyFirstIntervalAC <- assetClassFromPlutus' $ Onchain.Protocol.Types.membershipIntervalId fstInterval
+  let historyId = deriveMembershipHistoryIdFromHistory newHistory
+      fstIntervalId = deriveIntervalsHeadId newHistory
+  gyMembershipHistoryAC <- assetClassFromPlutus' historyId
+  gyFirstIntervalAC <- assetClassFromPlutus' fstIntervalId
 
   let updatedLeftNodeTxOutIdx = 0 :: Integer
   let insertedNodeTxOutIdx = 1 :: Integer
@@ -605,7 +612,7 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
         Nothing -> error "addMembershipIntervalTX: root node has no history"
 
   -- Look up the last interval (head of intervals chain) for reference input
-  let lastIntervalAC = membershipHistoryIntervalsHeadId currentHistory
+  let lastIntervalAC = deriveIntervalsHeadId currentHistory
   gyLastIntervalAC <- assetClassFromPlutus' lastIntervalAC
   (lastInterval, _lastIntervalValue) <- getMembershipIntervalDatumAndValue gyLastIntervalAC
 
@@ -614,7 +621,9 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
   let updatedHistoryNode = updateNodeMembershipHistory historyNode updatedHistory
 
   -- Derive GY asset class for the new interval
-  gyNewIntervalAC <- assetClassFromPlutus' $ Onchain.Protocol.Types.membershipIntervalId newInterval
+  let historyId = deriveMembershipHistoryIdFromHistory currentHistory
+      newIntervalId = deriveMembershipIntervalId historyId (membershipIntervalNumber newInterval)
+  gyNewIntervalAC <- assetClassFromPlutus' newIntervalId
 
   -- ============================================================
   -- Output index tracking (order must match skeleton mconcat order)
@@ -832,6 +841,162 @@ updateEndDateTX gyIntervalAC gyHistoryNodeAC newEndDateGY ownAddrs validityOverr
 
 ------------------------------------------------------------------------------------------------
 
+-- * Achievement Operations
+
+------------------------------------------------------------------------------------------------
+
+-- | Award an achievement to a practitioner.
+-- The awarder (awardedBy) spends their User NFT to authorize.
+-- Corresponds to 'NewAchievement' minting.
+--
+-- Output index layout:
+--   Output 0: Achievement NFT locked at achievementsValidator
+--   Output 1 (optional): Fee payment
+awardAchievementTX ::
+  (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  -- | Profile ID of the practitioner receiving the achievement
+  GYAssetClass ->
+  -- | Profile ID of the awarder (org or practitioner)
+  GYAssetClass ->
+  -- | CIP-68 metadata fields (name, description, image)
+  MetadataFields ->
+  -- | Additional metadata key-value pairs
+  [(BuiltinByteString, BuiltinByteString)] ->
+  -- | Achievement date
+  POSIXTime ->
+  -- | Awarder's wallet addresses (to spend User NFT)
+  [GYAddress] ->
+  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
+awardAchievementTX gyAwardedToProfileId gyAwardedByProfileId metadata otherMetadata achievementDate ownAddrs = do
+  mpGY <- asks getMintingPolicyFromCtx
+  mpRef <- asks getMintingPolicyRef
+  now <- slotOfCurrentBlock
+  let isInvalidBeforeNow = isInvalidBefore now
+
+  -- Oracle reference input + params
+  (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
+  let minLv = protocolMinLovelace
+  feeSkeleton <- getFeeSkeleton oracleParams fcAchievementFee
+
+  -- Get a seed TxOutRef for uniqueness
+  seedTxOutRef <- someUTxOWithoutRefScript
+  let isSpendingSeedUTxO = mustHaveInput (GYTxIn seedTxOutRef GYTxInWitnessKey)
+  let seedTxOutRefPlutus = txOutRefToV3Plutus seedTxOutRef
+
+  -- Awarder must spend their User NFT
+  gyAwarderUserAC <- gyDeriveUserFromRefAC gyAwardedByProfileId
+  spendsAwarderUserNFT <- txMustSpendFromAddress gyAwarderUserAC ownAddrs
+
+  -- ============================================================
+  -- Output index tracking (order must match skeleton mconcat order)
+  -- ============================================================
+  -- Output 0: Achievement NFT locked at achievementsValidator
+  -- Output 1 (optional): Fee payment
+  let achievementOutputIdx = 0 :: Integer
+
+  let redeemer =
+        NewAchievement
+          seedTxOutRefPlutus
+          metadata
+          otherMetadata
+          (assetClassToPlutus gyAwardedToProfileId)
+          (assetClassToPlutus gyAwardedByProfileId)
+          achievementDate
+          achievementOutputIdx
+  let gyRedeemer = redeemerFromPlutusData redeemer
+
+  -- Generate achievement NFT AC
+  (gyAchievementRefAC, _gyAchievementUserAC) <- gyGenerateRefAndUserAC mpGY seedTxOutRef
+  isMintingAchievementNFT <- txMustMintWithMintRef True mpRef mpGY gyRedeemer gyAchievementRefAC
+
+  -- Build achievement datum
+  let achievementInfo =
+        OnchainAchievement
+          { achievementId = assetClassToPlutus gyAchievementRefAC,
+            achievementAwardedTo = assetClassToPlutus gyAwardedToProfileId,
+            achievementAwardedBy = assetClassToPlutus gyAwardedByProfileId,
+            achievementDate = achievementDate,
+            achievementIsAccepted = False
+          }
+  let achievementDatum = mkCIP68Datum achievementInfo metadata otherMetadata
+
+  -- Output 0: Achievement NFT
+  isLockingAchievement <-
+    txMustLockStateWithInlineDatumAndValue
+      achievementsValidatorGY
+      achievementDatum
+      (valueSingleton gyAchievementRefAC 1 <> valueFromLovelace minLv)
+
+  return
+    ( mconcat
+        [ isSpendingSeedUTxO, -- Input (no output index)
+          spendsAwarderUserNFT, -- Input (no output index)
+          isInvalidBeforeNow, -- Validity (no output index)
+          oracleRefSkeleton, -- Reference input: oracle UTxO
+          isMintingAchievementNFT, -- Mint (no output index)
+          isLockingAchievement, -- Output 0: Achievement NFT
+          feeSkeleton -- Output 1 (optional): Fee payment
+        ],
+      gyAchievementRefAC
+    )
+
+-- | Accept an achievement (practitioner consent).
+-- Corresponds to 'AcceptAchievement' spending (no minting).
+--
+-- Output index layout:
+--   Output 0: Updated achievement with isAccepted = True
+acceptAchievementTX ::
+  (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
+  -- | Achievement NFT AC
+  GYAssetClass ->
+  -- | Practitioner's wallet addresses (to spend User NFT)
+  [GYAddress] ->
+  m (GYTxSkeleton 'PlutusV3)
+acceptAchievementTX gyAchievementAC ownAddrs = do
+  avRef <- asks getAchievementsValidatorRef
+
+  -- Look up the achievement
+  (achievementDatum, achievementValue) <- getAchievementDatumAndValue gyAchievementAC
+
+  -- Spend practitioner User NFT
+  let practitionerProfileRefAC = achievementAwardedTo (extra achievementDatum)
+  gyPractitionerProfileRefAC <- assetClassFromPlutus' practitionerProfileRefAC
+  gyPractitionerUserAC <- gyDeriveUserFromRefAC gyPractitionerProfileRefAC
+  spendsPractitionerUserNFT <- txMustSpendFromAddress gyPractitionerUserAC ownAddrs
+
+  -- Compute updated achievement
+  let updatedAchievement = acceptAchievement (extra achievementDatum)
+  let updatedAchievementDatum = achievementDatum {extra = updatedAchievement}
+
+  -- ============================================================
+  -- Output index tracking (order must match skeleton mconcat order)
+  -- ============================================================
+  -- Output 0: Updated achievement
+  let achievementOutputIdx = 0 :: Integer
+
+  -- Build AchievementsValidator redeemer
+  let avRedeemer = redeemerFromPlutusData $ AcceptAchievement achievementOutputIdx
+
+  -- Spend the achievement from achievements validator
+  spendsAchievement <- txMustSpendStateFromRefScriptWithRedeemer avRef gyAchievementAC avRedeemer achievementsValidatorGY
+
+  gyAchievementValue <- valueFromPlutus' achievementValue
+  -- Output 0: Updated achievement
+  isLockingUpdatedAchievement <-
+    txMustLockStateWithInlineDatumAndValue
+      achievementsValidatorGY
+      updatedAchievementDatum
+      gyAchievementValue
+
+  return $
+    mconcat
+      [ spendsPractitionerUserNFT, -- Input (no output index)
+        spendsAchievement, -- Input (no output index)
+        isLockingUpdatedAchievement -- Output 0: Updated achievement
+      ]
+
+------------------------------------------------------------------------------------------------
+
 -- * Oracle Management Operations
 
 ------------------------------------------------------------------------------------------------
@@ -892,17 +1057,20 @@ cleanupDustTX = do
   pvRef <- asks getProfilesValidatorRef
   rvRef <- asks getRanksValidatorRef
   mvRef <- asks getMembershipsValidatorRef
+  avRef <- asks getAchievementsValidatorRef
 
   pvAddr <- scriptAddress profilesValidatorGY
   rvAddr <- scriptAddress ranksValidatorGY
   mvAddr <- scriptAddress membershipsValidatorGY
+  avAddr <- scriptAddress achievementsValidatorGY
 
   -- Find dust UTxOs at each validator address
   profilesDust <- getDustUTxOs pvAddr protocolCS
   ranksDust <- getDustUTxOs rvAddr protocolCS
   membershipsDust <- getDustUTxOs mvAddr protocolCS
+  achievementsDust <- getDustUTxOs avAddr protocolCS
 
-  let dustCount = length profilesDust + length ranksDust + length membershipsDust
+  let dustCount = length profilesDust + length ranksDust + length membershipsDust + length achievementsDust
 
   when (dustCount == 0) $
     throwError (GYApplicationException NoDustFound)
@@ -911,9 +1079,11 @@ cleanupDustTX = do
   let pvCleanupRedeemer = redeemerFromPlutusData Onchain.Validators.ProfilesValidator.Cleanup
       rvCleanupRedeemer = redeemerFromPlutusData Onchain.Validators.RanksValidator.Cleanup
       mvCleanupRedeemer = redeemerFromPlutusData Onchain.Validators.MembershipsValidator.Cleanup
+      avCleanupRedeemer = redeemerFromPlutusData Onchain.Validators.AchievementsValidator.Cleanup
 
   let profileSpends = map (\utxo -> txMustSpendUTxOFromRefScript pvRef utxo pvCleanupRedeemer profilesValidatorGY) profilesDust
       rankSpends = map (\utxo -> txMustSpendUTxOFromRefScript rvRef utxo rvCleanupRedeemer ranksValidatorGY) ranksDust
       membershipsSpends = map (\utxo -> txMustSpendUTxOFromRefScript mvRef utxo mvCleanupRedeemer membershipsValidatorGY) membershipsDust
+      achievementsSpends = map (\utxo -> txMustSpendUTxOFromRefScript avRef utxo avCleanupRedeemer achievementsValidatorGY) achievementsDust
 
-  return (mconcat (profileSpends ++ rankSpends ++ membershipsSpends), dustCount)
+  return (mconcat (profileSpends ++ rankSpends ++ membershipsSpends ++ achievementsSpends), dustCount)

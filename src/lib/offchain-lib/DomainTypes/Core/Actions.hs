@@ -92,6 +92,16 @@ data ProfileActionType
         ude_membership_history_node_id :: GYAssetClass,
         ude_new_end_date :: GYTime
       }
+  | AwardAchievementAction
+      { aa_awarded_to_profile_id :: ProfileRefAC,
+        aa_awarded_by_profile_id :: ProfileRefAC,
+        aa_profile_data :: ProfileData,
+        aa_other_metadata :: [(Text, Text)],
+        aa_achievement_date :: GYTime
+      }
+  | AcceptAchievementAction
+      { aca_achievement_id :: GYAssetClass
+      }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 -------------------------------------------------------------------------------

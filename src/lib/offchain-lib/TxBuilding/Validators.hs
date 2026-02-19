@@ -170,6 +170,9 @@ ranksValidatorSize = compiledCodeSize ranksValidatorPlutus
 membershipsValidatorSize :: Int
 membershipsValidatorSize = compiledCodeSize membershipsValidatorPlutus
 
+achievementsValidatorSize :: Int
+achievementsValidatorSize = compiledCodeSize achievementsValidatorPlutus
+
 oracleValidatorSize :: Int
 oracleValidatorSize = compiledCodeSize oracleValidatorPlutus
 
@@ -192,6 +195,9 @@ exportRanksValidator = writeScript @'PlutusV3 Constants.defaultRanksValidatorFil
 exportMembershipsValidator :: IO ()
 exportMembershipsValidator = writeScript @'PlutusV3 Constants.defaultMembershipsValidatorFile $ validatorToScript membershipsValidatorGY
 
+exportAchievementsValidator :: IO ()
+exportAchievementsValidator = writeScript @'PlutusV3 Constants.defaultAchievementsValidatorFile $ validatorToScript achievementsValidatorGY
+
 exportOracleValidator :: IO ()
 exportOracleValidator = writeScript @'PlutusV3 Constants.defaultOracleValidatorFile $ validatorToScript oracleValidatorGY
 
@@ -200,4 +206,5 @@ exportValidators = do
   exportProfilesValidator
   exportRanksValidator
   exportMembershipsValidator
+  exportAchievementsValidator
   exportOracleValidator

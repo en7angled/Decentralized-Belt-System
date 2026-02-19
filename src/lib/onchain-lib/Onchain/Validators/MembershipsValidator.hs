@@ -35,6 +35,9 @@ import Onchain.Protocol
     acceptMembershipInterval,
     addMembershipIntervalToHistory,
     appendMembershipHistory,
+    deriveIntervalsHeadId,
+    deriveMembershipHistoryIdFromHistory,
+    deriveMembershipIntervalId,
     insertMembershipHistoryInBetween,
     mkMembershipHistoriesListNode,
     unsafeGetListNodeDatumAndValue,
@@ -43,7 +46,6 @@ import Onchain.Protocol
     updateMembershipIntervalEndDate,
     updateNodeMembershipHistory,
   )
-import Onchain.Protocol.Id (deriveMembershipIntervalId)
 import Onchain.Utils (mkUntypedLambda)
 import Onchain.Utils qualified as Utils
 import PlutusLedgerApi.V1 qualified as V1
@@ -156,9 +158,11 @@ handleInsertNode ::
 handleInsertNode txInfo@TxInfo {..} ownValue ownAddress oldLeftNode maybeRightNodeId insertedMembershipHistory updatedLeftNodeTxOutIdx insertedNodeTxOutIdx =
   let -- Derive org User NFT from the EXISTING on-chain datum (not redeemer) to prevent cross-org attacks
       orgUserAC = deriveUserFromRefAC (organizationId oldLeftNode)
-      insertedNodeNFT = V1.assetClassValue (membershipHistoryId insertedMembershipHistory) 1
+      historyId = deriveMembershipHistoryIdFromHistory insertedMembershipHistory
+      insertedNodeNFT = V1.assetClassValue historyId 1
 
-      newIntervalId = membershipHistoryIntervalsHeadId $ unsafeGetMembershipHistory insertedNodeDatum
+      insertedHistory = unsafeGetMembershipHistory insertedNodeDatum
+      newIntervalId = deriveIntervalsHeadId insertedHistory
       newIntervalNFT = V1.assetClassValue newIntervalId 1
 
       -- nextNodeKey must be the right node's KEY (practitioner id), not its NFT (which is the node id not the node key) .
@@ -196,16 +200,21 @@ handleUpdateNode txInfo@TxInfo {..} ownValue ownAddress spendingNode lastInterva
   let -- Derive org User NFT from the EXISTING on-chain datum (not redeemer) to prevent cross-org attacks
       orgUserAC = deriveUserFromRefAC (organizationId spendingNode)
       oldHistory = unsafeGetMembershipHistory spendingNode
+      -- Verify redeemer-provided lastIntervalId matches the derived head
+      expectedHeadId = deriveIntervalsHeadId oldHistory
+      validRedeemerId = expectedHeadId == lastIntervalId
       (_lastIntervalValue, lastInterval) = unsafeGetMembershipInterval lastIntervalId ownAddress txInfoReferenceInputs
       (newHistory, newInterval) = addMembershipIntervalToHistory oldHistory lastInterval startDate endDate
-      newIntervalId = membershipIntervalId newInterval
+      historyId = deriveMembershipHistoryIdFromHistory oldHistory
+      newIntervalId = deriveMembershipIntervalId historyId (membershipIntervalNumber newInterval)
       newIntervalNFT = V1.assetClassValue newIntervalId 1
       updatedNode = updateNodeMembershipHistory spendingNode newHistory
    in traceIfFalse "V6" -- Update node handler failed (V6)
         $ and
-          [ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1, -- Must spend org User NFT
-            Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- Lock updated node
-            mintValueMinted txInfoMint == newIntervalNFT -- Exact mint check
+          [ validRedeemerId,
+            V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1,
+            Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs,
+            mintValueMinted txInfoMint == newIntervalNFT
           ]
 
 {-# INLINEABLE handleAcceptInterval #-}
@@ -238,10 +247,15 @@ handleUpdateEndDate ::
 handleUpdateEndDate txInfo@TxInfo {..} ownValue ownAddress interval membershipHistoryNodeId newEndDate updatedIntervalTxOutIdx =
   let (_historyNodeValue, historyNode) = unsafeGetListNodeDatumAndValue membershipHistoryNodeId ownAddress txInfoReferenceInputs
       history = unsafeGetMembershipHistory historyNode
-      -- Interval must belong to this history (practitioner match + O(1) ID binding)
+      -- Interval must belong to this history: practitioner match + NFT in ownValue
+      -- matches the derivation from history fields. Verifying against ownValue is
+      -- stronger than comparing stored datum fields — it proves the actual token
+      -- locked in this UTxO matches the expected derivation.
+      historyId = deriveMembershipHistoryIdFromHistory history
+      expectedIntervalId = deriveMembershipIntervalId historyId (membershipIntervalNumber interval)
       intervalBelongsToHistory =
-        membershipHistoryPractitionerId history == membershipIntervalPractitionerId interval
-          && membershipIntervalId interval == deriveMembershipIntervalId (membershipHistoryId history) (membershipIntervalNumber interval)
+        membershipHistoryPractitionerId history == membershipIntervalPractitionerId interval -- interval datum and history agree on who the practitioner is.
+          && V1.assetClassValueOf ownValue expectedIntervalId == 1 -- the token we’re spending is the one that belongs to this history.
       orgUserAC = deriveUserFromRefAC (membershipHistoryOrganizationId history)
       practitionerUserAC = deriveUserFromRefAC (membershipIntervalPractitionerId interval)
       spentOrg = V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1

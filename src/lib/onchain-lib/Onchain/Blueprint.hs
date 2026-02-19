@@ -11,6 +11,7 @@ import Data.Set qualified as Set
 import Onchain.CIP68 (CIP68Datum)
 import Onchain.Protocol (OnchainProfile, OnchainRank, ProtocolParams)
 import Onchain.Protocol.Types (FeeConfig, OracleParams)
+import Onchain.Validators.AchievementsValidator (AchievementsRedeemer, achievementsCompile)
 import Onchain.Validators.MembershipsValidator (MembershipsRedeemer, membershipsCompile)
 import Onchain.Validators.MintingPolicy (MintingRedeemer, mintingPolicyCompile)
 import Onchain.Validators.OracleValidator (oracleCompile)
@@ -31,13 +32,14 @@ contractBlueprint mp =
             profilesValidatorBlueprint mp,
             ranksValidatorBlueprint mp,
             membershipsValidatorBlueprint mp,
+            achievementsValidatorBlueprint mp,
             oracleValidatorBlueprint
           ],
       -- Note: MembershipDatum is excluded from deriveDefinitions because it transitively contains
       -- NodeDatum (polymorphic type from LinkedList.hs) which cannot derive HasBlueprintSchema
       -- for concrete type parameter instantiations. The MembershipsValidator datum uses @() as a placeholder.
       -- OracleParams and FeeConfig are included for the oracle hub.
-      contractDefinitions = deriveDefinitions @[ProtocolParams, CIP68Datum OnchainProfile, OnchainRank, OracleParams, FeeConfig, MintingRedeemer, ProfilesRedeemer, RanksRedeemer, MembershipsRedeemer]
+      contractDefinitions = deriveDefinitions @[ProtocolParams, CIP68Datum OnchainProfile, OnchainRank, OracleParams, FeeConfig, MintingRedeemer, ProfilesRedeemer, RanksRedeemer, MembershipsRedeemer, AchievementsRedeemer]
     }
 
 myPreamble :: Preamble
@@ -150,7 +152,7 @@ membershipsValidatorBlueprint _mp =
         Just
           MkArgumentBlueprint
             { argumentTitle = Just "Membership Datum",
-              argumentDescription = Just "Sum type for datums stored at the MembershipsValidator address: ListNodeDatum (membership history node in the sorted linked list, containing organization ID, practitioner ID, interval head pointer, and interval count) or IntervalDatum (individual time-bounded membership period with start/end dates, practitioner reference, previous interval link, and acknowledgement flag).",
+              argumentDescription = Just "Sum type for datums stored at the MembershipsValidator address: ListNodeDatum (membership history node in the sorted linked list, containing organization ID, practitioner ID, and interval head number) or IntervalDatum (individual time-bounded membership period with start/end dates, interval number, practitioner reference, and acknowledgement flag). IDs (history NFT, interval NFT) are derived at runtime via deterministic hashing rather than stored in the datum.",
               argumentPurpose = Set.singleton Spend,
               -- MembershipDatum cannot be referenced here because NodeDatum (polymorphic) lacks HasBlueprintSchema.
               -- The actual datum type is MembershipDatum = ListNodeDatum MembershipHistoriesListNode | IntervalDatum OnchainMembershipInterval.
@@ -159,6 +161,33 @@ membershipsValidatorBlueprint _mp =
       validatorCompiled =
         Just $
           compiledValidator PlutusV3 (fromShort $ serialiseCompiledCode membershipsCompile)
+    }
+
+-- | Achievements Validator Blueprint
+achievementsValidatorBlueprint :: ProtocolParams -> ValidatorBlueprint referencedTypes
+achievementsValidatorBlueprint _mp =
+  MkValidatorBlueprint
+    { validatorTitle = "BJJ Belt System Achievements Validator",
+      validatorDescription = Just "Manages achievement NFTs awarded to practitioners by organizations or other practitioners. Supports acceptance (practitioner consent) and permissionless dust cleanup. Achievement NFTs are CIP-68 tokens locked at this validator with an OnchainAchievement datum tracking the award and acceptance status.",
+      validatorParameters = [],
+      validatorRedeemer =
+        MkArgumentBlueprint
+          { argumentTitle = Just "Achievements Redeemer",
+            argumentDescription = Just "Redeemer for achievement operations: AcceptAchievement (practitioner acknowledges an achievement, setting isAccepted to True) or Cleanup (permissionless dust removal for UTxOs without valid achievement datums).",
+            argumentPurpose = Set.fromList [Spend],
+            argumentSchema = definitionRef @AchievementsRedeemer
+          },
+      validatorDatum =
+        Just
+          MkArgumentBlueprint
+            { argumentTitle = Just "Achievement Datum",
+              argumentDescription = Just "CIP-68 datum containing achievement information: achievement ID, awarded-to profile, awarded-by profile, achievement date, and acceptance status.",
+              argumentPurpose = Set.singleton Spend,
+              argumentSchema = definitionRef @()
+            },
+      validatorCompiled =
+        Just $
+          compiledValidator PlutusV3 (fromShort $ serialiseCompiledCode achievementsCompile)
     }
 
 -- | Oracle Validator Blueprint

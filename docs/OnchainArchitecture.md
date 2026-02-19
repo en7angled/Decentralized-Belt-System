@@ -3,30 +3,35 @@
 
 - [Onchain Architecture Documentation](#onchain-architecture-documentation)
   - [Overview](#overview)
+    - [State NFT Token Name Derivation](#state-nft-token-name-derivation)
   - [Script Dependencies & Parameterization](#script-dependencies--parameterization)
   - [Oracle Hub for Parameters](#oracle-hub-for-parameters)
   - [Minting Policy](#minting-policy)
   - [Profiles Validator](#profiles-validator)
   - [Ranks Validator](#ranks-validator)
   - [Memberships Validator](#memberships-validator)
+  - [Achievements Validator](#achievements-validator)
   - [Promotion Flow](#promotion-flow)
   - [Membership Flow](#membership-flow)
+  - [Achievement Flow](#achievement-flow)
   - [BJJ Promotion Rules](#bjj-promotion-rules)
   - [Security Model](#security-model)
+  - [Membership Datum Optimization](#membership-datum-optimization)
 
 
 ## Overview
 
 The Decentralized BJJ Belt System implements a comprehensive smart contract architecture for managing Brazilian Jiu-Jitsu (BJJ) practitioner profiles, rank promotions, and organization memberships on the Cardano blockchain. 
 
-The system consists of five main validators and an oracle hub that work together to manage the complete BJJ belt system:
+The system consists of six main validators and an oracle hub that work together to manage the complete BJJ belt system:
 
 1. **Oracle Validator** - Guards the oracle UTxO containing dynamic protocol parameters
 2. **Oracle NFT Policy** - One-shot minting policy to create the unique oracle identifier
-3. **Minting Policy** - Controls token creation and validates promotions/memberships at creation time; reads oracle parameters via reference input
+3. **Minting Policy** - Controls token creation and validates promotions/memberships/achievements at creation time; reads oracle parameters via reference input
 4. **Profiles Validator** - Manages profile updates and validates promotion acceptance
 5. **Ranks Validator** - Handles promotion consumption with consent validation
 6. **Memberships Validator** - Manages membership histories and intervals for organization-practitioner relationships
+7. **Achievements Validator** - Manages achievement NFTs awarded to practitioners, supporting acceptance and permissionless dust cleanup
 
 **Immutability Principle**: Profiles are permanent by design. BJJ belt records are historical facts that should not be erasable, preserving lineage integrity and verification.
 
@@ -38,6 +43,21 @@ The system consists of five main validators and an oracle hub that work together
 - **Membership Histories Root Token**: NFT locked at Memberships Validator; root of the sorted linked list of membership histories for an organization
 - **Membership History Token**: NFT locked at Memberships Validator; node in the membership histories linked list representing a practitioner's membership at an organization
 - **Membership Interval Token**: NFT locked at Memberships Validator; represents a specific time period of membership
+
+### State NFT Token Name Derivation
+
+All state and user NFTs share the same minting policy (currency symbol). Token names are derived deterministically as below. `blake2b_224` yields 28 bytes; CIP-67 prefixes are 4 bytes.
+
+| Token | Token name derivation | CIP-67 prefix | Size |
+|-------|------------------------|---------------|------|
+| **Profile Ref** (state at Profiles) | `refPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef` | Yes (ref `0x000643b0`) | 32 B (4 + 28) |
+| **Profile User** (held by owner) | `userPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from same seed | Yes (user `0x000de140`) | 32 B (4 + 28) |
+| **First rank** (initial, with practitioner profile) | `blake2b_224(profileRefTokenName \|\| integerToByteString(BigEndian, 0, rankNumber))` | No | 28 B |
+| **Promotion / Accepted rank** (pending then accepted) | `blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef` | No | 28 B |
+| **Membership histories root** (list node at Memberships) | `blake2b_224(organizationProfileRefTokenName)` | No | 28 B |
+| **Membership history** (at Memberships) | `blake2b_224(orgProfileTokenName \|\| practitionerProfileTokenName)` | No | 28 B |
+| **Membership interval** (at Memberships) | `blake2b_224(membershipHistoryTokenName \|\| integerToByteString(BigEndian, 0, intervalNumber))` | No | 28 B |
+| **Achievement** (state at Achievements) | `refPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef` | Yes (ref `0x000643b0`) | 32 B (4 + 28) |
 
 
 ## Script Dependencies & Parameterization
@@ -437,25 +457,26 @@ data MembershipHistoriesListNode = MembershipHistoriesListNode
   , nodeInfo :: NodeDatum (Maybe OnchainMembershipHistory)
   }
 
--- One per practitioner per organization
+-- One per practitioner per organization.
+-- The history NFT ID is derived at runtime: deriveMembershipHistoryId(orgId, practitionerId).
 data OnchainMembershipHistory = OnchainMembershipHistory
-  { membershipHistoryId :: MembershipHistoryId
-  , membershipHistoryPractitionerId :: ProfileId
+  { membershipHistoryPractitionerId :: ProfileId
   , membershipHistoryOrganizationId :: ProfileId
-  , membershipHistoryIntervalsHeadId :: MembershipIntervalId  -- always points to the head interval
+  , membershipHistoryIntervalsHeadNumber :: Integer   -- sequential number of the head interval (0-based)
   }
 
--- Specific time period of membership (prepend-only linked list via miPrevId)
+-- Specific time period of membership.
+-- The interval NFT ID is derived at runtime: deriveMembershipIntervalId(historyId, number).
 data OnchainMembershipInterval = OnchainMembershipInterval
-  { membershipIntervalId :: MembershipIntervalId
-  , membershipIntervalStartDate :: POSIXTime
+  { membershipIntervalStartDate :: POSIXTime
   , membershipIntervalEndDate :: Maybe POSIXTime     -- Nothing = open-ended (active)
   , membershipIntervalIsAck :: Bool                   -- True = accepted by practitioner
-  , membershipIntervalPrevId :: Maybe MembershipIntervalId  -- Nothing for first interval
   , membershipIntervalNumber :: Integer               -- sequential number (0-based)
   , membershipIntervalPractitionerId :: ProfileId     -- for User NFT derivation in AcceptInterval
   }
 ```
+
+> **Datum Optimization — Derive, Don't Store**: Membership datums omit fields that are deterministically derivable from other datum fields. See [Membership Datum Optimization](#membership-datum-optimization) for the full design rationale.
 
 **Redeemers**:
 - `InsertNodeToMHList { maybeRightNodeId, insertedMembershipHistory, updatedLeftNodeTxOutIdx, insertedNodeTxOutIdx }` - Insert a new membership history node into the sorted linked list when a new member joins an organization
@@ -471,6 +492,7 @@ data OnchainMembershipInterval = OnchainMembershipInterval
 - **Prepend-Only Intervals**: New intervals are prepended to the history's interval chain, with the head always being the most recent. This simplifies "is current interval closed?" checks.
 - **Practitioner ID in Interval**: Stored directly in the interval datum to allow `AcceptInterval` to derive the User NFT without requiring a reference input to the membership history
 - **Interval Number**: Sequential numbering enables deterministic interval ID derivation via `deriveMembershipIntervalId(historyId, number)`
+- **Derive, Don't Store**: Membership datum fields that are deterministically derivable from other fields are omitted to reduce datum size and locked min-ADA. See [Membership Datum Optimization](#membership-datum-optimization)
 
 **Linked List Structure** (per organization):
 ```
@@ -824,6 +846,131 @@ Accept Membership Interval:
   Spend: UnacceptedInterval @ MembershipsValidator
   Lock: AcceptedInterval (IntervalDatum, isAck=True) @ MembershipsValidator
   No mint/burn (Variant A)
+
+Achievement Award:
+  Mint: AchievementRef NFT (CIP-68)
+  Lock: AchievementRef @ AchievementsValidator (with CIP68Datum OnchainAchievement, isAccepted=False)
+  Spend: Awarder's User NFT (authorization)
+
+Achievement Accept:
+  Spend: UnacceptedAchievement @ AchievementsValidator
+  Lock: AcceptedAchievement (isAccepted=True) @ AchievementsValidator
+  Spend: Practitioner's User NFT (consent)
+  No mint/burn
 ```
 
+## Achievements Validator
+
+The Achievements Validator manages achievement NFTs that are awarded to practitioners by organizations or other practitioners. Achievements represent seminars, camps, competition medals, diplomas, and other recognitions.
+
+### Achievement Data Model
+
+Each achievement is a CIP-68 token locked at the Achievements Validator with an `OnchainAchievement` datum:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `achievementId` | `AssetClass` | Unique identifier (derived from seed TxOutRef via blake2b_224) |
+| `achievementAwardedTo` | `ProfileId` | Ref AC of the practitioner receiving the achievement |
+| `achievementAwardedBy` | `ProfileId` | Ref AC of the profile granting the achievement |
+| `achievementDate` | `POSIXTime` | Date of the achievement (must be before tx validity range) |
+| `achievementIsAccepted` | `Bool` | Whether the practitioner has acknowledged the achievement |
+
+### Achievement Redeemers
+
+- **AcceptAchievement** `Integer` — The practitioner accepts the achievement. The `Integer` is the output index of the updated achievement UTxO. Requires spending the practitioner's User NFT.
+- **Cleanup** — Permissionless dust removal for UTxOs that don't contain a valid achievement datum.
+
+### Security Properties
+
+1. **Award authorization**: The awarder must spend their User NFT (checked by MintingPolicy via trace `Mf`)
+2. **Date validation**: Achievement date must be before the transaction's validity range (trace `Ml`)
+3. **Metadata validation**: CIP-68 metadata fields must pass size constraints (trace `Mm`)
+4. **Profile validation**: Both awardedTo and awardedBy must have the correct protocol currency symbol (trace `Mg`)
+5. **Accept consent**: Only the practitioner (awardedTo) can accept by spending their User NFT (AchievementsValidator)
+6. **Double-accept prevention**: An already-accepted achievement cannot be accepted again (trace `TA`)
+
+## Achievement Flow
+
+```
+┌──────────────────┐        ┌──────────────────────────┐
+│   Award          │        │   Accept                 │
+│   Achievement    │        │   Achievement            │
+│                  │        │                          │
+│ MintingPolicy:   │        │ AchievementsValidator:   │
+│  - Validate      │        │  - Validate practitioner │
+│    awarder NFT   │        │    User NFT spent        │
+│  - Validate date │        │  - Set isAccepted=True   │
+│  - Validate meta │        │  - Lock updated datum    │
+│  - Mint Ref NFT  │        │                          │
+│  - Lock at AV    │        │                          │
+└──────────────────┘        └──────────────────────────┘
+```
+
+
+## Membership Datum Optimization
+
+### Principle: Derive, Don't Store
+
+When an NFT's `AssetClass` (its on-chain identity) is deterministically derivable from other fields already present in the same datum, it should not be stored. Instead, validators and off-chain code derive it at runtime via the existing `blake2b_224`-based functions in `Onchain.Protocol.Id`.
+
+This principle applies specifically to **membership datums**, where all token IDs are deterministic compositions of organization ID, practitioner ID, and sequential numbers. It does **not** apply to rank datums, where promotion IDs are seed-based (derived from a one-time `TxOutRef`) and therefore not recoverable from other datum fields.
+
+### Fields Removed
+
+| Datum | Removed / Changed Field | Derivation |
+|-------|------------------------|------------|
+| `OnchainMembershipHistory` | `membershipHistoryId :: MembershipHistoryId` (removed) | `deriveMembershipHistoryId(orgId, practitionerId)` — both fields remain in the datum |
+| `OnchainMembershipHistory` | `membershipHistoryIntervalsHeadId :: MembershipIntervalId` → `membershipHistoryIntervalsHeadNumber :: Integer` | `deriveMembershipIntervalId(historyId, headNumber)` — compose with the above |
+| `OnchainMembershipInterval` | `membershipIntervalId :: MembershipIntervalId` (removed) | `deriveMembershipIntervalId(historyId, intervalNumber)` — `intervalNumber` remains in the datum; `historyId` is derived from the parent history |
+| `OnchainMembershipInterval` | `membershipIntervalPrevId :: Maybe MembershipIntervalId` (removed) | Dead field: never read on-chain or off-chain. If needed: `number > 0 → Just(deriveMembershipIntervalId(historyId, number - 1))` |
+
+### Why Not Rank Datums?
+
+Rank IDs use **two different derivation schemes**:
+- Initial rank (white belt): `deriveRankId(profileId, rankNumber)` — deterministic
+- Promoted ranks: `derivePromotionRankId(seedTxOutRef, currencySymbol)` — seed-based, unique by construction
+
+After any promotion, the rank's ID is seed-based and **not recoverable** from `(profileId, rankNumber)`. Therefore `currentRank :: Maybe RankId`, `rankId`, and `rankPreviousRankId` must remain as stored `AssetClass` values. Switching to deterministic promotion IDs was evaluated and rejected because it would (a) prevent concurrent promotions to the same belt level, (b) require burn-and-remint on acceptance adding a third script and oracle dependency, and (c) break the "tokens never leave the validator" invariant.
+
+### Trade-offs
+
+**Datum size savings** (~120 bytes per history, ~124 bytes per interval):
+
+| Datum | Before | After | Saving |
+|-------|--------|-------|--------|
+| `OnchainMembershipHistory` | 4 fields (~258 bytes) | 3 fields (~135 bytes) | ~121 bytes |
+| `OnchainMembershipInterval` | 7 fields (~220 bytes) | 5 fields (~93 bytes) | ~124 bytes |
+
+At `coinsPerUTxOByte = 4,310`, this reduces the chain-required min-ADA by ~0.5 ADA per UTxO. For an organization with 50 members (50 history nodes + 50+ intervals), this saves 50–100 ADA of permanently locked capital.
+
+**Additional hash computation cost** (1–4 extra `blake2b_224` calls per transaction):
+
+| Transaction | Extra hashes | Extra CPU steps | % of 10B limit | Extra ADA fee |
+|-------------|-------------|-----------------|-----------------|---------------|
+| NewMembershipHistory | +2 | ~1,200,000 | 0.012% | < 0.001 |
+| NewMembershipInterval | +4 | ~3,400,000 | 0.034% | < 0.001 |
+| UpdateEndDate | +1 | ~700,000 | 0.007% | < 0.001 |
+| AcceptInterval | 0 | 0 | 0% | 0 |
+
+The datum size savings dominate: ~10x more saved in transaction size fees than spent on extra hashing, plus the locked capital reduction.
+
+### Security Implications
+
+**`validLastInterval` check** (in `addMembershipIntervalToHistory`): Previously compared stored head ID against stored interval ID. Now compares `membershipHistoryIntervalsHeadNumber` against `membershipIntervalNumber` — equivalent because both the history and interval are created by the MintingPolicy with consistent numbering. The caller (MintingPolicy or MembershipsValidator) derives the head interval ID and uses it for the lookup, ensuring the interval found is the actual head.
+
+**`validRedeemerId` check** (new, in MembershipsValidator `handleUpdateNode`): The redeemer carries `lastIntervalId` (used for lookup). The validator now derives `deriveIntervalsHeadId(oldHistory)` and verifies it equals the redeemer-provided ID. This prevents cross-history attacks where an attacker provides an interval ID from a different history with a matching number.
+
+**`intervalBelongsToHistory` check** (in MembershipsValidator `handleUpdateEndDate`): Previously compared the interval's stored ID against the derivation from the history's stored ID. Now derives the expected interval ID from the history's fields and verifies it exists in `ownValue` (the spending UTxO's token value). This is strictly **stronger** — it validates against the actual NFT locked in the UTxO rather than a datum field that could theoretically be inconsistent.
+
+### Convenience Helpers
+
+Two on-chain helper functions in `Onchain.Protocol.Id` simplify the derivation pattern:
+
+```haskell
+-- Derive the history NFT ID from its own datum fields
+deriveMembershipHistoryIdFromHistory :: OnchainMembershipHistory -> MembershipHistoryId
+
+-- Derive the head interval NFT ID from a history datum
+deriveIntervalsHeadId :: OnchainMembershipHistory -> MembershipIntervalId
+```
 

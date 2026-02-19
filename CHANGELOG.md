@@ -1,6 +1,39 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.6 -- 2026-02-17
+
+### Achievements feature (award & accept)
+
+- **On-chain**: `AchievementsValidator` — spending validator for achievement NFTs; redeemers `AcceptAchievement` (practitioner consent) and `Cleanup` (permissionless dust). MintingPolicy redeemer `NewAchievement` with achievement date and metadata validation; trace codes Ml (date before validity), Mm (metadata fields). CIP-68 achievement datum with awarded-to/by, date, isAccepted.
+- **Off-chain**: Domain type `Achievement`; actions `AwardAchievementAction`, `AcceptAchievementAction`; operations `awardAchievementTX`, `acceptAchievementTX`; lookups `getAchievementDatumAndValue`, `getAllAchievements`; interactions, context `achievementsValidatorHashAndRef`, deploy/verify/cleanup including achievements validator; exception `AchievementNotFound`; functors `onchainAchievementToAchievement`; datum parsers in Utils.
+- **Storage & ingestion**: `AchievementProjection`, `putAchievementProjection`; `AchievementEvent`, `projectChainEvent` for achievements validator; rollback.
+- **Admin CLI**: `award-achievement`, `accept-achievement`; set-fees includes `--achievement-fee`.
+- **Blueprint**: Achievements validator blueprint and `AchievementsRedeemer` in contract definitions.
+- **Tests**: Unit tests for org awards achievement, practitioner accepts, full lifecycle; negative tests for double-accept (TA) and wrong-user accept; cleanup dust at AchievementsValidator.
+- **Scripts**: `test_exunits.sh` parses `AwardAchievementAction` and `AcceptAchievementAction`; `populate_testnet.sh` and `test_black_promotes_white_to_blue.sh` add achievement scenarios and fix set-fees to use `--membership-history-fee`, `--membership-interval-fee`, `--achievement-fee`.
+- **Docs**: `OnchainArchitecture.md` updated with Achievements Validator and flow; `onchain-trace-codes.md` Mk/Ml/Mm, A0.
+
+### Query API: achievements and memberships (live + DB)
+
+- **Achievements**: New REST endpoints `GET /achievements` and `GET /achievements/count` with filters (awarded_to, awarded_by, is_accepted, from/to), ordering, pagination, and `liveprojection` (live chain vs projected DB). Types `AchievementsOrderBy`, `AchievementFilter`; `Query.Projected` and `Query.Live` implement list/count.
+- **Memberships**: All four membership endpoints now support `QueryFlag "liveprojection"`; handlers dispatch to live lookups (`getAllMembershipHistories`, `getAllMembershipIntervals`) or projected DB. Added `getAllMembershipHistories` in `TxBuilding.Lookups` for unfiltered live membership histories.
+- **Swagger**: Regenerated `docs/swagger/query-swagger-api.json` with Achievement definition and new paths.
+
+### On-chain refactor (validators layout & Protocol)
+
+- **Validators layout**: Moved `MembershipsValidator`, `MintingPolicy`, `OracleNFTPolicy`, `OracleValidator`, `ProfilesValidator`, `RanksValidator` into `Onchain/Validators/`; added `AchievementsValidator.hs` in same folder. Imports and cabal adjusted.
+- **Protocol**: Extracted core protocol logic into `Onchain/Protocol/Core.hs` (e.g. profile/rank/membership/achievement helpers); `Protocol.hs` reduced and re-exports. `Protocol/Types.hs`, `Protocol/Id.hs`, `Protocol/Lookup.hs` updated; CIP68 and Utils adjusted.
+- **Trace codes**: New/updated codes for MintingPolicy (Mk, Ml, Mm) and AchievementsValidator (A0); `docs/onchain-trace-codes.md` updated.
+- **Tests**: TestRuns deploys achievements validator; BJJPropertyTests and UnitTests imports updated for Validators paths.
+
+### Membership datum optimization (derive, don't store)
+
+- **On-chain**: Membership history and interval datums no longer store NFT IDs; `membershipHistoryId`, `membershipHistoryIntervalsHeadId`, `membershipIntervalId`, `membershipIntervalPrevId` removed. IDs derived at runtime via `deriveMembershipHistoryIdFromHistory`, `deriveMembershipIntervalId`, `deriveIntervalsHeadId` in `Protocol.Id` and `Protocol.Core`. Smaller datums, lower min-ADA at MembershipsValidator.
+- **Off-chain**: Lookups and operations updated to derive history/interval IDs from datum fields; domain types and TxBuilding use derived IDs throughout.
+- **Docs**: `OnchainArchitecture.md` — added "State NFT Token Name Derivation" table and "Membership Datum Optimization" section.
+
+
 ## 0.3.1.5 -- 2026-02-16
 
 ### UpdateEndDate security: TD/TE/TB enforced on-chain; off-chain build fix
