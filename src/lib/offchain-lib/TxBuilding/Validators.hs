@@ -15,6 +15,7 @@ import Onchain.Validators.ProfilesValidator qualified as ProfilesValidator (prof
 import Onchain.Validators.RanksValidator qualified as RanksValidator (ranksCompile)
 import PlutusLedgerApi.V1.Value qualified as V1
 import PlutusLedgerApi.V3
+-- PlutusTx for types/script compilation; PlutusTx.Prelude for term-level code with ($) hidden to avoid conflict.
 import PlutusTx
 import PlutusTx.Prelude hiding (($))
 

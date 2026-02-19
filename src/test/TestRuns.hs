@@ -243,9 +243,9 @@ logPractitionerProfileInformation user profileRefAC = asUser user $ do
 
 getProfileAndRank :: (GYTxGameMonad m, HasCallStack) => GYAssetClass -> m ((CIP68Datum OnchainProfile, Value), (OnchainRank, Value))
 getProfileAndRank profileRefAC = do
-  (profile, profileValue) <- getProfileStateDataAndValue profileRefAC
+  (profile, profileValue) <- getProfileStateDatumAndValue profileRefAC
   rankRefAC <- assetClassFromPlutus' $ getCurrentRankId $ extra profile
-  (rank, rankValue) <- getRankStateDataAndValue rankRefAC
+  (rank, rankValue) <- getRankStateDatumAndValue rankRefAC
   return ((profile, profileValue), (rank, rankValue))
 
 ------------------------------------------------------------------------------------------------
@@ -274,7 +274,7 @@ maliciousAcceptPromotionTX gyPromotionId = do
   rvRef <- asks getRanksValidatorRef
   pvRef <- asks getProfilesValidatorRef
 
-  (plutusPromotionRankDatum, plutusPromotionRankValue) <- getRankStateDataAndValue gyPromotionId
+  (plutusPromotionRankDatum, plutusPromotionRankValue) <- getRankStateDatumAndValue gyPromotionId
 
   let studentProfileRefAC = promotionAwardedTo plutusPromotionRankDatum
   gyStudentProfileRefAC <- assetClassFromPlutus' studentProfileRefAC
@@ -295,7 +295,7 @@ maliciousAcceptPromotionTX gyPromotionId = do
   let gySpendProfileRedeemer = redeemerFromPlutusData $ AcceptPromotion (assetClassToPlutus gyPromotionId) profileOutputIdx
   spendsStudentProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyStudentProfileRefAC gySpendProfileRedeemer profilesValidatorGY
 
-  (plutusProfileDatum, plutusProfileValue) <- getProfileStateDataAndValue gyStudentProfileRefAC
+  (plutusProfileDatum, plutusProfileValue) <- getProfileStateDatumAndValue gyStudentProfileRefAC
   let plutusStudentProfile = extra plutusProfileDatum
   let studentCurrentRankId = Onchain.getCurrentRankId plutusStudentProfile
   gyStudentCurrentRankAC <- assetClassFromPlutus' studentCurrentRankId

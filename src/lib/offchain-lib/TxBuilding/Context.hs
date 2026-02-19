@@ -1,3 +1,4 @@
+-- | Deployed scripts context, provider context, and runTx/runQuery execution.
 module TxBuilding.Context where
 
 import Data.Aeson
@@ -5,7 +6,9 @@ import GHC.Generics (Generic)
 import GeniusYield.GYConfig
 import GeniusYield.TxBuilder
 import GeniusYield.Types
+import Onchain.Protocol (ProtocolParams)
 import Prelude
+import TxBuilding.Validators (compileMintingPolicy, mkProtocolParams)
 
 ------------------------------------------------------------------------------------------------
 
@@ -26,7 +29,7 @@ data DeployedScriptsContext = DeployedScriptsContext
     oracleValidatorHashAndRef :: (GYScriptHash, GYTxOutRef),
     oracleNFTAssetClass :: GYAssetClass
   }
-  deriving stock (Generic, Prelude.Show)
+  deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON)
 
 getMintingPolicyHash :: DeployedScriptsContext -> GYScriptHash
@@ -50,6 +53,16 @@ getAchievementsValidatorRef ctx = snd $ achievementsValidatorHashAndRef ctx
 getOracleValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getOracleValidatorRef ctx = snd $ oracleValidatorHashAndRef ctx
 
+-- | Get the compiled minting policy from the oracle NFT in context.
+getMintingPolicyFromCtx :: DeployedScriptsContext -> GYScript 'PlutusV3
+getMintingPolicyFromCtx ctx =
+  compileMintingPolicy (assetClassToPlutus $ oracleNFTAssetClass ctx)
+
+-- | Get the 'ProtocolParams' from the oracle NFT in context.
+getProtocolParamsFromCtx :: DeployedScriptsContext -> ProtocolParams
+getProtocolParamsFromCtx ctx =
+  mkProtocolParams (assetClassToPlutus $ oracleNFTAssetClass ctx)
+
 ------------------------------------------------------------------------------------------------
 
 -- * Default Context
@@ -72,6 +85,11 @@ runQuery ctx q = do
       providers = ctxProviders ctx
   runGYTxQueryMonadIO nid providers q
 
+-- | Convert optional collateral to the parameter expected by 'runGYTxBuilderMonadIO'.
+-- Set the 'Bool' to 'False' to disable the 5-ada-only check for the collateral UTxO.
+collateralToRunParam :: Maybe GYTxOutRefCbor -> Maybe (GYTxOutRef, Bool)
+collateralToRunParam = fmap (\c -> (getTxOutRefHex c, True))
+
 -- | Tries to build for given skeleton.
 runTx' ::
   ProviderCtx ->
@@ -91,14 +109,7 @@ runTx' ctx addrs addr collateral skeleton = do
     providers
     addrs
     addr
-    ( collateral
-        >>= ( \c ->
-                Just
-                  ( getTxOutRefHex c,
-                    True -- Make this as `False` to not do 5-ada-only check for value in this given UTxO to be used as collateral.
-                  )
-            )
-    )
+    (collateralToRunParam collateral)
     (skeleton >>= buildTxBody)
 
 -- | Tries to build for given skeleton.
@@ -115,20 +126,12 @@ runTx ::
 runTx ctx addrs addr collateral skeleton = do
   let nid = getNetworkId ctx
       providers = ctxProviders ctx
-
   runGYTxBuilderMonadIO
     nid
     providers
     addrs
     addr
-    ( collateral
-        >>= ( \c ->
-                Just
-                  ( getTxOutRefHex c,
-                    True -- Make this as `False` to not do 5-ada-only check for value in this given UTxO to be used as collateral.
-                  )
-            )
-    )
+    (collateralToRunParam collateral)
     (skeleton >>= \(txSklt, mac) -> (,mac) <$> buildTxBody txSklt)
 
 data TxBuildingContext = TxBuildingContext

@@ -21,6 +21,15 @@ import Query.Common qualified as C
 import Query.Live qualified as L
 import Query.Projected qualified as P
 import QueryAppMonad
+import RestAPI.Common
+  ( achievementFilterFromParams,
+    membershipHistoryFilterFromParams,
+    membershipIntervalFilterFromParams,
+    profileFilterFromParams,
+    promotionsFilterFromParams,
+    rankFilterFromParams,
+    withBackend,
+  )
 import Servant
 import Servant.Swagger
 import Servant.Swagger.UI
@@ -93,6 +102,7 @@ type Profiles =
         :> Description "Get Profiles Count"
         :> "profiles"
         :> "count"
+        :> QueryParams "profile" ProfileRefAC
         :> QueryParam' '[Optional] "profile_type" ProfileType
         :> QueryFlag "liveprojection"
         :> Get '[JSON] Int
@@ -111,15 +121,11 @@ type Profiles =
 
 handleGetPractitionerProfile :: ProfileRefAC -> Bool -> QueryAppMonad PractitionerProfileInformation
 handleGetPractitionerProfile profileRefAC liveProjection =
-  if liveProjection
-    then L.getPractitionerProfile profileRefAC
-    else P.getPractitionerProfile profileRefAC
+  withBackend liveProjection (L.getPractitionerProfile profileRefAC) (P.getPractitionerProfile profileRefAC)
 
 handleGetOrganizationProfile :: ProfileRefAC -> Bool -> QueryAppMonad OrganizationProfileInformation
 handleGetOrganizationProfile profileRefAC liveProjection =
-  if liveProjection
-    then L.getOrganizationProfile profileRefAC
-    else P.getOrganizationProfile profileRefAC
+  withBackend liveProjection (L.getOrganizationProfile profileRefAC) (P.getOrganizationProfile profileRefAC)
 
 handleGetProfiles ::
   Maybe Int ->
@@ -131,36 +137,19 @@ handleGetProfiles ::
   Bool ->
   QueryAppMonad [Profile]
 handleGetProfiles limit offset profileRefs profileType orderBy sortOrder liveProjection = do
-  let limitOffset = case (limit, offset) of
-        (Just l, Just o) -> Just (l, o)
-        (Just l, Nothing) -> Just (l, 0)
-        (Nothing, Just o) -> Just (100, o)
-        (Nothing, Nothing) -> Nothing
-  let profileFilter =
-        Just $
-          C.ProfileFilter
-            { C.profileFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs,
-              C.profileFilterType = profileType,
-              C.profileFilterName = Nothing,
-              C.profileFilterDescription = Nothing
-            }
-  let order = case (orderBy, sortOrder) of
-        (Just ob, Just o) -> Just (ob, o)
-        (Just ob, Nothing) -> Just (ob, Asc)
-        _ -> Nothing
-  if liveProjection
-    then L.getProfiles limitOffset profileFilter order
-    else P.getProfiles limitOffset profileFilter order
+  let limitOffset = C.normalizeLimitOffset limit offset
+  let profileFilter = profileFilterFromParams profileRefs profileType
+  let order = C.normalizeOrder orderBy sortOrder
+  withBackend liveProjection (L.getProfiles limitOffset profileFilter order) (P.getProfiles limitOffset profileFilter order)
 
-handleGetProfilesCount :: Maybe ProfileType -> Bool -> QueryAppMonad Int
-handleGetProfilesCount profileType liveProjection =
-  if liveProjection
-    then L.getProfilesCount profileType
-    else P.getProfilesCount profileType
+handleGetProfilesCount :: [ProfileRefAC] -> Maybe ProfileType -> Bool -> QueryAppMonad Int
+handleGetProfilesCount profileRefs profileType liveProjection = do
+  let profileFilter = profileFilterFromParams profileRefs profileType
+  withBackend liveProjection (L.getProfilesCount profileFilter) (P.getProfilesCount profileFilter)
 
 handleGetProfilesFrequency :: Bool -> QueryAppMonad [(ProfileType, Int)]
 handleGetProfilesFrequency liveProjection =
-  if liveProjection then L.getProfileTypeTotals else P.getProfileTypeTotals
+  withBackend liveProjection L.getProfileTypeTotals P.getProfileTypeTotals
 
 profilesServer :: ServerT Profiles QueryAppMonad
 profilesServer =
@@ -183,7 +172,7 @@ type Promotions =
       :> "promotions"
       :> QueryParam' '[Optional] "limit" Int
       :> QueryParam' '[Optional] "offset" Int
-      :> QueryParams "profile" ProfileRefAC
+      :> QueryParams "promotion" RankAC
       :> QueryParams "belt" BJJBelt
       :> QueryParams "achieved_by" ProfileRefAC
       :> QueryParams "awarded_by" ProfileRefAC
@@ -198,7 +187,7 @@ type Promotions =
         :> Description "Get Promotions Count"
         :> "promotions"
         :> "count"
-        :> QueryParams "profile" ProfileRefAC
+        :> QueryParams "promotion" RankAC
         :> QueryParams "belt" BJJBelt
         :> QueryParams "achieved_by" ProfileRefAC
         :> QueryParams "awarded_by" ProfileRefAC
@@ -218,7 +207,7 @@ type Promotions =
 handleGetPromotions ::
   Maybe Int ->
   Maybe Int ->
-  [ProfileRefAC] ->
+  [RankAC] ->
   [BJJBelt] ->
   [ProfileRefAC] ->
   [ProfileRefAC] ->
@@ -226,53 +215,26 @@ handleGetPromotions ::
   Maybe SortOrder ->
   Bool ->
   QueryAppMonad [Promotion]
-handleGetPromotions limit offset profileRefs beltRefs achievedByRefs awardedByRefs orderBy sortOrder liveProjection = do
-  let limitOffset = case (limit, offset) of
-        (Just l, Just o) -> Just (l, o)
-        (Just l, Nothing) -> Just (l, 0)
-        (Nothing, Just o) -> Just (100, o)
-        (Nothing, Nothing) -> Nothing
-  let promotionsFilter =
-        Just $
-          C.PromotionFilter
-            { C.promotionFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs,
-              C.promotionFilterBelt = if Prelude.null beltRefs then Nothing else Just beltRefs,
-              C.promotionFilterAchievedByProfileId = if Prelude.null achievedByRefs then Nothing else Just achievedByRefs,
-              C.promotionFilterAwardedByProfileId = if Prelude.null awardedByRefs then Nothing else Just awardedByRefs,
-              C.promotionFilterAchievementDateInterval = (Nothing, Nothing)
-            }
-  let order = case (orderBy, sortOrder) of
-        (Just ob, Just o) -> Just (ob, o)
-        (Just ob, Nothing) -> Just (ob, Asc)
-        _ -> Nothing
-  if liveProjection
-    then L.getPromotions limitOffset promotionsFilter order
-    else P.getPromotions limitOffset promotionsFilter order
+handleGetPromotions limit offset promotionIds beltRefs achievedByRefs awardedByRefs orderBy sortOrder liveProjection = do
+  let limitOffset = C.normalizeLimitOffset limit offset
+  let promotionsFilter = promotionsFilterFromParams promotionIds beltRefs achievedByRefs awardedByRefs
+  let order = C.normalizeOrder orderBy sortOrder
+  withBackend liveProjection (L.getPromotions limitOffset promotionsFilter order) (P.getPromotions limitOffset promotionsFilter order)
 
 handleGetPromotionsCount ::
-  [ProfileRefAC] ->
+  [RankAC] ->
   [BJJBelt] ->
   [ProfileRefAC] ->
   [ProfileRefAC] ->
   Bool ->
   QueryAppMonad Int
-handleGetPromotionsCount profileRefs beltRefs achievedByRefs awardedByRefs liveProjection = do
-  let promotionsFilter =
-        Just $
-          C.PromotionFilter
-            { C.promotionFilterId = if Prelude.null profileRefs then Nothing else Just profileRefs,
-              C.promotionFilterBelt = if Prelude.null beltRefs then Nothing else Just beltRefs,
-              C.promotionFilterAchievedByProfileId = if Prelude.null achievedByRefs then Nothing else Just achievedByRefs,
-              C.promotionFilterAwardedByProfileId = if Prelude.null awardedByRefs then Nothing else Just awardedByRefs,
-              C.promotionFilterAchievementDateInterval = (Nothing, Nothing)
-            }
-  if liveProjection
-    then L.getPromotionsCount promotionsFilter
-    else P.getPromotionsCount promotionsFilter
+handleGetPromotionsCount promotionIds beltRefs achievedByRefs awardedByRefs liveProjection = do
+  let promotionsFilter = promotionsFilterFromParams promotionIds beltRefs achievedByRefs awardedByRefs
+  withBackend liveProjection (L.getPromotionsCount promotionsFilter) (P.getPromotionsCount promotionsFilter)
 
 handleGetPromotionsFrequency :: Bool -> QueryAppMonad [(BJJBelt, Int)]
 handleGetPromotionsFrequency liveProjection =
-  if liveProjection then L.getPromotionBeltTotals else P.getPromotionBeltTotals
+  withBackend liveProjection L.getPromotionBeltTotals P.getPromotionBeltTotals
 
 promotionsServer :: ServerT Promotions QueryAppMonad
 promotionsServer =
@@ -293,14 +255,14 @@ type Belts =
       :> "belts"
       :> QueryParam' '[Optional] "limit" Int
       :> QueryParam' '[Optional] "offset" Int
-      :> QueryParams "profile" ProfileRefAC
+      :> QueryParams "rank" RankAC
       :> QueryParams "belt" BJJBelt
       :> QueryParams "achieved_by" ProfileRefAC
       :> QueryParams "awarded_by" ProfileRefAC
       :> QueryParam' '[Optional] "from" GYTime
       :> QueryParam' '[Optional] "to" GYTime
       :> QueryParam' '[Optional] "order_by" RanksOrderBy
-      :> QueryParam' '[Optional] "order" SortOrder
+      :> QueryParam' '[Optional] "sort_order" SortOrder
       :> QueryFlag "liveprojection"
       :> Get '[JSON] [Rank]
   )
@@ -310,9 +272,7 @@ type Belts =
         :> Description "Get Belts Count"
         :> "belts"
         :> "count"
-        :> QueryParam' '[Optional] "limit" Int
-        :> QueryParam' '[Optional] "offset" Int
-        :> QueryParams "profile" ProfileRefAC
+        :> QueryParams "rank" RankAC
         :> QueryParams "belt" BJJBelt
         :> QueryParams "achieved_by" ProfileRefAC
         :> QueryParams "awarded_by" ProfileRefAC
@@ -331,48 +291,21 @@ type Belts =
         :> Get '[JSON] [(BJJBelt, Int)]
     )
 
-handleGetBelts :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> Bool -> QueryAppMonad [Rank]
-handleGetBelts limit offset profiles belt achieved_by awarded_by fromPractitioner toPractitioner maybeOrderBy maybeOrder live = do
-  let limitOffset = case (limit, offset) of
-        (Just l, Just o) -> Just (l, o)
-        (Just l, Nothing) -> Just (l, 0)
-        (Nothing, Just o) -> Just (100, o)
-        (Nothing, Nothing) -> Nothing
-  let beltsFilter =
-        Just $
-          C.RankFilter
-            { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
-              C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
-              C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              C.rankFilterAchievementDateInterval = (fromPractitioner, toPractitioner)
-            }
-  let order = case (maybeOrderBy, maybeOrder) of
-        (Just ob, Just o) -> Just (ob, o)
-        (Just ob, Nothing) -> Just (ob, Asc)
-        _ -> Nothing
-  if live
-    then L.getRanks limitOffset beltsFilter order
-    else P.getRanks limitOffset beltsFilter order
+handleGetBelts :: Maybe Int -> Maybe Int -> [RankAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Maybe RanksOrderBy -> Maybe SortOrder -> Bool -> QueryAppMonad [Rank]
+handleGetBelts limit offset rankIds belt achievedByRefs awardedByRefs fromPractitioner toPractitioner maybeOrderBy maybeOrder liveProjection = do
+  let limitOffset = C.normalizeLimitOffset limit offset
+  let beltsFilter = rankFilterFromParams rankIds belt achievedByRefs awardedByRefs fromPractitioner toPractitioner
+  let order = C.normalizeOrder maybeOrderBy maybeOrder
+  withBackend liveProjection (L.getRanks limitOffset beltsFilter order) (P.getRanks limitOffset beltsFilter order)
 
-handleGetBeltsCount :: Maybe Int -> Maybe Int -> [ProfileRefAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Bool -> QueryAppMonad Int
-handleGetBeltsCount _limit _offset profiles belt achieved_by awarded_by fromPractitioner toPractioner live = do
-  let beltCountFilter =
-        Just $
-          C.RankFilter
-            { C.rankFilterId = if Prelude.null profiles then Nothing else Just profiles,
-              C.rankFilterBelt = if Prelude.null belt then Nothing else Just belt,
-              C.rankFilterAchievedByProfileId = if Prelude.null achieved_by then Nothing else Just achieved_by,
-              C.rankFilterAwardedByProfileId = if Prelude.null awarded_by then Nothing else Just awarded_by,
-              C.rankFilterAchievementDateInterval = (fromPractitioner, toPractioner)
-            }
-  if live
-    then L.getRanksCount beltCountFilter
-    else P.getRanksCount beltCountFilter
+handleGetBeltsCount :: [RankAC] -> [BJJBelt] -> [ProfileRefAC] -> [ProfileRefAC] -> Maybe GYTime -> Maybe GYTime -> Bool -> QueryAppMonad Int
+handleGetBeltsCount rankIds belt achieved_by awarded_by fromPractitioner toPractitioner liveProjection = do
+  let beltCountFilter = rankFilterFromParams rankIds belt achieved_by awarded_by fromPractitioner toPractitioner
+  withBackend liveProjection (L.getRanksCount beltCountFilter) (P.getRanksCount beltCountFilter)
 
 handleGetBeltsFrequency :: Bool -> QueryAppMonad [(BJJBelt, Int)]
-handleGetBeltsFrequency live =
-  if live then L.getBeltTotals else P.getBeltTotals
+handleGetBeltsFrequency liveProjection =
+  withBackend liveProjection L.getBeltTotals P.getBeltTotals
 
 beltsServer :: ServerT Belts QueryAppMonad
 beltsServer = handleGetBelts :<|> handleGetBeltsCount :<|> handleGetBeltsFrequency
@@ -394,7 +327,7 @@ type Memberships =
       :> QueryParam' '[Optional] "order_by" MembershipHistoriesOrderBy
       :> QueryParam' '[Optional] "sort_order" SortOrder
       :> QueryFlag "liveprojection"
-      :> Get '[JSON] [MembershipHistory]
+      :> Get '[JSON] [MembershipHistoryInformation]
   )
     :<|>
     ( Summary "Get Membership Histories Count"
@@ -416,7 +349,7 @@ type Memberships =
         :> QueryParam' '[Optional] "order_by" MembershipIntervalsOrderBy
         :> QueryParam' '[Optional] "sort_order" SortOrder
         :> QueryFlag "liveprojection"
-        :> Get '[JSON] [MembershipInterval]
+        :> Get '[JSON] [MembershipIntervalInformation]
     )
     :<|>
     ( Summary "Get Membership Intervals Count"
@@ -436,44 +369,17 @@ handleGetMembershipHistories ::
   Maybe MembershipHistoriesOrderBy ->
   Maybe SortOrder ->
   Bool ->
-  QueryAppMonad [MembershipHistory]
+  QueryAppMonad [MembershipHistoryInformation]
 handleGetMembershipHistories limit offset orgRefs practRefs orderBy sortOrder liveProjection = do
-  let limitOffset = case (limit, offset) of
-        (Just l, Just o) -> Just (l, o)
-        (Just l, Nothing) -> Just (l, 0)
-        (Nothing, Just o) -> Just (100, o)
-        (Nothing, Nothing) -> Nothing
-  let filter' =
-        if Prelude.null orgRefs && Prelude.null practRefs
-          then Nothing
-          else
-            Just
-              C.MembershipHistoryFilter
-                { C.membershipHistoryFilterOrganizationProfileId = if Prelude.null orgRefs then Nothing else Just orgRefs,
-                  C.membershipHistoryFilterPractitionerProfileId = if Prelude.null practRefs then Nothing else Just practRefs
-                }
-  let order = case (orderBy, sortOrder) of
-        (Just ob, Just so) -> Just (ob, so)
-        (Just ob, Nothing) -> Just (ob, Asc)
-        _ -> Nothing
-  if liveProjection
-    then L.getMembershipHistories limitOffset filter' order
-    else P.getMembershipHistories limitOffset filter' order
+  let limitOffset = C.normalizeLimitOffset limit offset
+  let membershipHistoryFilter = membershipHistoryFilterFromParams orgRefs practRefs
+  let order = C.normalizeOrder orderBy sortOrder
+  withBackend liveProjection (L.getMembershipHistories limitOffset membershipHistoryFilter order) (P.getMembershipHistories limitOffset membershipHistoryFilter order)
 
 handleGetMembershipHistoriesCount :: [ProfileRefAC] -> [ProfileRefAC] -> Bool -> QueryAppMonad Int
 handleGetMembershipHistoriesCount orgRefs practRefs liveProjection = do
-  let filter' =
-        if Prelude.null orgRefs && Prelude.null practRefs
-          then Nothing
-          else
-            Just
-              C.MembershipHistoryFilter
-                { C.membershipHistoryFilterOrganizationProfileId = if Prelude.null orgRefs then Nothing else Just orgRefs,
-                  C.membershipHistoryFilterPractitionerProfileId = if Prelude.null practRefs then Nothing else Just practRefs
-                }
-  if liveProjection
-    then L.getMembershipHistoriesCount filter'
-    else P.getMembershipHistoriesCount filter'
+  let membershipHistoryFilter = membershipHistoryFilterFromParams orgRefs practRefs
+  withBackend liveProjection (L.getMembershipHistoriesCount membershipHistoryFilter) (P.getMembershipHistoriesCount membershipHistoryFilter)
 
 handleGetMembershipIntervals ::
   Maybe Int ->
@@ -482,34 +388,17 @@ handleGetMembershipIntervals ::
   Maybe MembershipIntervalsOrderBy ->
   Maybe SortOrder ->
   Bool ->
-  QueryAppMonad [MembershipInterval]
+  QueryAppMonad [MembershipIntervalInformation]
 handleGetMembershipIntervals limit offset practRefs orderBy sortOrder liveProjection = do
-  let limitOffset = case (limit, offset) of
-        (Just l, Just o) -> Just (l, o)
-        (Just l, Nothing) -> Just (l, 0)
-        (Nothing, Just o) -> Just (100, o)
-        (Nothing, Nothing) -> Nothing
-  let filter' =
-        if Prelude.null practRefs
-          then Nothing
-          else Just (C.MembershipIntervalFilter {C.membershipIntervalFilterPractitionerProfileId = Just practRefs})
-  let order = case (orderBy, sortOrder) of
-        (Just ob, Just so) -> Just (ob, so)
-        (Just ob, Nothing) -> Just (ob, Asc)
-        _ -> Nothing
-  if liveProjection
-    then L.getMembershipIntervals limitOffset filter' order
-    else P.getMembershipIntervals limitOffset filter' order
+  let limitOffset = C.normalizeLimitOffset limit offset
+  let membershipIntervalFilter = membershipIntervalFilterFromParams practRefs
+  let order = C.normalizeOrder orderBy sortOrder
+  withBackend liveProjection (L.getMembershipIntervals limitOffset membershipIntervalFilter order) (P.getMembershipIntervals limitOffset membershipIntervalFilter order)
 
 handleGetMembershipIntervalsCount :: [ProfileRefAC] -> Bool -> QueryAppMonad Int
 handleGetMembershipIntervalsCount practRefs liveProjection = do
-  let filter' =
-        if Prelude.null practRefs
-          then Nothing
-          else Just (C.MembershipIntervalFilter {C.membershipIntervalFilterPractitionerProfileId = Just practRefs})
-  if liveProjection
-    then L.getMembershipIntervalsCount filter'
-    else P.getMembershipIntervalsCount filter'
+  let membershipIntervalFilter = membershipIntervalFilterFromParams practRefs
+  withBackend liveProjection (L.getMembershipIntervalsCount membershipIntervalFilter) (P.getMembershipIntervalsCount membershipIntervalFilter)
 
 membershipsServer :: ServerT Memberships QueryAppMonad
 membershipsServer =
@@ -530,6 +419,7 @@ type Achievements =
       :> "achievements"
       :> QueryParam' '[Optional] "limit" Int
       :> QueryParam' '[Optional] "offset" Int
+      :> QueryParams "achievement" AchievementAC
       :> QueryParams "awarded_to" ProfileRefAC
       :> QueryParams "awarded_by" ProfileRefAC
       :> QueryParam' '[Optional] "is_accepted" Bool
@@ -545,6 +435,7 @@ type Achievements =
         :> Description "Get count of achievements"
         :> "achievements"
         :> "count"
+        :> QueryParams "achievement" AchievementAC
         :> QueryParams "awarded_to" ProfileRefAC
         :> QueryParams "awarded_by" ProfileRefAC
         :> QueryParam' '[Optional] "is_accepted" Bool
@@ -557,6 +448,7 @@ type Achievements =
 handleGetAchievements ::
   Maybe Int ->
   Maybe Int ->
+  [AchievementAC] ->
   [ProfileRefAC] ->
   [ProfileRefAC] ->
   Maybe Bool ->
@@ -566,30 +458,14 @@ handleGetAchievements ::
   Maybe SortOrder ->
   Bool ->
   QueryAppMonad [Achievement]
-handleGetAchievements limit offset awardedToRefs awardedByRefs isAccepted fromTime toTime orderBy sortOrder liveProjection = do
-  let limitOffset = case (limit, offset) of
-        (Just l, Just o) -> Just (l, o)
-        (Just l, Nothing) -> Just (l, 0)
-        (Nothing, Just o) -> Just (100, o)
-        (Nothing, Nothing) -> Nothing
-  let achievementFilter =
-        Just $
-          C.AchievementFilter
-            { C.achievementFilterId = Nothing,
-              C.achievementFilterAwardedToProfileId = if Prelude.null awardedToRefs then Nothing else Just awardedToRefs,
-              C.achievementFilterAwardedByProfileId = if Prelude.null awardedByRefs then Nothing else Just awardedByRefs,
-              C.achievementFilterIsAccepted = isAccepted,
-              C.achievementFilterDateInterval = (fromTime, toTime)
-            }
-  let order = case (orderBy, sortOrder) of
-        (Just ob, Just o) -> Just (ob, o)
-        (Just ob, Nothing) -> Just (ob, Asc)
-        _ -> Nothing
-  if liveProjection
-    then L.getAchievements limitOffset achievementFilter order
-    else P.getAchievements limitOffset achievementFilter order
+handleGetAchievements limit offset achievementIds awardedToRefs awardedByRefs isAccepted fromTime toTime orderBy sortOrder liveProjection = do
+  let limitOffset = C.normalizeLimitOffset limit offset
+  let achievementFilter = achievementFilterFromParams achievementIds awardedToRefs awardedByRefs isAccepted fromTime toTime
+  let order = C.normalizeOrder orderBy sortOrder
+  withBackend liveProjection (L.getAchievements limitOffset achievementFilter order) (P.getAchievements limitOffset achievementFilter order)
 
 handleGetAchievementsCount ::
+  [AchievementAC] ->
   [ProfileRefAC] ->
   [ProfileRefAC] ->
   Maybe Bool ->
@@ -597,19 +473,9 @@ handleGetAchievementsCount ::
   Maybe GYTime ->
   Bool ->
   QueryAppMonad Int
-handleGetAchievementsCount awardedToRefs awardedByRefs isAccepted fromTime toTime liveProjection = do
-  let achievementFilter =
-        Just $
-          C.AchievementFilter
-            { C.achievementFilterId = Nothing,
-              C.achievementFilterAwardedToProfileId = if Prelude.null awardedToRefs then Nothing else Just awardedToRefs,
-              C.achievementFilterAwardedByProfileId = if Prelude.null awardedByRefs then Nothing else Just awardedByRefs,
-              C.achievementFilterIsAccepted = isAccepted,
-              C.achievementFilterDateInterval = (fromTime, toTime)
-            }
-  if liveProjection
-    then L.getAchievementsCount achievementFilter
-    else P.getAchievementsCount achievementFilter
+handleGetAchievementsCount achievementIds awardedToRefs awardedByRefs isAccepted fromTime toTime liveProjection = do
+  let achievementFilter = achievementFilterFromParams achievementIds awardedToRefs awardedByRefs isAccepted fromTime toTime
+  withBackend liveProjection (L.getAchievementsCount achievementFilter) (P.getAchievementsCount achievementFilter)
 
 achievementsServer :: ServerT Achievements QueryAppMonad
 achievementsServer = handleGetAchievements :<|> handleGetAchievementsCount

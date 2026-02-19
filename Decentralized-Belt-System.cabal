@@ -182,7 +182,7 @@ library offchain-lib
     Storage
     TxBuilding.Context
     TxBuilding.Exceptions
-    TxBuilding.Functors
+    TxBuilding.Conversions
     TxBuilding.Interactions
     TxBuilding.Lookups
     TxBuilding.Operations
@@ -322,6 +322,7 @@ executable query-api
     Query.Projected
     QueryAppMonad
     RestAPI
+    RestAPI.Common
     Types
 
   build-depends:

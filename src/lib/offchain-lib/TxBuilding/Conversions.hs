@@ -1,15 +1,15 @@
-module TxBuilding.Functors where
+module TxBuilding.Conversions where
 
 import Data.Text qualified as T
-import DomainTypes.Core.Types
 import DomainTypes.Core.Actions
+import DomainTypes.Core.Types
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (intToBelt)
-import Onchain.CIP68 (MetadataFields (..), getMetadataFields, extra, CIP68Datum)
+import Onchain.CIP68 (CIP68Datum, MetadataFields (..), extra, getMetadataFields)
 import Onchain.Protocol qualified as Onchain
-import Onchain.Protocol.Id (deriveMembershipHistoryIdFromHistory, deriveMembershipIntervalId)
-import Onchain.Protocol.Types (OnchainAchievement (..), OnchainMembershipHistory (..), OnchainMembershipInterval (..))
+import Onchain.Protocol.Id qualified as OnchainId
+import Onchain.Protocol.Types qualified as OnchainTypes
 import PlutusLedgerApi.V3
 import PlutusTx.Builtins (decodeUtf8)
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteStringUtf8)
@@ -35,7 +35,6 @@ textToBuiltinByteString = stringToBuiltinByteStringUtf8 . T.unpack
 
 fromBuiltinByteStringUtf8 :: BuiltinByteString -> T.Text
 fromBuiltinByteStringUtf8 = T.pack . init . tail . show . decodeUtf8
-
 
 profileTypeToOnchainProfileType :: ProfileType -> Onchain.OnchainProfileType
 profileTypeToOnchainProfileType Practitioner = Onchain.Practitioner
@@ -79,25 +78,23 @@ onchainPromotionToPromotionInformation (Onchain.Promotion {..}) = do
         }
 onchainPromotionToPromotionInformation (Onchain.Rank {}) = return Nothing
 
-
-
-profileDatumToProfileData :: CIP68Datum Onchain.OnchainProfile ->  ProfileData
-profileDatumToProfileData  = metadataFieldsToProfileData . getMetadataFields
-
+profileDatumToProfileData :: CIP68Datum Onchain.OnchainProfile -> ProfileData
+profileDatumToProfileData = metadataFieldsToProfileData . getMetadataFields
 
 profileDatumToProfile :: (MonadError GYTxMonadException m) => CIP68Datum Onchain.OnchainProfile -> m Profile
 profileDatumToProfile datum = do
   let ProfileData {..} = profileDatumToProfileData datum
-      onchainProfile =  extra datum
+      onchainProfile = extra datum
   let profileType = onchainProfileTypeToProfileType $ Onchain.profileType onchainProfile
   gyProfileId <- assetClassFromPlutus' (Onchain.profileId onchainProfile)
-  return $ Profile
-    { profileId = gyProfileId,
-      profileName = profileDataName,
-      profileDescription = profileDataDescription,
-      profileImageURI = profileDataImageURI,
-      profileType = profileType
-    }
+  return $
+    Profile
+      { profileId = gyProfileId,
+        profileName = profileDataName,
+        profileDescription = profileDataDescription,
+        profileImageURI = profileDataImageURI,
+        profileType = profileType
+      }
 
 ------------------------------------------------------------------------------------------------
 
@@ -105,9 +102,9 @@ profileDatumToProfile datum = do
 
 ------------------------------------------------------------------------------------------------
 
-onchainMembershipHistoryToMembershipHistory :: (MonadError GYTxMonadException m) => OnchainMembershipHistory -> m MembershipHistory
-onchainMembershipHistoryToMembershipHistory history@OnchainMembershipHistory {..} = do
-  gyHistoryId <- assetClassFromPlutus' (deriveMembershipHistoryIdFromHistory history)
+onchainMembershipHistoryToMembershipHistory :: (MonadError GYTxMonadException m) => OnchainTypes.OnchainMembershipHistory -> m MembershipHistory
+onchainMembershipHistoryToMembershipHistory history@OnchainTypes.OnchainMembershipHistory {..} = do
+  gyHistoryId <- assetClassFromPlutus' (OnchainId.deriveMembershipHistoryIdFromHistory history)
   gyPractitionerId <- assetClassFromPlutus' membershipHistoryPractitionerId
   gyOrganizationId <- assetClassFromPlutus' membershipHistoryOrganizationId
   return
@@ -118,8 +115,8 @@ onchainMembershipHistoryToMembershipHistory history@OnchainMembershipHistory {..
       }
 
 -- | Convert with a pre-computed interval GYAssetClass (from UTxO value or derivation).
-onchainMembershipIntervalToMembershipInterval :: (MonadError GYTxMonadException m) => GYAssetClass -> OnchainMembershipInterval -> m MembershipInterval
-onchainMembershipIntervalToMembershipInterval gyIntervalId OnchainMembershipInterval {..} = do
+onchainMembershipIntervalToMembershipInterval :: (MonadError GYTxMonadException m) => GYAssetClass -> OnchainTypes.OnchainMembershipInterval -> m MembershipInterval
+onchainMembershipIntervalToMembershipInterval gyIntervalId OnchainTypes.OnchainMembershipInterval {..} = do
   gyPractitionerId <- assetClassFromPlutus' membershipIntervalPractitionerId
   return
     MembershipInterval
@@ -132,10 +129,10 @@ onchainMembershipIntervalToMembershipInterval gyIntervalId OnchainMembershipInte
       }
 
 -- | Derive the interval ID from the organization's ProfileId and convert.
-onchainMembershipIntervalToMembershipIntervalWithOrgId :: (MonadError GYTxMonadException m) => Onchain.ProfileId -> OnchainMembershipInterval -> m MembershipInterval
-onchainMembershipIntervalToMembershipIntervalWithOrgId orgId interval@OnchainMembershipInterval {..} = do
+onchainMembershipIntervalToMembershipIntervalWithOrgId :: (MonadError GYTxMonadException m) => Onchain.ProfileId -> OnchainTypes.OnchainMembershipInterval -> m MembershipInterval
+onchainMembershipIntervalToMembershipIntervalWithOrgId orgId interval@OnchainTypes.OnchainMembershipInterval {..} = do
   let historyId = Onchain.deriveMembershipHistoryId orgId membershipIntervalPractitionerId
-      intervalId = deriveMembershipIntervalId historyId membershipIntervalNumber
+      intervalId = OnchainId.deriveMembershipIntervalId historyId membershipIntervalNumber
   gyIntervalId <- assetClassFromPlutus' intervalId
   onchainMembershipIntervalToMembershipInterval gyIntervalId interval
 
@@ -145,9 +142,9 @@ onchainMembershipIntervalToMembershipIntervalWithOrgId orgId interval@OnchainMem
 
 ------------------------------------------------------------------------------------------------
 
-onchainAchievementToAchievement :: (MonadError GYTxMonadException m) => CIP68Datum OnchainAchievement -> m Achievement
+onchainAchievementToAchievement :: (MonadError GYTxMonadException m) => CIP68Datum OnchainTypes.OnchainAchievement -> m Achievement
 onchainAchievementToAchievement datum = do
-  let OnchainAchievement {..} = extra datum
+  let OnchainTypes.OnchainAchievement {..} = extra datum
       ProfileData {..} = metadataFieldsToProfileData (getMetadataFields datum)
   gyAchievementId <- assetClassFromPlutus' achievementId
   gyAwardedTo <- assetClassFromPlutus' achievementAwardedTo

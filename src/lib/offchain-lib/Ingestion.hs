@@ -10,7 +10,7 @@ import GeniusYield.Types
 import KupoAtlas
 import Onchain.Protocol.Types (MembershipDatum (..), MembershipHistoriesListNode (..))
 import Onchain.LinkedList (NodeDatum (..))
-import TxBuilding.Functors
+import TxBuilding.Conversions
 import TxBuilding.Utils
 import TxBuilding.Validators (achievementsValidatorHashGY, membershipsValidatorHashGY, profilesValidatorHashGY, ranksValidatorHashGY)
 

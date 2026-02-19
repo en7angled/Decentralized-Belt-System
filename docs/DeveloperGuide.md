@@ -29,7 +29,7 @@
     - [3.7 TxBuilding/Lookups — UTxO and State Lookups](#37-txbuildinglookups--utxo-and-state-lookups)
     - [3.8 TxBuilding/Interactions — User Intent Mapping](#38-txbuildinginteractions--user-intent-mapping)
     - [3.9 TxBuilding/Transactions — Execution and Submission](#39-txbuildingtransactions--execution-and-submission)
-    - [3.10 TxBuilding/Functors — Domain ↔ On-Chain Conversions](#310-txbuildingfunctors--domain--on-chain-conversions)
+    - [3.10 TxBuilding/Conversions — Domain ↔ On-Chain Conversions](#310-txbuildingconversions--domain--on-chain-conversions)
     - [3.11 TxBuilding/Exceptions — Error Handling](#311-txbuildingexceptions--error-handling)
     - [3.12 TxBuilding/Validators — Compiled Script Access](#312-txbuildingvalidators--compiled-script-access)
     - [3.13 Storage — Persistent Projections](#313-storage--persistent-projections)
@@ -333,13 +333,13 @@ offchain-lib/
 │   │   ├── Actions.hs             -- ProfileActionType, ProtocolActionType, AdminActionType, ProfileData
 │   │   └── BJJ.hs                 -- BJJBelt with JSON/Swagger instances
 │   └── Transfer/
-│       └── Types.hs               -- PractitionerProfileInformation, OrganizationProfileInformation
+│       └── Types.hs               -- PractitionerProfileInformation, OrganizationProfileInformation, MembershipHistoryInformation, MembershipIntervalInformation
 ├── Ingestion.hs                    -- Chain event → domain event projection
 ├── Storage.hs                      -- Persistent entities, PostgreSQL operations
 └── TxBuilding/
     ├── Context.hs                  -- DeployedScriptsContext, ProviderCtx, runners
     ├── Exceptions.hs               -- TxBuildingException, HTTP status mapping
-    ├── Functors.hs                 -- Domain ↔ on-chain type conversions
+    ├── Conversions.hs                 -- Domain ↔ on-chain type conversions
     ├── Interactions.hs             -- Interaction type, action → skeleton mapping
     ├── Lookups.hs                  -- UTxO lookups, state extraction
     ├── Operations.hs               -- Domain tx operations (createProfileTX, promoteTX, etc.)
@@ -440,7 +440,7 @@ These are the **low-level building blocks** for constructing transactions. Each 
 | Function | Purpose |
 |----------|---------|
 | `txMustLockStateWithInlineDatumAndValue` | Lock state with inline datum at a validator |
-| `txIsPayingValueToAddress` | Pay value to an address (no datum) |
+| `txMustPayValueToAddress` | Pay value to an address (no datum) |
 
 **Spending (inputs):**
 
@@ -606,9 +606,9 @@ interactionToTxSkeleton ::
 2. Include the new script hash in `ProtocolParams` (if needed)
 3. Update the `DeployedScriptsContext` construction
 
-### 3.10 TxBuilding/Functors — Domain ↔ On-Chain Conversions
+### 3.10 TxBuilding/Conversions — Domain ↔ On-Chain Conversions
 
-Functors convert between off-chain domain types and on-chain Plutus types:
+Conversions convert between off-chain domain types and on-chain Plutus types:
 
 | Function | Direction |
 |----------|-----------|
@@ -620,7 +620,7 @@ Functors convert between off-chain domain types and on-chain Plutus types:
 | `textToBuiltinByteString` | `Text` → `BuiltinByteString` |
 
 **When adding a new concept:**
-1. Add conversion functions in `TxBuilding/Functors.hs`
+1. Add conversion functions in `TxBuilding/Conversions.hs`
 2. Both directions: off-chain → on-chain (for building tx) and on-chain → off-chain (for queries/projections)
 
 ### 3.11 TxBuilding/Exceptions — Error Handling
@@ -698,6 +698,8 @@ MyProjection
 
 **Important**: The `UniqueMyProjection` constraint ensures upsert semantics. Always use `upsertByUnique` for idempotent writes.
 
+**Membership interval organization backfill:** When a membership history projection is stored, Storage backfills `organizationProfileId` on any existing interval projections that (a) have the same practitioner and NULL org, and (b) belong to that history (same ID derivation as in `resolveOrganizationForInterval`). This handles the case where the interval event was processed before the history event (e.g. first membership created in one transaction).
+
 ### 3.14 Ingestion — Chain Event Projection
 
 The ingestion module converts raw chain matches into domain events:
@@ -732,7 +734,7 @@ DomainTypes/
 │   ├── Actions.hs    -- ProfileActionType, AdminActionType, ProfileData (API inputs)
 │   └── BJJ.hs        -- BJJBelt type with JSON/Swagger/Persistent instances
 └── Transfer/
-    └── Types.hs      -- Composite types for API responses (ProfileInformation)
+    └── Types.hs      -- Composite types for API responses (PractitionerProfileInformation, OrganizationProfileInformation, MembershipHistoryInformation, MembershipIntervalInformation)
 ```
 
 **When adding a new concept's domain types:**
@@ -811,6 +813,9 @@ data QueryAppContext = QueryAppContext
 - `Query.Live` — On-chain queries via GeniusYield providers (slower, always current)
 - `Query.Common` — Shared filter types and utilities
 
+**Membership endpoints and transfer types:**  
+Membership history endpoints return **history plus its list of intervals**; interval endpoints include **organization id** so clients get the org without an extra lookup. The response types are the *Information* transfer types from `DomainTypes/Transfer/Types.hs`: `MembershipHistoryInformation` (history + `intervals` as `[MembershipIntervalInformation]`) and `MembershipIntervalInformation` (interval + `organization_id`). Implementors should use these types for enriched membership views.
+
 **To add query endpoints for a new concept:**
 
 1. Add route in `RestAPI.hs`:
@@ -847,7 +852,7 @@ data Command
 
 ### 4.4 Chain Sync Service (Port 8084)
 
-The chain sync service (`src/exe/chain-sync/`) polls Kupo for new UTxOs matching the minting policy pattern and feeds them through the ingestion pipeline.
+The chain sync service (`src/exe/chain-sync/`) polls Kupo for new UTxOs matching the minting policy pattern and feeds them through the ingestion pipeline. Event order within a block is not guaranteed; for membership, Storage backfills interval `organizationProfileId` when the corresponding history is stored, so no separate ordering step is required for correctness.
 
 **When adding a new concept:** If the new concept's tokens are minted by the existing `MintingPolicy`, the chain sync will automatically pick them up. You only need to:
 1. Update `Ingestion.hs` to recognize the new datum type
@@ -908,7 +913,7 @@ The chain sync service (`src/exe/chain-sync/`) polls Kupo for new UTxOs matching
 
 ### Phase 5: Off-Chain Transaction Building
 
-**File**: `src/lib/offchain-lib/TxBuilding/Functors.hs`
+**File**: `src/lib/offchain-lib/TxBuilding/Conversions.hs`
 
 1. Add domain ↔ on-chain conversion functions
 
@@ -1021,7 +1026,7 @@ Use this checklist when adding any new concept:
 ### Off-Chain
 - [ ] Domain type in `DomainTypes/Core/Types.hs` with JSON/Swagger instances
 - [ ] Action type constructor in `DomainTypes/Core/Actions.hs`
-- [ ] Functor conversions in `TxBuilding/Functors.hs` (both directions)
+- [ ] Conversion functions in `TxBuilding/Conversions.hs` (both directions)
 - [ ] Datum parser in `TxBuilding/Utils.hs`
 - [ ] Lookup functions in `TxBuilding/Lookups.hs`
 - [ ] Error constructors in `TxBuilding/Exceptions.hs`
@@ -1233,7 +1238,7 @@ Quick reference for which files to modify when adding different types of changes
 | **New validator** | `Onchain/MyValidator.hs`, `Protocol.hs`, `Validators.hs`, `Context.hs`, `Transactions.hs`, `.cabal` |
 | **New minting redeemer** | `MintingPolicy.hs` |
 | **New off-chain domain type** | `DomainTypes/Core/Types.hs`, `DomainTypes/Core/Actions.hs` |
-| **New tx operation** | `Operations.hs`, `Lookups.hs`, `Interactions.hs`, `Functors.hs` |
+| **New tx operation** | `Operations.hs`, `Lookups.hs`, `Interactions.hs`, `Conversions.hs` |
 | **New error type** | `Exceptions.hs` |
 | **New query endpoint** | `query-api/RestAPI.hs`, `Query/Projected.hs` or `Query/Live.hs` |
 | **New admin command** | `admin/Main.hs` |

@@ -1,3 +1,4 @@
+-- | Datum parsing, GY/Plutus conversions, and small helpers for TxBuilding.
 module TxBuilding.Utils where
 
 import Cardano.Api (Key (getVerificationKey), castVerificationKey)
@@ -16,9 +17,9 @@ import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
 import GeniusYield.Types.Wallet
 import Onchain.CIP68 (CIP68Datum)
 import Onchain.Protocol qualified as Onchain
-import Onchain.Protocol.Types (MembershipDatum, OnchainAchievement)
+import Onchain.Protocol.Types (MembershipDatum, OnchainAchievement, OracleParams)
 import PlutusLedgerApi.V1.Tx qualified as V1
-import PlutusLedgerApi.V1.Value ( flattenValue)
+import PlutusLedgerApi.V1.Value (flattenValue)
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Tx qualified as V3
 import System.Directory.Extra
@@ -98,6 +99,11 @@ getInlineDatumAndValue utxo = case utxoOutDatum utxo of
   GYOutDatumInline datum -> Just (datum, utxoValue utxo)
   _ -> Nothing
 
+-- | Get inline datum and value from UTxO or throw 'DatumParseError'.
+getInlineDatumAndValueOrThrow :: (MonadError GYTxMonadException m) => GYUTxO -> m (GYDatum, GYValue)
+getInlineDatumAndValueOrThrow utxo =
+  maybe (throwError (GYApplicationException DatumParseError)) return $ getInlineDatumAndValue utxo
+
 tnFromGYAssetClass :: (MonadError GYTxMonadException m) => GYAssetClass -> m GYTokenName
 tnFromGYAssetClass (GYToken _ gyProfileRefTN) = return gyProfileRefTN
 tnFromGYAssetClass _ = throwError (GYApplicationException InvalidAssetClass)
@@ -148,6 +154,14 @@ membershipDatumFromDatum gyDatum =
 membershipDatumFromGYOutDatum :: GYOutDatum -> Maybe MembershipDatum
 membershipDatumFromGYOutDatum (GYOutDatumInline gyDatum) = membershipDatumFromDatum gyDatum
 membershipDatumFromGYOutDatum _ = Nothing
+
+oracleParamsFromDatum :: GYDatum -> Maybe OracleParams
+oracleParamsFromDatum gyDatum =
+  fromBuiltinData (datumToPlutus' gyDatum)
+
+oracleParamsFromGYOutDatum :: GYOutDatum -> Maybe OracleParams
+oracleParamsFromGYOutDatum (GYOutDatumInline gyDatum) = oracleParamsFromDatum gyDatum
+oracleParamsFromGYOutDatum _ = Nothing
 
 achievementDatumFromDatum :: GYDatum -> Maybe (CIP68Datum OnchainAchievement)
 achievementDatumFromDatum gyDatum =

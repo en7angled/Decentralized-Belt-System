@@ -67,10 +67,16 @@
             "example": "ff80aaaf03a273b8f5c558168dc0e2377eea810badbae6eceefc14ef.474f4c44",
             "type": "string"
         },
-        "MembershipHistory": {
+        "MembershipHistoryInformation": {
             "properties": {
                 "id": {
                     "$ref": "#/definitions/GYAssetClass"
+                },
+                "intervals": {
+                    "items": {
+                        "$ref": "#/definitions/MembershipIntervalInformation"
+                    },
+                    "type": "array"
                 },
                 "organization_id": {
                     "$ref": "#/definitions/GYAssetClass"
@@ -82,11 +88,12 @@
             "required": [
                 "id",
                 "practitioner_id",
-                "organization_id"
+                "organization_id",
+                "intervals"
             ],
             "type": "object"
         },
-        "MembershipInterval": {
+        "MembershipIntervalInformation": {
             "properties": {
                 "end_date": {
                     "description": "This is the posix time in ISO8601 format.",
@@ -103,6 +110,9 @@
                 "number": {
                     "type": "integer"
                 },
+                "organization_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
                 "practitioner_id": {
                     "$ref": "#/definitions/GYAssetClass"
                 },
@@ -118,7 +128,8 @@
                 "start_date",
                 "is_accepted",
                 "practitioner_id",
-                "number"
+                "number",
+                "organization_id"
             ],
             "type": "object"
         },
@@ -332,6 +343,15 @@
                         "items": {
                             "type": "string"
                         },
+                        "name": "achievement",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
                         "name": "awarded_to",
                         "type": "array"
                     },
@@ -409,7 +429,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `to` or `from` or `is_accepted` or `awarded_by` or `awarded_to` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `to` or `from` or `is_accepted` or `awarded_by` or `awarded_to` or `achievement` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Achievements"
@@ -419,6 +439,15 @@
             "get": {
                 "description": "Get count of achievements",
                 "parameters": [
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "achievement",
+                        "type": "array"
+                    },
                     {
                         "collectionFormat": "multi",
                         "in": "query",
@@ -478,7 +507,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `to` or `from` or `is_accepted` or `awarded_by` or `awarded_to`"
+                        "description": "Invalid `liveprojection` or `to` or `from` or `is_accepted` or `awarded_by` or `awarded_to` or `achievement`"
                     }
                 },
                 "summary": "Get Achievements Count"
@@ -510,7 +539,7 @@
                         "items": {
                             "type": "string"
                         },
-                        "name": "profile",
+                        "name": "rank",
                         "type": "array"
                     },
                     {
@@ -590,7 +619,7 @@
                             "desc"
                         ],
                         "in": "query",
-                        "name": "order",
+                        "name": "sort_order",
                         "required": false,
                         "type": "string"
                     },
@@ -616,7 +645,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `rank` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Belts"
@@ -627,28 +656,12 @@
                 "description": "Get Belts Count",
                 "parameters": [
                     {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "limit",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
-                        "in": "query",
-                        "maximum": 9223372036854775807,
-                        "minimum": -9223372036854775808,
-                        "name": "offset",
-                        "required": false,
-                        "type": "integer"
-                    },
-                    {
                         "collectionFormat": "multi",
                         "in": "query",
                         "items": {
                             "type": "string"
                         },
-                        "name": "profile",
+                        "name": "rank",
                         "type": "array"
                     },
                     {
@@ -730,7 +743,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `to` or `from` or `awarded_by` or `achieved_by` or `belt` or `rank`"
                     }
                 },
                 "summary": "Get Belts Count"
@@ -873,7 +886,7 @@
                         "description": "",
                         "schema": {
                             "items": {
-                                "$ref": "#/definitions/MembershipHistory"
+                                "$ref": "#/definitions/MembershipHistoryInformation"
                             },
                             "type": "array"
                         }
@@ -1001,7 +1014,7 @@
                         "description": "",
                         "schema": {
                             "items": {
-                                "$ref": "#/definitions/MembershipInterval"
+                                "$ref": "#/definitions/MembershipIntervalInformation"
                             },
                             "type": "array"
                         }
@@ -1217,6 +1230,15 @@
                 "description": "Get Profiles Count",
                 "parameters": [
                     {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
                         "enum": [
                             "Practitioner",
                             "Organization"
@@ -1247,7 +1269,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `profile_type`"
+                        "description": "Invalid `liveprojection` or `profile_type` or `profile`"
                     }
                 },
                 "summary": "Get Profiles Count"
@@ -1323,7 +1345,7 @@
                         "items": {
                             "type": "string"
                         },
-                        "name": "profile",
+                        "name": "promotion",
                         "type": "array"
                     },
                     {
@@ -1415,7 +1437,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `awarded_by` or `achieved_by` or `belt` or `profile` or `offset` or `limit`"
+                        "description": "Invalid `liveprojection` or `sort_order` or `order_by` or `awarded_by` or `achieved_by` or `belt` or `promotion` or `offset` or `limit`"
                     }
                 },
                 "summary": "Get Pending Promotions"
@@ -1431,7 +1453,7 @@
                         "items": {
                             "type": "string"
                         },
-                        "name": "profile",
+                        "name": "promotion",
                         "type": "array"
                     },
                     {
@@ -1499,7 +1521,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid `liveprojection` or `awarded_by` or `achieved_by` or `belt` or `profile`"
+                        "description": "Invalid `liveprojection` or `awarded_by` or `achieved_by` or `belt` or `promotion`"
                     }
                 },
                 "summary": "Get Promotions Count"

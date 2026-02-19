@@ -1,27 +1,91 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-{-# HLINT ignore "Redundant ^." #-}
 
 module Query.Projected where
 
 import Control.Exception (throwIO)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (for_)
+import Data.List (groupBy, nub, sortOn)
 import Control.Monad.Reader.Class
 import Data.MultiSet (fromList, toOccurList)
 import Data.Text qualified as T
+import Data.Maybe 
 import Database.Esqueleto.Experimental
 import Database.Persist qualified as P
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import DomainTypes.Core.BJJ (BJJBelt)
+import GeniusYield.Types (GYTime)
 import Query.Common qualified as C
 import QueryAppMonad
 import Storage
 import TxBuilding.Exceptions (TxBuildingException (..))
 import Types
 
+-- | Apply sort direction (Asc/Desc) to an expression for orderBy.
+orderByDir :: PersistField a => SortOrder -> SqlExpr (Value a) -> SqlExpr OrderBy
+orderByDir so expr = case so of Types.Asc -> asc expr; Types.Desc -> desc expr
+
+-- | Apply optional limit/offset in a select query.
+applyLimitOffset :: Maybe (C.Limit, C.Offset) -> SqlQuery ()
+applyLimitOffset Nothing = pure ()
+applyLimitOffset (Just (l, o)) = do
+  offset (fromIntegral o)
+  limit (fromIntegral l)
+
+-- | Add where_ clauses for an optional date interval (from, to).
+whereDateInterval :: (Maybe GYTime, Maybe GYTime) -> SqlExpr (Value GYTime) -> SqlQuery ()
+whereDateInterval (mf, mt) dateCol = case (mf, mt) of
+  (Nothing, Nothing) -> pure ()
+  (Just f, Nothing) -> where_ (dateCol >=. val f)
+  (Nothing, Just t) -> where_ (dateCol <=. val t)
+  (Just f, Just t) -> where_ (dateCol >=. val f &&. dateCol <=. val t)
+
+applyPromotionFilter :: Maybe C.PromotionFilter -> SqlExpr (Entity PromotionProjection) -> SqlQuery ()
+applyPromotionFilter Nothing _ = pure ()
+applyPromotionFilter (Just C.PromotionFilter {..}) pr = do
+  for_ promotionFilterId (\ids -> where_ (pr ^. PromotionProjectionPromotionId `in_` valList ids))
+  for_ promotionFilterBelt (\belts -> where_ (pr ^. PromotionProjectionPromotionBelt `in_` valList belts))
+  for_ promotionFilterAchievedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAchievedByProfileId `in_` valList ids))
+  for_ promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
+  whereDateInterval promotionFilterAchievementDateInterval (pr ^. PromotionProjectionPromotionAchievementDate)
+
+applyRankFilter :: Maybe C.RankFilter -> SqlExpr (Entity RankProjection) -> SqlQuery ()
+applyRankFilter Nothing _ = pure ()
+applyRankFilter (Just C.RankFilter {..}) rp = do
+  for_ rankFilterId (\ids -> where_ (rp ^. RankProjectionRankId `in_` valList ids))
+  for_ rankFilterBelt (\belts -> where_ (rp ^. RankProjectionRankBelt `in_` valList belts))
+  for_ rankFilterAchievedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAchievedByProfileId `in_` valList ids))
+  for_ rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
+  whereDateInterval rankFilterAchievementDateInterval (rp ^. RankProjectionRankAchievementDate)
+
+applyAchievementFilter :: Maybe C.AchievementFilter -> SqlExpr (Entity AchievementProjection) -> SqlQuery ()
+applyAchievementFilter Nothing _ = pure ()
+applyAchievementFilter (Just C.AchievementFilter {..}) ap = do
+  for_ achievementFilterId (\ids -> where_ (ap ^. AchievementProjectionAchievementId `in_` valList ids))
+  for_ achievementFilterAwardedToProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedToProfileId `in_` valList ids))
+  for_ achievementFilterAwardedByProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedByProfileId `in_` valList ids))
+  for_ achievementFilterIsAccepted (\ac -> where_ (ap ^. AchievementProjectionIsAccepted ==. val ac))
+  whereDateInterval achievementFilterDateInterval (ap ^. AchievementProjectionAchievementDate)
+
+applyMembershipHistoryFilter :: Maybe C.MembershipHistoryFilter -> SqlExpr (Entity MembershipHistoryProjection) -> SqlQuery ()
+applyMembershipHistoryFilter Nothing _ = pure ()
+applyMembershipHistoryFilter (Just C.MembershipHistoryFilter {..}) mhp = do
+  for_ membershipHistoryFilterOrganizationProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionOrganizationProfileId `in_` valList ids))
+  for_ membershipHistoryFilterPractitionerProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionPractitionerProfileId `in_` valList ids))
+
+applyMembershipIntervalFilter :: Maybe C.MembershipIntervalFilter -> SqlExpr (Entity MembershipIntervalProjection) -> SqlQuery ()
+applyMembershipIntervalFilter Nothing _ = pure ()
+applyMembershipIntervalFilter (Just C.MembershipIntervalFilter {..}) mip = do
+  for_ membershipIntervalFilterPractitionerProfileId (\ids -> where_ (mip ^. MembershipIntervalProjectionPractitionerProfileId `in_` valList ids))
+
+applyProfileFilter :: Maybe C.ProfileFilter -> SqlExpr (Entity ProfileProjection) -> SqlQuery ()
+applyProfileFilter Nothing _ = pure ()
+applyProfileFilter (Just C.ProfileFilter {..}) pp = do
+  for_ profileFilterId (\ids -> where_ (pp ^. ProfileProjectionProfileId `in_` valList ids))
+  for_ profileFilterType (\pt -> where_ (pp ^. ProfileProjectionProfileType ==. val pt))
+  for_ profileFilterName (\nameSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileName) `like` val (T.pack "%" <> T.toLower nameSubstring <> T.pack "%")))
+  for_ profileFilterDescription (\descriptionSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileDescription) `like` val (T.pack "%" <> T.toLower descriptionSubstring <> T.pack "%")))
 
 getPractitionerProfile :: (MonadIO m, MonadReader QueryAppContext m) => ProfileRefAC -> m PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
@@ -76,17 +140,14 @@ getOrganizationProfile profileRefAC = do
             }
     ) pool
 
-getProfilesCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe ProfileType -> m Int
-getProfilesCount maybeProfileType = do
+getProfilesCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.ProfileFilter -> m Int
+getProfilesCount maybeProfileFilter = do
   pool <- asks pgPool
   liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       pp <- from $ table @ProfileProjection
-      case maybeProfileType of
-        Nothing -> pure countRows
-        Just pt -> do
-          where_ (pp ^. ProfileProjectionProfileType ==. val pt)
-          pure countRows
+      applyProfileFilter maybeProfileFilter pp
+      pure countRows
     pure (maybe 0 unValue cnt)
     ) pool
 
@@ -96,27 +157,16 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
   liftIO $ runSqlPool (do
     rows <- select $ do
       pp <- from $ table @ProfileProjection
-      case maybeProfileFilter of
-        Nothing -> pure ()
-        Just C.ProfileFilter {..} -> do
-          for_ profileFilterId (\ids -> where_ (pp ^. ProfileProjectionProfileId `in_` valList ids))
-          for_ profileFilterType (\pt -> where_ (pp ^. ProfileProjectionProfileType ==. val pt))
-          for_ profileFilterName (\nameSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileName) `like` val (T.pack "%" <> T.toLower nameSubstring <> T.pack "%")))
-          for_ profileFilterDescription (\descriptionSubstring -> where_ (lower_ (pp ^. ProfileProjectionProfileDescription) `like` val (T.pack "%" <> T.toLower descriptionSubstring <> T.pack "%")))
+      applyProfileFilter maybeProfileFilter pp
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
-          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
-           in case ob of
-                ProfilesOrderById -> orderBy [dir (pp ^. ProfileProjectionProfileId)]
-                ProfilesOrderByName -> orderBy [dir (pp ^. ProfileProjectionProfileName)]
-                ProfilesOrderByDescription -> orderBy [dir (pp ^. ProfileProjectionProfileDescription)]
-                ProfilesOrderByType -> orderBy [dir (pp ^. ProfileProjectionProfileType)]
-      case maybeLimitOffset of
-        Nothing -> pure ()
-        Just (l, o) -> do
-          offset (fromIntegral o)
-          limit (fromIntegral l)
+          case ob of
+            ProfilesOrderById -> orderBy [orderByDir so (pp ^. ProfileProjectionProfileId)]
+            ProfilesOrderByName -> orderBy [orderByDir so (pp ^. ProfileProjectionProfileName)]
+            ProfilesOrderByDescription -> orderBy [orderByDir so (pp ^. ProfileProjectionProfileDescription)]
+            ProfilesOrderByType -> orderBy [orderByDir so (pp ^. ProfileProjectionProfileType)]
+      applyLimitOffset maybeLimitOffset
       pure pp
     let toProfile pp =
           Profile
@@ -135,33 +185,17 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
   liftIO $ runSqlPool (do
     rows <- select $ do
       pr <- from $ table @PromotionProjection
-      case maybePromotionFilter of
-        Nothing -> pure ()
-        Just C.PromotionFilter {..} -> do
-          for_ promotionFilterId (\ids -> where_ (pr ^. PromotionProjectionPromotionId `in_` valList ids))
-          for_ promotionFilterBelt (\belts -> where_ (pr ^. PromotionProjectionPromotionBelt `in_` valList belts))
-          for_ promotionFilterAchievedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAchievedByProfileId `in_` valList ids))
-          for_ promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
-          case promotionFilterAchievementDateInterval of
-            (Nothing, Nothing) -> pure ()
-            (Just f, Nothing) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f)
-            (Nothing, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
-            (Just f, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f &&. pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
+      applyPromotionFilter maybePromotionFilter pr
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
-          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
-           in case ob of
-                PromotionsOrderById -> orderBy [dir (pr ^. PromotionProjectionPromotionId)]
-                PromotionsOrderByBelt -> orderBy [dir (pr ^. PromotionProjectionPromotionBelt)]
-                PromotionsOrderByAchievedBy -> orderBy [dir (pr ^. PromotionProjectionPromotionAchievedByProfileId)]
-                PromotionsOrderByAwardedBy -> orderBy [dir (pr ^. PromotionProjectionPromotionAwardedByProfileId)]
-                PromotionsOrderByDate -> orderBy [dir (pr ^. PromotionProjectionPromotionAchievementDate)]
-      case maybeLimitOffset of
-        Nothing -> pure ()
-        Just (l, o) -> do
-          offset (fromIntegral o)
-          limit (fromIntegral l)
+          case ob of
+            PromotionsOrderById -> orderBy [orderByDir so (pr ^. PromotionProjectionPromotionId)]
+            PromotionsOrderByBelt -> orderBy [orderByDir so (pr ^. PromotionProjectionPromotionBelt)]
+            PromotionsOrderByAchievedBy -> orderBy [orderByDir so (pr ^. PromotionProjectionPromotionAchievedByProfileId)]
+            PromotionsOrderByAwardedBy -> orderBy [orderByDir so (pr ^. PromotionProjectionPromotionAwardedByProfileId)]
+            PromotionsOrderByDate -> orderBy [orderByDir so (pr ^. PromotionProjectionPromotionAchievementDate)]
+      applyLimitOffset maybeLimitOffset
       pure pr
     let toPromotion p =
           Promotion
@@ -180,19 +214,8 @@ getPromotionsCount maybePromotionFilter = do
   liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       pr <- from $ table @PromotionProjection
-      case maybePromotionFilter of
-        Nothing -> pure countRows
-        Just C.PromotionFilter {..} -> do
-          for_ promotionFilterId (\ids -> where_ (pr ^. PromotionProjectionPromotionId `in_` valList ids))
-          for_ promotionFilterBelt (\belts -> where_ (pr ^. PromotionProjectionPromotionBelt `in_` valList belts))
-          for_ promotionFilterAchievedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAchievedByProfileId `in_` valList ids))
-          for_ promotionFilterAwardedByProfileId (\ids -> where_ (pr ^. PromotionProjectionPromotionAwardedByProfileId `in_` valList ids))
-          case promotionFilterAchievementDateInterval of
-            (Nothing, Nothing) -> pure ()
-            (Just f, Nothing) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f)
-            (Nothing, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
-            (Just f, Just to) -> where_ (pr ^. PromotionProjectionPromotionAchievementDate >=. val f &&. pr ^. PromotionProjectionPromotionAchievementDate <=. val to)
-          pure countRows
+      applyPromotionFilter maybePromotionFilter pr
+      pure countRows
     pure (maybe 0 unValue cnt)
     ) pool
 
@@ -202,33 +225,17 @@ getAchievements maybeLimitOffset maybeAchievementFilter maybeOrder = do
   liftIO $ runSqlPool (do
     rows <- select $ do
       ap <- from $ table @AchievementProjection
-      case maybeAchievementFilter of
-        Nothing -> pure ()
-        Just C.AchievementFilter {..} -> do
-          for_ achievementFilterId (\ids -> where_ (ap ^. AchievementProjectionAchievementId `in_` valList ids))
-          for_ achievementFilterAwardedToProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedToProfileId `in_` valList ids))
-          for_ achievementFilterAwardedByProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedByProfileId `in_` valList ids))
-          for_ achievementFilterIsAccepted (\ac -> where_ (ap ^. AchievementProjectionIsAccepted ==. val ac))
-          case achievementFilterDateInterval of
-            (Nothing, Nothing) -> pure ()
-            (Just f, Nothing) -> where_ (ap ^. AchievementProjectionAchievementDate >=. val f)
-            (Nothing, Just to) -> where_ (ap ^. AchievementProjectionAchievementDate <=. val to)
-            (Just f, Just to) -> where_ (ap ^. AchievementProjectionAchievementDate >=. val f &&. ap ^. AchievementProjectionAchievementDate <=. val to)
+      applyAchievementFilter maybeAchievementFilter ap
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
-          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
-           in case ob of
-                AchievementsOrderById -> orderBy [dir (ap ^. AchievementProjectionAchievementId)]
-                AchievementsOrderByDate -> orderBy [dir (ap ^. AchievementProjectionAchievementDate)]
-                AchievementsOrderByAwardedTo -> orderBy [dir (ap ^. AchievementProjectionAwardedToProfileId)]
-                AchievementsOrderByAwardedBy -> orderBy [dir (ap ^. AchievementProjectionAwardedByProfileId)]
-                AchievementsOrderByName -> orderBy [dir (ap ^. AchievementProjectionAchievementName)]
-      case maybeLimitOffset of
-        Nothing -> pure ()
-        Just (l, o) -> do
-          offset (fromIntegral o)
-          limit (fromIntegral l)
+          case ob of
+            AchievementsOrderById -> orderBy [orderByDir so (ap ^. AchievementProjectionAchievementId)]
+            AchievementsOrderByDate -> orderBy [orderByDir so (ap ^. AchievementProjectionAchievementDate)]
+            AchievementsOrderByAwardedTo -> orderBy [orderByDir so (ap ^. AchievementProjectionAwardedToProfileId)]
+            AchievementsOrderByAwardedBy -> orderBy [orderByDir so (ap ^. AchievementProjectionAwardedByProfileId)]
+            AchievementsOrderByName -> orderBy [orderByDir so (ap ^. AchievementProjectionAchievementName)]
+      applyLimitOffset maybeLimitOffset
       pure ap
     let toAchievement ap =
           Achievement
@@ -250,19 +257,8 @@ getAchievementsCount maybeAchievementFilter = do
   liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       ap <- from $ table @AchievementProjection
-      case maybeAchievementFilter of
-        Nothing -> pure countRows
-        Just C.AchievementFilter {..} -> do
-          for_ achievementFilterId (\ids -> where_ (ap ^. AchievementProjectionAchievementId `in_` valList ids))
-          for_ achievementFilterAwardedToProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedToProfileId `in_` valList ids))
-          for_ achievementFilterAwardedByProfileId (\ids -> where_ (ap ^. AchievementProjectionAwardedByProfileId `in_` valList ids))
-          for_ achievementFilterIsAccepted (\ac -> where_ (ap ^. AchievementProjectionIsAccepted ==. val ac))
-          case achievementFilterDateInterval of
-            (Nothing, Nothing) -> pure ()
-            (Just f, Nothing) -> where_ (ap ^. AchievementProjectionAchievementDate >=. val f)
-            (Nothing, Just to) -> where_ (ap ^. AchievementProjectionAchievementDate <=. val to)
-            (Just f, Just to) -> where_ (ap ^. AchievementProjectionAchievementDate >=. val f &&. ap ^. AchievementProjectionAchievementDate <=. val to)
-          pure countRows
+      applyAchievementFilter maybeAchievementFilter ap
+      pure countRows
     pure (maybe 0 unValue cnt)
     ) pool
 
@@ -272,33 +268,17 @@ getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
   liftIO $ runSqlPool (do
     rows <- select $ do
       rp <- from $ table @RankProjection
-      case maybeRankFilter of
-        Nothing -> pure ()
-        Just C.RankFilter {..} -> do
-          for_ rankFilterId (\ids -> where_ (rp ^. RankProjectionRankId `in_` valList ids))
-          for_ rankFilterBelt (\belts -> where_ (rp ^. RankProjectionRankBelt `in_` valList belts))
-          for_ rankFilterAchievedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAchievedByProfileId `in_` valList ids))
-          for_ rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
-          case rankFilterAchievementDateInterval of
-            (Nothing, Nothing) -> pure ()
-            (Just f, Nothing) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f)
-            (Nothing, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate <=. val to)
-            (Just f, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f &&. rp ^. RankProjectionRankAchievementDate <=. val to)
+      applyRankFilter maybeRankFilter rp
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
-          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
-           in case ob of
-                RanksOrderById -> orderBy [dir (rp ^. RankProjectionRankId)]
-                RanksOrderByBelt -> orderBy [dir (rp ^. RankProjectionRankBelt)]
-                RanksOrderByAchievedBy -> orderBy [dir (rp ^. RankProjectionRankAchievedByProfileId)]
-                RanksOrderByAwardedBy -> orderBy [dir (rp ^. RankProjectionRankAwardedByProfileId)]
-                RanksOrderByDate -> orderBy [dir (rp ^. RankProjectionRankAchievementDate)]
-      case maybeLimitOffset of
-        Nothing -> pure ()
-        Just (l, o) -> do
-          offset (fromIntegral o)
-          limit (fromIntegral l)
+          case ob of
+            RanksOrderById -> orderBy [orderByDir so (rp ^. RankProjectionRankId)]
+            RanksOrderByBelt -> orderBy [orderByDir so (rp ^. RankProjectionRankBelt)]
+            RanksOrderByAchievedBy -> orderBy [orderByDir so (rp ^. RankProjectionRankAchievedByProfileId)]
+            RanksOrderByAwardedBy -> orderBy [orderByDir so (rp ^. RankProjectionRankAwardedByProfileId)]
+            RanksOrderByDate -> orderBy [orderByDir so (rp ^. RankProjectionRankAchievementDate)]
+      applyLimitOffset maybeLimitOffset
       pure rp
     let toRank rp =
           Rank
@@ -317,19 +297,8 @@ getRanksCount maybeRankFilter = do
   liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       rp <- from $ table @RankProjection
-      case maybeRankFilter of
-        Nothing -> pure countRows
-        Just C.RankFilter {..} -> do
-          for_ rankFilterId (\ids -> where_ (rp ^. RankProjectionRankId `in_` valList ids))
-          for_ rankFilterBelt (\belts -> where_ (rp ^. RankProjectionRankBelt `in_` valList belts))
-          for_ rankFilterAchievedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAchievedByProfileId `in_` valList ids))
-          for_ rankFilterAwardedByProfileId (\ids -> where_ (rp ^. RankProjectionRankAwardedByProfileId `in_` valList ids))
-          case rankFilterAchievementDateInterval of
-            (Nothing, Nothing) -> pure ()
-            (Just f, Nothing) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f)
-            (Nothing, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate <=. val to)
-            (Just f, Just to) -> where_ (rp ^. RankProjectionRankAchievementDate >=. val f &&. rp ^. RankProjectionRankAchievementDate <=. val to)
-          pure countRows
+      applyRankFilter maybeRankFilter rp
+      pure countRows
     pure (maybe 0 unValue cnt)
     ) pool
 
@@ -366,39 +335,69 @@ getPromotionBeltTotals = do
     pure (toOccurList . fromList $ belts)
     ) pool
 
-getMembershipHistories :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.MembershipHistoryFilter -> Maybe (MembershipHistoriesOrderBy, SortOrder) -> m [MembershipHistory]
+getMembershipHistoriesAsHistory :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.MembershipHistoryFilter -> Maybe (MembershipHistoriesOrderBy, SortOrder) -> m [MembershipHistory]
+getMembershipHistoriesAsHistory maybeLimitOffset maybeFilter maybeOrder = do
+  infos <- getMembershipHistories maybeLimitOffset maybeFilter maybeOrder
+  pure $ membershipHistoryInformationToHistory <$> infos
+  where
+    membershipHistoryInformationToHistory info =
+      MembershipHistory
+        { membershipHistoryId = membershipHistoryInformationId info,
+          membershipHistoryPractitionerId = membershipHistoryInformationPractitionerId info,
+          membershipHistoryOrganizationId = membershipHistoryInformationOrganizationId info
+        }
+
+getMembershipHistories :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.MembershipHistoryFilter -> Maybe (MembershipHistoriesOrderBy, SortOrder) -> m [MembershipHistoryInformation]
 getMembershipHistories maybeLimitOffset maybeFilter maybeOrder = do
   pool <- asks pgPool
   liftIO $ runSqlPool (do
     rows <- select $ do
       mhp <- from $ table @MembershipHistoryProjection
-      case maybeFilter of
-        Nothing -> pure ()
-        Just C.MembershipHistoryFilter {..} -> do
-          for_ membershipHistoryFilterOrganizationProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionOrganizationProfileId `in_` valList ids))
-          for_ membershipHistoryFilterPractitionerProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionPractitionerProfileId `in_` valList ids))
+      applyMembershipHistoryFilter maybeFilter mhp
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
-          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
-           in case ob of
-                MembershipHistoriesOrderById -> orderBy [dir (mhp ^. MembershipHistoryProjectionMembershipHistoryId)]
-                MembershipHistoriesOrderByCreatedAt -> orderBy [dir (mhp ^. MembershipHistoryProjectionCreatedAtSlot)]
-                MembershipHistoriesOrderByPractitioner -> orderBy [dir (mhp ^. MembershipHistoryProjectionPractitionerProfileId)]
-                MembershipHistoriesOrderByOrganization -> orderBy [dir (mhp ^. MembershipHistoryProjectionOrganizationProfileId)]
-      case maybeLimitOffset of
-        Nothing -> pure ()
-        Just (l, o) -> do
-          offset (fromIntegral o)
-          limit (fromIntegral l)
+          case ob of
+            MembershipHistoriesOrderById -> orderBy [orderByDir so (mhp ^. MembershipHistoryProjectionMembershipHistoryId)]
+            MembershipHistoriesOrderByCreatedAt -> orderBy [orderByDir so (mhp ^. MembershipHistoryProjectionCreatedAtSlot)]
+            MembershipHistoriesOrderByPractitioner -> orderBy [orderByDir so (mhp ^. MembershipHistoryProjectionPractitionerProfileId)]
+            MembershipHistoriesOrderByOrganization -> orderBy [orderByDir so (mhp ^. MembershipHistoryProjectionOrganizationProfileId)]
+      applyLimitOffset maybeLimitOffset
       pure mhp
-    let toMembershipHistory mhp =
-          MembershipHistory
-            { membershipHistoryId = membershipHistoryProjectionMembershipHistoryId mhp,
-              membershipHistoryPractitionerId = membershipHistoryProjectionPractitionerProfileId mhp,
-              membershipHistoryOrganizationId = membershipHistoryProjectionOrganizationProfileId mhp
-            }
-    pure (Prelude.map (toMembershipHistory . entityVal) rows)
+    intervalByKey <- if null rows then pure [] else do
+      let pids = nub $ map (membershipHistoryProjectionPractitionerProfileId . entityVal) rows
+      intervalRows <- select $ do
+        mip <- from $ table @MembershipIntervalProjection
+        where_ (mip ^. MembershipIntervalProjectionPractitionerProfileId `in_` valList pids)
+        orderBy [asc (mip ^. MembershipIntervalProjectionPractitionerProfileId), asc (mip ^. MembershipIntervalProjectionOrganizationProfileId), asc (mip ^. MembershipIntervalProjectionIntervalNumber)]
+        pure mip
+      let key (Entity _ mip) = (membershipIntervalProjectionOrganizationProfileId mip, membershipIntervalProjectionPractitionerProfileId mip)
+          sorted = sortOn key intervalRows
+          groups = Data.List.groupBy (\a b -> key a == key b) sorted
+      pure $ map (\g -> (key (head g), g)) groups
+    let toIntervalInfo mip =
+          (\org ->
+            MembershipIntervalInformation
+              { membershipIntervalInformationId = membershipIntervalProjectionMembershipIntervalId mip,
+                membershipIntervalInformationStartDate = membershipIntervalProjectionStartDate mip,
+                membershipIntervalInformationEndDate = membershipIntervalProjectionEndDate mip,
+                membershipIntervalInformationIsAccepted = membershipIntervalProjectionIsAccepted mip,
+                membershipIntervalInformationPractitionerId = membershipIntervalProjectionPractitionerProfileId mip,
+                membershipIntervalInformationNumber = membershipIntervalProjectionIntervalNumber mip,
+                membershipIntervalInformationOrganizationId = org
+              })
+            <$> membershipIntervalProjectionOrganizationProfileId mip
+    let buildInfo mhp =
+          let k = (Just (membershipHistoryProjectionOrganizationProfileId mhp), membershipHistoryProjectionPractitionerProfileId mhp)
+              intervalRowsForHistory = Data.Maybe.fromMaybe [] $ lookup k intervalByKey
+              intervalInfos = mapMaybe (toIntervalInfo . entityVal) intervalRowsForHistory
+           in MembershipHistoryInformation
+                { membershipHistoryInformationId = membershipHistoryProjectionMembershipHistoryId mhp,
+                  membershipHistoryInformationPractitionerId = membershipHistoryProjectionPractitionerProfileId mhp,
+                  membershipHistoryInformationOrganizationId = membershipHistoryProjectionOrganizationProfileId mhp,
+                  membershipHistoryInformationIntervals = intervalInfos
+                }
+    pure $ map (buildInfo . entityVal) rows
     ) pool
 
 getMembershipHistoriesCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.MembershipHistoryFilter -> m Int
@@ -407,50 +406,56 @@ getMembershipHistoriesCount maybeFilter = do
   liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       mhp <- from $ table @MembershipHistoryProjection
-      case maybeFilter of
-        Nothing -> pure countRows
-        Just C.MembershipHistoryFilter {..} -> do
-          for_ membershipHistoryFilterOrganizationProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionOrganizationProfileId `in_` valList ids))
-          for_ membershipHistoryFilterPractitionerProfileId (\ids -> where_ (mhp ^. MembershipHistoryProjectionPractitionerProfileId `in_` valList ids))
-          pure countRows
+      applyMembershipHistoryFilter maybeFilter mhp
+      pure countRows
     pure (maybe 0 unValue cnt)
     ) pool
 
-getMembershipIntervals :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.MembershipIntervalFilter -> Maybe (MembershipIntervalsOrderBy, SortOrder) -> m [MembershipInterval]
+getMembershipIntervalsAsInterval :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.MembershipIntervalFilter -> Maybe (MembershipIntervalsOrderBy, SortOrder) -> m [MembershipInterval]
+getMembershipIntervalsAsInterval maybeLimitOffset maybeFilter maybeOrder = do
+  infos <- getMembershipIntervals maybeLimitOffset maybeFilter maybeOrder
+  pure $ membershipIntervalInformationToInterval <$> infos
+  where
+    membershipIntervalInformationToInterval info =
+      MembershipInterval
+        { membershipIntervalId = membershipIntervalInformationId info,
+          membershipIntervalStartDate = membershipIntervalInformationStartDate info,
+          membershipIntervalEndDate = membershipIntervalInformationEndDate info,
+          membershipIntervalIsAccepted = membershipIntervalInformationIsAccepted info,
+          membershipIntervalPractitionerId = membershipIntervalInformationPractitionerId info,
+          membershipIntervalNumber = membershipIntervalInformationNumber info
+        }
+
+getMembershipIntervals :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe C.MembershipIntervalFilter -> Maybe (MembershipIntervalsOrderBy, SortOrder) -> m [MembershipIntervalInformation]
 getMembershipIntervals maybeLimitOffset maybeFilter maybeOrder = do
   pool <- asks pgPool
   liftIO $ runSqlPool (do
     rows <- select $ do
       mip <- from $ table @MembershipIntervalProjection
-      case maybeFilter of
-        Nothing -> pure ()
-        Just C.MembershipIntervalFilter {..} -> do
-          for_ membershipIntervalFilterPractitionerProfileId (\ids -> where_ (mip ^. MembershipIntervalProjectionPractitionerProfileId `in_` valList ids))
+      applyMembershipIntervalFilter maybeFilter mip
       case maybeOrder of
         Nothing -> pure ()
         Just (ob, so) ->
-          let dir f = case so of Types.Asc -> asc f; Types.Desc -> desc f
-           in case ob of
-                MembershipIntervalsOrderById -> orderBy [dir (mip ^. MembershipIntervalProjectionMembershipIntervalId)]
-                MembershipIntervalsOrderByStartDate -> orderBy [dir (mip ^. MembershipIntervalProjectionStartDate)]
-                MembershipIntervalsOrderByIntervalNumber -> orderBy [dir (mip ^. MembershipIntervalProjectionIntervalNumber)]
-                MembershipIntervalsOrderByPractitioner -> orderBy [dir (mip ^. MembershipIntervalProjectionPractitionerProfileId)]
-      case maybeLimitOffset of
-        Nothing -> pure ()
-        Just (l, o) -> do
-          offset (fromIntegral o)
-          limit (fromIntegral l)
+          case ob of
+            MembershipIntervalsOrderById -> orderBy [orderByDir so (mip ^. MembershipIntervalProjectionMembershipIntervalId)]
+            MembershipIntervalsOrderByStartDate -> orderBy [orderByDir so (mip ^. MembershipIntervalProjectionStartDate)]
+            MembershipIntervalsOrderByIntervalNumber -> orderBy [orderByDir so (mip ^. MembershipIntervalProjectionIntervalNumber)]
+            MembershipIntervalsOrderByPractitioner -> orderBy [orderByDir so (mip ^. MembershipIntervalProjectionPractitionerProfileId)]
+      applyLimitOffset maybeLimitOffset
       pure mip
-    let toMembershipInterval mip =
-          MembershipInterval
-            { membershipIntervalId = membershipIntervalProjectionMembershipIntervalId mip,
-              membershipIntervalStartDate = membershipIntervalProjectionStartDate mip,
-              membershipIntervalEndDate = membershipIntervalProjectionEndDate mip,
-              membershipIntervalIsAccepted = membershipIntervalProjectionIsAccepted mip,
-              membershipIntervalPractitionerId = membershipIntervalProjectionPractitionerProfileId mip,
-              membershipIntervalNumber = membershipIntervalProjectionIntervalNumber mip
-            }
-    pure (Prelude.map (toMembershipInterval . entityVal) rows)
+    let toIntervalInfo mip =
+          (\org ->
+            MembershipIntervalInformation
+              { membershipIntervalInformationId = membershipIntervalProjectionMembershipIntervalId mip,
+                membershipIntervalInformationStartDate = membershipIntervalProjectionStartDate mip,
+                membershipIntervalInformationEndDate = membershipIntervalProjectionEndDate mip,
+                membershipIntervalInformationIsAccepted = membershipIntervalProjectionIsAccepted mip,
+                membershipIntervalInformationPractitionerId = membershipIntervalProjectionPractitionerProfileId mip,
+                membershipIntervalInformationNumber = membershipIntervalProjectionIntervalNumber mip,
+                membershipIntervalInformationOrganizationId = org
+              })
+            <$> membershipIntervalProjectionOrganizationProfileId mip
+    pure (mapMaybe (toIntervalInfo . entityVal) rows)
     ) pool
 
 getMembershipIntervalsCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe C.MembershipIntervalFilter -> m Int
@@ -459,10 +464,7 @@ getMembershipIntervalsCount maybeFilter = do
   liftIO $ runSqlPool (do
     cnt <- selectOne $ do
       mip <- from $ table @MembershipIntervalProjection
-      case maybeFilter of
-        Nothing -> pure countRows
-        Just C.MembershipIntervalFilter {..} -> do
-          for_ membershipIntervalFilterPractitionerProfileId (\ids -> where_ (mip ^. MembershipIntervalProjectionPractitionerProfileId `in_` valList ids))
-          pure countRows
+      applyMembershipIntervalFilter maybeFilter mip
+      pure countRows
     pure (maybe 0 unValue cnt)
     ) pool

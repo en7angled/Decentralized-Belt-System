@@ -3,7 +3,7 @@ module TxBuilding.Exceptions where
 import Control.Exception
 import GHC.Generics (Generic)
 import GeniusYield.HTTP.Errors (IsGYApiError)
-import Prelude qualified
+import Prelude
 
 ------------------------------------------------------------------------------------------------
 
@@ -37,14 +37,15 @@ data TxBuildingException
   | DeployedScriptsNotReady
     -- * UTxO / Asset Errors
   | InvalidAssetClass
+  | NFTNotFound
   | MultipleUtxosFound
   | DatumParseError
     -- * Cleanup Errors
   | NoDustFound
-  deriving stock (Generic, Prelude.Show, Prelude.Eq)
+  deriving stock (Generic, Show, Eq)
 
 instance Exception TxBuildingException where
-  displayException :: TxBuildingException -> Prelude.String
+  displayException :: TxBuildingException -> String
   displayException ProfileNotFound = "Profile not found"
   displayException WrongProfileType = "Wrong profile type"
   displayException RankNotFound = "Rank not found"
@@ -61,6 +62,7 @@ instance Exception TxBuildingException where
   displayException ScriptNotFound = "Script not found"
   displayException DeployedScriptsNotReady = "Deployed scripts are not ready"
   displayException InvalidAssetClass = "Invalid asset class"
+  displayException NFTNotFound = "UTxO with this NFT not found"
   displayException MultipleUtxosFound = "Multiple UTxOs found for this asset class"
   displayException DatumParseError = "UTxO datum is missing or unparseable"
   displayException NoDustFound = "No dust UTxOs found at validator addresses"
@@ -75,7 +77,7 @@ instance IsGYApiError TxBuildingException
 
 -- | Map a 'TxBuildingException' to the appropriate HTTP status code.
 -- Used by the interaction API to return structured error responses.
-txBuildingExceptionToHttpStatus :: TxBuildingException -> Prelude.Int
+txBuildingExceptionToHttpStatus :: TxBuildingException -> Int
 txBuildingExceptionToHttpStatus ProfileNotFound = 404
 txBuildingExceptionToHttpStatus RankNotFound = 404
 txBuildingExceptionToHttpStatus RankListEmpty = 404
@@ -88,4 +90,5 @@ txBuildingExceptionToHttpStatus OracleNotFound = 404
 txBuildingExceptionToHttpStatus DeployedScriptsNotReady = 503
 txBuildingExceptionToHttpStatus ProtocolPaused = 503
 txBuildingExceptionToHttpStatus NoDustFound = 404
+txBuildingExceptionToHttpStatus NFTNotFound = 404
 txBuildingExceptionToHttpStatus _ = 400

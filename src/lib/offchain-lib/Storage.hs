@@ -17,9 +17,10 @@
 
 module Storage where
 
-import Control.Monad (void)
+import Control.Monad (forM_, void)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.Maybe (isNothing)
 import Data.Text (Text)
 import Data.Time (UTCTime, getCurrentTime)
 import Database.Persist
@@ -30,7 +31,9 @@ import GeniusYield.Types
 import Ingestion
 import KupoAtlas (kupoMatchToAtlasMatch)
 import KupoClient (CreatedAt (..), KupoMatch (..))
+import Onchain.Protocol.Id (deriveMembershipHistoryId, deriveMembershipIntervalId)
 import DomainTypes.Core.BJJ (BJJBelt)
+import Data.List qualified as L
 
 derivePersistFieldJSON "BJJBelt"
 derivePersistFieldJSON "GYAssetClass"
@@ -115,6 +118,7 @@ MembershipIntervalProjection
     endDate                   GYTime Maybe
     isAccepted                Bool
     practitionerProfileId     GYAssetClass
+    organizationProfileId     GYAssetClass Maybe
     intervalNumber            Integer
     insertedAt                UTCTime
     UniqueMembershipIntervalProjection membershipIntervalId
@@ -178,7 +182,9 @@ putMatchAndProjections networkId km = do
           ProfileEvent p -> putProfileProjection slotNoInt header p
           PromotionEvent pr -> putPromotionProjection slotNoInt header pr
           MembershipHistoryEvent mh -> putMembershipHistoryProjection slotNoInt header mh
-          MembershipIntervalEvent mi -> putMembershipIntervalProjection slotNoInt header mi
+          MembershipIntervalEvent mi -> do
+            mOrg <- resolveOrganizationForInterval mi
+            putMembershipIntervalProjection slotNoInt header mi mOrg
           AchievementEvent a -> putAchievementProjection slotNoInt header a
           NoEvent _ -> pure ()
 
@@ -250,9 +256,41 @@ putMembershipHistoryProjection createdSlot createdHash mh = do
           (membershipHistoryOrganizationId mh)
           now
   upsertByUnique (UniqueMembershipHistoryProjection . membershipHistoryProjectionMembershipHistoryId) ev
+  backfillIntervalOrganizationsForHistory mh
 
-putMembershipIntervalProjection :: (MonadIO m) => Integer -> Text -> MembershipInterval -> SqlPersistT m ()
-putMembershipIntervalProjection createdSlot createdHash mi = do
+-- | Resolve the organization profile id for an interval by matching against stored membership histories.
+resolveOrganizationForInterval :: (MonadIO m) => MembershipInterval -> SqlPersistT m (Maybe ProfileRefAC)
+resolveOrganizationForInterval mi = do
+  histories <- selectList [] []
+  let plutusIntervalId = assetClassToPlutus (membershipIntervalId mi)
+      matches (Entity _ proj) =
+        let plutusOrg = assetClassToPlutus (membershipHistoryProjectionOrganizationProfileId proj)
+            plutusPract = assetClassToPlutus (membershipHistoryProjectionPractitionerProfileId proj)
+            historyId = deriveMembershipHistoryId plutusOrg plutusPract
+            derivedIntervalId = deriveMembershipIntervalId historyId (membershipIntervalNumber mi)
+         in derivedIntervalId == plutusIntervalId
+            && membershipIntervalPractitionerId mi == membershipHistoryProjectionPractitionerProfileId proj
+  pure $ membershipHistoryProjectionOrganizationProfileId . entityVal <$> L.find matches histories
+
+-- | When a membership history is stored, backfill organizationProfileId on any interval
+-- projections that belong to this history and currently have NULL org (e.g. interval was
+-- processed before the history event in the same block).
+backfillIntervalOrganizationsForHistory :: (MonadIO m) => MembershipHistory -> SqlPersistT m ()
+backfillIntervalOrganizationsForHistory mh = do
+  candidates <-
+    selectList [MembershipIntervalProjectionPractitionerProfileId ==. membershipHistoryPractitionerId mh] []
+  let plutusOrg = assetClassToPlutus (membershipHistoryOrganizationId mh)
+      plutusPract = assetClassToPlutus (membershipHistoryPractitionerId mh)
+      historyId = deriveMembershipHistoryId plutusOrg plutusPract
+      belongsToHistory (Entity _ proj) =
+        isNothing (membershipIntervalProjectionOrganizationProfileId proj)
+          && deriveMembershipIntervalId historyId (membershipIntervalProjectionIntervalNumber proj)
+            == assetClassToPlutus (membershipIntervalProjectionMembershipIntervalId proj)
+  forM_ (filter belongsToHistory candidates) $ \entity ->
+    update (entityKey entity) [MembershipIntervalProjectionOrganizationProfileId =. Just (membershipHistoryOrganizationId mh)]
+
+putMembershipIntervalProjection :: (MonadIO m) => Integer -> Text -> MembershipInterval -> Maybe ProfileRefAC -> SqlPersistT m ()
+putMembershipIntervalProjection createdSlot createdHash mi mOrganizationProfileId = do
   now <- liftIO getCurrentTime
   let ev =
         MembershipIntervalProjection
@@ -263,6 +301,7 @@ putMembershipIntervalProjection createdSlot createdHash mi = do
           (membershipIntervalEndDate mi)
           (membershipIntervalIsAccepted mi)
           (membershipIntervalPractitionerId mi)
+          mOrganizationProfileId
           (membershipIntervalNumber mi)
           now
   upsertByUnique (UniqueMembershipIntervalProjection . membershipIntervalProjectionMembershipIntervalId) ev

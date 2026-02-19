@@ -11,7 +11,7 @@ import GeniusYield.Types
 import Onchain.Protocol.Types (OracleParams (..))
 import Text.Printf (printf)
 import Text.Printf qualified as Printf
-import TxBuilding.Context
+import TxBuilding.Context (DeployedScriptsContext (..), ProviderCtx (..), TxBuildingContext (..), ctxProviders, deployedScriptsCtx, getNetworkId, providerCtx, runTx, runTx')
 import TxBuilding.Interactions
 import TxBuilding.Skeletons
 import TxBuilding.Utils
@@ -54,7 +54,7 @@ interactionToTxBody ::
 interactionToTxBody i@Interaction {..} = do
   TxBuildingContext {..} <- ask
   let builderMonadSkeleton = runReaderT (interactionToTxSkeleton i) deployedScriptsCtx
-  liftIO $ runTx providerCtx (usedAddresses userAddresses) (changeAddress userAddresses) Nothing builderMonadSkeleton
+  liftIO $ runTx providerCtx (usedAddresses userAddresses) (changeAddress userAddresses) (reservedCollateral userAddresses) builderMonadSkeleton
 
 -- | Builds an unsigned transaction from an interaction
 interactionToUnsignedTx :: (MonadReader TxBuildingContext m, MonadIO m) => Interaction -> m GYTx

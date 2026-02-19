@@ -1,3 +1,4 @@
+-- | Reusable transaction skeleton components (CIP-68, validity, ref inputs, state locks, mints).
 module TxBuilding.Skeletons where
 
 import Data.Word (Word64)
@@ -9,8 +10,8 @@ import Onchain.Utils (nameFromTxOutRef)
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
 import TxBuilding.Exceptions (TxBuildingException (..))
-import TxBuilding.Lookups (getUTxOWithNFT, getUtxoWithTokenAtAddresses)
-import TxBuilding.Utils
+import TxBuilding.Lookups (getUTxOWithNFT, getUTxOWithTokenAtAddresses)
+import TxBuilding.Utils (getInlineDatumAndValue, getInlineDatumAndValueOrThrow, tnFromGYAssetClass, txOutRefToV3Plutus)
 
 ------------------------------------------------------------------------------------------------
 
@@ -18,8 +19,8 @@ import TxBuilding.Utils
 
 ------------------------------------------------------------------------------------------------
 
-getRefScriptUTxO :: (GYTxQueryMonad m) => GYTxOutRef -> m GYAnyScript
-getRefScriptUTxO refScript = do
+getRefScriptAtTxOutRef :: (GYTxQueryMonad m) => GYTxOutRef -> m GYAnyScript
+getRefScriptAtTxOutRef refScript = do
   utxo <- utxoAtTxOutRef refScript
   let ms = utxoRefScript =<< utxo
   case ms of
@@ -74,8 +75,8 @@ isValidBetween s1 s2 = mconcat [isInvalidBefore s1, isInvalidAfter s2]
 
 ------------------------------------------------------------------------------------------------
 
-txIsPayingValueToAddress :: (GYTxQueryMonad m) => GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
-txIsPayingValueToAddress recipient gyValue = do
+txMustPayValueToAddress :: (GYTxQueryMonad m) => GYAddress -> GYValue -> m (GYTxSkeleton 'PlutusV3)
+txMustPayValueToAddress recipient gyValue = do
   return $
     mustHaveOutput
       GYTxOut
@@ -89,16 +90,13 @@ txMustSpendStateFromRefScriptWithRedeemer :: (GYTxUserQueryMonad m) => GYTxOutRe
 txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyValidator =
   do
     stateUTxO <- getUTxOWithNFT stateTokenId
-    (gyDatum, _v) <- gyGetInlineDatumAndValue' stateUTxO
+    (gyDatum, _v) <- getInlineDatumAndValueOrThrow stateUTxO
     return $
       mustHaveInput
         GYTxIn
           { gyTxInTxOutRef = utxoRef stateUTxO,
             gyTxInWitness = GYTxInWitnessScript (GYInReference refScript $ validatorToScript gyValidator) (Just gyDatum) gyRedeemer
           }
-  where
-    gyGetInlineDatumAndValue' :: (MonadError GYTxMonadException m) => GYUTxO -> m (GYDatum, GYValue)
-    gyGetInlineDatumAndValue' utxo = maybe (throwError (GYApplicationException DatumParseError)) return $ getInlineDatumAndValue utxo
 
 -- | Build a spend skeleton for a UTxO whose ref and datum are already known (e.g. from a prior query).
 -- Unlike 'txMustSpendStateFromRefScriptWithRedeemer', this does not look up the UTxO by NFT.
@@ -132,14 +130,13 @@ txMustHaveUTxOsAsRefInputs gyACs = mconcat <$> mapM txMustHaveUTxOAsRefInput gyA
 
 txMustSpendFromAddress :: (GYTxUserQueryMonad m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendFromAddress tokenId addrs = do
-  do
-    tokenUtxo <- getUtxoWithTokenAtAddresses tokenId addrs
-    return $
-      mustHaveInput
-        GYTxIn
-          { gyTxInTxOutRef = utxoRef tokenUtxo,
-            gyTxInWitness = GYTxInWitnessKey
-          }
+  tokenUtxo <- getUTxOWithTokenAtAddresses tokenId addrs
+  return $
+    mustHaveInput
+      GYTxIn
+        { gyTxInTxOutRef = utxoRef tokenUtxo,
+          gyTxInWitness = GYTxInWitnessKey
+        }
 
 txMustLockStateWithInlineDatumAndValue :: (GYTxQueryMonad m, ToData a) => GYScript 'PlutusV3 -> a -> GYValue -> m (GYTxSkeleton 'PlutusV3)
 txMustLockStateWithInlineDatumAndValue validator todata value = do

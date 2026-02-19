@@ -3,6 +3,7 @@ module TxBuilding.Interactions where
 import Control.Monad.Reader.Class (MonadReader)
 import Data.Aeson
 import Data.Aeson.Types qualified as AesonTypes
+import Data.Bifunctor qualified
 import Data.List.Extra
 import Data.Maybe (fromMaybe)
 import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
@@ -13,7 +14,7 @@ import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import TxBuilding.Context (DeployedScriptsContext)
-import TxBuilding.Functors
+import TxBuilding.Conversions
 import TxBuilding.Operations
 
 ------------------------------------------------------------------------------------------------
@@ -58,7 +59,7 @@ data ActionType
 
 data Interaction
   = Interaction
-  { -- | The intented action to perfrom.
+  { -- | The intended action to perform.
     action :: ActionType,
     -- | The user addresses to be used as input for transaction building.
     userAddresses :: UserAddresses,
@@ -112,7 +113,7 @@ interactionToTxSkeleton Interaction {..} = do
           skeleton <- updateEndDateTX intervalId historyNodeId newEndDate usedAddrs Nothing
           return (skeleton, intervalId)
         AwardAchievementAction awardedToId awardedById profileData otherMeta achievementDate -> do
-          let otherMetadataPlutus = map (\(k, v) -> (textToBuiltinByteString k, textToBuiltinByteString v)) otherMeta
+          let otherMetadataPlutus = map (Data.Bifunctor.bimap textToBuiltinByteString textToBuiltinByteString) otherMeta
           awardAchievementTX awardedToId awardedById (profileDataToMetadataFields profileData) otherMetadataPlutus (timeToPlutus achievementDate) usedAddrs
         AcceptAchievementAction achievementId -> do
           skeleton <- acceptAchievementTX achievementId usedAddrs

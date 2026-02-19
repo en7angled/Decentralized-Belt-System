@@ -1,6 +1,20 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.7 -- 2026-02-20
+
+### Query API: profiles count filters and RestAPI refactor
+
+- **Profiles count**: `GET /profiles/count` now supports the same filters as `GET /profiles`: `profile` (query params) and `profile_type`. Backend `getProfilesCount` in `Query.Live` and `Query.Projected` takes `Maybe ProfileFilter` and applies the same filter as the list endpoint. Swagger updated for `/profiles/count`.
+- **RestAPI**: Extracted `RestAPI/Common.hs` with `withBackend` and filter-from-params helpers (`profileFilterFromParams`, `promotionsFilterFromParams`, `rankFilterFromParams`, `membershipHistoryFilterFromParams`, `membershipIntervalFilterFromParams`, `achievementFilterFromParams`). RestAPI handlers use these; reduced duplication.
+
+### TxBuilding: Functors → Conversions and naming
+
+- **Module rename**: `TxBuilding.Functors` removed; `TxBuilding.Conversions` added with same conversion helpers (profile, promotion, rank, membership, achievement). Lookups, Operations, Ingestion, Interactions updated to import Conversions.
+- **Naming**: `getUtxoWithTokenAtAddresses` → `getUTxOWithTokenAtAddresses` in Lookups and call sites; CHANGELOG 0.3.1.1 and 0.3.1.5 references corrected (Functors→Conversions, getUtxo→getUTxO).
+- **Changelog**: Removed "Membership datum optimization" subsection from 0.3.1.6 (content belongs in a dedicated release or was redundant).
+
+
 ## 0.3.1.6 -- 2026-02-17
 
 ### Achievements feature (award & accept)
@@ -26,12 +40,6 @@
 - **Protocol**: Extracted core protocol logic into `Onchain/Protocol/Core.hs` (e.g. profile/rank/membership/achievement helpers); `Protocol.hs` reduced and re-exports. `Protocol/Types.hs`, `Protocol/Id.hs`, `Protocol/Lookup.hs` updated; CIP68 and Utils adjusted.
 - **Trace codes**: New/updated codes for MintingPolicy (Mk, Ml, Mm) and AchievementsValidator (A0); `docs/onchain-trace-codes.md` updated.
 - **Tests**: TestRuns deploys achievements validator; BJJPropertyTests and UnitTests imports updated for Validators paths.
-
-### Membership datum optimization (derive, don't store)
-
-- **On-chain**: Membership history and interval datums no longer store NFT IDs; `membershipHistoryId`, `membershipHistoryIntervalsHeadId`, `membershipIntervalId`, `membershipIntervalPrevId` removed. IDs derived at runtime via `deriveMembershipHistoryIdFromHistory`, `deriveMembershipIntervalId`, `deriveIntervalsHeadId` in `Protocol.Id` and `Protocol.Core`. Smaller datums, lower min-ADA at MembershipsValidator.
-- **Off-chain**: Lookups and operations updated to derive history/interval IDs from datum fields; domain types and TxBuilding use derived IDs throughout.
-- **Docs**: `OnchainArchitecture.md` — added "State NFT Token Name Derivation" table and "Membership Datum Optimization" section.
 
 
 ## 0.3.1.5 -- 2026-02-16
@@ -96,7 +104,7 @@
 
 ### Consistency: use existing wrappers and abstractions
 
-- **Lookups**: Use `profileDatumToProfileData` from `TxBuilding.Functors` in `getPractitionerInformation` and `getOrganizationInformation` instead of inlining `metadataFieldsToProfileData . getMetadataFields`
+- **Lookups**: Use `profileDatumToProfileData` from `TxBuilding.Conversions` in `getPractitionerInformation` and `getOrganizationInformation` instead of inlining `metadataFieldsToProfileData . getMetadataFields`
 - **Lookups**: Renamed `getPractiotionerInformation` to `getPractitionerInformation`; updated call sites in `Query.Live` and `TestRuns`
 - **Lookups**: Added `getAllParsedDatumsAtValidator` and refactored `getAllOnchainValidRanks` and `getAllOnchainProfiles` to use it
 - **Operations**: Unified reader usage to `asks getX` in `createProfileWithRankTX`, `promoteProfileTX`, and `updateOracleTX` (removed `ctx <- ask` + `let x = getX ctx`)
@@ -118,7 +126,7 @@
 - Added `txMustSpendFromRefScriptWithKnownDatum` skeleton helper for spending UTxOs with pre-resolved refs/datums; used in `updateOracleTX`
 - `getFeeSkeleton` now uses `txIsPayingValueToAddress` instead of manual output construction
 - `mintOracleNFTAndLockDatum` and `mintTestOracleNFT` now use `txMustLockStateWithInlineDatumAndValue` instead of manual output construction
-- `queryOracleParams` now uses `getUtxoWithTokenAtAddresses` and `getInlineDatumAndValue` instead of manual UTxO filtering and datum parsing
+- `queryOracleParams` now uses `getUTxOWithTokenAtAddresses` and `getInlineDatumAndValue` instead of manual UTxO filtering and datum parsing
 - Added `getNetworkId :: ProviderCtx -> GYNetworkId` helper; replaced 7+ occurrences of `cfgNetworkId . ctxCoreCfg`
 - Extracted `pkhFromExtendedSkey` into `TxBuilding.Utils`; `addressFromPaymentSigningKey` and `pkhFromSkey` now share the same key derivation logic
 - `getProfileRanks` now uses the `extra` accessor instead of pattern-matching `CIP68Datum` internals

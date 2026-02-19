@@ -21,6 +21,16 @@ import Servant (FromHttpApiData (..))
 data SortOrder = Asc | Desc
   deriving (Show, Generic, Eq)
 
+instance ToSchema SortOrder where
+  declareNamedSchema = genericDeclareNamedSchema sortOrderSchemaOptions
+    where
+      sortOrderSchemaOptions :: SchemaOptions
+      sortOrderSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.constructorTagModifier = camelTo2 '_' . dropPrefix "SortOrder"
+            }
+
 instance ToParamSchema SortOrder where
   toParamSchema _ =
     mempty
