@@ -71,6 +71,22 @@ print_subsection() {
     echo -e "${CYAN}────────────────────────────────────────${NC}"
 }
 
+# Metadata length limits (enforced for profiles and achievements)
+NAME_MAX=128
+DESC_MAX=1024
+IMAGE_MAX=256
+
+# Truncate string to max length (byte length in bash)
+truncate_str() {
+    local max=$1
+    local s="$2"
+    if [ "${#s}" -le "$max" ]; then
+        printf '%s' "$s"
+    else
+        printf '%s' "${s:0:$max}"
+    fi
+}
+
 # Resolve repo root (script may be run from anywhere)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -82,29 +98,29 @@ print_info "REPO_ROOT: $REPO_ROOT"
 ADMIN="cabal run admin --"
 
 # Helper function to run admin command and extract profile/promotion ID
-# Suppresses verbose output, only shows errors on failure
+# Prints full admin stdout/stderr, then parses output for errors and the returned ID
 run_admin_cmd() {
     local output
     local exit_code=0
     output=$(cd "$REPO_ROOT" && $ADMIN "$@" 2>&1) || exit_code=$?
     
+    # Show admin command output as-is (to stderr so ID extraction still works when captured)
+    echo "$output" >&2
+    
     # Check for exit code failure
     if [ "$exit_code" -ne 0 ]; then
         print_error "Command failed (exit code $exit_code): $ADMIN $*"
-        echo "$output" >&2
         exit 1
     fi
     
     # Check for known error messages in output (CLI doesn't always use exit codes)
     if echo "$output" | grep -q "Please run 'deploy-reference-scripts' first"; then
         print_error "Reference scripts not properly deployed. Run: $ADMIN deploy-reference-scripts"
-        echo "$output" >&2
         exit 1
     fi
     
     if echo "$output" | grep -q "No transaction building context found"; then
         print_error "No transaction building context. Run: $ADMIN deploy-reference-scripts"
-        echo "$output" >&2
         exit 1
     fi
     
@@ -127,28 +143,29 @@ run_admin_cmd() {
 }
 
 # For commands that don't return an ID (like accept-promotion)
+# Prints full admin stdout/stderr, then parses output for errors
 run_admin_cmd_no_output() {
     local output
     local exit_code=0
     output=$(cd "$REPO_ROOT" && $ADMIN "$@" 2>&1) || exit_code=$?
     
+    # Show admin command output as-is
+    echo "$output"
+    
     # Check for exit code failure
     if [ "$exit_code" -ne 0 ]; then
         print_error "Command failed (exit code $exit_code): $ADMIN $*"
-        echo "$output" >&2
         exit 1
     fi
     
     # Check for known error messages in output
     if echo "$output" | grep -q "Please run 'deploy-reference-scripts' first"; then
         print_error "Reference scripts not properly deployed. Run: $ADMIN deploy-reference-scripts"
-        echo "$output" >&2
         exit 1
     fi
     
     if echo "$output" | grep -q "No transaction building context found"; then
         print_error "No transaction building context. Run: $ADMIN deploy-reference-scripts"
-        echo "$output" >&2
         exit 1
     fi
 }
@@ -242,7 +259,7 @@ oracle_output2=""
 oracle_exit2=0
 oracle_output2=$(cd "$REPO_ROOT" && $ADMIN query-oracle 2>&1) || oracle_exit2=$?
 if [ "$oracle_exit2" -eq 0 ]; then
-    echo "$oracle_output2" | grep -E "(Paused|Min Output|Fee Config|Fee Address|Profile Creation Fee|Promotion Fee|Membership Fee)" | while read -r line; do
+    echo "$oracle_output2" | grep -E "(Paused|Min Output|Fee Config|Fee Address|Profile Creation Fee|Promotion Fee|Membership History Fee|Membership Interval Fee|Achievement Fee)" | while read -r line; do
         print_info "  $line"
     done
 fi
@@ -288,22 +305,20 @@ print_section "Step 2: Create Organizations"
 
 print_info "Creating Gracie Barra Academy..."
 ORG1_ID=$(run_admin_cmd init-profile \
-    --name "Gracie Barra Academy" \
-    --description "One of the largest BJJ organizations in the world. Founded by Master Carlos Gracie Jr., dedicated to spreading Jiu-Jitsu for everyone." \
-    --image-uri "https://example.com/gracie-barra-logo.png" \
+    --name "$(truncate_str $NAME_MAX "Gracie Barra Academy")" \
+    --description "$(truncate_str $DESC_MAX "One of the largest BJJ organizations in the world. Founded by Master Carlos Gracie Jr., dedicated to spreading Jiu-Jitsu for everyone.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "https://example.com/gracie-barra-logo.png")" \
     --organization \
-    --posix "$ORG1_CREATION_TIME" \
-    --output-id)
+    --posix "$ORG1_CREATION_TIME" --output-id)
 print_success "Gracie Barra Academy created: $ORG1_ID"
 
 print_info "Creating Alliance Jiu-Jitsu..."
 ORG2_ID=$(run_admin_cmd init-profile \
-    --name "Alliance Jiu-Jitsu" \
-    --description "Premier BJJ academy known for producing world champions. Committed to excellence in martial arts training." \
-    --image-uri "https://example.com/alliance-logo.png" \
+    --name "$(truncate_str $NAME_MAX "Alliance Jiu-Jitsu")" \
+    --description "$(truncate_str $DESC_MAX "Premier BJJ academy known for producing world champions. Committed to excellence in martial arts training.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "https://example.com/alliance-logo.png")" \
     --organization \
-    --posix "$ORG2_CREATION_TIME" \
-    --output-id)
+    --posix "$ORG2_CREATION_TIME" --output-id)
 print_success "Alliance Jiu-Jitsu created: $ORG2_ID"
 
 # ============================================================================
@@ -313,9 +328,9 @@ print_section "Step 3: Create Grand Master"
 
 print_info "Creating Grand Master Helio..."
 GRANDMASTER_ID=$(run_admin_cmd create-profile-with-rank \
-    --name "Grand Master Helio" \
-    --description "9th degree Red Belt. Pioneer of Brazilian Jiu-Jitsu. Dedicated his life to perfecting the gentle art and spreading its philosophy worldwide." \
-    --image-uri "https://example.com/grandmaster-helio.jpg" \
+    --name "$(truncate_str $NAME_MAX "Grand Master Helio")" \
+    --description "$(truncate_str $DESC_MAX "9th degree Red Belt. Pioneer of Brazilian Jiu-Jitsu. Dedicated his life to perfecting the gentle art and spreading its philosophy worldwide.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "https://example.com/grandmaster-helio.jpg")" \
     --practitioner \
     --posix "$GRANDMASTER_CREATION_TIME" \
     --belt Red \
@@ -329,9 +344,9 @@ print_section "Step 4: Create Masters"
 
 print_info "Creating Master Ricardo Silva..."
 MASTER1_ID=$(run_admin_cmd create-profile-with-rank \
-    --name "Master Ricardo Silva" \
-    --description "3rd degree Black Belt. Head instructor at Gracie Barra Academy. Specializes in competition training and has produced multiple world champions." \
-    --image-uri "https://example.com/master-ricardo.jpg" \
+    --name "$(truncate_str $NAME_MAX "Master Ricardo Silva")" \
+    --description "$(truncate_str $DESC_MAX "3rd degree Black Belt. Head instructor at Gracie Barra Academy. Specializes in competition training and has produced multiple world champions.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "https://example.com/master-ricardo.jpg")" \
     --practitioner \
     --posix "$MASTER1_CREATION_TIME" \
     --belt Black \
@@ -340,9 +355,9 @@ print_success "Master Ricardo created: $MASTER1_ID"
 
 print_info "Creating Master Ana Santos..."
 MASTER2_ID=$(run_admin_cmd create-profile-with-rank \
-    --name "Master Ana Santos" \
-    --description "2nd degree Black Belt. Head instructor at Alliance Academy. Pioneer in women's BJJ and advocate for inclusive training." \
-    --image-uri "https://example.com/master-ana.jpg" \
+    --name "$(truncate_str $NAME_MAX "Master Ana Santos")" \
+    --description "$(truncate_str $DESC_MAX "2nd degree Black Belt. Head instructor at Alliance Academy. Pioneer in women's BJJ and advocate for inclusive training.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "https://example.com/master-ana.jpg")" \
     --practitioner \
     --posix "$MASTER2_CREATION_TIME" \
     --belt Black \
@@ -356,9 +371,9 @@ print_section "Step 5: Create Students"
 
 print_info "Creating Student John Martinez..."
 STUDENT1_ID=$(run_admin_cmd init-profile \
-    --name "John Martinez" \
-    --description "Dedicated practitioner training under Master Ricardo. Focused on competition and self-defense techniques." \
-    --image-uri "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk" \
+    --name "$(truncate_str $NAME_MAX "John Martinez")" \
+    --description "$(truncate_str $DESC_MAX "Dedicated practitioner training under Master Ricardo. Focused on competition and self-defense techniques.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "ipfs://QmReBRNMe7tBr6WbA89uwnHHW7f7Zoe8wY2mzVpA8STdAk")" \
     --practitioner \
     --posix "$STUDENT1_CREATION_TIME" \
     --output-id)
@@ -366,9 +381,9 @@ print_success "Student John created (White belt): $STUDENT1_ID"
 
 print_info "Creating Student Maria Garcia..."
 STUDENT2_ID=$(run_admin_cmd init-profile \
-    --name "Maria Garcia" \
-    --description "Passionate about BJJ. Training for self-improvement and community. Dreams of becoming an instructor." \
-    --image-uri "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG" \
+    --name "$(truncate_str $NAME_MAX "Maria Garcia")" \
+    --description "$(truncate_str $DESC_MAX "Passionate about BJJ. Training for self-improvement and community. Dreams of becoming an instructor.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG")" \
     --practitioner \
     --posix "$STUDENT2_CREATION_TIME" \
     --output-id)
@@ -376,9 +391,9 @@ print_success "Student Maria created (White belt): $STUDENT2_ID"
 
 print_info "Creating Student Carlos Oliveira..."
 STUDENT3_ID=$(run_admin_cmd init-profile \
-    --name "Carlos Oliveira" \
-    --description "Former wrestler transitioning to BJJ. Bringing grappling experience and eager to learn submission techniques." \
-    --image-uri "ipfs://QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx" \
+    --name "$(truncate_str $NAME_MAX "Carlos Oliveira")" \
+    --description "$(truncate_str $DESC_MAX "Former wrestler transitioning to BJJ. Bringing grappling experience and eager to learn submission techniques.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "ipfs://QmZ4tDuvesekSs4qM5ZBKpXiZGun7S2CYtEZRB3DYXkjGx")" \
     --practitioner \
     --posix "$STUDENT3_CREATION_TIME" \
     --output-id)
@@ -386,9 +401,9 @@ print_success "Student Carlos created (White belt): $STUDENT3_ID"
 
 print_info "Creating Student Emma Thompson..."
 STUDENT4_ID=$(run_admin_cmd init-profile \
-    --name "Emma Thompson" \
-    --description "Started BJJ for fitness, fell in love with the art. Active competitor in local tournaments." \
-    --image-uri "ipfs://QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB" \
+    --name "$(truncate_str $NAME_MAX "Emma Thompson")" \
+    --description "$(truncate_str $DESC_MAX "Started BJJ for fitness, fell in love with the art. Active competitor in local tournaments.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "ipfs://QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB")" \
     --practitioner \
     --posix "$STUDENT4_CREATION_TIME" \
     --output-id)
@@ -483,6 +498,12 @@ MEMBERSHIP_JOHN_ID=$(run_admin_cmd create-membership-history \
     --output-id)
 print_success "Membership history created: $MEMBERSHIP_JOHN_ID"
 
+# Protocol requires the current (first) interval to be accepted before adding the next one.
+print_info "John accepting first membership interval (required before adding second)..."
+FIRST_INTERVAL_JOHN_ID=$(run_admin_cmd get-first-interval-id --membership-node-id "$MEMBERSHIP_JOHN_ID")
+run_admin_cmd_no_output accept-membership-interval --interval-id "$FIRST_INTERVAL_JOHN_ID"
+print_success "First interval accepted!"
+
 print_info "Adding second membership interval (2022-01-01 to 2023-01-01)..."
 INTERVAL_JOHN_ID=$(run_admin_cmd add-membership-interval \
     --org-profile-id "$ORG1_ID" \
@@ -492,9 +513,9 @@ INTERVAL_JOHN_ID=$(run_admin_cmd add-membership-interval \
     --output-id)
 print_success "Second interval created: $INTERVAL_JOHN_ID"
 
-print_info "John accepting membership interval..."
+print_info "John accepting second membership interval..."
 run_admin_cmd_no_output accept-membership-interval --interval-id "$INTERVAL_JOHN_ID"
-print_success "John's membership interval accepted!"
+print_success "John's second membership interval accepted!"
 
 # Maria at Alliance: create history, add second interval, accept
 print_subsection "Membership 2: Maria at Alliance Jiu-Jitsu"
@@ -506,6 +527,11 @@ MEMBERSHIP_MARIA_ID=$(run_admin_cmd create-membership-history \
     --end-posix "$MEMBERSHIP_JOHN_FIRST_END" \
     --output-id)
 print_success "Membership history created: $MEMBERSHIP_MARIA_ID"
+
+print_info "Maria accepting first membership interval..."
+FIRST_INTERVAL_MARIA_ID=$(run_admin_cmd get-first-interval-id --membership-node-id "$MEMBERSHIP_MARIA_ID")
+run_admin_cmd_no_output accept-membership-interval --interval-id "$FIRST_INTERVAL_MARIA_ID"
+print_success "First interval accepted!"
 
 print_info "Adding second membership interval for Maria..."
 INTERVAL_MARIA_ID=$(run_admin_cmd add-membership-interval \
@@ -531,6 +557,11 @@ MEMBERSHIP_CARLOS_ID=$(run_admin_cmd create-membership-history \
     --output-id)
 print_success "Membership history created: $MEMBERSHIP_CARLOS_ID"
 
+print_info "Carlos accepting first membership interval..."
+FIRST_INTERVAL_CARLOS_ID=$(run_admin_cmd get-first-interval-id --membership-node-id "$MEMBERSHIP_CARLOS_ID")
+run_admin_cmd_no_output accept-membership-interval --interval-id "$FIRST_INTERVAL_CARLOS_ID"
+print_success "First interval accepted!"
+
 print_info "Adding second interval for Carlos..."
 INTERVAL_CARLOS_ID=$(run_admin_cmd add-membership-interval \
     --org-profile-id "$ORG1_ID" \
@@ -554,6 +585,11 @@ MEMBERSHIP_EMMA_ID=$(run_admin_cmd create-membership-history \
     --end-posix "$MEMBERSHIP_JOHN_FIRST_END" \
     --output-id)
 print_success "Membership history created: $MEMBERSHIP_EMMA_ID"
+
+print_info "Emma accepting first membership interval..."
+FIRST_INTERVAL_EMMA_ID=$(run_admin_cmd get-first-interval-id --membership-node-id "$MEMBERSHIP_EMMA_ID")
+run_admin_cmd_no_output accept-membership-interval --interval-id "$FIRST_INTERVAL_EMMA_ID"
+print_success "First interval accepted!"
 
 print_info "Adding second interval for Emma..."
 INTERVAL_EMMA_ID=$(run_admin_cmd add-membership-interval \
@@ -604,9 +640,9 @@ print_info "Gracie Barra awarding gold medal to John..."
 ACHIEVEMENT1_ID=$(run_admin_cmd award-achievement \
     --awarded-to-profile-id "$STUDENT1_ID" \
     --awarded-by-profile-id "$ORG1_ID" \
-    --name "Gold Medal - Regional Championship" \
-    --description "Won gold medal in the purple belt division at the 2023 Regional BJJ Championship" \
-    --image-uri "ipfs://QmGoldMedalJohnMartinez2023" \
+    --name "$(truncate_str $NAME_MAX "Gold Medal - Regional Championship")" \
+    --description "$(truncate_str $DESC_MAX "Won gold medal in the purple belt division at the 2023 Regional BJJ Championship")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "ipfs://QmGoldMedalJohnMartinez2023")" \
     --posix "$ACHIEVEMENT1_TIME" \
     --output-id)
 print_success "Achievement awarded: $ACHIEVEMENT1_ID"
@@ -621,9 +657,9 @@ print_info "Alliance awarding seminar certificate to Maria..."
 ACHIEVEMENT2_ID=$(run_admin_cmd award-achievement \
     --awarded-to-profile-id "$STUDENT2_ID" \
     --awarded-by-profile-id "$ORG2_ID" \
-    --name "Guard Passing Seminar" \
-    --description "Completed advanced guard passing seminar with visiting instructor. 8 hours of intensive training." \
-    --image-uri "ipfs://QmSeminarCertMaria2023" \
+    --name "$(truncate_str $NAME_MAX "Guard Passing Seminar")" \
+    --description "$(truncate_str $DESC_MAX "Completed advanced guard passing seminar with visiting instructor. 8 hours of intensive training.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "ipfs://QmSeminarCertMaria2023")" \
     --posix "$ACHIEVEMENT2_TIME" \
     --output-id)
 print_success "Achievement awarded: $ACHIEVEMENT2_ID"
@@ -638,9 +674,9 @@ print_info "Master Ricardo awarding training camp completion to Carlos..."
 ACHIEVEMENT3_ID=$(run_admin_cmd award-achievement \
     --awarded-to-profile-id "$STUDENT3_ID" \
     --awarded-by-profile-id "$MASTER1_ID" \
-    --name "Summer Training Camp 2023" \
-    --description "Completed the intensive 2-week summer training camp. Demonstrated excellent technique and dedication." \
-    --image-uri "ipfs://QmCampCompletionCarlos2023" \
+    --name "$(truncate_str $NAME_MAX "Summer Training Camp 2023")" \
+    --description "$(truncate_str $DESC_MAX "Completed the intensive 2-week summer training camp. Demonstrated excellent technique and dedication.")" \
+    --image-uri "$(truncate_str $IMAGE_MAX "ipfs://QmCampCompletionCarlos2023")" \
     --posix "$ACHIEVEMENT3_TIME" \
     --output-id)
 print_success "Achievement awarded: $ACHIEVEMENT3_ID"

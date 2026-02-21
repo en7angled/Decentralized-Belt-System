@@ -46,7 +46,7 @@ import PlutusTx.Prelude
 -------------------------------------------------------------------------------
 
 protocolMinLovelace :: Integer
-protocolMinLovelace = 3_500_000
+protocolMinLovelace = 10_000_000
 {-# INLINEABLE protocolMinLovelace #-}
 
 -- | Minimum lovelace value required for UTxO outputs.

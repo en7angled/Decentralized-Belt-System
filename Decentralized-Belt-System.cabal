@@ -409,8 +409,15 @@ test-suite test
   main-is:          Main.hs
   other-modules:
     BJJPropertyTests
+    Test.Fixtures
+    Test.Helpers
     TestRuns
     UnitTests
+    UnitTests.Achievement
+    UnitTests.Cleanup
+    UnitTests.Membership
+    UnitTests.Oracle
+    UnitTests.Promotion
 
   build-depends:
     , base

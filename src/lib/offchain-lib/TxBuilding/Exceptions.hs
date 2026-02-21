@@ -7,6 +7,20 @@ import Prelude
 
 ------------------------------------------------------------------------------------------------
 
+-- * Add membership interval validation reasons
+
+------------------------------------------------------------------------------------------------
+
+-- | Reason for rejecting an add-membership-interval request (mirrors on-chain validation).
+data AddMembershipIntervalReason
+  = LastIntervalNotAccepted -- practitioner must accept current interval first
+  | LastIntervalNotClosed -- current interval has no end date or new start < its end
+  | InvalidNewIntervalEndDate -- end date not after start date (TC)
+  | HeadNumberMismatch -- history head number != last interval number
+  deriving stock (Generic, Show, Eq)
+
+------------------------------------------------------------------------------------------------
+
 -- * Offchain Transaction Building Exceptions
 
 ------------------------------------------------------------------------------------------------
@@ -26,6 +40,8 @@ data TxBuildingException
   | MembershipHistoryNotFound
   | MembershipIntervalNotFound
   | MembershipListNodeNotFound
+  | MembershipRootNodeHasNoHistory
+  | CannotAddMembershipInterval AddMembershipIntervalReason
     -- * Achievement Errors
   | AchievementNotFound
     -- * Oracle Errors
@@ -55,6 +71,8 @@ instance Exception TxBuildingException where
   displayException MembershipHistoryNotFound = "Membership history not found"
   displayException MembershipIntervalNotFound = "Membership interval not found"
   displayException MembershipListNodeNotFound = "Membership list node not found"
+  displayException MembershipRootNodeHasNoHistory = "Membership list node is the root; it has no history or first interval"
+  displayException (CannotAddMembershipInterval reason) = addMembershipIntervalReasonMessage reason
   displayException AchievementNotFound = "Achievement not found"
   displayException OracleNotFound = "Oracle UTxO not found"
   displayException OracleDatumInvalid = "Oracle datum invalid or unparseable"
@@ -66,6 +84,16 @@ instance Exception TxBuildingException where
   displayException MultipleUtxosFound = "Multiple UTxOs found for this asset class"
   displayException DatumParseError = "UTxO datum is missing or unparseable"
   displayException NoDustFound = "No dust UTxOs found at validator addresses"
+
+addMembershipIntervalReasonMessage :: AddMembershipIntervalReason -> String
+addMembershipIntervalReasonMessage LastIntervalNotAccepted =
+  "Cannot add membership interval: the current last interval must be accepted by the practitioner first"
+addMembershipIntervalReasonMessage LastIntervalNotClosed =
+  "Cannot add membership interval: the current last interval must be closed (have an end date) and the new start date must be after it"
+addMembershipIntervalReasonMessage InvalidNewIntervalEndDate =
+  "Cannot add membership interval: end date must be after start date"
+addMembershipIntervalReasonMessage HeadNumberMismatch =
+  "Cannot add membership interval: history head number does not match last interval number"
 
 instance IsGYApiError TxBuildingException
 
@@ -85,6 +113,8 @@ txBuildingExceptionToHttpStatus PromotionNotFound = 404
 txBuildingExceptionToHttpStatus MembershipHistoryNotFound = 404
 txBuildingExceptionToHttpStatus MembershipIntervalNotFound = 404
 txBuildingExceptionToHttpStatus MembershipListNodeNotFound = 404
+txBuildingExceptionToHttpStatus MembershipRootNodeHasNoHistory = 404
+txBuildingExceptionToHttpStatus (CannotAddMembershipInterval _) = 400
 txBuildingExceptionToHttpStatus AchievementNotFound = 404
 txBuildingExceptionToHttpStatus OracleNotFound = 404
 txBuildingExceptionToHttpStatus DeployedScriptsNotReady = 503

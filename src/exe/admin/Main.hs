@@ -23,7 +23,7 @@ import PlutusLedgerApi.V3
 import Text.Read qualified as Text
 import TxBuilding.Context
 import TxBuilding.Interactions
-import TxBuilding.Lookups (queryOracleParams)
+import TxBuilding.Lookups (getFirstIntervalIdForMembershipNode, queryOracleParams)
 import TxBuilding.Transactions
 import TxBuilding.Utils
 import TxBuilding.Validators (blueprintProtocolParams)
@@ -54,6 +54,7 @@ data Command
   | AcceptPromotion AcceptPromotionArgs
   | CreateProfileWithRank CreateProfileWithRankArgs
   | CreateMembershipHistory CreateMembershipHistoryArgs
+  | GetFirstMembershipIntervalId GetFirstMembershipIntervalIdArgs
   | AddMembershipInterval AddMembershipIntervalArgs
   | AcceptMembershipInterval AcceptMembershipIntervalArgs
   | UpdateEndDate UpdateEndDateArgs
@@ -118,6 +119,11 @@ data CreateMembershipHistoryArgs = CreateMembershipHistoryArgs
     cmhaStartDate :: GYTime,
     cmhaEndDate :: Maybe GYTime,
     cmhaOutputId :: Bool
+  }
+  deriving (Show)
+
+newtype GetFirstMembershipIntervalIdArgs = GetFirstMembershipIntervalIdArgs
+  { gfmiiMembershipNodeId :: GYAssetClass
   }
   deriving (Show)
 
@@ -416,6 +422,12 @@ commandParser =
               (progDesc "Create a new membership history for a practitioner at an organization")
           )
         <> command
+          "get-first-interval-id"
+          ( info
+              (GetFirstMembershipIntervalId . GetFirstMembershipIntervalIdArgs <$> option (maybeReader parseAssetClass) (long "membership-node-id" <> metavar "MEMBERSHIP_NODE_ID" <> help "Membership history node asset class"))
+              (progDesc "Get the first (interval 0) membership interval ID for a membership history node (for accepting before adding next interval)")
+          )
+        <> command
           "add-membership-interval"
           ( info
               ( AddMembershipInterval
@@ -648,6 +660,13 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     if cmhaOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
       else printGreen $ "Membership History ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  GetFirstMembershipIntervalId args -> do
+    printYellow "Looking up first interval ID for membership node..."
+    let pCtx = providerCtx txBuildingCtx
+        dCtx = deployedScriptsCtx txBuildingCtx
+    firstIntervalId <- runQuery pCtx $ runReaderT (getFirstIntervalIdForMembershipNode (gfmiiMembershipNodeId args)) dCtx
+    printGreen "First interval ID:"
+    putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode firstIntervalId
   AddMembershipInterval args -> do
     printYellow "Adding membership interval..."
     let actionType = addMembershipIntervalToActionType args

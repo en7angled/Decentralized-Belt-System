@@ -1,7 +1,6 @@
 -- | Reusable transaction skeleton components (CIP-68, validity, ref inputs, state locks, mints).
 module TxBuilding.Skeletons where
 
-import Data.Word (Word64)
 import GeniusYield.Examples.Limbo
 import GeniusYield.TxBuilder
 import GeniusYield.Types
@@ -59,7 +58,7 @@ gyDeriveUserFromRefTN gyProfileRefTN = tokenNameFromPlutus' $ deriveUserFromRefT
 ------------------------------------------------------------------------------------------------
 
 -- | Minimum validity window in seconds (~7h) when building validity range for UpdateEndDate.
-safeEraTime :: Word64
+safeEraTime :: Integer
 safeEraTime = 25920
 
 -- | Transaction valid only in the slot range [s1, s2] (inclusive).
@@ -67,7 +66,8 @@ safeEraTime = 25920
 isValidBetween :: GYSlot -> GYSlot -> GYTxSkeleton 'PlutusV3
 isValidBetween s1 s2 = mconcat [isInvalidBefore s1, isInvalidAfter s2]
 
-
+txIsValidForSafeEra :: GYSlot -> GYTxSkeleton PlutusV3
+txIsValidForSafeEra now = isValidBetween now (unsafeSlotFromInteger $ slotToInteger now + safeEraTime)
 
 ------------------------------------------------------------------------------------------------
 

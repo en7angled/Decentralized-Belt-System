@@ -23,7 +23,7 @@ import Onchain.Validators.RanksValidator qualified (RanksRedeemer (Cleanup))
 import Onchain.Utils (protocolMinLovelace)
 import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getAchievementsValidatorRef, getMembershipsValidatorRef, getMintingPolicyFromCtx, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getProtocolParamsFromCtx, getRanksValidatorRef)
-import TxBuilding.Exceptions (TxBuildingException (..))
+import TxBuilding.Exceptions (AddMembershipIntervalReason (..), TxBuildingException (..))
 import TxBuilding.Lookups (findInsertPointForNewMembership, getAchievementDatumAndValue, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDatumAndValue, getRankStateDatumAndValue, getUTxOWithTokenAtAddresses, queryOracleParams)
 import TxBuilding.Skeletons
 import TxBuilding.Utils (gySlotFromPOSIXTime, pPOSIXTimeFromGYSlot, txOutRefToV3Plutus)
@@ -66,8 +66,8 @@ getOracleFeeAndValiditySkeleton feeSelector = do
   let minLv = protocolMinLovelace
   feeSkeleton <- getFeeSkeleton oracleParams feeSelector
   now <- slotOfCurrentBlock
-  let isInvalidBeforeNow = isInvalidBefore now
-  return (oracleRefSkeleton, oracleParams, minLv, feeSkeleton, isInvalidBeforeNow)
+  let isValidForSafeEra = txIsValidForSafeEra now
+  return (oracleRefSkeleton, oracleParams, minLv, feeSkeleton, isValidForSafeEra)
 
 -- | Spend the User NFT for a profile (Ref AC) from the given addresses.
 spendUserNFTForProfile ::
@@ -582,14 +582,26 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
 
   -- Look up the membership history node
   (historyNode, historyNodeValue) <- getMembershipListNodeDatumAndValue gyMembershipNodeAC
-  let currentHistory = case nodeData (OnchainTypes.nodeInfo historyNode) of
-        Just h -> h
-        Nothing -> error "addMembershipIntervalTX: root node has no history"
+  currentHistory <- case nodeData (OnchainTypes.nodeInfo historyNode) of
+    Just h -> return h
+    Nothing -> throwError (GYApplicationException MembershipRootNodeHasNoHistory)
 
   -- Look up the last interval (head of intervals chain) for reference input
   let lastIntervalAC = Onchain.deriveIntervalsHeadId currentHistory
   gyLastIntervalAC <- assetClassFromPlutus' lastIntervalAC
   (lastInterval, _lastIntervalValue) <- getMembershipIntervalDatumAndValue gyLastIntervalAC
+
+  -- Pre-validate add-interval conditions (mirror on-chain validation) so we throw domain exceptions instead of Plutus traceError
+  unless (OnchainTypes.membershipHistoryIntervalsHeadNumber currentHistory == OnchainTypes.membershipIntervalNumber lastInterval) $
+    throwError (GYApplicationException (CannotAddMembershipInterval HeadNumberMismatch))
+  case OnchainTypes.membershipIntervalEndDate lastInterval of
+    Just lastEnd -> unless (startDate >= lastEnd) $ throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotClosed))
+    Nothing -> throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotClosed))
+  unless (OnchainTypes.membershipIntervalIsAck lastInterval) $
+    throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotAccepted))
+  case mEndDate of
+    Just ed -> unless (ed > startDate) $ throwError (GYApplicationException (CannotAddMembershipInterval InvalidNewIntervalEndDate))
+    Nothing -> return ()
 
   -- Compute updated history and new interval using Protocol functions
   let (updatedHistory, newInterval) = Onchain.addMembershipIntervalToHistory currentHistory lastInterval startDate mEndDate

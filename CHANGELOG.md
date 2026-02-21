@@ -1,6 +1,25 @@
 # Revision history for Decentralized-Belt-System
 
 
+## 0.3.1.8 -- 2026-02-21
+
+### Unit test refactor
+
+- **Structure**: Split monolithic `UnitTests.hs` into modules `UnitTests.Achievement`, `UnitTests.Cleanup`, `UnitTests.Membership`, `UnitTests.Oracle`, `UnitTests.Promotion`; added `Test.Fixtures` (shared profile data) and `Test.Helpers` (`assert`, `queryOracle`). `UnitTests.hs` now only imports and composes test groups. Cabal test-suite updated with new modules.
+
+### Membership interval validation (off-chain)
+
+- **Exceptions**: New type `AddMembershipIntervalReason` (LastIntervalNotAccepted, LastIntervalNotClosed, InvalidNewIntervalEndDate, HeadNumberMismatch); new `TxBuildingException` constructors `MembershipRootNodeHasNoHistory`, `CannotAddMembershipInterval`. HTTP mapping: 404 for root-node, 400 for add-interval reasons.
+- **Lookups**: `getFirstIntervalIdForMembershipNode` — returns first interval asset ID for a membership history node; throws `MembershipRootNodeHasNoHistory` for root nodes.
+- **Operations**: `addMembershipIntervalTX` pre-validates add-interval conditions (head number match, last interval closed and accepted, end date after start) and throws structured exceptions instead of leaving validation only on-chain.
+- **Skeletons**: `safeEraTime` type changed from `Word64` to `Integer`; added `txIsValidForSafeEra`; `getOracleFeeAndValiditySkeleton` now uses `txIsValidForSafeEra` instead of `isInvalidBefore`.
+
+### Other
+
+- **Onchain**: `protocolMinLovelace` increased from 3_500_000 to 10_000_000 in `Onchain.Utils`.
+- **Admin CLI, config, scripts, Swagger**: Minor updates (populate_testnet, interaction API spec, config) as needed.
+
+
 ## 0.3.1.7 -- 2026-02-20
 
 ### Query API: profiles count filters and RestAPI refactor
