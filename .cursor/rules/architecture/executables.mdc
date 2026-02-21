@@ -1,0 +1,66 @@
+---
+description: Executable layout, startup patterns, and implementation conventions for admin, interaction-api, query-api, chainsync-service
+globs: src/exe/**/*
+alwaysApply: false
+---
+# Executables
+
+**Contents:** Admin CLI · HTTP API servers (interaction-api, query-api) · Build-tx vs submit and provider · Query API specifics · Chain-sync service · **Shared conventions** (applies to all executables below).
+
+- **Available executables**: `admin` (CLI), `interaction-api` (8082), `query-api` (8083), `chainsync-service` (8084). Sources live under `src/exe/<name>/`; Cabal `hs-source-dirs` is `src/exe/admin`, `src/exe/interaction-api`, `src/exe/query-api`, `src/exe/chain-sync` (directory name `chain-sync` for chainsync-service).
+- **Cabal**: Each executable uses `import: common-options`, `main-is: Main.hs`, and its own `hs-source-dirs` and `other-modules`. Dependencies: admin → offchain-lib, onchain-lib; interaction-api / query-api → offchain-lib, onchain-lib, webapi-lib; chainsync-service → chainsync-lib, offchain-lib, onchain-lib, webapi-lib.
+
+------------------------------------------------------------------------------------------------
+* Admin CLI
+------------------------------------------------------------------------------------------------
+
+- **Structure**: Single `Main.hs` with a `Command` sum type, optparse-applicative `hsubparser` for subcommands, and `executeCommand` that dispatches on `Command`.
+- **Parsing**: Use `command "kebab-name" (info (parser) (progDesc "…"))`; share parsers (e.g. `profileDataParser`, `assetClassParser`, `posixTimeParser`, `outputIdParser`) across commands. Use `maybeReader` for asset classes (JSON-decode) and custom parsers for enums (e.g. BJJ belt: case-insensitive, hyphenated).
+- **Context**: Commands that need the chain use `TxBuildingContext` (deployed scripts + provider). Use `Either ProviderCtx TxBuildingContext`: `Left` when no deployed context (only deploy-reference-scripts / write-blueprint / limited queries), `Right` for full tx-building. Load context with `decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" Constants.defaultTxBuldingContextFile` and `decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" Constants.defaultAtlasCoreConfig`; run inside `withCfgProviders`.
+- **Execution**: Tx-building commands convert CLI args to domain `ActionType` (e.g. `InitProfileArgs` → `ProfileAction InitProfileAction`) and call `runBJJActionWithPK txBuildingCtx signKey actionType Nothing`; capture `(txId, mAssetClass)` and optionally print asset class (e.g. with `--output-id`). Read-only commands that need chain (e.g. QueryOracle, GetFirstMembershipIntervalId) use `runQuery providerCtx (runReaderT lookupFn deployedScriptsCtx)` — no signing. Commands that need no provider (e.g. WriteBlueprint) run before loading providers.
+- **New admin command**: Add a `Command` constructor and `*Args` type if needed; add `command "subcommand-name" (info parser (progDesc "…"))`; add conversion from args to `ActionType` (or admin/oracle path); add a case in `executeCommand` for both `Left` and `Right` context where relevant.
+
+------------------------------------------------------------------------------------------------
+* HTTP API servers (interaction-api, query-api)
+------------------------------------------------------------------------------------------------
+
+- **Main.hs**: (1) Write Swagger file on startup: `BL8.writeFile "docs/swagger/<api>-swagger-api.json" (encodePretty apiSwagger)`. (2) Load config: `decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" Constants.defaultAtlasCoreConfig`; interaction-api also loads `DEPLOYED_VALIDATORS_CONFIG`. (3) Run inside `withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do`. (4) Build app context (auth from `getBasicAuthFromEnv`, plus tx-building context or provider + PG pool). (5) Port via `getPortFromEnvOrDefault <defaultPort>`. (6) `runSettings (setHost "0.0.0.0" . setPort port $ defaultSettings) (mkBJJApp appContext)`.
+- **App monad**: Define `*AppContext` (e.g. `InteractionAppContext`, `QueryAppContext`) with auth and service-specific data. Define `newtype *AppMonad a = *AppMonad (ReaderT *AppContext Handler a)` with `run*AppMonad`, and derive `Functor`, `Applicative`, `Monad`, `MonadIO`, `MonadReader *AppContext`. Handlers run in this monad; hoist it with `hoistServerWithContext` when building the WAI app.
+- **RestAPI module**: Define API types with `Summary` and `Description` on routes. Include `ProbeAPI` (or `ServiceProbeAPI`) and domain APIs; use `SwaggerSchemaUI "swagger-ui" "swagger-api.json"` for Swagger. Build `apiSwagger` with `toSwagger proxyPublicAPI` and lens-set title, version, description. Full server = swagger server :<|> probe server :<|> private (auth-protected) server. Build WAI app: `mkBJJApp ctx = WebAPI.CORS.setupCors . provideOptions proxyPublicAPI $ serveWithContext proxyFullAPI basicCtx (hoistServerWithContext ... run*AppMonad ctx ... fullServer)` with `basicCtx = basicAuthServerContext (authContext ctx)`.
+- **Error handling**: Map domain exceptions to HTTP status (e.g. `txBuildingExceptionToHttpStatus`) and use `throwError (err404 { errBody = ... })` etc. in the app monad; centralize in a `runWith*ErrorHandling`-style wrapper if many handlers share the same pattern.
+- **New endpoint**: Add route type in RestAPI, handler in the app monad, and wire in the server record; add `ToSchema` for request/response types so Swagger stays in sync. Query API: use transfer types from `DomainTypes/Transfer/Types.hs` for responses.
+
+------------------------------------------------------------------------------------------------
+* Build-tx vs submit and provider
+------------------------------------------------------------------------------------------------
+
+- **Provider config:** Atlas core config (`config_atlas.json`) includes `coreProvider` (Maestro, local node + Kupo, or Blockfrost), `networkId`, and optional `logging`/`logTiming`. Servers run inside `withCfgProviders` so the same code path gets providers for building and submitting.
+- **Build-tx flow:** Endpoint receives used addresses, change address, optional collateral (e.g. from wallet `getCollateral()`). Run builder with operation skeleton; return **unsigned** tx body (e.g. CBOR hex). Do not sign in the server for browser wallets.
+- **Submit flow:** Endpoint receives unsigned body plus witness from wallet `signTx`; add witness and submit via provider. Keep build and submit as separate endpoints when the wallet signs in the browser.
+- **Multi-address wallets:** Build-tx endpoints accept a **list** of used addresses and a change address so they work with wallets that are not single-address (e.g. Eternl).
+- **Collateral:** If the frontend sends optional collateral, backend uses it when valid (e.g. 5-ADA check); otherwise the framework picks a UTxO. Document when collateral is reserved vs chosen by the framework.
+
+------------------------------------------------------------------------------------------------
+* Query API specifics
+------------------------------------------------------------------------------------------------
+
+- **Context**: `QueryAppContext` = auth + `ProviderCtx` + PostgreSQL `ConnectionPool`. Pool from `PG_CONN_STR` env (default `host=postgres user=postgres password=postgres dbname=chainsync port=5432`), created with `createPostgresqlPool` (e.g. 10 connections).
+- **Live vs projected**: Use `QueryFlag "liveprojection"` on read endpoints; in handlers call `withBackend liveFlag liveHandler projectedHandler` so one route can serve either live (chain) or projected (DB) data. Implement live in `Query.Live`, projected in `Query.Projected`; shared types/helpers in `Query.Common`.
+- **RestAPI.Common**: Centralize building of filter types from query params (e.g. `profileFilterFromParams`, `rankFilterFromParams`) and use `withBackend` so RestAPI stays thin and handlers delegate to Query.*.
+
+------------------------------------------------------------------------------------------------
+* Chain-sync service
+------------------------------------------------------------------------------------------------
+
+- **Main.hs**: (1) Port and env: `getPortFromEnvOrDefault 8084`, `KUPO_URL`, `PG_CONN_STR` (defaults for local Postgres and preview Kupo). (2) Create PG pool, run migrations. (3) Initial tip from DB; create `SyncMetrics` MVar (local tip, chain tip, last sync time, db/sync state). (4) Start probe server in a forked thread: `forkIO (startProbeServer port metricsVar)`. (5) Load atlas and deployed validators config; derive Kupo match pattern from minting policy hash (e.g. `policyHexText <> ".*"`). (6) Align checkpoint with Kupo (findCheckpoint from local tip). (7) `forever` sync loop: get blockchain tip and local tip, `evaluateChainSyncState` (UpToDate | Behind | Ahead | UpToDateButDifferentBlockHash); if Behind, fetch matches and `putMatchAndProjections`, then update local tip; if Ahead, run `rollbackTo` and update local tip; if UpToDateButDifferentBlockHash, update local tip to chain tip.
+- **Probe server**: Separate module (e.g. `ChainSyncServer`) with `startProbeServer port metricsVar`; build app with `mkServiceProbeApp metricsVar` (Servant serve, no auth). Probe exposes `SyncMetrics`; ready endpoint can return 503 when state is not UpToDate (or when way behind) so orchestrators see unhealthy until synced.
+- **Config**: Same env vars as other exes for Atlas and deployed validators (`ATLAS_CORE_CONFIG`, `DEPLOYED_VALIDATORS_CONFIG`); optional `BATCH_SIZE`, `FETCH_BATCH_SIZE` for Kupo.
+
+------------------------------------------------------------------------------------------------
+* Shared conventions
+------------------------------------------------------------------------------------------------
+
+- **Config**: Use `Constants` for default file paths and app version. Use `decodeConfigEnvOrFile "ENV_VAR" defaultPath` for optional env override. Use `WebAPI.Utils.getPortFromEnvOrDefault` for port (defaults: 8082, 8083, 8084).
+- **Auth**: API servers use `WebAPI.Auth.getBasicAuthFromEnv` and `basicAuthServerContext`; protect private routes with `BasicAuth "user-realm" AuthUser :> ...`.
+- **CORS**: Use `WebAPI.CORS.setupCors` as the outermost middleware for all HTTP services.
+- **Swagger**: APIs write their Swagger JSON to `docs/swagger/` on startup; do not edit these files by hand. See docs-and-api.mdc.

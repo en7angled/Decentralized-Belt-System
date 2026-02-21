@@ -1,0 +1,51 @@
+---
+description: Onchain project-specific concepts (validators, minting, oracle, token flow)
+globs: src/lib/onchain-lib/**/*.hs
+alwaysApply: false
+---
+# Onchain Project Rules
+
+**Reference**: Full flows, token derivation, and security model: `docs/OnchainArchitecture.md`.
+
+Plutus/PlutusTx *coding* style (INLINEABLE, tracing, validator structure): see [plutus/plutus-rules.mdc](../plutus/plutus-rules.mdc).
+
+## Types and IDs
+
+- **Types**: New on-chain types in `Onchain/Protocol/Types.hs`. Use `makeIsDataSchemaIndexed` with **stable** constructor indices; never reorder existing constructors. Add `HasBlueprintDefinition` for CIP-57 where applicable.
+- **ID derivation**: All new deterministic token names go in `Onchain/Protocol/Id.hs`. Use `blake2b_224` for 28-byte names; use `integerToByteString BigEndian 0 n` for integers. CIP-68 ref/user tokens use `generateRefAndUserTN` from seed `TxOutRef`. Do not store IDs in datums when they are derivable (see "Datum optimization" below).
+- **ProtocolParams**: Carried in profile/rank datums so unparameterized validators (Profiles, Ranks, Memberships) can resolve cross-validator addresses. Only the MintingPolicy is parameterized by `ProtocolParams`; it bakes in validator hashes and oracle `AssetClass` at compile time.
+- **Address resolution**: ProfilesValidator and RanksValidator are **unparameterized**; they get validator addresses from the datum's `protocolParams` / `promotionProtocolParams`. Do not add validator hashes as validator parameters.
+
+## Minting policy
+
+- **Redeemers**: New token kinds → new redeemer constructor in `Onchain/Validators/MintingPolicy.hs`. Validate **exact mint** (`mintValueMinted == expectedValue`); never allow extra or different token names.
+- **Oracle**: Every minting transaction must include the **oracle UTxO as a reference input**. In the policy: `readOracleParams (oracleToken protocolParams) txInfoReferenceInputs`; then check `opPaused` and `checkFee` when applicable. Min lovelace is from `Onchain.Utils.protocolMinLovelaceValue` (fixed constant), not from the oracle.
+- **Uniqueness**: For one-off tokens (e.g. promotion, achievement), require spending a **seed TxOutRef** and derive token name from it (e.g. `nameFromTxOutRef seed`) so the same TxOutRef cannot be reused.
+- **Authorization**: Promotion requires master User NFT; membership ops require organization User NFT; achievement award requires awarder User NFT. Use `deriveUserFromRefAC` from `Onchain.CIP68` to get User `AssetClass` from Ref `ProfileId`.
+- **CurrencySymbol**: In the minting policy, pattern-match on `MintingScript mintingPolicyCurrencySymbol` and pass that value to handlers. Validate any referenced profile/rank/org `AssetClass` with `hasCurrencySymbol ref mintingPolicyCurrencySymbol` so only protocol tokens are accepted.
+
+## Datum optimization
+
+- **Derive, don't store**: For membership datums, do not store IDs that are derivable from other datum fields (e.g. `deriveMembershipHistoryIdFromHistory`, `deriveIntervalsHeadId` in `Onchain.Protocol.Id`). Deriving reduces datum size and min-ADA; storing would duplicate data. Rank/promotion IDs stay stored because promotion IDs are seed-based and not derivable from the datum.
+- **Cross-history safety**: When a redeemer supplies an interval ID (e.g. `lastIntervalId`), the validator must derive the expected ID from the datum and check equality. This ensures interval IDs refer to the same membership history and prevents using an interval from a different history.
+
+## Security and invariants
+
+- **No profile deletion**: Profiles are permanent by design; do not add a path to delete or burn profile state (lineage integrity).
+- **Reference inputs**: Use reference inputs for non-destructive reads (oracle, current rank on accept, last membership interval). See OnchainArchitecture.md "Reference Input Usage" table.
+- **Token flow**: Tokens locked at a validator must remain at that validator (same address and value on output) unless the design explicitly burns or moves them (e.g. promotion consumption). Membership intervals use "Variant A": acceptance only updates the datum, no mint/burn.
+
+## Output layout and redeemers
+
+- **Output indices**: The order of outputs in the transaction is determined by the off-chain skeleton `mconcat`. Redeemer parameters (e.g. `profileOutputIdx`, `rankOrMembershipRootOutputIdx`) must refer to that order. Document the output layout in a comment when adding or changing a redeemer so it stays in sync with `TxBuilding/Operations.hs`.
+
+## Conventions
+
+- **Cleanup redeemer**: State validators (Profiles, Ranks, Memberships, Achievements) each have a **Cleanup** redeemer: anyone can spend a UTxO at the validator if the datum is absent or does not parse; if the datum is valid, Cleanup must fail with `traceError`. Document as "Permissionless dust cleanup" in the redeemer.
+- **Business logic**: Keep domain rules in dedicated modules: `Onchain.BJJ` (belt hierarchy, `validatePromotion`); `Onchain.Protocol.Core` (membership list/interval ops, profile/rank smart constructors). Validators and MintingPolicy call these; do not embed complex logic in the validator lambda.
+- **CIP68Datum**: State with metadata (profile, achievement) uses `CIP68Datum OnchainProfile` or `CIP68Datum OnchainAchievement`. Use `extra` to get the inner datum; wrap with `CIP68Datum` when building outputs.
+- **Fee check**: `checkFee` (in `Onchain.Protocol.Lookup`) takes `OracleParams`, a selector `(FeeConfig -> Integer)` (e.g. `fcProfileCreationFee`, `fcPromotionFee`), and outputs. Use the appropriate selector per redeemer.
+- **Lookups**: Use `Onchain.Protocol.Lookup` for reading state: `readOracleParams`, `unsafeGetRank`, `unsafeGetProfile`, `unsafeGetListNodeDatumAndValue`, `unsafeGetMembershipInterval`. Use `checkAndGetCurrentStateDatumAndValue` / `checkAndGetInlineDatum` from Utils where needed.
+- **Oracle validator**: Unparameterized; requires datum; admin (`opAdminPkh` from datum) must sign; one output must preserve same address and value as the spent oracle UTxO.
+- **MintingContext**: MintingPolicy builds a `MintingContext` (minLv plus validator addresses) from `ProtocolParams` and passes it to handlers. Adding a new validator that receives minted outputs means extending `ProtocolParams` and `MintingContext`.
+- **Linked lists**: Generic list logic lives in `Onchain.LinkedList` (`NodeDatum` with `nodeKey`, `nextNodeKey`, `nodeData`). Protocol.Core uses it for membership histories; follow the same pattern for new list-like structures.

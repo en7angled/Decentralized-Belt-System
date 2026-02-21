@@ -1,0 +1,37 @@
+---
+description: Offchain project-specific concepts (pipeline, type hierarchy, context, errors); Atlas GYTxSkeleton and monads
+globs: src/lib/offchain-lib/**/*.hs
+alwaysApply: false
+---
+# Offchain Project Rules
+
+Offchain and TxBuilding concepts for this project. See also [project-architecture.mdc](project-architecture.mdc) for library layout and file reference.
+
+## Pipeline
+
+Interactions are transformed into Transactions via Operations. (1) `interactionToTxSkeleton` (Interactions) takes an `Interaction` (action + user addresses) and dispatches to Operations (e.g. `createProfileTX`, `promoteProfileTX`). (2) Operations build a `GYTxSkeleton` by composing **Skeletons** (ref inputs, validity window, CIP-68 helpers) and **Lookups** (UTxO/datum queries). (3) `interactionToTxBody` (Transactions) runs the skeleton through the builder to produce the actual transaction. Do not bypass this flow. Output order in skeleton `mconcat` must match on-chain redeemer indices; see [onchain-rules.mdc](onchain-rules.mdc) § Output layout and redeemers. Document that order in a comment when adding or changing redeemers.
+
+## Atlas conventions (GYTxSkeleton and monads)
+
+- **Specify-what-you-want:** Operations declare desired inputs, outputs, reference inputs, validity, and signatories; the framework handles change outputs, min ADA, collateral, and balancing. Do not manually add change or min-ADA logic in operations.
+- **Monad hierarchy** (increasing capability): `GYTxQueryMonad` (queries: `scriptAddress`, `utxoDatum'`, slot/time); `GYTxUserQueryMonad` (user/wallet); `GYTxBuilderMonad` (`buildTxBody`); `GYTxMonad` (sign + submit); `GYTxGameMonad` (testing: `asUser`). Use the least capable monad that suffices for each function.
+- **Skeleton helpers:** Compose with `mconcat`: `mustHaveOutput`, `mustHaveInput`, `mustHaveRefInput`, `mustBeSignedBy`, `isInvalidBefore`/`isInvalidAfter`, `mustMint`. Output order defines on-chain redeemer indices (see Pipeline and [onchain-rules.mdc](onchain-rules.mdc)).
+- **Scripts:** `scriptFromPlutus` yields `GYScript v`; use `scriptAddress @_ @'PlutusV2` (or correct `PlutusVersion`). Reference script: `GYBuildPlutusScriptReference refScript script`; inlined: `GYBuildPlutusScriptInlined script`.
+- **Lookups:** For script addresses, use `utxoDatum'` for one UTxO's datum; use `utxosDatums` when filtering out invalid datums at an address where anyone can create UTxOs.
+
+## Type hierarchy
+
+Transfer → Domain → Onchain; add new API shapes in Transfer, domain entities in Core, onchain types in `Onchain/Protocol/Types.hs` and `Id.hs`. See [project-architecture.mdc](project-architecture.mdc) and its file reference table.
+
+## New concept
+
+When adding a new validator, token kind, projection type, or API surface: follow the phase order (on-chain types → validator → minting redeemer → domain types → tx building → API → chain sync → admin → tests → deployment) and run the full consistency checklist. See [new-concept-checklist.mdc](../workflow/new-concept-checklist.mdc) for the detailed checklist and common pitfalls.
+
+## DeployedScriptsContext
+
+New validator → new field in Context, JSON config, `deployReferenceScripts` in Transactions, and `config/config_bjj_validators.json` updated after deploy.
+
+## Errors and JSON
+
+- **Errors**: Use `TxBuildingException` and map to HTTP status via `txBuildingExceptionToHttpStatus`; do not throw raw strings.
+- **JSON**: Use `deriving-aeson` with `StripPrefix` + `CamelToSnake` for consistent snake_case API fields.

@@ -1,0 +1,28 @@
+---
+description: Plutus/PlutusTx coding style for onchain-lib (validators, tracing, output checks)
+globs: src/lib/onchain-lib/**/*.hs
+alwaysApply: false
+---
+# Plutus (On-Chain) Coding Rules
+
+Generic Plutus/PlutusTx coding conventions. For this project's onchain *concepts* (ProtocolParams, validators, minting, oracle), see [architecture/onchain-rules.mdc](../architecture/onchain-rules.mdc).
+
+## Pragmas and tracing
+
+- **INLINEABLE**: Put `{-# INLINEABLE #-}` **before** the type signature for every function used across on-chain modules.
+- **Trace messages**: Use short, unique codes in both `traceIfFalse` and `traceError`; document each code in a comment (e.g. `traceIfFalse "M0" (not (opPaused oracle)) -- Protocol is paused (M0)`; `traceError "P0" -- No datum (P0)`).
+
+## Validators
+
+- **Size**: Keep validator lambdas under ~80 lines; extract per-redeemer logic into named `INLINEABLE` helpers.
+- **Output checks**: Use **output-index checks** only: `checkTxOutAtIndexWithDatumValueAndAddress` (or `isTxOutAtIndexWithDatumValueAndAddress`) from `Onchain.Utils`. Do not use O(n) search over `txInfoOutputs`. Redeemers carry the expected output index; wrong index causes validation failure.
+- **Validator structure**: Wrap the typed lambda with `mkUntypedLambda` from `Onchain.Utils`. Pattern-match `ScriptContext txInfo (Redeemer bredeemer) scriptInfo`; for spending use `SpendingScript spendingTxOutRef mdatum`. Get own UTxO with `Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs`, then use `txOutValue` / `txOutAddress` for output checks.
+- **Multiple datum kinds at one address**: Use a wrapper sum type (e.g. `MembershipDatum = ListNodeDatum ... | IntervalDatum ...`). List which redeemers each datum kind accepts; reject incompatible redeemer with `traceError` (e.g. ListNodeDatum only InsertNodeToMHList/UpdateNodeInMHList; IntervalDatum only AcceptInterval/UpdateEndDate).
+
+## Constants
+
+- No magic numbers in validator logic; use named constants from `Onchain.Utils` or similar.
+
+## Atlas / Plutus version
+
+- When using Plutus V2 with a plutus library that defaults to Plutus Core 1.1.0, set `ghc-options: -fplugin-opt PlutusTx.Plugin:target-version=1.0.0` so the script targets the correct ledger version. Off-chain code must use the matching `PlutusVersion` (e.g. `scriptAddress @_ @'PlutusV2`).
