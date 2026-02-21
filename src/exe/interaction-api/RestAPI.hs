@@ -86,7 +86,7 @@ apiSwagger :: Swagger
 apiSwagger =
   toSwagger proxyPublicAPI
     & info . title .~ "Decentralized Belt System Interaction API"
-    & info . Data.Swagger.version .~ "1.0"
+    & info . Data.Swagger.version .~ "1.0.0"
     & info . Data.Swagger.description ?~ "This is the Interaction API for the Decentralized Belt System - handles transaction building and submission"
     & info
       . license

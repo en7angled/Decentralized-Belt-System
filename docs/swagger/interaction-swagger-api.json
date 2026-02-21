@@ -431,7 +431,7 @@
             "name": "GPL-3.0 license"
         },
         "title": "Decentralized Belt System Interaction API",
-        "version": "1.0"
+        "version": "1.0.0"
     },
     "paths": {
         "/build-tx": {

@@ -10,13 +10,13 @@ module RestAPI where
 import Control.Lens hiding (Context)
 import Data.Swagger
 import Data.Text hiding (length)
+import DomainTypes.Core.BJJ (BJJBelt)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.Imports
 import GeniusYield.Types hiding (title)
 import Network.Wai
 import Network.Wai.Middleware.Servant.Options (provideOptions)
-import DomainTypes.Core.BJJ (BJJBelt)
 import Query.Common qualified as C
 import Query.Live qualified as L
 import Query.Projected qualified as P
@@ -38,7 +38,6 @@ import WebAPI.Auth
 import WebAPI.CORS
 import WebAPI.ServiceProbe
 
-
 ------------------------------------------------------------------------------------------------
 
 --  Health API
@@ -50,10 +49,8 @@ type ServiceProbeAPI = WebAPI.ServiceProbe.ServiceProbe Text Text
 proxyServiceProbe :: Proxy ServiceProbeAPI
 proxyServiceProbe = Proxy
 
-
 handleReady :: QueryAppMonad (ServiceProbeStatus Text)
 handleReady = verifyProjectionDbConnection
-
 
 serviceProbeServer :: ServerT ServiceProbeAPI QueryAppMonad
 serviceProbeServer = alwaysHealthy "query-api" :<|> handleReady
@@ -329,37 +326,34 @@ type Memberships =
       :> QueryFlag "liveprojection"
       :> Get '[JSON] [MembershipHistoryInformation]
   )
-    :<|>
-    ( Summary "Get Membership Histories Count"
-        :> Description "Get count of membership histories"
-        :> "membership-histories"
-        :> "count"
-        :> QueryParams "organization" ProfileRefAC
-        :> QueryParams "practitioner" ProfileRefAC
-        :> QueryFlag "liveprojection"
-        :> Get '[JSON] Int
-    )
-    :<|>
-    ( Summary "Get Membership Intervals"
-        :> Description "Get membership intervals with optional filters"
-        :> "membership-intervals"
-        :> QueryParam' '[Optional] "limit" Int
-        :> QueryParam' '[Optional] "offset" Int
-        :> QueryParams "practitioner" ProfileRefAC
-        :> QueryParam' '[Optional] "order_by" MembershipIntervalsOrderBy
-        :> QueryParam' '[Optional] "sort_order" SortOrder
-        :> QueryFlag "liveprojection"
-        :> Get '[JSON] [MembershipIntervalInformation]
-    )
-    :<|>
-    ( Summary "Get Membership Intervals Count"
-        :> Description "Get count of membership intervals"
-        :> "membership-intervals"
-        :> "count"
-        :> QueryParams "practitioner" ProfileRefAC
-        :> QueryFlag "liveprojection"
-        :> Get '[JSON] Int
-    )
+    :<|> ( Summary "Get Membership Histories Count"
+             :> Description "Get count of membership histories"
+             :> "membership-histories"
+             :> "count"
+             :> QueryParams "organization" ProfileRefAC
+             :> QueryParams "practitioner" ProfileRefAC
+             :> QueryFlag "liveprojection"
+             :> Get '[JSON] Int
+         )
+    :<|> ( Summary "Get Membership Intervals"
+             :> Description "Get membership intervals with optional filters"
+             :> "membership-intervals"
+             :> QueryParam' '[Optional] "limit" Int
+             :> QueryParam' '[Optional] "offset" Int
+             :> QueryParams "practitioner" ProfileRefAC
+             :> QueryParam' '[Optional] "order_by" MembershipIntervalsOrderBy
+             :> QueryParam' '[Optional] "sort_order" SortOrder
+             :> QueryFlag "liveprojection"
+             :> Get '[JSON] [MembershipIntervalInformation]
+         )
+    :<|> ( Summary "Get Membership Intervals Count"
+             :> Description "Get count of membership intervals"
+             :> "membership-intervals"
+             :> "count"
+             :> QueryParams "practitioner" ProfileRefAC
+             :> QueryFlag "liveprojection"
+             :> Get '[JSON] Int
+         )
 
 handleGetMembershipHistories ::
   Maybe Int ->
@@ -430,20 +424,19 @@ type Achievements =
       :> QueryFlag "liveprojection"
       :> Get '[JSON] [Achievement]
   )
-    :<|>
-    ( Summary "Get Achievements Count"
-        :> Description "Get count of achievements"
-        :> "achievements"
-        :> "count"
-        :> QueryParams "achievement" AchievementAC
-        :> QueryParams "awarded_to" ProfileRefAC
-        :> QueryParams "awarded_by" ProfileRefAC
-        :> QueryParam' '[Optional] "is_accepted" Bool
-        :> QueryParam' '[Optional] "from" GYTime
-        :> QueryParam' '[Optional] "to" GYTime
-        :> QueryFlag "liveprojection"
-        :> Get '[JSON] Int
-    )
+    :<|> ( Summary "Get Achievements Count"
+             :> Description "Get count of achievements"
+             :> "achievements"
+             :> "count"
+             :> QueryParams "achievement" AchievementAC
+             :> QueryParams "awarded_to" ProfileRefAC
+             :> QueryParams "awarded_by" ProfileRefAC
+             :> QueryParam' '[Optional] "is_accepted" Bool
+             :> QueryParam' '[Optional] "from" GYTime
+             :> QueryParam' '[Optional] "to" GYTime
+             :> QueryFlag "liveprojection"
+             :> Get '[JSON] Int
+         )
 
 handleGetAchievements ::
   Maybe Int ->
@@ -517,7 +510,7 @@ apiSwagger :: Swagger
 apiSwagger =
   toSwagger proxyPublicAPI
     & info . title .~ "Decentralized Belt System Query API"
-    & info . Data.Swagger.version .~ "1.0"
+    & info . Data.Swagger.version .~ "1.0.0"
     & info . Data.Swagger.description ?~ "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, belts, membership histories and intervals, and achievements"
     & info
       . license
