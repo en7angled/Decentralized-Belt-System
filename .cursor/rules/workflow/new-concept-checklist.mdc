@@ -33,6 +33,7 @@ alwaysApply: false
 - [ ] Event type in `Ingestion.hs`; projection in `projectChainEvent`
 - [ ] Persistent entity and put function in `Storage.hs`; `putMatchAndProjections` updated
 - [ ] `rollbackTo` handles new projection
+- [ ] `chainSyncTableNames` in Storage.hs includes the new table (for `wipeChainSyncTables` on policy change)
 
 **API & CLI**
 
@@ -54,6 +55,7 @@ alwaysApply: false
 | Forgetting oracle reference       | All minting tx must include oracle as reference input; use `getOracleRefInputSkeleton`.                                                                    |
 | Constructor index collision       | `makeIsDataSchemaIndexed` indices unique and stable; never reorder existing constructors.                                                                  |
 | Missing rollback handling         | Every new projection table needs a `deleteWhere` in `rollbackTo`.                                                                                          |
+| Missing wipe list entry           | Every new entity in the Storage persist block needs its table name in `chainSyncTableNames` so policy-change startup wipes it.                             |
 | Inconsistent JSON naming          | Use `deriving-aeson` with `StripPrefix` + `CamelToSnake` for API types.                                                                                    |
 | Off-chain deps in on-chain        | `onchain-lib` must not import Aeson, Servant, Swagger; Plutus in onchain-lib, JSON in offchain-lib.                                                        |
 | Missing INLINEABLE                | Every on-chain cross-module function needs `{-# INLINEABLE #-}`.                                                                                           |
