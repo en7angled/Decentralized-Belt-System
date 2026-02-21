@@ -1,0 +1,78 @@
+---
+description: How to add or edit Cursor rules in our project
+globs:
+alwaysApply: false
+---
+# Cursor Rules Location
+
+How to add new cursor rules to the project
+
+1. Always place rule files in PROJECT_ROOT/.cursor/rules/ (subfolders are allowed for grouping):
+    ```
+    .cursor/rules/
+    ├── cursor-rules.mdc
+    ├── environment.mdc
+    ├── self-improvement.mdc
+    ├── architecture/
+    │   ├── project-architecture.mdc
+    │   ├── executables.mdc
+    │   ├── onchain-rules.mdc
+    │   └── offchain-rules.mdc
+    ├── haskell/
+    │   └── haskell-style.mdc
+    ├── plutus/
+    │   ├── plutus-rules.mdc
+    │   └── plutus-security.mdc
+    ├── operations/
+    │   └── storage-ingestion.mdc
+    └── workflow/
+        ├── api-versioning.mdc
+        ├── build-and-test-after-plan.mdc
+        ├── docs-and-api.mdc
+        ├── new-concept-checklist.mdc
+        ├── scripts.mdc
+        ├── testing-and-config.mdc
+        └── versioning.mdc
+    ```
+
+2. Follow the naming convention:
+    - Use kebab-case for filenames
+    - Always use .mdc extension
+    - Make names descriptive of the rule's purpose
+
+3. Directory structure: rules may live at the root of .cursor/rules/ or in subfolders (e.g. architecture/, haskell/, plutus/, operations/, workflow/). Coding rules: haskell/ (Haskell offchain style), plutus/ (Plutus onchain style). Concept rules: architecture/ (onchain-rules, offchain-rules, project-architecture, executables). Cursor loads .mdc files from any depth under .cursor/rules/.
+
+4. Never place rule files:
+    - In the project root
+    - In subdirectories outside .cursor/rules
+    - In any other location
+
+5. Cross-references: use links relative to the current file (same folder = `file.mdc`, other folder = `../folder/file.mdc`, or from rules root = `folder/file.mdc`).
+
+6. Cursor rules have the following structure:
+
+```
+---
+description: Short description of the rule's purpose
+globs: optional/path/pattern/**/*
+alwaysApply: false
+---
+# Rule Title
+
+Main content explaining the rule with markdown formatting.
+
+1. Step-by-step instructions
+2. Code examples
+3. Guidelines
+
+Example (illustrative; for this repo follow [haskell-style.mdc](haskell/haskell-style.mdc) and [plutus-rules.mdc](plutus/plutus-rules.mdc) for code style):
+
+```haskell
+-- Good: follows project conventions
+goodExample :: Monad m => X -> m Y
+goodExample x = ...
+
+-- Bad: bypasses pipeline or breaks layering
+badExample = ...
+```
+

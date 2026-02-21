@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module KupoClient where
 
@@ -32,6 +33,7 @@ instance FromJSON KupoValue where
       <*> o .: "assets"
 
 instance ToJSON KupoValue where
+  toJSON :: KupoValue -> Aeson.Value
   toJSON (KupoValue c as) =
     Aeson.object ["coins" Aeson..= c, "assets" Aeson..= as]
 

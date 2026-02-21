@@ -13,6 +13,7 @@ import Data.Text hiding (init, tail)
 import Data.Text qualified as T
 import Deriving.Aeson
 import DomainTypes.Core.Types
+import GeniusYield.Types.Time (GYTime)
 import GHC.Generics ()
 import Utils
 
@@ -58,6 +59,49 @@ instance ToSchema OrganizationProfileInformation where
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "organization"
             }
 
+-- | Interval plus organization id (API view for membership intervals).
+data MembershipIntervalInformation = MembershipIntervalInformation
+  { membershipIntervalInformationId :: MembershipIntervalAC,
+    membershipIntervalInformationStartDate :: GYTime,
+    membershipIntervalInformationEndDate :: Maybe GYTime,
+    membershipIntervalInformationIsAccepted :: Bool,
+    membershipIntervalInformationPractitionerId :: ProfileRefAC,
+    membershipIntervalInformationNumber :: Integer,
+    membershipIntervalInformationOrganizationId :: ProfileRefAC
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "membershipIntervalInformation", CamelToSnake]] MembershipIntervalInformation
+
+instance ToSchema MembershipIntervalInformation where
+  declareNamedSchema = genericDeclareNamedSchema membershipIntervalInformationSchemaOptions
+    where
+      membershipIntervalInformationSchemaOptions :: SchemaOptions
+      membershipIntervalInformationSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "membershipIntervalInformation"
+            }
+
+-- | History plus list of intervals (API view for membership histories).
+data MembershipHistoryInformation = MembershipHistoryInformation
+  { membershipHistoryInformationId :: MembershipHistoryAC,
+    membershipHistoryInformationPractitionerId :: ProfileRefAC,
+    membershipHistoryInformationOrganizationId :: ProfileRefAC,
+    membershipHistoryInformationIntervals :: [MembershipIntervalInformation]
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "membershipHistoryInformation", CamelToSnake]] MembershipHistoryInformation
+
+instance ToSchema MembershipHistoryInformation where
+  declareNamedSchema = genericDeclareNamedSchema membershipHistoryInformationSchemaOptions
+    where
+      membershipHistoryInformationSchemaOptions :: SchemaOptions
+      membershipHistoryInformationSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "membershipHistoryInformation"
+            }
+
 -- Custom Show instances for better formatting
 instance Show PractitionerProfileInformation where
   show :: PractitionerProfileInformation -> String
@@ -88,6 +132,31 @@ instance Show OrganizationProfileInformation where
         "│ Description: " <> stringFromJSON organizationDescription,
         "│ Image URI: " <> stringFromJSON organizationImageURI,
         "│ ID: " <> stringFromJSON organizationId,
+        "└─────────────────────────────────────────────────────────────"
+      ]
+
+instance Show MembershipIntervalInformation where
+  show (MembershipIntervalInformation {..}) =
+    Prelude.unlines
+      [ "┌─────────────────────────────────────────────────────────────",
+        "│ MembershipIntervalInformation ID: " <> stringFromJSON membershipIntervalInformationId,
+        "│ Organization: " <> stringFromJSON membershipIntervalInformationOrganizationId,
+        "│ Practitioner: " <> stringFromJSON membershipIntervalInformationPractitionerId,
+        "│ Start: " <> stringFromJSON membershipIntervalInformationStartDate,
+        "│ End: " <> stringFromJSON membershipIntervalInformationEndDate,
+        "│ Accepted: " <> show membershipIntervalInformationIsAccepted,
+        "│ Number: " <> show membershipIntervalInformationNumber,
+        "└─────────────────────────────────────────────────────────────"
+      ]
+
+instance Show MembershipHistoryInformation where
+  show (MembershipHistoryInformation {..}) =
+    Prelude.unlines
+      [ "┌─────────────────────────────────────────────────────────────",
+        "│ MembershipHistoryInformation ID: " <> stringFromJSON membershipHistoryInformationId,
+        "│ Practitioner: " <> stringFromJSON membershipHistoryInformationPractitionerId,
+        "│ Organization: " <> stringFromJSON membershipHistoryInformationOrganizationId,
+        "│ Intervals: " <> show (Prelude.length membershipHistoryInformationIntervals),
         "└─────────────────────────────────────────────────────────────"
       ]
 

@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name:          Decentralized-Belt-System
-version:       0.1.0.0
+version:       0.3.1.8
 synopsis:
   A DApp to standardize BJJ belt rankings and lineages, ensuring global consistency and transparency, thus solving the issue of varying standards and unclear lineages in the BJJ community.
 
@@ -43,9 +43,11 @@ common plinth-ghc-options
   -- set target plutus-core version
   ghc-options:        -fplugin-opt PlutusTx.Plugin:target-version=1.1.0
 
-  -- Compiler flags (defaults)
-  ghc-options:        -fplugin-opt PlutusTx.Plugin:no-remove-trace
-  ghc-options:        -fplugin-opt PlutusTx.Plugin:no-optimize
+  -- Compiler flags (defaults): no-remove-trace keeps traces; preserve-logging
+  -- prevents optimization from removing trace messages (see Plutus troubleshooting).
+  -- ghc-options:        -fplugin-opt PlutusTx.Plugin:preserve-logging
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:remove-trace
+  ghc-options:        -fplugin-opt PlutusTx.Plugin:optimize
 
 library onchain-lib
   import:             common-options, plinth-ghc-options
@@ -55,11 +57,20 @@ library onchain-lib
     Onchain.BJJ
     Onchain.Blueprint
     Onchain.CIP68
-    Onchain.MintingPolicy
-    Onchain.ProfilesValidator
+    Onchain.LinkedList
     Onchain.Protocol
-    Onchain.RanksValidator
+    Onchain.Protocol.Core
+    Onchain.Protocol.Id
+    Onchain.Protocol.Lookup
+    Onchain.Protocol.Types
     Onchain.Utils
+    Onchain.Validators.AchievementsValidator
+    Onchain.Validators.MembershipsValidator
+    Onchain.Validators.MintingPolicy
+    Onchain.Validators.OracleNFTPolicy
+    Onchain.Validators.OracleValidator
+    Onchain.Validators.ProfilesValidator
+    Onchain.Validators.RanksValidator
 
   if !(impl(ghcjs) || os(ghcjs))
     build-depends: plutus-tx-plugin
@@ -68,13 +79,8 @@ library onchain-lib
 
   -- other-extensions:
   build-depends:
-    , aeson
     , bytestring
     , containers
-    , http-types
-    , servant-server
-    , swagger2
-    , text
 
   --- Cardano specific dependencies
   build-depends:
@@ -82,7 +88,6 @@ library onchain-lib
     , plutus-ledger-api
     , plutus-tx
 
-  hs-source-dirs:     src/lib
   default-extensions:
     BangPatterns
     BlockArguments
@@ -170,16 +175,18 @@ library offchain-lib
   exposed-modules:
     Constants
     DomainTypes.Core.Actions
+    DomainTypes.Core.BJJ
     DomainTypes.Core.Types
     DomainTypes.Transfer.Types
     Ingestion
     Storage
     TxBuilding.Context
+    TxBuilding.Conversions
     TxBuilding.Exceptions
-    TxBuilding.Functors
     TxBuilding.Interactions
     TxBuilding.Lookups
     TxBuilding.Operations
+    TxBuilding.SafeOnchainLogic
     TxBuilding.Skeletons
     TxBuilding.Transactions
     TxBuilding.Utils
@@ -248,6 +255,7 @@ executable admin
   build-depends:
     , aeson
     , bytestring
+    , mtl
     , optparse-applicative
     , text
 
@@ -315,6 +323,7 @@ executable query-api
     Query.Projected
     QueryAppMonad
     RestAPI
+    RestAPI.Common
     Types
 
   build-depends:
@@ -401,13 +410,21 @@ test-suite test
   main-is:          Main.hs
   other-modules:
     BJJPropertyTests
+    Test.Fixtures
+    Test.Helpers
     TestRuns
     UnitTests
+    UnitTests.Achievement
+    UnitTests.Cleanup
+    UnitTests.Membership
+    UnitTests.Oracle
+    UnitTests.Promotion
 
   build-depends:
     , base
     , offchain-lib
     , onchain-lib
+    , text
 
   build-depends:
     , extra
@@ -420,3 +437,4 @@ test-suite test
   build-depends:
     , atlas-cardano
     , plutus-ledger-api
+    , plutus-tx

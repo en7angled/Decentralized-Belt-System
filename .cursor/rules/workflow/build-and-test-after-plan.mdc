@@ -1,0 +1,16 @@
+---
+description: After implementing a plan (or each major step), build and tests must succeed before proceeding.
+globs: src/**/*
+alwaysApply: false
+---
+# Build and test after implementing a plan
+
+**Task** here means the implementation of a plan (e.g. a multi-step plan or checklist). After each such task — or after each major step of the plan — ensure the project builds and tests pass before considering the work done or moving to the next step.
+
+## Requirement
+
+1. From repo root, run **`cabal build all`** then **`cabal test`**.
+2. If either fails, fix the failures before proceeding.
+3. Do not treat the implementation as complete, and do not start the next task or step, until both succeed.
+
+For the exact commands and test layout, see [testing-and-config.mdc](testing-and-config.mdc). For build/test environment (e.g. `CABAL_DIR`), see [environment.mdc](../environment.mdc).

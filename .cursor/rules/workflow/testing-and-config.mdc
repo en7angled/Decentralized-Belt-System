@@ -1,0 +1,18 @@
+---
+description: Test layout, cabal, scripts, and config/env for the BJJ belt system; Atlas unified testing and runners
+globs: src/test/**/*, scripts/**/*, config/**/*
+alwaysApply: false
+---
+# Testing & Config
+
+- **Tests**: Unit tests in `src/test/UnitTests.hs`, integration in `TestRuns.hs`, property tests in `BJJPropertyTests.hs`. Add unit tests for new operations (happy path + error cases).
+- **Build/run**: `cabal build all`, `cabal test`. Scripts in `scripts/` (see [scripts.mdc](scripts.mdc)): e.g. `scripts/test_black_promotes_white_to_blue.sh`, `scripts/populate_testnet.sh`, `scripts/test_exunits.sh`, `scripts/build-images.sh` — maintain when changing admin CLI, config, or test flows.
+- **Config**: `config/config_atlas.json` (provider/network), `config/config_bjj_validators.json` (deployed script refs); `operation.prv` for admin. Do not commit secrets; document required env vars (see README §6.4).
+
+## Atlas unified testing
+
+- **Backends:** Same operations and runners can run on **CLB emulator** (fresh ledger per test, fast) or **privnet** (shared network). Use `mkTestFor` for emulator; `mkPrivnetTestFor` inside `withPrivnet` for privnet. Emulator and privnet behavior can differ; note when a test is backend-specific.
+- **Test environment:** `TestInfo` provides `testWallets :: Wallets`; each `User` has `userPaymentSKey`, `userAddresses`, `userChangeAddress`, `userCollateral`. Wallets are pre-funded.
+- **Runners:** In `GYTxGameMonad`, take `TestInfo`/`Wallets` and params; use `asUser user $ do { …; skeleton <- myOperation …; buildTxBody skeleton >>= signAndSubmitConfirmed }` so the same operation code is reused for tests. Add a runner when adding a new operation that should be tested end-to-end.
+- **Balance checks:** Use `withWalletBalancesCheckSimple [wallet := valueDelta] $ do …` to assert balance deltas (framework accounts for fees); use `withWalletBalancesCheck` for finer control.
+- **Negative tests:** Emulator: wrap runner with `mustFail`. Privnet: use `handleError` and match expected exception (e.g. `GYBuildTxException GYBuildTxBodyErrorAutoBalance {}`).

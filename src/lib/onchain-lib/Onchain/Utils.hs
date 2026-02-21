@@ -1,70 +1,100 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module Onchain.Utils where
+-- | On-chain utility functions shared across validators.
+-- Provides helpers for untyped lambda conversion, datum/value lookups,
+-- output validation, and oracle reading. Minimum lovelace for state outputs
+-- comes from the oracle ('opMinUTxOValue'), not from this module.
+module Onchain.Utils
+  ( -- * Helper Functions
+    mkUntypedLambda,
+    nameFromTxOutRef,
+
+    -- * Datum Helper Functions
+    checkTxOutAtIndexWithDatumValueAndAddress,
+    isTxOutAtIndexWithDatumValueAndAddress,
+    checkTxOutAtIndexWithDatumMinValueAndAddress,
+    isTxOutAtIndexWithDatumMinValueAndAddress,
+    isGivenInlineDatum,
+    unsafeFindOwnInputByTxOutRef,
+
+    -- * Validate and Get
+    checkAndGetCurrentStateDatumAndValue,
+    checkAndGetInlineDatum,
+
+    -- * Asset Class Helpers
+    hasCurrencySymbol,
+
+    -- * Inputs Spend TxOutRef Helper Functions
+    hasTxInAtAddressWithNFT,
+    inputsSpendTxOutRef,
+  )
+where
 
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
-import PlutusTx.Builtins (serialiseData)
+import PlutusTx.Builtins
 import PlutusTx.List qualified
 import PlutusTx.Prelude
 
---------------------------------------
---  Helper Functions
---------------------------------------
+-------------------------------------------------------------------------------
 
--- | Converts a typed lambda to untyped
+-- * Helper Functions
+
+-------------------------------------------------------------------------------
+
+-- | Converts a typed validator lambda to the untyped form expected by Plutus.
+{-# INLINEABLE mkUntypedLambda #-}
 mkUntypedLambda ::
   (ScriptContext -> Bool) ->
   (BuiltinData -> BuiltinUnit)
-mkUntypedLambda f c = check $ f (parseData c "Invalid context")
+mkUntypedLambda f c = check $ f (parseData c "U0") -- Invalid context (U0)
   where
     parseData mdata message = case fromBuiltinData mdata of
       Just d -> d
       _ -> traceError message
-{-# INLINEABLE mkUntypedLambda #-}
-
--- TODO update with new builtins
-{-# INLINEABLE integerToBs24 #-}
-integerToBs24 :: Integer -> BuiltinByteString
-integerToBs24 = dropByteString 1 . serialiseData . toBuiltinData -- Removing First Byte  (works for value > 24)
-
-{-# INLINEABLE tokenNameFromTxOutRef #-}
-tokenNameFromTxOutRef :: TxOutRef -> TokenName
-tokenNameFromTxOutRef toref = TokenName (nameFromTxOutRef toref)
 
 {-# INLINEABLE nameFromTxOutRef #-}
 nameFromTxOutRef :: TxOutRef -> BuiltinByteString
-nameFromTxOutRef (TxOutRef (TxId txIdbs) txIdx) = takeByteString 28 $ blake2b_256 (txIdbs <> (serialiseData . toBuiltinData) txIdx)
+nameFromTxOutRef (TxOutRef (TxId txIdbs) txIdx) = blake2b_224 (txIdbs `appendByteString` integerToByteString BigEndian 0 txIdx)
 
-------------------------
+-------------------------------------------------------------------------------
 
--- ** Value Helper Functions
+-- * Datum Helper Functions
 
-------------------------
+-------------------------------------------------------------------------------
 
-{-# INLINEABLE isMintingNFT #-}
-isMintingNFT :: V1.AssetClass -> MintValue -> Bool
-isMintingNFT ac txInfoMint = V1.assetClassValueOf (mintValueMinted txInfoMint) ac == 1
+-- | Check that the output at a specific index has the expected datum, value, and address.
+-- This is more efficient than searching through all outputs with hasTxOutWithInlineDatumAndValue.
+{-# INLINEABLE checkTxOutAtIndexWithDatumValueAndAddress #-}
+checkTxOutAtIndexWithDatumValueAndAddress :: (ToData a) => Integer -> a -> Value -> Address -> [TxOut] -> Bool
+checkTxOutAtIndexWithDatumValueAndAddress idx datum value address outputs =
+  isTxOutAtIndexWithDatumValueAndAddress datum value address (outputs !! idx)
 
-{-# INLINEABLE isBurningNFT #-}
-isBurningNFT :: V1.AssetClass -> MintValue -> Bool
-isBurningNFT ac txInfoMint = V1.assetClassValueOf (mintValueBurned txInfoMint) ac == 1
-
-------------------------
-
--- ** Datum Helper Functions
-
-------------------------
-
-{-# INLINEABLE hasTxOutWithInlineDatumAndValue #-}
-hasTxOutWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> [TxOut] -> Bool
-hasTxOutWithInlineDatumAndValue datum value address = traceIfFalse "output with datum and value not found" . any (isTxOutWithInlineDatumAndValue datum value address)
-
-{-# INLINEABLE isTxOutWithInlineDatumAndValue #-}
-isTxOutWithInlineDatumAndValue :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
-isTxOutWithInlineDatumAndValue datum value address TxOut {txOutValue, txOutAddress, txOutDatum} =
+{-# INLINEABLE isTxOutAtIndexWithDatumValueAndAddress #-}
+isTxOutAtIndexWithDatumValueAndAddress :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
+isTxOutAtIndexWithDatumValueAndAddress datum value address TxOut {txOutValue, txOutAddress, txOutDatum} =
   (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
+
+-- | Check that the output at a specific index has the expected datum and address, and that its value is >= minValue.
+-- Use this in the minting policy where the exact output value depends on datum size (min-ADA); we only require value >= (minLv + NFT).
+{-# INLINEABLE checkTxOutAtIndexWithDatumMinValueAndAddress #-}
+checkTxOutAtIndexWithDatumMinValueAndAddress :: (ToData a) => Integer -> a -> Value -> Address -> [TxOut] -> Bool
+checkTxOutAtIndexWithDatumMinValueAndAddress idx datum minValue address outputs =
+  isTxOutAtIndexWithDatumMinValueAndAddress datum minValue address (outputs !! idx)
+
+{-# INLINEABLE isTxOutAtIndexWithDatumMinValueAndAddress #-}
+isTxOutAtIndexWithDatumMinValueAndAddress :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
+isTxOutAtIndexWithDatumMinValueAndAddress datum minValue address TxOut {txOutValue, txOutAddress, txOutDatum} =
+  (txOutValue `geq` minValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
+
+{-# INLINEABLE hasTxInAtAddressWithNFT #-}
+hasTxInAtAddressWithNFT :: AssetClass -> Address -> [TxInInfo] -> Bool
+hasTxInAtAddressWithNFT ac address = any (\(TxInInfo _inOutRef (TxOut {txOutAddress, txOutValue})) -> (address == txOutAddress) && (V1.assetClassValueOf txOutValue ac == 1))
+
+{-# INLINEABLE inputsSpendTxOutRef #-}
+inputsSpendTxOutRef :: TxOutRef -> [TxInInfo] -> Bool
+inputsSpendTxOutRef spendingTxOutRef = any ((== spendingTxOutRef) . txInInfoOutRef)
 
 {-# INLINEABLE isGivenInlineDatum #-}
 isGivenInlineDatum :: (ToData a) => a -> OutputDatum -> Bool
@@ -72,29 +102,40 @@ isGivenInlineDatum datum outdat = case outdat of
   OutputDatum da -> toBuiltinData datum == getDatum da
   _ -> False
 
+{-# INLINEABLE unsafeFindOwnInputByTxOutRef #-}
 unsafeFindOwnInputByTxOutRef :: TxOutRef -> [TxInInfo] -> TxOut
 unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs =
   let i = PlutusTx.List.find (\TxInInfo {txInInfoOutRef} -> txInInfoOutRef == spendingTxOutRef) txInfoInputs
    in case i of
         Just (TxInInfo _inOutRef inOut) -> inOut
-        Nothing -> traceError "Own input not found"
-{-# INLINEABLE unsafeFindOwnInputByTxOutRef #-}
+        Nothing -> traceError "U1" -- Cannot find own input by TxOutRef (U1)
 
-------------------------
+-------------------------------------------------------------------------------
 
--- ** Unsafe Datum Helper Functions
+-- * Validate and Get - Datum and Value Helper Functions
 
-------------------------
+-------------------------------------------------------------------------------
 
-unsafeGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, BuiltinData)
-unsafeGetCurrentStateDatumAndValue stateToken addr outs =
+{-# INLINEABLE checkAndGetCurrentStateDatumAndValue #-}
+checkAndGetCurrentStateDatumAndValue :: V1.AssetClass -> Address -> [TxInInfo] -> (Value, BuiltinData)
+checkAndGetCurrentStateDatumAndValue stateToken addr outs =
   case filter (\(TxInInfo _inOutRef (TxOut {txOutValue, txOutAddress})) -> (txOutValue `geq` V1.assetClassValue stateToken 1) && (addr == txOutAddress)) outs of
-    [TxInInfo _inOutRef out] -> (txOutValue out, unsafeGetInlineDatum out)
-    _ -> traceError "state nft not found"
-{-# INLINEABLE unsafeGetCurrentStateDatumAndValue #-}
+    [TxInInfo _inOutRef out] -> (txOutValue out, checkAndGetInlineDatum out)
+    _ -> traceError "U2" -- Cannot find state NFT at expected address (U2)
 
-unsafeGetInlineDatum :: TxOut -> BuiltinData
-unsafeGetInlineDatum out = case txOutDatum out of
+{-# INLINEABLE checkAndGetInlineDatum #-}
+checkAndGetInlineDatum :: TxOut -> BuiltinData
+checkAndGetInlineDatum out = case txOutDatum out of
   OutputDatum da -> getDatum da
-  _ -> traceError "No inline datum"
-{-# INLINEABLE unsafeGetInlineDatum #-}
+  _ -> traceError "U3" -- Invalid output: expected inline datum (U3)
+
+-------------------------------------------------------------------------------
+
+-- * Asset Class Helpers
+
+-------------------------------------------------------------------------------
+
+-- | Check whether an 'AssetClass' belongs to the given 'CurrencySymbol'.
+{-# INLINEABLE hasCurrencySymbol #-}
+hasCurrencySymbol :: AssetClass -> CurrencySymbol -> Bool
+hasCurrencySymbol (AssetClass (cs, _)) cs' = cs == cs'

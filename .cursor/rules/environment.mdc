@@ -1,0 +1,81 @@
+---
+description: Use when working with the development environment, toolchain, or env/config for the BJJ belt system so tooling and env vars stay consistent.
+globs:
+alwaysApply: false
+---
+# Rule: Development Environment
+
+This rule gives quick context about the development environment for the Decentralized Belt System. It points at authoritative sources instead of duplicating them.
+
+## Operational context
+
+- **Local development**: Unix-like (Linux, macOS, WSL2). Nix + direnv provide the toolchain and project env.
+- **Reproducibility**: [The Developer Experience Shell (devx)](https://github.com/input-output-hk/devx/) supplies GHC, Cabal, and HLS via a Nix flake; see [README §5](mdc:README.md).
+- **Config and secrets**: Provider/config and deployed validators live in `config/`; admin operations need `operation.prv`. Do not commit secrets; document any new env in README §6.4 and in [testing-and-config.mdc](workflow/testing-and-config.mdc).
+
+## Environment loading (.env and .envrc)
+
+- **direnv**: The project uses [direnv](https://direnv.net/) with [`.envrc`](mdc:.envrc). Entering the repo directory loads the environment after `direnv allow`.
+- **`.env`**: `.envrc` runs `dotenv` and `watch_file .env`, so a **local `.env` file is sourced when present**. The `.env` file is **not** committed; create it from the list below for local overrides.
+- **Nix**: `.envrc` uses `use flake` (nix-direnv) to provide:
+  - GHC 9.6 (devx `ghc96-iog-full`)
+  - Cabal, HLS (symlinked via `just link-hls` to avoid GHCup conflicts)
+  - `CABAL_DIR="$PROJECT_ROOT/.cabal"` (local build)
+  - Platform fixes (e.g. liblzma `PKG_CONFIG_PATH`, macOS `GC_DONT_GC`)
+
+After loading, the message `Decentralized Belt System environment loaded successfully` confirms success.
+
+## Environment variables (for `.env` and services)
+
+Documented in [README §6.4](mdc:README.md). Use these in `.env` to override defaults when running executables or scripts.
+
+| Variable                         | Used by                                                     | Default / meaning                                                                                                                                                               |
+| -------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ATLAS_CORE_CONFIG`              | interaction-api, query-api, chain-sync, admin               | JSON string or path; default file `config/config_atlas.json`                                                                                                                    |
+| `DEPLOYED_VALIDATORS_CONFIG`     | interaction-api, chain-sync, admin                          | JSON string or path; default file `config/config_bjj_validators.json`                                                                                                           |
+| `BASIC_USER`                     | interaction-api, query-api                                  | HTTP Basic Auth user (default `cardano`)                                                                                                                                        |
+| `BASIC_PASS`                     | interaction-api, query-api                                  | HTTP Basic Auth password (default `lovelace`)                                                                                                                                   |
+| `PORT`                           | interaction-api (8082), query-api (8083), chain-sync (8084) | Override service port                                                                                                                                                           |
+| `PG_CONN_STR`                    | query-api, chain-sync                                       | PostgreSQL connection string; chain-sync default `host=localhost user=postgres password=postgres dbname=chainsync port=5432`; query-api default uses `host=postgres` for Docker |
+| `KUPO_URL`                       | chain-sync                                                  | Kupo base URL (default `http://localhost:1442`)                                                                                                                                 |
+| `BATCH_SIZE`, `FETCH_BATCH_SIZE` | chain-sync                                                  | Optional Kupo batching                                                                                                                                                          |
+
+Config is loaded via `decodeConfigEnvOrFile "ENV_VAR" defaultFilePath` in the executables; see [executables.mdc](architecture/executables.mdc). Ports use `getPortFromEnvOrDefault` from `WebAPI.Utils`.
+
+## Config files (not in .env)
+
+- **`config/config_atlas.json`**: Atlas provider (e.g. Maestro token) and `networkId`; see README §5.2.
+- **`config/config_bjj_validators.json`**: Deployed validator references; produced after `admin deploy-reference-scripts` and used by APIs and chain-sync.
+- **`operation.prv`**: Private key mnemonic (24 words) for admin/deploy; see README §5.3. Never commit.
+
+## Build system
+
+- **Pure Cabal**: No Stack, no `package.yaml`; the project uses `.cabal` and [cabal.project](mdc:cabal.project) (CHaP, index-state, source-repository-packages for Atlas, haskell-sdk, clb, cardano-addresses).
+- **Before build/test**: Run `direnv allow` in the project root first so the Nix/Cabal environment is active (unless already done this session).
+- **Build**: From repo root run `cabal build all` (no need to `cd` elsewhere).
+- **Test**: `cabal test`. For exUnits and script-size reporting use [scripts/test_exunits.sh](mdc:scripts/test_exunits.sh); see [scripts.mdc](workflow/scripts.mdc).
+- **REPL**: `cabal repl` (e.g. for a specific component: `cabal repl exe:admin`).
+- **Clean**: `cabal clean`.
+
+## IDE and tooling
+
+- **Cursor** as primary IDE; [.vscode/settings.json](mdc:.vscode/settings.json) configures Ormolu, format-on-save, HLS (via symlink), and HLint.
+- **HLS**: Use the Nix-provided HLS linked by `just link-hls` to avoid version clashes with system GHCup.
+
+## Key files to check
+
+1. [.envrc](mdc:.envrc): direnv + Nix entrypoint and env vars.
+2. [README.md](mdc:README.md) §5 (Installation & Setup) and §6.4 (Environment variables).
+3. [cabal.project](mdc:cabal.project): solver, CHaP, index-state, and source-repository-packages.
+4. [testing-and-config.mdc](workflow/testing-and-config.mdc): test layout and config.
+5. [scripts.mdc](workflow/scripts.mdc): scripts that depend on config/env.
+
+## Note to AI assistant
+
+When helping with env or tooling:
+
+1. Prefer [README §5–6](mdc:README.md) and this rule for toolchain and env vars.
+2. **Before `cabal build` or `cabal test`**: Run `direnv allow` in the project root so the project environment is loaded (unless you have already done so in this session).
+3. For executable startup and config loading, see [executables.mdc](architecture/executables.mdc).
+4. Do not commit `.env` or secrets; document new required vars in README §6.4 and in [testing-and-config.mdc](workflow/testing-and-config.mdc).
+5. Run Cabal from the workspace root without requiring an extra `cd`.

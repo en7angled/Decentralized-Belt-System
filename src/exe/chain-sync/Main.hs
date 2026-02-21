@@ -21,19 +21,18 @@ import Control.Monad.Logger (runStdoutLoggingT)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-
-
+import Data.Time
 import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool)
 import Database.Persist.Sql (runSqlPool)
+import GeniusYield.GYConfig (GYCoreConfig (..))
 import KupoClient (KupoCheckpoint (..))
-import Storage
+import Storage (getStoredPolicyHexText, putStoredPolicyHexText, rollbackTo, runMigrations, wipeChainSyncTables)
 import System.Environment (lookupEnv)
+import System.Exit (die)
 import Text.Printf
 import TxBuilding.Context
 import Utils (decodeConfigEnvOrFile)
-import Data.Time
 import WebAPI.Utils
-
 
 defaultConnStr :: String
 defaultConnStr = "host=localhost user=postgres password=postgres dbname=chainsync port=5432"
@@ -52,8 +51,37 @@ main = do
   pool <- runStdoutLoggingT $ createPostgresqlPool connBS 16
   runSqlPool runMigrations pool
 
+  atlasConfig <- maybe (die "Atlas configuration failed") return =<< decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
+  let networkId = cfgNetworkId atlasConfig
+
+  deployedScriptsContext <- maybe (die "Deployed validators configuration failed") return =<< decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuildingContextFile
+  let policyHexText = T.pack $ printf "%s" (getMintingPolicyHash deployedScriptsContext)
+
+  batch_size <- do
+    mb <- lookupEnv "BATCH_SIZE"
+    pure $ maybe (100_000_000 :: Integer) read mb
+  fetch_batch_size <- do
+    mb <- lookupEnv "FETCH_BATCH_SIZE"
+    pure $ maybe (10_000_000 :: Integer) read mb
+
+  stored <- runSqlPool getStoredPolicyHexText pool
+  case stored of
+    Nothing -> do
+      liftIO $ putStrLn "First run: no stored policy; storing current policy."
+      runSqlPool (putStoredPolicyHexText policyHexText) pool
+    Just storedHex
+      | storedHex == policyHexText ->
+          liftIO $ putStrLn "Stored policy matches current policy; skipping wipe."
+      | otherwise -> do
+          liftIO $
+            putStrLn $
+              "Policy changed (stored: " <> T.unpack storedHex <> ", current: " <> T.unpack policyHexText <> "); wiping chain-sync tables and storing current policy."
+          runSqlPool wipeChainSyncTables pool
+          runSqlPool (putStoredPolicyHexText policyHexText) pool
 
   initialTip <- getLocalTip pool
+  startingCheckPoint <- findCheckpoint kupoUrl batch_size (ck_slot_no initialTip)
+  updateLocalTip pool startingCheckPoint
 
   now <- getCurrentTime
   metricsVar <-
@@ -65,37 +93,16 @@ main = do
           smDbReady = False,
           smMigrationsComplete = False,
           smChainSyncState = Behind True -- by default we are way behind
-        } 
+        }
 
- 
   -- Start probe server
   void $ forkIO $ startProbeServer port metricsVar
-
-  -- Chain sync loop
-
-  deployedScriptsContext <- Data.Maybe.fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
-  let (mpHash, _mpRef) = mintingPolicyHashAndRef deployedScriptsContext
-
-  let policyHexText = T.pack $ printf "%s" mpHash
 
   let matchPattern = policyHexText <> ".*"
   putStrLn "Starting chain-sync ..."
   putStrLn ("Base URL: " <> kupoUrl)
   putStrLn ("Pattern: " <> T.unpack matchPattern)
   putStrLn ("Postgres DSN: " <> connStr)
-
-  batch_size <- do
-    mb <- lookupEnv "BATCH_SIZE"
-    pure $ maybe (100_000_000 :: Integer) read mb
-  fetch_batch_size <- do
-    mb <- lookupEnv "FETCH_BATCH_SIZE"
-    pure $ maybe (10_000_000 :: Integer) read mb
-
-  -- Sync loop in background thread (includes initial checkpoint alignment)
-
-  initLocal <- getLocalTip pool
-  startingCheckPoint <- findCheckpoint kupoUrl batch_size (ck_slot_no initLocal)
-  updateLocalTip pool startingCheckPoint
 
   forever $ do
     blockchainTip <- getBlockchainTip kupoUrl
@@ -112,7 +119,7 @@ main = do
       Behind _isWayBehind -> do
         liftIO $ putStrLn "Chain is behind"
         liftIO $ putStrLn "Fetching matches"
-        fetchingMatches metricsVar kupoUrl matchPattern policyHexText pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
+        fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
         blockchainTip' <- getBlockchainTip kupoUrl
         updateLocalTip pool blockchainTip'
       Ahead -> do

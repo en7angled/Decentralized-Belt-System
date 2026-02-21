@@ -1,0 +1,39 @@
+---
+description: Keep API and blueprint schema versions up to date; use when changing REST API surface or on-chain blueprint.
+globs: docs/swagger/**/*, docs/bjj-belt-system-blueprint.json, src/exe/interaction-api/**/*, src/exe/query-api/**/*, src/lib/onchain-lib/Onchain/Blueprint.hs
+alwaysApply: false
+---
+# Rule: API and blueprint versioning
+
+API and blueprint versions are **independent** from the project release version. See [versioning.mdc](versioning.mdc) for app release version (CHANGELOG, cabal, .cz.toml).
+
+## Where versions are set
+
+| Asset               | Source (edit here)                                                                                                                 | Regenerated output                                                       |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Query API**       | [src/exe/query-api/RestAPI.hs](src/exe/query-api/RestAPI.hs) — `info . Data.Swagger.version .~ "X.Y.Z"`                            | `docs/swagger/query-swagger-api.json` (on query-api startup)             |
+| **Interaction API** | [src/exe/interaction-api/RestAPI.hs](src/exe/interaction-api/RestAPI.hs) — `info . Data.Swagger.version .~ "X.Y.Z"`                | `docs/swagger/interaction-swagger-api.json` (on interaction-api startup) |
+| **Blueprint**       | [src/lib/onchain-lib/Onchain/Blueprint.hs](src/lib/onchain-lib/Onchain/Blueprint.hs) — `preambleVersion = "X.Y.Z"` in `myPreamble` | `docs/bjj-belt-system-blueprint.json` (run `admin write-blueprint`)      |
+
+Do not edit the JSON files by hand for version alone; change the **source** (RestAPI.hs or Blueprint.hs), then regenerate. After changing version in code, run the corresponding API (query-api / interaction-api) so the Swagger JSON is written, or run `admin write-blueprint` for the blueprint.
+
+## Semver for API and blueprint
+
+Use **semver** (MAJOR.MINOR.PATCH) for both APIs and the blueprint:
+
+- **MAJOR**: Breaking change (remove or rename endpoint/field; change contract/validator semantics in a breaking way).
+- **MINOR**: Backward-compatible addition (new endpoint, new optional field, new validator/contract without breaking existing).
+- **PATCH**: Non-breaking fix or docs-only (e.g. description text, same schema).
+
+## Keep APIs in sync
+
+Use the **same** version string for Query API and Interaction API unless you intentionally ship different API versions. When bumping one, bump the other to the same value and regenerate both Swagger files.
+
+## When to bump
+
+- **REST API**: When you add, change, or remove endpoints or request/response shapes. Bump in both RestAPI.hs files if both APIs are versioned together; regenerate by running each API (or at least starting it so the Swagger file is written).
+- **Blueprint**: When you change validator/contract definitions in `Onchain.Blueprint` or related types (new validators, new parameters, renamed types). Run `admin write-blueprint` after editing the blueprint module.
+
+## Cross-reference
+
+- [docs-and-api.mdc](docs-and-api.mdc) — how Swagger and blueprint are generated and when to regenerate.

@@ -1,5 +1,21 @@
 {
     "definitions": {
+        "ActionType": {
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+                "AdminAction": {
+                    "type": "string"
+                },
+                "ProfileAction": {
+                    "$ref": "#/definitions/ProfileActionType"
+                },
+                "ProtocolAction": {
+                    "$ref": "#/definitions/ProtocolActionType"
+                }
+            },
+            "type": "object"
+        },
         "AddWitAndSubmitParams": {
             "properties": {
                 "tx_unsigned": {
@@ -64,7 +80,7 @@
         "Interaction": {
             "properties": {
                 "action": {
-                    "$ref": "#/definitions/ProfileActionType"
+                    "$ref": "#/definitions/ActionType"
                 },
                 "recipient": {
                     "$ref": "#/definitions/GYAddress"
@@ -83,6 +99,28 @@
             "maxProperties": 1,
             "minProperties": 1,
             "properties": {
+                "AcceptAchievementAction": {
+                    "properties": {
+                        "aca_achievement_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        }
+                    },
+                    "required": [
+                        "aca_achievement_id"
+                    ],
+                    "type": "object"
+                },
+                "AcceptMembershipIntervalAction": {
+                    "properties": {
+                        "aci_interval_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        }
+                    },
+                    "required": [
+                        "aci_interval_id"
+                    ],
+                    "type": "object"
+                },
                 "AcceptPromotionAction": {
                     "properties": {
                         "promotion_id": {
@@ -91,6 +129,105 @@
                     },
                     "required": [
                         "promotion_id"
+                    ],
+                    "type": "object"
+                },
+                "AddMembershipIntervalAction": {
+                    "properties": {
+                        "ami_end_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        },
+                        "ami_membership_node_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "ami_organization_profile_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "ami_start_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "ami_organization_profile_id",
+                        "ami_membership_node_id",
+                        "ami_start_date"
+                    ],
+                    "type": "object"
+                },
+                "AwardAchievementAction": {
+                    "properties": {
+                        "aa_achievement_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        },
+                        "aa_awarded_by_profile_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "aa_awarded_to_profile_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "aa_other_metadata": {
+                            "items": {
+                                "items": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "string"
+                                    }
+                                ],
+                                "maxItems": 2,
+                                "minItems": 2,
+                                "type": "array"
+                            },
+                            "type": "array"
+                        },
+                        "aa_profile_data": {
+                            "$ref": "#/definitions/ProfileData"
+                        }
+                    },
+                    "required": [
+                        "aa_awarded_to_profile_id",
+                        "aa_awarded_by_profile_id",
+                        "aa_profile_data",
+                        "aa_other_metadata",
+                        "aa_achievement_date"
+                    ],
+                    "type": "object"
+                },
+                "CreateMembershipHistoryAction": {
+                    "properties": {
+                        "cmh_end_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        },
+                        "cmh_organization_profile_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "cmh_practitioner_profile_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "cmh_start_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "cmh_organization_profile_id",
+                        "cmh_practitioner_profile_id",
+                        "cmh_start_date"
                     ],
                     "type": "object"
                 },
@@ -117,17 +254,6 @@
                         "profile_type",
                         "creation_date",
                         "belt"
-                    ],
-                    "type": "object"
-                },
-                "DeleteProfileAction": {
-                    "properties": {
-                        "profile_id": {
-                            "$ref": "#/definitions/GYAssetClass"
-                        }
-                    },
-                    "required": [
-                        "profile_id"
                     ],
                     "type": "object"
                 },
@@ -179,6 +305,28 @@
                     ],
                     "type": "object"
                 },
+                "UpdateEndDateAction": {
+                    "properties": {
+                        "ude_membership_history_node_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "ude_membership_interval_id": {
+                            "$ref": "#/definitions/GYAssetClass"
+                        },
+                        "ude_new_end_date": {
+                            "description": "This is the posix time in ISO8601 format.",
+                            "example": "1970-01-01T00:00:00Z",
+                            "format": "ISO8601",
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "ude_membership_interval_id",
+                        "ude_membership_history_node_id",
+                        "ude_new_end_date"
+                    ],
+                    "type": "object"
+                },
                 "UpdateProfileImageAction": {
                     "properties": {
                         "image_uri": {
@@ -220,6 +368,12 @@
             "enum": [
                 "Practitioner",
                 "Organization"
+            ],
+            "type": "string"
+        },
+        "ProtocolActionType": {
+            "enum": [
+                "CleanupDustAction"
             ],
             "type": "string"
         },
@@ -277,7 +431,7 @@
             "name": "GPL-3.0 license"
         },
         "title": "Decentralized Belt System Interaction API",
-        "version": "1.0"
+        "version": "1.0.0"
     },
     "paths": {
         "/build-tx": {

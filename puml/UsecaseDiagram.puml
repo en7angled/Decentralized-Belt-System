@@ -1,7 +1,7 @@
 @startuml ProtocolUsecases
 !theme toy
 title: Use Cases Diagram 
-caption: Decentalized Belt System Protocol 
+caption: Decentralized Belt System Protocol 
 
 
 entity Organisation

@@ -9,7 +9,14 @@ import Hedgehog
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 import Onchain.BJJ
-import PlutusLedgerApi.V3 (POSIXTime (POSIXTime))
+import Onchain.CIP68 (CIP68Datum (..), MetadataFields (..))
+import Onchain.LinkedList (NodeDatum (..))
+import Onchain.Protocol.Types
+import PlutusLedgerApi.V1.Value (AssetClass (..), CurrencySymbol (..), TokenName (..))
+import PlutusLedgerApi.V3 (Address (..), Credential (..), POSIXTime (POSIXTime), PubKeyHash (..), ScriptHash (..), StakingCredential (..))
+import PlutusTx (fromBuiltinData, toBuiltinData)
+import PlutusTx.AssocMap qualified as AssocMap
+import PlutusTx.Builtins (BuiltinByteString, toBuiltin)
 import Test.Tasty
 import Test.Tasty.Hedgehog
 
@@ -57,6 +64,39 @@ bjjPropertyTests =
         [ testProperty "time requirements enforced" prop_timeRequirementsEnforced,
           testProperty "same belt promotion fails" prop_sameBeltPromotionFails,
           testProperty "downgrade promotion fails" prop_downgradePromotionFails
+        ],
+      testGroup
+        "Serialization Roundtrip Properties"
+        [ testGroup
+            "Oracle Types"
+            [ testProperty "OracleParams roundtrip (no fee)" prop_oracleParamsRoundtrip,
+              testProperty "FeeConfig roundtrip" prop_feeConfigRoundtrip,
+              testProperty "OracleParams roundtrip (with fee)" prop_oracleParamsWithFeeConfigRoundtrip
+            ],
+          testGroup
+            "Core Datum Types"
+            [ testProperty "BJJBelt roundtrip" prop_bjjBeltRoundtrip,
+              testProperty "BeltSnapshot roundtrip" prop_beltSnapshotRoundtrip,
+              testProperty "OnchainProfileType roundtrip" prop_onchainProfileTypeRoundtrip,
+              testProperty "OnchainProfile roundtrip" prop_onchainProfileRoundtrip,
+              testProperty "OnchainRank (Rank) roundtrip" prop_onchainRankRoundtrip,
+              testProperty "OnchainRank (Promotion) roundtrip" prop_onchainPromotionRoundtrip
+            ],
+          testGroup
+            "Membership Types"
+            [ testProperty "OnchainMembershipHistory roundtrip" prop_membershipHistoryRoundtrip,
+              testProperty "OnchainMembershipInterval roundtrip" prop_membershipIntervalRoundtrip,
+              testProperty "MembershipHistoriesListNode roundtrip" prop_membershipListNodeRoundtrip,
+              testProperty "MembershipDatum (ListNodeDatum) roundtrip" prop_membershipDatumListNodeRoundtrip,
+              testProperty "MembershipDatum (IntervalDatum) roundtrip" prop_membershipDatumIntervalRoundtrip
+            ],
+          testGroup
+            "CIP-68 Types"
+            [ testProperty "MetadataFields roundtrip" prop_metadataFieldsRoundtrip,
+              testProperty "CIP68Datum OnchainProfile roundtrip" prop_cip68DatumProfileRoundtrip,
+              testProperty "CIP68Datum OnchainRank roundtrip" prop_cip68DatumRankRoundtrip,
+              testProperty "NodeDatum roundtrip" prop_nodeDatumRoundtrip
+            ]
         ]
     ]
 
@@ -188,14 +228,15 @@ prop_monthsToPosixTimeNonNegative = property $ do
 
 prop_timeRequirementsEnforced :: Property
 prop_timeRequirementsEnforced = property $ do
-  (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, studentNextDate) <- forAll genInvalidTimePromotion
-  Hedgehog.assert $ not (validatePromotion masterBelt masterDate studentCurrentBelt studentCurrentDate studentNextBelt studentNextDate)
+  (master, studentCurrent, studentNext) <- forAll genInvalidTimePromotion
+  Hedgehog.assert $ not (validatePromotion master studentCurrent studentNext)
 
 prop_sameBeltPromotionFails :: Property
 prop_sameBeltPromotionFails = property $ do
-  belt <- forAll genBelt
+  b <- forAll genBelt
   date <- forAll genPOSIXTime
-  Hedgehog.assert $ not (validatePromotion belt date belt date belt date)
+  let snapshot = BeltSnapshot b date
+  Hedgehog.assert $ not (validatePromotion snapshot snapshot snapshot)
 
 prop_downgradePromotionFails :: Property
 prop_downgradePromotionFails = property $ do
@@ -203,7 +244,7 @@ prop_downgradePromotionFails = property $ do
   lowerBelt <- forAll genBelt
   date <- forAll genPOSIXTime
   when (higherBelt > lowerBelt) $ do
-    Hedgehog.assert $ not (validatePromotion higherBelt date higherBelt date lowerBelt date)
+    Hedgehog.assert $ not (validatePromotion (BeltSnapshot higherBelt date) (BeltSnapshot higherBelt date) (BeltSnapshot lowerBelt date))
 
 -- =============================================================================
 -- Generators
@@ -216,7 +257,7 @@ genPOSIXTime :: Gen POSIXTime
 genPOSIXTime = POSIXTime <$> Gen.integral (Range.linear 0 1000000000)
 
 -- Invalid time promotion generator
-genInvalidTimePromotion :: Gen (BJJBelt, POSIXTime, BJJBelt, POSIXTime, BJJBelt, POSIXTime)
+genInvalidTimePromotion :: Gen (BeltSnapshot, BeltSnapshot, BeltSnapshot)
 genInvalidTimePromotion = do
   masterBelt <- Gen.element [Black, Black1, Black2]
   masterDate <- genPOSIXTime
@@ -226,4 +267,284 @@ genInvalidTimePromotion = do
 
   -- Set next date before current date
   let invalidNextDate = POSIXTime (unPOSIXTime studentCurrentDate - 2629800000) -- Before current date
-  pure (masterBelt, masterDate, studentCurrentBelt, studentCurrentDate, studentNextBelt, invalidNextDate)
+  pure (BeltSnapshot masterBelt masterDate, BeltSnapshot studentCurrentBelt studentCurrentDate, BeltSnapshot studentNextBelt invalidNextDate)
+
+-- =============================================================================
+-- Serialization Roundtrip Properties — Oracle Types
+-- =============================================================================
+
+prop_oracleParamsRoundtrip :: Property
+prop_oracleParamsRoundtrip = property $ do
+  oracleParams <- forAll genOracleParamsNoFee
+  fromBuiltinData (toBuiltinData oracleParams) === Just oracleParams
+
+prop_feeConfigRoundtrip :: Property
+prop_feeConfigRoundtrip = property $ do
+  feeConfig <- forAll genFeeConfig
+  fromBuiltinData (toBuiltinData feeConfig) === Just feeConfig
+
+prop_oracleParamsWithFeeConfigRoundtrip :: Property
+prop_oracleParamsWithFeeConfigRoundtrip = property $ do
+  oracleParams <- forAll genOracleParamsWithFee
+  fromBuiltinData (toBuiltinData oracleParams) === Just oracleParams
+
+-- =============================================================================
+-- Serialization Roundtrip Properties — Core Datum Types
+-- =============================================================================
+
+prop_bjjBeltRoundtrip :: Property
+prop_bjjBeltRoundtrip = property $ do
+  b <- forAll genBelt
+  fromBuiltinData (toBuiltinData b) === Just b
+
+prop_beltSnapshotRoundtrip :: Property
+prop_beltSnapshotRoundtrip = property $ do
+  snap <- forAll genBeltSnapshot
+  fromBuiltinData (toBuiltinData snap) === Just snap
+
+prop_onchainProfileTypeRoundtrip :: Property
+prop_onchainProfileTypeRoundtrip = property $ do
+  pt <- forAll genOnchainProfileType
+  fromBuiltinData (toBuiltinData pt) === Just pt
+
+prop_onchainProfileRoundtrip :: Property
+prop_onchainProfileRoundtrip = property $ do
+  p <- forAll genOnchainProfile
+  fromBuiltinData (toBuiltinData p) === Just p
+
+prop_onchainRankRoundtrip :: Property
+prop_onchainRankRoundtrip = property $ do
+  r <- forAll genOnchainRank
+  fromBuiltinData (toBuiltinData r) === Just r
+
+prop_onchainPromotionRoundtrip :: Property
+prop_onchainPromotionRoundtrip = property $ do
+  p <- forAll genOnchainPromotion
+  fromBuiltinData (toBuiltinData p) === Just p
+
+-- =============================================================================
+-- Serialization Roundtrip Properties — Membership Types
+-- =============================================================================
+
+prop_membershipHistoryRoundtrip :: Property
+prop_membershipHistoryRoundtrip = property $ do
+  mh <- forAll genOnchainMembershipHistory
+  fromBuiltinData (toBuiltinData mh) === Just mh
+
+prop_membershipIntervalRoundtrip :: Property
+prop_membershipIntervalRoundtrip = property $ do
+  mi <- forAll genOnchainMembershipInterval
+  fromBuiltinData (toBuiltinData mi) === Just mi
+
+prop_membershipListNodeRoundtrip :: Property
+prop_membershipListNodeRoundtrip = property $ do
+  n <- forAll genMembershipHistoriesListNode
+  fromBuiltinData (toBuiltinData n) === Just n
+
+prop_membershipDatumListNodeRoundtrip :: Property
+prop_membershipDatumListNodeRoundtrip = property $ do
+  n <- forAll genMembershipHistoriesListNode
+  let d = ListNodeDatum n
+  fromBuiltinData (toBuiltinData d) === Just d
+
+prop_membershipDatumIntervalRoundtrip :: Property
+prop_membershipDatumIntervalRoundtrip = property $ do
+  mi <- forAll genOnchainMembershipInterval
+  let d = IntervalDatum mi
+  fromBuiltinData (toBuiltinData d) === Just d
+
+-- =============================================================================
+-- Serialization Roundtrip Properties — CIP-68 Types
+-- =============================================================================
+
+prop_metadataFieldsRoundtrip :: Property
+prop_metadataFieldsRoundtrip = property $ do
+  mf <- forAll genMetadataFields
+  fromBuiltinData (toBuiltinData mf) === Just mf
+
+prop_cip68DatumProfileRoundtrip :: Property
+prop_cip68DatumProfileRoundtrip = property $ do
+  d <- forAll genCIP68DatumProfile
+  fromBuiltinData (toBuiltinData d) === Just d
+
+prop_cip68DatumRankRoundtrip :: Property
+prop_cip68DatumRankRoundtrip = property $ do
+  d <- forAll genCIP68DatumRank
+  fromBuiltinData (toBuiltinData d) === Just d
+
+prop_nodeDatumRoundtrip :: Property
+prop_nodeDatumRoundtrip = property $ do
+  nd <- forAll genNodeDatum
+  fromBuiltinData (toBuiltinData nd) === Just nd
+
+-- =============================================================================
+-- Generators — Primitive / Shared
+-- =============================================================================
+
+genPubKeyHash :: Gen PubKeyHash
+genPubKeyHash = PubKeyHash . toBuiltin <$> Gen.bytes (Range.singleton 28)
+
+genScriptHash :: Gen ScriptHash
+genScriptHash = ScriptHash . toBuiltin <$> Gen.bytes (Range.singleton 28)
+
+genCurrencySymbol :: Gen CurrencySymbol
+genCurrencySymbol = CurrencySymbol . toBuiltin <$> Gen.bytes (Range.singleton 28)
+
+genTokenName :: Gen TokenName
+genTokenName = TokenName . toBuiltin <$> Gen.bytes (Range.linear 0 32)
+
+genAssetClass :: Gen AssetClass
+genAssetClass = AssetClass <$> ((,) <$> genCurrencySymbol <*> genTokenName)
+
+genAddress :: Gen Address
+genAddress = do
+  cred <- PubKeyCredential <$> genPubKeyHash
+  mStake <- Gen.maybe (StakingHash . PubKeyCredential <$> genPubKeyHash)
+  pure $ Address cred mStake
+
+genBuiltinByteString :: Range Int -> Gen BuiltinByteString
+genBuiltinByteString range = toBuiltin <$> Gen.bytes range
+
+-- =============================================================================
+-- Generators — Oracle Types
+-- =============================================================================
+
+genFeeConfig :: Gen FeeConfig
+genFeeConfig =
+  FeeConfig
+    <$> genAddress
+    <*> Gen.integral (Range.linear 1000000 100000000)
+    <*> Gen.integral (Range.linear 1000000 100000000)
+    <*> Gen.integral (Range.linear 1000000 100000000)
+    <*> Gen.integral (Range.linear 1000000 100000000)
+    <*> Gen.integral (Range.linear 1000000 100000000)
+
+genOracleParamsNoFee :: Gen OracleParams
+genOracleParamsNoFee =
+  OracleParams
+    <$> genPubKeyHash
+    <*> Gen.bool
+    <*> pure Nothing
+    <*> Gen.integral (Range.linear 1000000 50000000)
+
+genOracleParamsWithFee :: Gen OracleParams
+genOracleParamsWithFee =
+  OracleParams
+    <$> genPubKeyHash
+    <*> Gen.bool
+    <*> (Just <$> genFeeConfig)
+    <*> Gen.integral (Range.linear 1000000 50000000)
+
+-- =============================================================================
+-- Generators — Core Datum Types
+-- =============================================================================
+
+genBeltSnapshot :: Gen BeltSnapshot
+genBeltSnapshot = BeltSnapshot <$> genBelt <*> genPOSIXTime
+
+genOnchainProfileType :: Gen OnchainProfileType
+genOnchainProfileType = Gen.element [Practitioner, Organization]
+
+genProtocolParams :: Gen ProtocolParams
+genProtocolParams =
+  ProtocolParams
+    <$> genScriptHash
+    <*> genScriptHash
+    <*> genScriptHash
+    <*> genScriptHash
+    <*> genAssetClass
+
+genOnchainProfile :: Gen OnchainProfile
+genOnchainProfile =
+  OnchainProfile
+    <$> genAssetClass
+    <*> genOnchainProfileType
+    <*> Gen.maybe genAssetClass
+    <*> genProtocolParams
+
+genOnchainRank :: Gen OnchainRank
+genOnchainRank =
+  Rank
+    <$> genAssetClass
+    <*> Gen.integral (Range.linear 0 14)
+    <*> genAssetClass
+    <*> genAssetClass
+    <*> genPOSIXTime
+    <*> Gen.maybe genAssetClass
+    <*> genProtocolParams
+
+genOnchainPromotion :: Gen OnchainRank
+genOnchainPromotion =
+  Promotion
+    <$> genAssetClass
+    <*> Gen.integral (Range.linear 0 14)
+    <*> genAssetClass
+    <*> genAssetClass
+    <*> genPOSIXTime
+    <*> genProtocolParams
+
+-- =============================================================================
+-- Generators — Membership Types
+-- =============================================================================
+
+genOnchainMembershipHistory :: Gen OnchainMembershipHistory
+genOnchainMembershipHistory =
+  OnchainMembershipHistory
+    <$> genAssetClass
+    <*> genAssetClass
+    <*> Gen.integral (Range.linear 0 100)
+
+genOnchainMembershipInterval :: Gen OnchainMembershipInterval
+genOnchainMembershipInterval =
+  OnchainMembershipInterval
+    <$> genPOSIXTime
+    <*> Gen.maybe genPOSIXTime
+    <*> Gen.bool
+    <*> Gen.integral (Range.linear 0 100)
+    <*> genAssetClass
+
+genNodeDatum :: Gen (NodeDatum (Maybe OnchainMembershipHistory))
+genNodeDatum =
+  NodeDatum
+    <$> Gen.maybe genAssetClass
+    <*> Gen.maybe genAssetClass
+    <*> Gen.maybe genOnchainMembershipHistory
+
+genMembershipHistoriesListNode :: Gen MembershipHistoriesListNode
+genMembershipHistoriesListNode =
+  MembershipHistoriesListNode
+    <$> genAssetClass
+    <*> genNodeDatum
+
+-- =============================================================================
+-- Generators — CIP-68 Types
+-- =============================================================================
+
+genMetadataFields :: Gen MetadataFields
+genMetadataFields =
+  Metadata222
+    <$> genBuiltinByteString (Range.linear 1 64)
+    <*> genBuiltinByteString (Range.linear 1 128)
+    <*> genBuiltinByteString (Range.linear 1 64)
+
+genMetadata :: Gen (AssocMap.Map BuiltinByteString BuiltinByteString)
+genMetadata = do
+  pairs <- Gen.list (Range.linear 0 5) $ do
+    k <- genBuiltinByteString (Range.linear 1 16)
+    v <- genBuiltinByteString (Range.linear 1 32)
+    pure (k, v)
+  pure $ AssocMap.unsafeFromList pairs
+
+genCIP68DatumProfile :: Gen (CIP68Datum OnchainProfile)
+genCIP68DatumProfile =
+  CIP68Datum
+    <$> genMetadata
+    <*> Gen.integral (Range.linear 1 5)
+    <*> genOnchainProfile
+
+genCIP68DatumRank :: Gen (CIP68Datum OnchainRank)
+genCIP68DatumRank =
+  CIP68Datum
+    <$> genMetadata
+    <*> Gen.integral (Range.linear 1 5)
+    <*> Gen.choice [genOnchainRank, genOnchainPromotion]

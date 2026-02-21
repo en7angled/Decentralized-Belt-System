@@ -3,6 +3,7 @@ module TxBuilding.Interactions where
 import Control.Monad.Reader.Class (MonadReader)
 import Data.Aeson
 import Data.Aeson.Types qualified as AesonTypes
+import Data.Bifunctor qualified
 import Data.List.Extra
 import Data.Maybe (fromMaybe)
 import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
@@ -13,7 +14,7 @@ import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import TxBuilding.Context (DeployedScriptsContext)
-import TxBuilding.Functors
+import TxBuilding.Conversions
 import TxBuilding.Operations
 
 ------------------------------------------------------------------------------------------------
@@ -50,13 +51,15 @@ data UserAddresses = UserAddresses
   }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
-newtype ActionType = ProfileAction ProfileActionType
-  deriving (Show, Generic)
-  deriving newtype (FromJSON, ToJSON, ToSchema)
+data ActionType
+  = ProfileAction ProfileActionType
+  | ProtocolAction ProtocolActionType
+  | AdminAction AdminActionType
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 data Interaction
   = Interaction
-  { -- | The intented action to perfrom.
+  { -- | The intended action to perform.
     action :: ActionType,
     -- | The user addresses to be used as input for transaction building.
     userAddresses :: UserAddresses,
@@ -68,26 +71,26 @@ data Interaction
 interactionToTxSkeleton ::
   (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
   Interaction ->
-  m (GYTxSkeleton 'PlutusV3, GYAssetClass)
+  m (GYTxSkeleton 'PlutusV3, Maybe GYAssetClass)
 interactionToTxSkeleton Interaction {..} = do
   let changeAddr = changeAddress userAddresses
   let usedAddrs = usedAddresses userAddresses
   let receiveAddr = fromMaybe changeAddr recipient
   case action of
     ProfileAction actionType -> do
-      case actionType of
+      fmap (fmap Just) $ case actionType of
         CreateProfileWithRankAction profileData profileType creationDate belt -> do
           createProfileWithRankTX
             receiveAddr
             (profileDataToMetadataFields profileData)
-            (profileTypeToOnChainProfileType profileType)
+            (profileTypeToOnchainProfileType profileType)
             (timeToPlutus creationDate)
             belt
         InitProfileAction profileData profileType creationDate -> do
           createProfileTX
             receiveAddr
             (profileDataToMetadataFields profileData)
-            (profileTypeToOnChainProfileType profileType)
+            (profileTypeToOnchainProfileType profileType)
             (timeToPlutus creationDate)
         UpdateProfileImageAction profileRefAC imgURI -> do
           (,profileRefAC)
@@ -95,10 +98,30 @@ interactionToTxSkeleton Interaction {..} = do
               profileRefAC
               (textToBuiltinByteString imgURI)
               usedAddrs
-        DeleteProfileAction profileRefAC -> do
-          (,profileRefAC)
-            <$> deleteProfileTX profileRefAC receiveAddr usedAddrs
         PromoteProfileAction promotedProfileId promotedByProfileId achievementDate belt ->
           promoteProfileTX promotedProfileId promotedByProfileId (timeToPlutus achievementDate) belt usedAddrs
         AcceptPromotionAction promotionId ->
           acceptPromotionTX promotionId usedAddrs
+        CreateMembershipHistoryAction orgProfileId practitionerProfileId startDate mEndDate ->
+          createMembershipHistoryTX orgProfileId practitionerProfileId (timeToPlutus startDate) (timeToPlutus <$> mEndDate) usedAddrs
+        AddMembershipIntervalAction orgProfileId membershipNodeId startDate mEndDate ->
+          addMembershipIntervalTX orgProfileId membershipNodeId (timeToPlutus startDate) (timeToPlutus <$> mEndDate) usedAddrs
+        AcceptMembershipIntervalAction intervalId -> do
+          skeleton <- acceptMembershipIntervalTX intervalId usedAddrs
+          return (skeleton, intervalId)
+        UpdateEndDateAction intervalId historyNodeId newEndDate -> do
+          skeleton <- updateEndDateTX intervalId historyNodeId newEndDate usedAddrs Nothing
+          return (skeleton, intervalId)
+        AwardAchievementAction awardedToId awardedById profileData otherMeta achievementDate -> do
+          let otherMetadataPlutus = map (Data.Bifunctor.bimap textToBuiltinByteString textToBuiltinByteString) otherMeta
+          awardAchievementTX awardedToId awardedById (profileDataToMetadataFields profileData) otherMetadataPlutus (timeToPlutus achievementDate) usedAddrs
+        AcceptAchievementAction achievementId -> do
+          skeleton <- acceptAchievementTX achievementId usedAddrs
+          return (skeleton, achievementId)
+    ProtocolAction protocolActionType -> case protocolActionType of
+      CleanupDustAction -> do
+        (skeleton, _dustCount) <- cleanupDustTX
+        return (skeleton, Nothing)
+    AdminAction adminActionType -> do
+      skeleton <- updateOracleTX adminActionType
+      return (skeleton, Nothing)

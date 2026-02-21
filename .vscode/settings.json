@@ -1,4 +1,22 @@
 {
-  "haskell.plugin.semanticTokens.globalOn": true,
-  "editor.semanticHighlighting.enabled": true
+  // "haskell.plugin.semanticTokens.globalOn": true,
+  // "editor.semanticHighlighting.enabled": true,
+  "haskell.formattingProvider": "ormolu",
+  "editor.formatOnSave": true,
+  "[haskell]": {
+    "editor.defaultFormatter": "haskell.haskell"
+  },
+  "haskell.manageHLS": "PATH",
+  "haskell.serverExecutablePath": "${workspaceFolder}/.vscode/haskell-language-server.link",
+  "haskell.plugin.hlint.globalOn": true,
+  "haskell.plugin.eval.globalOn": true,
+  "haskell.plugin.importLens.globalOn": true,
+  "haskell.plugin.retrie.globalOn": true,
+  "haskell.plugin.splice.globalOn": true,
+  "haskell.plugin.tactics.globalOn": true,
+  "haskell.trace.server": "verbose",
+  "files.associations": {
+    "*.hs": "haskell",
+    "*.lhs": "haskell"
+  }
 }

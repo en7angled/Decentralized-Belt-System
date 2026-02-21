@@ -7,8 +7,23 @@
   - [2. Key Features](#2-key-features)
   - [3. Architecture \& Components](#3-architecture--components)
   - [4. Project Structure](#4-project-structure)
+    - [4.1 Library Architecture](#41-library-architecture)
   - [5. Installation \& Setup](#5-installation--setup)
+  - [Prerequisites](#prerequisites)
+  - [5.1. Clone and Setup](#51-clone-and-setup)
+    - [5.2. Configure Atlas](#52-configure-atlas)
+    - [5.3. Configure Operation Key](#53-configure-operation-key)
+    - [5.4. Deploy validators](#54-deploy-validators)
   - [6. Usage](#6-usage)
+    - [6.1 Command Line Interface](#61-command-line-interface)
+    - [6.2 Testnet Scripts](#62-testnet-scripts)
+      - [**Test Script** - `scripts/test_black_promotes_white_to_blue.sh`](#test-script---scriptstest_black_promotes_white_to_bluesh)
+      - [**Population Script** - `scripts/populate_testnet.sh`](#population-script---scriptspopulate_testnetsh)
+    - [6.3 API Services](#63-api-services)
+      - [**Interaction API** (Port 8082)](#interaction-api-port-8082)
+      - [**Query API** (Port 8083)](#query-api-port-8083)
+    - [6.4 Executables \& Local Run](#64-executables--local-run)
+      - [**Chain Sync Probe** (Port 8084)](#chain-sync-probe-port-8084)
   - [7. License](#7-license)
   - [8. Contributions, Feedback and Support](#8-contributions-feedback-and-support)
   - [9. Future Milestones](#9-future-milestones)
@@ -24,9 +39,10 @@ The **Decentralized Belt System** aims to bring **transparency** and **trust** t
 
 ## 2. Key Features
 
-- **Immutable Rank Tracking**: Every rank promotion is recorded on-chain along with the awarding authority.  
+- **Immutable Rank Tracking**: Every rank promotion is recorded on-chain along with the awarding authority. Profiles are permanent by design, preserving lineage integrity.
 - **Ensure transparency** in rank progression and lineage  
-- **Achievements & Memberships**: Practitioners can showcase achievements, and organizational memberships in one place.  
+- **Achievements & Memberships**: Practitioners can showcase achievements, and organizational memberships in one place.
+- **Full Security Model**: Two-layer validation with BJJ rule enforcement at mint time and consent verification at acceptance.  
 
 ---
 
@@ -47,8 +63,8 @@ The **Decentralized Belt System** aims to bring **transparency** and **trust** t
 
 
 
-For more details, see :  
-[Detailed Documentation](docs/Documentation.md)
+For more details, see [Detailed Documentation](docs/Documentation.md).  
+To regenerate diagram images after editing `puml/*.puml`, run `scripts/regenerate_diagrams.sh` (requires [PlantUML](https://plantuml.com/); e.g. `brew install plantuml`).
 
 ---
 
@@ -79,11 +95,19 @@ For more details, see :
 │   │   └── query-api/               # Data querying API
 │   └── test/                        # Test suites
 │       ├── TestRuns.hs              # Integration tests
-│       ├── UnitTests.hs             # Unit tests
+│       ├── UnitTests.hs             # Unit test entrypoint
+│       ├── UnitTests/               # Unit test modules (Achievement, Cleanup, Membership, Oracle, Promotion)
+│       ├── Test/                    # Fixtures and helpers
 │       └── BJJPropertyTests.hs      # Property-based tests
 ├── docs/                            # Documentation, specifications, diagrams
 ├── puml/                            # Plantuml diagrams
 ├── out/                             # Images of plantuml diagrams
+├── scripts/                         # Test and utility scripts
+│   ├── test_black_promotes_white_to_blue.sh  # Core promotion test
+│   ├── populate_testnet.sh          # Testnet data population
+│   ├── regenerate_diagrams.sh       # Regenerate PlantUML images (puml/ → out/puml/)
+│   ├── test_exunits.sh              # Execution units / cost testing
+│   └── build-images.sh              # Docker/image build
 └── README.md                        # This file
 ```
 
@@ -192,23 +216,73 @@ Usage: admin COMMAND
 
   A command-line tool for managing Brazilian Jiu Jitsu profiles, belt
   promotions, and achievements on the Cardano blockchain. Supports deploying
-  reference scripts, initializing and updating profiles, handling promotions,
-  and more.
+  reference scripts, writing CIP-57 blueprints, initializing and updating
+  profiles, handling promotions, and more.
 
 Available options:
   -h,--help                Show this help text
 
 Available commands:
-  deploy-reference-scripts Deploy reference scripts for the BJJ belt system
-  init-profile             Initialize a new profile
-  update-profile-image     Update profile image
-  delete-profile           Delete a profile
-  promote-profile          Promote a profile to a new belt
-  accept-promotion         Accept a promotion
-  create-profile-with-rank Create a profile with initial rank
+  deploy-reference-scripts   Deploy reference scripts for the BJJ belt system
+  write-blueprint            Write the CIP-57 contract blueprint JSON to a file
+  pause-protocol             Pause the protocol (oracle opPaused = True)
+  unpause-protocol           Unpause the protocol
+  set-fees                   Set or clear fee configuration in the oracle
+  set-min-utxo-value         Set minimum UTxO value (lovelace) for protocol state outputs
+  query-oracle               Display current oracle parameters (read-only)
+  init-profile               Initialize a new profile (White belt)
+  update-profile-image       Update profile image
+  promote-profile            Promote a profile to a new belt
+  accept-promotion           Accept a promotion
+  create-profile-with-rank   Create a profile with initial rank (for masters)
+  create-membership-history  Create a membership history for a practitioner at an organization
+  get-first-interval-id      Get first membership interval ID for a history node
+  add-membership-interval    Add a membership interval to an existing history
+  accept-membership-interval Accept a membership interval (practitioner acknowledges)
+  update-end-date            Update membership interval end date
+  award-achievement          Award an achievement to a practitioner
+  accept-achievement         Accept an achievement (practitioner acknowledges)
+  cleanup-dust               Sweep dust/griefing UTxOs from validator addresses (permissionless)
 ```
 
-### 6.2 API Services
+> **Note**: Profile deletion is intentionally not supported. BJJ belt records are permanent historical facts that preserve lineage integrity.
+
+### 6.2 Testnet Scripts
+
+Two shell scripts are provided for testnet testing and demonstrations:
+
+#### **Test Script** - `scripts/test_black_promotes_white_to_blue.sh`
+
+A focused test that demonstrates the core promotion flow:
+1. Creates a master profile with Black belt
+2. Creates a student profile (White belt)
+3. Master promotes student to Blue belt
+4. Student accepts the promotion
+
+```bash
+./scripts/test_black_promotes_white_to_blue.sh
+```
+
+#### **Population Script** - `scripts/populate_testnet.sh`
+
+A comprehensive script that populates the testnet with realistic sample data:
+- 2 Organizations (Gracie Barra Academy, Alliance Jiu-Jitsu)
+- 1 Grand Master (Red belt)
+- 2 Masters (Black belts)
+- 4 Students (White to Purple belts)
+- Multiple promotion scenarios
+
+```bash
+./scripts/populate_testnet.sh
+```
+
+Both scripts:
+- Automatically deploy reference scripts if needed
+- Show clean progress output with colored indicators
+- Display detailed summaries with all created IDs
+- Handle errors gracefully with clear messages
+
+### 6.3 API Services
 
 The system provides two independent API services:
 
@@ -219,14 +293,16 @@ The system provides two independent API services:
 - **Authentication**: All endpoints require HTTP Basic Auth. Defaults: `BASIC_USER=cardano`, `BASIC_PASS=lovelace` (override via env).
 
 #### **Query API** (Port 8083)  
-- **Profiles**: `GET /practitioner/{id}`, `GET /organization/{id}`, `GET /profiles`
-- **Promotions**: `GET /promotions` - Query pending promotions
+- **Profiles**: `GET /practitioner/{id}`, `GET /organization/{id}`, `GET /profiles`, `GET /profiles/count`, `GET /profiles/frequency`
+- **Promotions**: `GET /promotions`, `GET /promotions/count`
 - **Belts**: `GET /belts`, `GET /belts/count`, `GET /belts/frequency`
+- **Memberships**: `GET /membership-histories`, `GET /membership-histories/count`, `GET /membership-intervals`, `GET /membership-intervals/count`
+- **Achievements**: `GET /achievements`, `GET /achievements/count`
 - **Swagger UI**: `http://localhost:8083/swagger-ui/`
 - **Authentication**: All endpoints require HTTP Basic Auth (same defaults). Swagger UI is public.
 - **Projection mode**: add `?liveprojection=true` to query live data; otherwise the projected SQLite DB is used. Standard `limit`, `offset`, filter params are available per Swagger.
 
-### 6.3 Executables & Local Run
+### 6.4 Executables & Local Run
 
 Executables produced by the build:
 

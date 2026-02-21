@@ -5,7 +5,7 @@ import UnitTests (unitTests)
 
 runTest :: IO ()
 runTest =
-  defaultMain (testGroup "Tests" [unitTests, bjjPropertyTests])
+  defaultMain (testGroup "Tests" [bjjPropertyTests, unitTests])
 
 main :: IO ()
 main = do

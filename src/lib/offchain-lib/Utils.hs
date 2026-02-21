@@ -48,6 +48,14 @@ purpleColorString s =
     ++ "\ESC[0m"
     ++ "\n"
 
+cyanColorString :: String -> String
+cyanColorString s =
+  "\n"
+    ++ "\ESC[1;96m"
+    ++ s
+    ++ "\ESC[0m"
+    ++ "\n"
+
 decodeConfigFile :: (FromJSON a) => FilePath -> IO (Maybe a)
 decodeConfigFile path = do
   fileExist <- doesFileExist path

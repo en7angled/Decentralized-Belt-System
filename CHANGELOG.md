@@ -1,106 +1,108 @@
 # Revision history for Decentralized-Belt-System
 
+Major changes only, latest first.
+
+---
+
+## 0.3.1.9 -- 2026-02-21
+
+- **Dynamic min ADA and oracle `opMinUTxOValue`**: Minimum lovelace for protocol state outputs is now taken only from the oracle (`OracleParams.opMinUTxOValue`), not from a fixed constant. MintingPolicy and MembershipsValidator read min lovelace from the oracle; off-chain uses `opMinUTxOValue` for each state output (with optional future use of protocol params and serialized size). Removed `protocolMinLovelace` and `protocolMinLovelaceValue` from `Onchain.Utils`. Admin action `SetMinUTxOValueAction` and CLI `set-min-utxo-value --lovelace N`; initial oracle and tests use `opMinUTxOValue = 1_000_000`. **Breaking**: Oracle datum gains a fourth field (`opMinUTxOValue`); see OnchainArchitecture.md § Oracle datum schema and migration.
+
+## 0.3.1.8 -- 2026-02-21
+
+- Unit tests split into modules (Achievement, Cleanup, Membership, Oracle, Promotion); Test.Fixtures and Test.Helpers added.
+- Off-chain membership interval validation: structured exceptions (`AddMembershipIntervalReason`, `CannotAddMembershipInterval`); pre-validation in `addMembershipIntervalTX`.
+- `protocolMinLovelace` increased to 10_000_000.
+
+## 0.3.1.7 -- 2026-02-20
+
+- `GET /profiles/count` supports same filters as `GET /profiles`; RestAPI refactor (Common.hs, shared filter helpers).
+- `TxBuilding.Functors` → `TxBuilding.Conversions`; `getUtxoWithTokenAtAddresses` → `getUTxOWithTokenAtAddresses`.
+
+## 0.3.1.6 -- 2026-02-17
+
+- **Achievements**: AchievementsValidator (award/accept/cleanup); MintingPolicy `NewAchievement`; full off-chain ops, storage, ingestion; REST `GET /achievements` and `GET /achievements/count` with filters and liveprojection.
+- Validators moved under `Onchain/Validators/`; protocol logic extracted to `Onchain/Protocol/Core.hs`. Membership endpoints support liveprojection.
+
+## 0.3.1.5 -- 2026-02-16
+
+- **UpdateEndDate security**: TD/TE/TB enforced on-chain (no longer dead code); off-chain uses `updateEndDateWithoutValidations` so invalid attempts fail on-chain.
+- Trace codes made globally unique and consolidated; single `onchain-trace-codes.md` (61 codes).
+
+## 0.3.1.4 -- 2026-02-15
+
+- Scripts: `populate_testnet.sh` and `test_black_promotes_white_to_blue.sh` extended for memberships; `test_exunits.sh` parses membership actions.
+
+## 0.3.1.3 -- 2026-02-15
+
+- **Memberships (off-chain)**: Full flow for histories and intervals (create, add interval, accept); storage, ingestion, REST API, admin CLI. Permissionless `Cleanup` redeemer for dust on Profiles/Ranks/Memberships validators.
+
+## 0.3.1.2 -- 2026-02-15
+
+- **TxBuilding exceptions**: `ProfileException` → `TxBuildingException` (RankListEmpty, PromotionNotFound, OracleDatumInvalid, etc.); HTTP mapping 404/503/400. Added `docs/DeveloperGuide.md`.
+
+## 0.3.1.1 -- 2026-02-15
+
+- Consistency: shared lookups (`getAllParsedDatumsAtValidator`, `profileDatumToProfileData`), `upsertByUnique` in storage; typo fix `getPractitionerInformation`.
+
+## 0.3.1.0 -- 2026-02-15
+
+- Codebase consistency: config via env vars, shared helpers (`txOutRefToV3Plutus`, `pkhFromExtendedSkey`), `runWithTxErrorHandling`, `appVersion`; dead code removed.
+
+## 0.3.0.0 -- 2026-02-15
+
+- **Oracle Hub**: Dynamic protocol parameters (pause, fees, min lovelace, admin) via on-chain oracle; OracleValidator, OracleNFTPolicy, OracleParams/FeeConfig. MintingPolicy reads oracle from reference input. Admin actions (pause/unpause, set-fees, query-oracle) via shared Interaction pipeline.
+
+## 0.2.9.0 -- 2026-02-15
+
+- Protocol split into `Protocol/Types.hs`, `Protocol/Lookup.hs`, `Protocol/Id.hs`. Haskell style: Haddock, export lists, INLINEABLE; `BeltSnapshot` refactor in BJJ.
+
+## 0.2.8.2 -- 2026-02-10
+
+- Script size reporting in test output (bytes and % of 16 KB limit).
+
+## 0.2.8.1 -- 2026-02-10
+
+- Admin CLI `write-blueprint`; Blueprint includes MembershipsValidator and fixes. Bug fix: `unsafeGetProfileDatumAndValue` type (ProfileId not RankId); OnchainSecurityAudit R5 corrected.
+
+## 0.2.8.0 -- 2026-02-09
+
+- **Memberships (on-chain)**: LinkedList, MembershipsValidator; membership history/interval datums and redeemers; init history, add interval, accept flows.
+- **Security audit**: Cross-org membership fix (MV checks org User NFT); CurrencySymbol and startDate validation. Redeemer **breaking**: AcceptPromotion no longer has `rankOutputIdx`; new mint redeemers for membership. `promoteProfileDatum` split for PV cost reduction.
+
+## 0.2.7.0 -- 2026-02-01
+
+- **Output index optimization**: O(n) → O(1) output validation via `checkTxOutAtIndex`. **Breaking**: Redeemers now include output indices (CreateProfile, Promote, UpdateProfileImage, AcceptPromotion).
+
+## 0.2.6.0 -- 2026-02-01
+
+- **PlutusV3**: Token ID generation via `blake2b_224` + `integerToByteString`. **Breaking** for new token names. Added `populate_testnet.sh`; script improvements and docs.
+
+## 0.2.5.0 -- 2026-02-01
+
+- **Profile deletion removed** (**breaking**): DeleteProfile, BurnProfileId, deleteProfileTX removed; profiles permanent by design.
+- Metadata size limits (name 128, description 1024, imageURI 256 bytes) to prevent DoS. AcceptPromotion redundant check removed.
+
+## 0.2.4.0 -- 2025-02-01
+
+- **Promotion security**: Full BJJ validation at mint; seed TxOutRef for unique promotion IDs; acceptance-time checks (nextBelt > currentBelt, date ordering). RanksValidator simplified to consent-only.
+
+## 0.2.3.0 -- 2025-01-06
+
+- Query API: `GET /profiles/count`, `/profiles/frequency`, `GET /promotions/count`, `/promotions/frequency`; all support liveprojection.
 
 ## 0.2.2.0 -- 2024-12-21
 
-### API Architecture Split
-
-**Service Separation for Better Scalability**
-
-#### API Split Implementation
-- **Interaction API Service**: Dedicated service for transaction building and submission (`build-tx`, `submit-tx`)
-- **Query API Service**: Dedicated service for data queries (profiles, promotions, belts)
-- **Independent Deployment**: Each service can be deployed and scaled independently
-- **Docker Support**: Separate Dockerfiles for each service (`Dockerfile.interaction-api`, `Dockerfile.query-api`)
-
-#### Infrastructure Updates
-- **Nginx Configuration**: Updated routing to direct requests to appropriate services
-- **Docker Compose**: Updated to orchestrate both services independently
-- **Build Scripts**: Updated to build and deploy both services separately
-
-#### Documentation Updates
-- **Architecture Documentation**: Updated to reflect split service architecture
-- **API Documentation**: Service-specific Swagger documentation for each API
+- **API split**: Interaction API (build/submit tx) and Query API (profiles, promotions, belts) as separate services; separate Dockerfiles and deployment.
 
 ## 0.2.1.0 -- 2024-12-20
 
-### Milestone 2 Enhancements & Feedback Response
-
-**Additional Evidence and Improvements**
-
-#### Testnet Deployment Evidence
-- **Testnet Transactions**: `test_evidence_preview.txt` - Successful testnet transaction execution
-- **Automated Test Script**: `test_black_promotes_white_to_blue.sh` - Self-service test script for reviewers
-
-#### Documentation Updates
-- **Enhanced README**: Complete installation, setup, and usage instructions
-
-
-#### Admin Command Line Tools
-- **Deployment Commands**: admin cli
-
+- Testnet evidence, automated test script, admin CLI deployment commands; README enhancements.
 
 ## 0.2.0.0 -- 2024-12-19
 
-### Milestone 2 - Smart Contract Architecture ✅ COMPLETED
-
-**Project Catalyst F13 - ID: #1300081**
-
-Milestone 2 has been successfully completed with all deliverables delivered and acceptance criteria met. The project has delivered a complete on-chain smart contract architecture for managing BJJ practitioner profiles and rank promotions on the Cardano blockchain.
-
-#### Deliverables Evidence
-
-**1. Complete Smart Contract Architecture** ✅
-- **Blueprint Definition**: `src/lib/Onchain/Blueprint.hs` 
-- **Contract Specification**: `bjj-belt-system-blueprint.json`
-- **Core Validators**: 
-  - `src/lib/Onchain/MintingPolicy.hs` 
-  - `src/lib/Onchain/ProfilesValidator.hs` 
-  - `src/lib/Onchain/RanksValidator.hs` 
-- **BJJ Logic**: `src/lib/Onchain/BJJ.hs` 
-
-**2. Transaction Building Infrastructure** ✅
-- **Core Operations**: `src/lib/TxBuilding/Operations.hs`  
-- **Interaction Layer**: `src/lib/TxBuilding/Interactions.hs`  
-- **Supporting Services**: `src/lib/TxBuilding/Lookups.hs`, `src/lib/TxBuilding/Skeletons.hs` 
-
-**3. Comprehensive Testing Suite** ✅
-- **Unit Tests**: `src/test/UnitTests.hs`
-- **Property Tests**: `src/test/BJJPropertyTests.hs` 
-- **Tests Evidence**: `tests_evidence.txt` 
-
-**4. Complete Documentation** ✅
-- **Technical Documentation**: `docs/Documentation.md`  
-- **Architecture Documentation**: `docs/OnchainArchitecture.md`
-- **Visual Documentation**: `puml/` 
-- **Project Overview**: `README.md`
-
-#### Acceptance Criteria Evidence
-
-- **AC1: Smart Contract Completeness** ✅ - All three validators implemented with BJJ-specific logic
-- **AC2: Transaction Building Completeness** ✅ - Full operation set for profiles, ranks, and promotions  
-- **AC3: Testing Completeness** ✅ - Unit and property tests covering all core functionality
-- **AC4: Documentation Completeness** ✅ - Complete technical specs and user documentation
-- **AC5: Blueprint Integration** ✅ - Contract blueprint with validator specifications
-
-#### Repository Structure Evidence
-
-```
-src/
-├── lib/               # Core library modules
-│   ├── Onchain/      # Smart contract implementations
-│   ├── TxBuilding/   # Transaction building infrastructure  
-│   └── DomainTypes/  # Domain type definitions
-├── exe/              # Executable applications
-│   ├── admin/        # Command-line admin tool
-│   ├── interaction-api/  # Transaction building and submission API
-│   └── query-api/    # Data querying API
-└── test/             # Comprehensive testing suite
-docs/                 # Complete documentation
-puml/                 # Visual documentation diagrams
-bjj-belt-system-blueprint.json  # Contract specification
-```
+- **Milestone 2**: Smart contract architecture — MintingPolicy, ProfilesValidator, RanksValidator, BJJ.hs; TxBuilding (Operations, Interactions, Lookups, Skeletons); unit and property tests; blueprint and documentation.
 
 ## 0.1.0.0 -- YYYY-mm-dd
 
-* First version. Released on an unsuspecting world.
+- First version. Released on an unsuspecting world.
