@@ -20,20 +20,20 @@ module Storage where
 import Control.Monad (forM_, void)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.List qualified as L
 import Data.Maybe (isNothing)
 import Data.Text (Text)
 import Data.Time (UTCTime, getCurrentTime)
 import Database.Persist
 import Database.Persist.Sql
 import Database.Persist.TH
+import DomainTypes.Core.BJJ (BJJBelt)
 import DomainTypes.Core.Types
 import GeniusYield.Types
 import Ingestion
 import KupoAtlas (kupoMatchToAtlasMatch)
 import KupoClient (CreatedAt (..), KupoMatch (..))
 import Onchain.Protocol.Id (deriveMembershipHistoryId, deriveMembershipIntervalId)
-import DomainTypes.Core.BJJ (BJJBelt)
-import Data.List qualified as L
 
 derivePersistFieldJSON "BJJBelt"
 derivePersistFieldJSON "GYAssetClass"
@@ -53,6 +53,13 @@ ChainCursor
     lastTxId         Text Maybe
     lastOutputIndex  Int  Maybe
     UniqueCursor singleton
+    deriving Show
+
+-- Singleton config row: stored minting policy hex; used only at startup to detect policy change and optionally wipe.
+ChainSyncConfig
+    singleton        Bool
+    policyHexText    Text
+    UniqueChainSyncConfig singleton
     deriving Show
 
 -- Raw Atlas match storage (flattened Kupo match fields)
@@ -163,6 +170,38 @@ getCursorValue = fmap entityVal <$> getBy (UniqueCursor True)
 putCursor :: (MonadIO m) => ChainCursor -> SqlPersistT m ()
 putCursor = upsertByUnique (const (UniqueCursor True))
 
+-- | Read the stored policy hex from the singleton config row, or Nothing if no row exists.
+getStoredPolicyHexText :: (MonadIO m) => SqlPersistT m (Maybe Text)
+getStoredPolicyHexText = fmap (chainSyncConfigPolicyHexText . entityVal) <$> getBy (UniqueChainSyncConfig True)
+
+-- | Upsert the singleton config row with the given policy hex (idempotent, single row only).
+putStoredPolicyHexText :: (MonadIO m) => Text -> SqlPersistT m ()
+putStoredPolicyHexText policyHexText =
+  upsertByUnique (const (UniqueChainSyncConfig True)) (ChainSyncConfig True policyHexText)
+
+-- | Table names for all entities in this persist block (persistLowerCase).
+-- When adding a new entity to this block, add its table name here so wipeChainSyncTables drops it.
+chainSyncTableNames :: [Text]
+chainSyncTableNames =
+  [ "achievement_projection",
+    "chain_cursor",
+    "chain_sync_config",
+    "membership_history_projection",
+    "membership_interval_projection",
+    "onchain_match_event",
+    "profile_projection",
+    "promotion_projection",
+    "rank_projection"
+  ]
+
+-- | Drop all chain-sync tables (this persist block), then run migrations to recreate them.
+-- Does not drop tables used only by other services; this module has no such tables.
+wipeChainSyncTables :: (MonadIO m) => SqlPersistT m ()
+wipeChainSyncTables = do
+  forM_ chainSyncTableNames $ \tableName ->
+    rawExecute ("DROP TABLE IF EXISTS " <> tableName <> " CASCADE") []
+  runMigrations
+
 putMatchAndProjections :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
 putMatchAndProjections networkId km = do
   liftIO $ putStrLn ("Putting match and projections for " <> show (slot_no (created_at km)))
@@ -269,7 +308,7 @@ resolveOrganizationForInterval mi = do
             historyId = deriveMembershipHistoryId plutusOrg plutusPract
             derivedIntervalId = deriveMembershipIntervalId historyId (membershipIntervalNumber mi)
          in derivedIntervalId == plutusIntervalId
-            && membershipIntervalPractitionerId mi == membershipHistoryProjectionPractitionerProfileId proj
+              && membershipIntervalPractitionerId mi == membershipHistoryProjectionPractitionerProfileId proj
   pure $ membershipHistoryProjectionOrganizationProfileId . entityVal <$> L.find matches histories
 
 -- | When a membership history is stored, backfill organizationProfileId on any interval

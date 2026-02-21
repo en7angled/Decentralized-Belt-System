@@ -15,7 +15,64 @@ So the ChainSync process has two jobs:
 
 ---
 
+## Overview diagram
+
+The following diagram summarizes startup (including policy check and optional wipe), the probe server, and the main sync loop.
+
+```mermaid
+flowchart TB
+  subgraph startup [Startup]
+    A[Create PG pool]
+    B[Run migrations]
+    C[Load config, compute policyHexText]
+    D[getStoredPolicyHexText]
+    E{Policy check}
+    F[First run: putStoredPolicyHexText only]
+    G[Policy changed: wipeChainSyncTables then putStoredPolicyHexText]
+    H[Same policy: skip]
+    I[getLocalTip, findCheckpoint, updateLocalTip]
+    A --> B --> C --> D --> E
+    E -->|No stored row| F --> I
+    E -->|Stored differs from current| G --> I
+    E -->|Stored equals current| H --> I
+  end
+
+  subgraph loop [Main loop]
+    J[Get blockchain tip and local tip]
+    K[evaluateChainSyncState]
+    L{State?}
+    M[UpToDate: sleep]
+    N[Behind: fetch matches, putMatchAndProjections, updateLocalTip]
+    O[Ahead: rollbackTo, updateLocalTip]
+    P[UpToDateButDifferentBlockHash: updateLocalTip]
+    I --> J
+    J --> K --> L
+    L --> M
+    L --> N
+    L --> O
+    L --> P
+    M --> J
+    N --> J
+    O --> J
+    P --> J
+  end
+
+  subgraph probe [Probe server]
+    Q[forkIO startProbeServer]
+    Q -.->|exposes SyncMetrics, readiness| loop
+  end
+  startup --> probe
+  startup --> loop
+```
+
+---
+
 ## Why it works this way
+
+### Policy check at startup
+
+- **What**: The minting policy hex (from deployed validators config) is stored in a singleton table (`chain_sync_config`). At startup the process reads the stored value and compares it to the current config. **First run** (no stored row): the process only writes the current policy; it does not wipe. **Policy changed** (stored value differs from current): the process wipes all chain-sync tables, re-runs migrations, writes the current policy, then aligns the cursor so sync starts from a clean state. **Same policy**: no wipe, no write; startup continues with existing cursor and data.
+- **Why**: If you redeploy the minting policy (e.g. after a protocol upgrade), the new policy hash would not match the old one. Data indexed under the old policy would be invalid for the new one. Wiping on change ensures the DB only reflects the current policy. On first run the tables are already empty, so wiping would be redundant.
 
 ### Single cursor (local tip)
 
@@ -75,4 +132,4 @@ So functionally: **UpToDate** = idle; **Behind** = catch up by ingesting; **Ahea
 
 ## Summary
 
-**Functionally**, ChainSync keeps a single DB cursor aligned with the chain, **ingests** on-chain events (via Kupo) into the DB and updates projections when **behind**, **rolls back** when **ahead** or on a wrong block, and **exposes health/readiness** so the rest of the system can depend on “DB reflects chain up to tip” when the probe says ready.
+**Functionally**, ChainSync keeps a single DB cursor aligned with the chain, **ingests** on-chain events (via Kupo) into the DB and updates projections when **behind**, **rolls back** when **ahead** or on a wrong block, and **exposes health/readiness** so the rest of the system can depend on “DB reflects chain up to tip” when the probe says ready. At startup, a **policy check** ensures the stored minting policy hex matches the current config: first run only stores the policy (no wipe); if the policy changed, chain-sync tables are wiped and recreated before syncing.
