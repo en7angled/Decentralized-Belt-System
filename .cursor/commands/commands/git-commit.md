@@ -19,6 +19,7 @@ Create a short, focused commit message and commit staged changes.
     - Base the message on the actual changes in the diff
     - Example: `git commit -m "fix(auth): handle expired token refresh"`
     - Example with issue key: `git commit -m "PROJ-123: fix(auth): handle expired token refresh"`
+    - **Version bumps:** If the diff includes `.cz.toml`, `CHANGELOG.md`, and `Decentralized-Belt-System.cabal` version changes, the bump must have been done via Commitizen (`cz bump`) and cabal sync first — see [versioning rule](../../rules/workflow/versioning.mdc). Use: `git commit -m "chore: bump version to X.Y.Z.W"` (replace with actual version from `.cz.toml`).
 
 ## Template
 
@@ -32,3 +33,4 @@ Create a short, focused commit message and commit staged changes.
 - **Capitalize:** First letter of summary should be capitalized
 - **No period:** Don't end the subject line with a period
 - **Describe why:** Not just what - "fix stuff" is meaningless
+- **Version bumps:** Only commit version bumps after using Commitizen (`cz bump`) and syncing [Decentralized-Belt-System.cabal](Decentralized-Belt-System.cabal); message format `chore: bump version to X.Y.Z.W`. See [versioning rule](../../rules/workflow/versioning.mdc).
