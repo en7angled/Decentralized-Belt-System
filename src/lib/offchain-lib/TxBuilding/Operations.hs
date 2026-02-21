@@ -13,14 +13,15 @@ import Onchain.CIP68 (CIP68Datum (..), ImageURI, MetadataFields, extra, mkCIP68D
 import Onchain.LinkedList (NodeDatum (..))
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types qualified as OnchainTypes
+import Onchain.Utils (protocolMinLovelace)
 import Onchain.Validators.AchievementsValidator (AchievementsRedeemer (..))
 import Onchain.Validators.MembershipsValidator (MembershipsRedeemer (..))
 import Onchain.Validators.MintingPolicy
+import Onchain.Validators.OracleValidator (OracleRedeemer (OracleUpdate))
 import Onchain.Validators.ProfilesValidator (ProfilesRedeemer (AcceptPromotion, UpdateProfileImage))
 import Onchain.Validators.ProfilesValidator qualified (ProfilesRedeemer (Cleanup))
 import Onchain.Validators.RanksValidator (RanksRedeemer (PromotionAcceptance))
 import Onchain.Validators.RanksValidator qualified (RanksRedeemer (Cleanup))
-import Onchain.Utils (protocolMinLovelace)
 import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getAchievementsValidatorRef, getMembershipsValidatorRef, getMintingPolicyFromCtx, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getProtocolParamsFromCtx, getRanksValidatorRef)
 import TxBuilding.Exceptions (AddMembershipIntervalReason (..), TxBuildingException (..))
@@ -989,7 +990,7 @@ updateOracleTX ::
 updateOracleTX adminAction = do
   ovRef <- asks getOracleValidatorRef
   (currentParams, oracleRef, oracleValue) <- queryOracleParams
-  let gyRedeemer = redeemerFromPlutusData ()
+  let gyRedeemer = redeemerFromPlutusData (OracleUpdate 0)
 
   -- Apply the action to derive the new oracle params
   let newParams = applyAdminAction adminAction currentParams

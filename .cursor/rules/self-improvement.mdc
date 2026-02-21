@@ -34,7 +34,7 @@ alwaysApply: true
   - Related rules have been updated
   - Implementation details have changed
 
-- **Example Pattern Recognition:** When you see the same pattern in 3+ places (e.g. a repeated lookup style, error-handling shape, or naming convention), consider adding a rule. For this codebase: coding style → [haskell-style.mdc](.cursor/rules/haskell/haskell-style.mdc) or [plutus-rules.mdc](.cursor/rules/plutus/plutus-rules.mdc); document standard patterns, preconditions, and naming there.
+- **Example Pattern Recognition:** When you see the same pattern in 3+ places (e.g. a repeated lookup style, error-handling shape, or naming convention), consider adding a rule. For this codebase: coding style → [haskell-style.mdc](haskell/haskell-style.mdc) or [plutus-rules.mdc](plutus/plutus-rules.mdc); document standard patterns, preconditions, and naming there.
 
 - **Rule Quality Checks:**
 - Rules should be actionable and specific
@@ -64,5 +64,5 @@ alwaysApply: true
 - Maintain links between related rules
 - Document breaking changes
 
-Follow [cursor-rules.mdc](.cursor/rules/cursor-rules.mdc) for proper rule formatting and structure.
+Follow [cursor-rules.mdc](cursor-rules.mdc) for proper rule formatting and structure.
 

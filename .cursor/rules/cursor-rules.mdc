@@ -11,6 +11,7 @@ How to add new cursor rules to the project
     ```
     .cursor/rules/
     ├── cursor-rules.mdc
+    ├── environment.mdc
     ├── self-improvement.mdc
     ├── architecture/
     │   ├── project-architecture.mdc
@@ -20,12 +21,14 @@ How to add new cursor rules to the project
     ├── haskell/
     │   └── haskell-style.mdc
     ├── plutus/
-    │   └── plutus-rules.mdc
+    │   ├── plutus-rules.mdc
+    │   └── plutus-security.mdc
     ├── operations/
     │   └── storage-ingestion.mdc
     └── workflow/
         ├── new-concept-checklist.mdc
         ├── testing-and-config.mdc
+        ├── scripts.mdc
         └── docs-and-api.mdc
     ```
 
@@ -41,7 +44,9 @@ How to add new cursor rules to the project
     - In subdirectories outside .cursor/rules
     - In any other location
 
-5. Cursor rules have the following structure:
+5. Cross-references: use links relative to the current file (same folder = `file.mdc`, other folder = `../folder/file.mdc`, or from rules root = `folder/file.mdc`).
+
+6. Cursor rules have the following structure:
 
 ```
 ---

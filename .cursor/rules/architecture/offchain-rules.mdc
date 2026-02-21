@@ -29,7 +29,7 @@ When adding a new validator, token kind, projection type, or API surface: follow
 
 ## DeployedScriptsContext
 
-New validator → new field in Context, JSON config, `deployReferenceScripts` in Transactions, and `config/config_bjj_validators.json` updated after deploy.
+New validator → new field in Context, JSON config, `deployReferenceScripts` in Transactions, and `config/config_bjj_validators.json` updated after deploy. **OracleNFTPolicy is not part of DeployedScriptsContext** — it is used inlined in the single oracle-mint transaction only; do not add an oracle NFT policy ref to context. See OnchainArchitecture.md § Oracle NFT Policy: Inlined, Not Deployed.
 
 ## Errors and JSON
 

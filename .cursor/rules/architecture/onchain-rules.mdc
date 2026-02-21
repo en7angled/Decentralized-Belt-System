@@ -9,6 +9,11 @@ alwaysApply: false
 
 Plutus/PlutusTx *coding* style (INLINEABLE, tracing, validator structure): see [plutus/plutus-rules.mdc](../plutus/plutus-rules.mdc).
 
+## Deployment
+
+- **Deployment order**: The only strict ordering is that the oracle NFT must be minted before the main MintingPolicy can be compiled (it is parameterized by the oracle `AssetClass`). Other validators can be deployed in any order. See OnchainArchitecture.md § Deployment Order.
+- **Oracle NFT Policy**: It is **not** deployed as a reference script; it is compiled per deployment and used **inlined** in the single transaction that mints the oracle NFT. Rationale (one-shot, deployment-specific, no reuse): OnchainArchitecture.md § Oracle NFT Policy: Inlined, Not Deployed.
+
 ## Types and IDs
 
 - **Types**: New on-chain types in `Onchain/Protocol/Types.hs`. Use `makeIsDataSchemaIndexed` with **stable** constructor indices; never reorder existing constructors. Add `HasBlueprintDefinition` for CIP-57 where applicable.
@@ -47,5 +52,5 @@ Plutus/PlutusTx *coding* style (INLINEABLE, tracing, validator structure): see [
 - **Fee check**: `checkFee` (in `Onchain.Protocol.Lookup`) takes `OracleParams`, a selector `(FeeConfig -> Integer)` (e.g. `fcProfileCreationFee`, `fcPromotionFee`), and outputs. Use the appropriate selector per redeemer.
 - **Lookups**: Use `Onchain.Protocol.Lookup` for reading state: `readOracleParams`, `unsafeGetRank`, `unsafeGetProfile`, `unsafeGetListNodeDatumAndValue`, `unsafeGetMembershipInterval`. Use `checkAndGetCurrentStateDatumAndValue` / `checkAndGetInlineDatum` from Utils where needed.
 - **Oracle validator**: Unparameterized; requires datum; admin (`opAdminPkh` from datum) must sign; one output must preserve same address and value as the spent oracle UTxO.
-- **MintingContext**: MintingPolicy builds a `MintingContext` (minLv plus validator addresses) from `ProtocolParams` and passes it to handlers. Adding a new validator that receives minted outputs means extending `ProtocolParams` and `MintingContext`.
+
 - **Linked lists**: Generic list logic lives in `Onchain.LinkedList` (`NodeDatum` with `nodeKey`, `nextNodeKey`, `nodeData`). Protocol.Core uses it for membership histories; follow the same pattern for new list-like structures.

@@ -5,7 +5,7 @@ alwaysApply: false
 ---
 # Plutus (On-Chain) Coding Rules
 
-Generic Plutus/PlutusTx coding conventions. For this project's onchain *concepts* (ProtocolParams, validators, minting, oracle), see [architecture/onchain-rules.mdc](../architecture/onchain-rules.mdc).
+Generic Plutus/PlutusTx coding conventions. For this project's onchain *concepts* (ProtocolParams, validators, minting, oracle), see [architecture/onchain-rules.mdc](../architecture/onchain-rules.mdc). For security rules (redeemers, token names, datum/value bounds, multiple satisfaction, staking, etc.), see [plutus-security.mdc](plutus-security.mdc).
 
 ## Pragmas and tracing
 

@@ -18,11 +18,11 @@ where
 import Onchain.CIP68 (CIP68Datum (..))
 import Onchain.Protocol.Types
 import Onchain.Utils (checkAndGetCurrentStateDatumAndValue)
-import PlutusLedgerApi.V3 
-import PlutusTx.Prelude  
-import qualified PlutusLedgerApi.V1 as V1
-import qualified PlutusTx.List
+import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Value
+import PlutusLedgerApi.V3
+import PlutusTx.List qualified
+import PlutusTx.Prelude
 
 -- | Look up a rank datum from transaction inputs. Fails if not found.
 {-# INLINEABLE unsafeGetRank #-}
@@ -59,7 +59,7 @@ unsafeGetListNodeDatumAndValue listNodeId addr txins =
   let (v, b) = checkAndGetCurrentStateDatumAndValue listNodeId addr txins
    in case unsafeFromBuiltinData b :: MembershipDatum of
         ListNodeDatum node -> (v, node)
-        _ -> traceError "K0"
+        _ -> traceError "K0" -- Wrong datum type: expected ListNodeDatum (K0)
 
 -- | Look up a membership interval datum and its UTxO value from transaction inputs. Fails if not found.
 {-# INLINEABLE unsafeGetMembershipInterval #-}
@@ -68,7 +68,7 @@ unsafeGetMembershipInterval intervalId addr txins =
   let (v, b) = checkAndGetCurrentStateDatumAndValue intervalId addr txins
    in case unsafeFromBuiltinData b :: MembershipDatum of
         IntervalDatum interval -> (v, interval)
-        _ -> traceError "K0"
+        _ -> traceError "K0" -- Wrong datum type: expected IntervalDatum (K0)
 
 -------------------------------------------------------------------------------
 

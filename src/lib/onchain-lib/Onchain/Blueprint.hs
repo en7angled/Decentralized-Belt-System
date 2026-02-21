@@ -14,7 +14,7 @@ import Onchain.Protocol.Types (FeeConfig, OracleParams)
 import Onchain.Validators.AchievementsValidator (AchievementsRedeemer, achievementsCompile)
 import Onchain.Validators.MembershipsValidator (MembershipsRedeemer, membershipsCompile)
 import Onchain.Validators.MintingPolicy (MintingRedeemer, mintingPolicyCompile)
-import Onchain.Validators.OracleValidator (oracleCompile)
+import Onchain.Validators.OracleValidator (OracleRedeemer, oracleCompile)
 import Onchain.Validators.ProfilesValidator (ProfilesRedeemer, profilesCompile)
 import Onchain.Validators.RanksValidator (RanksRedeemer, ranksCompile)
 import PlutusLedgerApi.V3 (serialiseCompiledCode)
@@ -200,9 +200,9 @@ oracleValidatorBlueprint =
       validatorRedeemer =
         MkArgumentBlueprint
           { argumentTitle = Just "Oracle Redeemer",
-            argumentDescription = Just "Unit redeemer — the oracle validator only checks admin signature and output preservation.",
+            argumentDescription = Just "OracleUpdate outputIdx — the output index where the oracle UTxO must be returned (output-index check). The validator checks admin signature and that the output at this index preserves datum, value, and address.",
             argumentPurpose = Set.fromList [Spend],
-            argumentSchema = definitionRef @()
+            argumentSchema = definitionRef @OracleRedeemer
           },
       validatorDatum =
         Just

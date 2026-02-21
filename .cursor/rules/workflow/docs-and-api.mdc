@@ -12,6 +12,6 @@ alwaysApply: false
 
 ## Hand-maintained docs and API changes
 
-- **Docs**: The cursor rules under `.cursor/rules/` are the canonical development reference; update them when patterns change. Keep `docs/OnchainArchitecture.md` and `docs/HaskellStyleGuide.md` in sync with code. When validators or protocol params change, update OnchainArchitecture and regenerate the blueprint as above.
+- **Docs**: The cursor rules under `.cursor/rules/` are the canonical development reference; update them when patterns change. Cursor rules define process and checklists; `OnchainArchitecture.md` and `HaskellStyleGuide.md` are narrative/reference docs—update both when patterns or code change. When validators or protocol params change, update OnchainArchitecture and regenerate the blueprint as above.
 - **APIs**: Interaction API (8082): `/build-tx`, `/submit-tx`; Query API (8083): add new routes in RestAPI and handlers in Query.Projected / Query.Live. Use transfer types from `DomainTypes/Transfer/Types.hs` for responses (e.g. membership history + intervals). Add `ToSchema` for new types so Swagger stays in sync when the server runs.
 - **Build vs submit:** Interaction API: `/build-tx` returns unsigned body; `/submit-tx` accepts body + witness and submits. See [executables.mdc](../architecture/executables.mdc) for provider and multi-address/collateral details.

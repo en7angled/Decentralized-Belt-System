@@ -1,0 +1,30 @@
+---
+description: Project scripts in scripts/ are maintained tooling; purpose, usage, and when to update
+globs: scripts/**/*
+alwaysApply: false
+---
+# Scripts (scripts/)
+
+Scripts in `scripts/` are **part of the project and should be maintained**. When changing admin CLI, config, Dockerfiles, or test flows, update the affected scripts and keep them runnable.
+
+## Script inventory
+
+| Script                                 | Purpose                                                                                                                                                                   | Usage / notes                                                                                                                                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `populate_testnet.sh`                  | Populate testnet with sample BJJ data (orgs, profiles, promotions, memberships, achievements).                                                                            | Run from repo root or `scripts/`. Requires `config/config_atlas.json`, `operation.prv`. Deploys reference scripts if `config_bjj_validators.json` is missing. Uses `cabal run admin --` for all operations. |
+| `test_black_promotes_white_to_blue.sh` | End-to-end test: Black promotes White→Blue + memberships + achievements + oracle admin + dust cleanup. Mirrors `blackPromotesWhiteToBlue`-style flow from `UnitTests.hs`. | Same preconditions as `populate_testnet.sh`. Use for quick manual/privnet smoke tests.                                                                                                                      |
+| `test_exunits.sh`                      | Run `cabal test` and parse exUnits (memory/steps) and script sizes; print formatted tables and per-action summaries.                                                      | Run from repo root. Parses test output for `INTERACTION` / `TX BUDGET` and `SCRIPT_SIZES`. Reports vs mainnet limits (14M mem, 10B steps, 16 KB script).                                                    |
+| `build-images.sh`                      | Build Docker images for the project (shared builder base + interaction-api, query-api, chainsync).                                                                        | `scripts/build-images.sh` [tag] — tag defaults to git short hash. Env: `IMAGE_PREFIX` (default `mariusgeorgescu`). Builds for host arch only; `PUSH=true` is intentionally unsupported for local builder.   |
+
+## Maintenance
+
+- **Admin CLI changes**: If new subcommands, flags, or output format are added to the `admin` executable, update `populate_testnet.sh` and `test_black_promotes_white_to_blue.sh` (e.g. `run_admin_cmd` usage, ID parsing, error checks).
+- **Config / env**: Scripts assume `config/config_atlas.json` and `operation.prv` where they run admin commands. Document any new required config or env in this rule and in README.
+- **Test flow changes**: If `UnitTests.hs` (or related tests) change the black-promotes-white-to-blue or deployment flow, align `test_black_promotes_white_to_blue.sh` so it stays a valid mirror for manual/privnet runs.
+- **ExUnits / script sizes**: If test output format for `INTERACTION` / `TX BUDGET` / `SCRIPT_SIZES` changes, update the parsing in `test_exunits.sh` (Perl/awk sections).
+- **Docker**: When adding or renaming services or changing `Dockerfile.*`, update `build-images.sh` and any docs that list built images.
+
+## Conventions
+
+- Scripts use `set -e` (and where appropriate `set -o pipefail` or `set -euo pipefail`), resolve repo root via `SCRIPT_DIR`/`REPO_ROOT`, and use `cabal run admin --` from repo root.
+- Do not remove or repurpose scripts without updating this rule and [testing-and-config.mdc](testing-and-config.mdc) if they are referenced there.

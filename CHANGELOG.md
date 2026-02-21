@@ -138,7 +138,7 @@
 
 - Relaxed monad constraints on `txMustLockStateWithInlineDatumAndValue`, `txIsPayingValueToAddress`, and `txIsPayingValueToAddressWithInlineDatum` from `GYTxUserQueryMonad` to `GYTxQueryMonad` (they only use `scriptAddress`/`return`/`mustHaveOutput`)
 - Extracted `txOutRefToV3Plutus` into `TxBuilding.Utils` and replaced all 5 inline V1-to-V3 TxOutRef conversions across Operations, Skeletons, Transactions, and TestRuns
-- Admin CLI now uses `Constants.defaultAtlasCoreConfig` and `Constants.defaultTxBuldingContextFile` instead of hardcoded local paths
+- Admin CLI now uses `Constants.defaultAtlasCoreConfig` and `Constants.defaultTxBuildingContextFile` instead of hardcoded local paths
 - Admin CLI now uses `decodeConfigEnvOrFile` for config loading, supporting `DEPLOYED_VALIDATORS_CONFIG` and `ATLAS_CORE_CONFIG` env vars (consistent with all other executables)
 - Chain sync service now reads network ID from `GYCoreConfig` instead of hardcoding `GYTestnetPreview`
 - `updateOracleTX` now uses `txMustLockStateWithInlineDatumAndValue` for re-locking oracle datum (consistent with all other operations)
@@ -326,11 +326,11 @@ Implemented the complete onchain membership system for tracking practitioner-org
 - `AcceptInterval` — Practitioner accepts/acknowledges a membership interval
 
 **Transaction Flows**:
-| Flow | Authorization | What Happens |
-|------|--------------|--------------|
-| InitMembershipHistory | Org User NFT | Root created atomically with org profile; new history node inserted into list |
-| AddToMembershipHistory | Org User NFT | New interval prepended to existing history |
-| AcceptMembershipInterval | Practitioner User NFT | Practitioner acknowledges the interval |
+| Flow                     | Authorization         | What Happens                                                                  |
+| ------------------------ | --------------------- | ----------------------------------------------------------------------------- |
+| InitMembershipHistory    | Org User NFT          | Root created atomically with org profile; new history node inserted into list |
+| AddToMembershipHistory   | Org User NFT          | New interval prepended to existing history                                    |
+| AcceptMembershipInterval | Practitioner User NFT | Practitioner acknowledges the interval                                        |
 
 #### Security Audit
 
@@ -338,11 +338,11 @@ Comprehensive security audit documented in `docs/OnchainSecurityAudit.md`.
 
 **Issues Found and Resolved**:
 
-| Severity | Issue | Status |
-|----------|-------|--------|
-| HIGH | Cross-Organization Membership Manipulation — Org A could modify Org B's membership data | **Fixed** (MV now independently checks Org User NFT from on-chain datum) |
-| MEDIUM | Missing CurrencySymbol validation for `practitionerId` in `NewMembershipHistory` | **Fixed** |
-| MEDIUM | No `startDate` validation against transaction validity range | **Fixed** |
+| Severity | Issue                                                                                   | Status                                                                   |
+| -------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| HIGH     | Cross-Organization Membership Manipulation — Org A could modify Org B's membership data | **Fixed** (MV now independently checks Org User NFT from on-chain datum) |
+| MEDIUM   | Missing CurrencySymbol validation for `practitionerId` in `NewMembershipHistory`        | **Fixed**                                                                |
+| MEDIUM   | No `startDate` validation against transaction validity range                            | **Fixed**                                                                |
 
 **Remaining LOW items**: `UpdateEndDate` time validation (not yet implemented), `endDate` validation on creation, dust/griefing mitigation (admin cleanup TODO), MV redeemer data integrity.
 
@@ -426,20 +426,20 @@ Transaction builders in `Operations.hs` now:
 - Document expected output order in skeleton construction
 
 **Output Index Conventions**:
-| Transaction | Output 0 | Output 1 | Output 2 |
-|-------------|----------|----------|----------|
-| CreateProfile (Practitioner) | Profile state | User NFT | Rank state |
-| CreateProfile (Organization) | Profile state | User NFT | - |
-| UpdateProfile | Updated profile | - | - |
-| Promote | Pending rank | - | - |
-| AcceptPromotion | Updated profile | Updated rank | - |
+| Transaction                  | Output 0        | Output 1     | Output 2   |
+| ---------------------------- | --------------- | ------------ | ---------- |
+| CreateProfile (Practitioner) | Profile state   | User NFT     | Rank state |
+| CreateProfile (Organization) | Profile state   | User NFT     | -          |
+| UpdateProfile                | Updated profile | -            | -          |
+| Promote                      | Pending rank    | -            | -          |
+| AcceptPromotion              | Updated profile | Updated rank | -          |
 
 #### Benefits
 
-| Aspect | Before | After |
-|--------|--------|-------|
+| Aspect          | Before                | After                 |
+| --------------- | --------------------- | --------------------- |
 | Time complexity | O(n) per output check | O(1) per output check |
-| Execution units | Higher | Lower |
+| Execution units | Higher                | Lower                 |
 
 **Note**: This is a **breaking change** for redeemer structure. Existing on-chain scripts need redeployment to use the new optimized validation.
 
@@ -468,12 +468,12 @@ blake2b_224 (bs <> integerToByteString BigEndian 0 i)
 ```
 
 **Benefits**:
-| Aspect | Old Approach | New Approach |
-|--------|-------------|--------------|
-| Hash function | `blake2b_256` + truncate | `blake2b_224` (native 28-byte) |
+| Aspect           | Old Approach                             | New Approach                        |
+| ---------------- | ---------------------------------------- | ----------------------------------- |
+| Hash function    | `blake2b_256` + truncate                 | `blake2b_224` (native 28-byte)      |
 | Integer encoding | CBOR via `serialiseData . toBuiltinData` | Raw bytes via `integerToByteString` |
-| Overhead | Two operations + truncation | Single builtin each |
-| Execution units | Higher (extra computation discarded) | Lower (direct output) |
+| Overhead         | Two operations + truncation              | Single builtin each                 |
+| Execution units  | Higher (extra computation discarded)     | Lower (direct output)               |
 
 **Note**: This is a **breaking change** for token name generation. Existing on-chain tokens are not affected, but new tokens will have different names for the same inputs compared to the old algorithm.
 
@@ -486,17 +486,17 @@ blake2b_224 (bs <> integerToByteString BigEndian 0 i)
 Added `scripts/populate_testnet.sh` - a comprehensive script to populate the testnet with realistic sample data for testing and demonstrations.
 
 **Profiles Created**:
-| Type | Name | Belt Level |
-|------|------|------------|
-| Organization | Gracie Barra Academy | N/A |
-| Organization | Alliance Jiu-Jitsu | N/A |
-| Grand Master | Grand Master Helio | Red (9th degree) |
-| Master | Master Ricardo Silva | Black → Black1 |
-| Master | Master Ana Santos | Black |
-| Student | John Martinez | White → Blue → Purple |
-| Student | Maria Garcia | White → Blue |
-| Student | Carlos Oliveira | White |
-| Student | Emma Thompson | White |
+| Type         | Name                 | Belt Level            |
+| ------------ | -------------------- | --------------------- |
+| Organization | Gracie Barra Academy | N/A                   |
+| Organization | Alliance Jiu-Jitsu   | N/A                   |
+| Grand Master | Grand Master Helio   | Red (9th degree)      |
+| Master       | Master Ricardo Silva | Black → Black1        |
+| Master       | Master Ana Santos    | Black                 |
+| Student      | John Martinez        | White → Blue → Purple |
+| Student      | Maria Garcia         | White → Blue          |
+| Student      | Carlos Oliveira      | White                 |
+| Student      | Emma Thompson        | White                 |
 
 **Promotion Scenarios**:
 - John's Journey: White → Blue → Purple (promoted by Master Ricardo)
@@ -557,11 +557,11 @@ This release addresses issues discovered during a comprehensive security review 
 - **Bug**: No size limits on CIP68 metadata fields allowed DoS via oversized datums
 - **Fix**: Added per-field size validation
 
-| Field | Max Size | Rationale |
-|-------|----------|-----------|
-| `name` | 128 bytes | Full names with titles, accents, academy |
+| Field         | Max Size   | Rationale                                  |
+| ------------- | ---------- | ------------------------------------------ |
+| `name`        | 128 bytes  | Full names with titles, accents, academy   |
 | `description` | 1024 bytes | Detailed bio with achievements and lineage |
-| `imageURI` | 256 bytes | IPFS/Arweave/HTTPS URLs |
+| `imageURI`    | 256 bytes  | IPFS/Arweave/HTTPS URLs                    |
 
 - **Applied to**: `MintingPolicy` (CreateProfile) and `ProfilesValidator` (UpdateProfileImage)
 
@@ -574,11 +574,11 @@ This release addresses issues discovered during a comprehensive security review 
 
 #### Summary
 
-| Change | Type | Impact |
-|--------|------|--------|
-| Profile deletion removed | Breaking | Profiles are now permanent (by design) |
-| Metadata size limits | Security | Prevents DoS via oversized datums |
-| AcceptPromotion optimized | Optimization | Smaller script, lower costs |
+| Change                    | Type         | Impact                                 |
+| ------------------------- | ------------ | -------------------------------------- |
+| Profile deletion removed  | Breaking     | Profiles are now permanent (by design) |
+| Metadata size limits      | Security     | Prevents DoS via oversized datums      |
+| AcceptPromotion optimized | Optimization | Smaller script, lower costs            |
 
 
 ## 0.2.4.0 -- 2025-02-01
@@ -612,12 +612,12 @@ This release significantly improves the security and robustness of the promotion
 - **New `generatePromotionRankId`**: Generates unique promotion IDs from seed
 
 #### Security Improvements
-| Attack Vector | Prevention Mechanism |
-|--------------|---------------------|
-| Invalid promotion creation | Full validation at mint time |
-| Token ID collisions | Seed TxOutRef guarantees uniqueness |
-| Double-acceptance (same rank) | `nextBelt > currentBelt` check |
-| Out-of-order acceptance | `nextBeltDate > currentBeltDate` check |
+| Attack Vector                 | Prevention Mechanism                   |
+| ----------------------------- | -------------------------------------- |
+| Invalid promotion creation    | Full validation at mint time           |
+| Token ID collisions           | Seed TxOutRef guarantees uniqueness    |
+| Double-acceptance (same rank) | `nextBelt > currentBelt` check         |
+| Out-of-order acceptance       | `nextBeltDate > currentBeltDate` check |
 
 #### Documentation Updates
 - **OnchainArchitecture.md**: Complete rewrite with new security model documentation
