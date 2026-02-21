@@ -1,0 +1,37 @@
+---
+description: Keep project version in sync across CHANGELOG, cabal, and Commitizen; use when bumping or setting the release version.
+globs:
+alwaysApply: false
+---
+# Rule: Version consistency
+
+## Use Commitizen (cz) for version bumps
+
+**Always use Commitizen** for bumping the project version. Do not edit version numbers or CHANGELOG by hand for releases.
+
+1. Run **`cz bump`** (interactive: choose patch/minor/major) or **`cz bump --increment PATCH`** (or `MINOR` / `MAJOR`). This updates [.cz.toml](.cz.toml) and [CHANGELOG.md](CHANGELOG.md) (with `update_changelog_on_bump = true`).
+2. **Sync [Decentralized-Belt-System.cabal](Decentralized-Belt-System.cabal)** — set `version:` to the same value as in `.cz.toml` (Commitizen does not update the cabal file).
+3. Commit the version bump: the changed `.cz.toml`, `CHANGELOG.md`, and `Decentralized-Belt-System.cabal`.
+
+## Single source of truth
+
+The latest release version is defined by the **Version index** table in [CHANGELOG.md](CHANGELOG.md) (the table near the top; the latest row = current version). After a `cz bump`, that table and `.cz.toml` match; cabal must be kept in sync manually.
+
+## Must stay in sync
+
+When setting or bumping the project version (via Commitizen), ensure **all** of:
+
+1. **[CHANGELOG.md](CHANGELOG.md)** — updated by `cz bump`; add any extra section entries if needed.
+2. **[Decentralized-Belt-System.cabal](Decentralized-Belt-System.cabal)** — `version:` field (four-part, same as `.cz.toml`).
+3. **[.cz.toml](.cz.toml)** — `version = "X.Y.Z.W"` (updated by `cz bump`).
+
+## Tag format
+
+`.cz.toml` uses `tag_format = "$version"`, so tags are created **without** a `v` prefix (e.g. `0.3.1.8`). Use that format when creating Git tags manually so tags match Commitizen.
+
+## Do not change for app release bumps
+
+- Blueprint version in `docs/bjj-belt-system-blueprint.json` — schema version.
+- Swagger/OpenAPI `version` in `docs/swagger/*.json` — API version.
+
+Those are independent from the project release version.

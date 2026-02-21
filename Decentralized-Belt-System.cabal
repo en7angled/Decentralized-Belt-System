@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name:          Decentralized-Belt-System
-version:       0.1.0.0
+version:       0.3.1.8
 synopsis:
   A DApp to standardize BJJ belt rankings and lineages, ensuring global consistency and transparency, thus solving the issue of varying standards and unclear lineages in the BJJ community.
 
@@ -181,8 +181,8 @@ library offchain-lib
     Ingestion
     Storage
     TxBuilding.Context
-    TxBuilding.Exceptions
     TxBuilding.Conversions
+    TxBuilding.Exceptions
     TxBuilding.Interactions
     TxBuilding.Lookups
     TxBuilding.Operations
