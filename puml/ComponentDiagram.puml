@@ -2,7 +2,7 @@
 !theme toy
 
 title "Components Diagram"
-caption: BJJ-DApp - Decentalized Belt System for Brazilian Jiu Jitsu
+caption: BJJ-DApp - Decentralized Belt System for Brazilian Jiu Jitsu
 
 
 skinparam interface {
@@ -84,7 +84,7 @@ component BackEnd  as "BackEnd Services"  #LightGray   {
         Ranks
         Promotions
         Achievements
-        Memmberships
+        Memberships
         --
         "
     }
@@ -98,10 +98,10 @@ component BackEnd  as "BackEnd Services"  #LightGray   {
     Lookups - queryPort
 
     Interactions -->> CardanoProvider : query\n and \n submit \nsigned tx
-    Lookups --> CardanoProvider : veryfy\n scripts\n availability
+    Lookups --> CardanoProvider : verify\n scripts\n availability
 
     ChainSync --> Kupo : monitor
-    ChainSync --> Projections : uspert
+    ChainSync --> Projections : upsert
     Lookups --> Projections : query
 
 

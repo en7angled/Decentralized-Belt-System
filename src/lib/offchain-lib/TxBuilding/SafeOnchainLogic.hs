@@ -4,7 +4,7 @@
 module TxBuilding.SafeOnchainLogic where
 
 import Control.Monad (unless, when)
-import Control.Monad.Except (throwError)
+import Control.Monad.Except ( throwError, MonadError )
 import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import Onchain.BJJ (BJJBelt, intToBelt)
 import Onchain.CIP68 (CIP68Datum, extra)
@@ -19,7 +19,6 @@ import Onchain.Protocol.Types
   )
 import PlutusLedgerApi.V3 (POSIXTime)
 import TxBuilding.Exceptions (TxBuildingException (..))
-import Control.Monad.Except (MonadError)
 
 ------------------------------------------------------------------------------------------------
 

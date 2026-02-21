@@ -51,6 +51,7 @@ Config is loaded via `decodeConfigEnvOrFile "ENV_VAR" defaultFilePath` in the ex
 ## Build system
 
 - **Pure Cabal**: No Stack, no `package.yaml`; the project uses `.cabal` and [cabal.project](mdc:cabal.project) (CHaP, index-state, source-repository-packages for Atlas, haskell-sdk, clb, cardano-addresses).
+- **Before build/test**: Run `direnv allow` in the project root first so the Nix/Cabal environment is active (unless already done this session).
 - **Build**: From repo root run `cabal build all` (no need to `cd` elsewhere).
 - **Test**: `cabal test`. For exUnits and script-size reporting use [scripts/test_exunits.sh](mdc:scripts/test_exunits.sh); see [scripts.mdc](workflow/scripts.mdc).
 - **REPL**: `cabal repl` (e.g. for a specific component: `cabal repl exe:admin`).
@@ -74,6 +75,7 @@ Config is loaded via `decodeConfigEnvOrFile "ENV_VAR" defaultFilePath` in the ex
 When helping with env or tooling:
 
 1. Prefer [README §5–6](mdc:README.md) and this rule for toolchain and env vars.
-2. For executable startup and config loading, see [executables.mdc](architecture/executables.mdc).
-3. Do not commit `.env` or secrets; document new required vars in README §6.4 and in [testing-and-config.mdc](workflow/testing-and-config.mdc).
-4. Run Cabal from the workspace root without requiring an extra `cd`.
+2. **Before `cabal build` or `cabal test`**: Run `direnv allow` in the project root so the project environment is loaded (unless you have already done so in this session).
+3. For executable startup and config loading, see [executables.mdc](architecture/executables.mdc).
+4. Do not commit `.env` or secrets; document new required vars in README §6.4 and in [testing-and-config.mdc](workflow/testing-and-config.mdc).
+5. Run Cabal from the workspace root without requiring an extra `cd`.
