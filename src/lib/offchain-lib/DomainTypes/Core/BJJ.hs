@@ -7,7 +7,6 @@
 module DomainTypes.Core.BJJ (module Onchain.BJJ, parseBelt) where
 
 import Data.Aeson.Types (FromJSON, ToJSON)
-import Data.String (IsString (..))
 import Data.Swagger (ToParamSchema, ToSchema)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -22,12 +21,8 @@ deriving anyclass instance ToSchema BJJBelt
 
 deriving anyclass instance ToParamSchema BJJBelt
 
-instance IsString BJJBelt where
-  fromString :: String -> BJJBelt
-  fromString s = case parseBelt s of
-    Just belt -> belt
-    Nothing -> error "Invalid belt"
-
+-- | Parse a belt from string (e.g. "White", "Black1"). Use this or 'parseQueryParam'
+-- for user input; do not use 'error' for invalid strings.
 parseBelt :: String -> Maybe BJJBelt
 parseBelt s = case s of
   "White" -> Just White

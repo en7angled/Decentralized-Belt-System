@@ -16,12 +16,23 @@ NC='\033[0m' # No Color
 echo -e "${CYAN}Running cabal test...${NC}"
 TEST_OUTPUT=$(cabal test 2>&1) || true
 
-# Check if tests passed
-if echo "$TEST_OUTPUT" | grep -q "All.*tests passed\|Test suite.*PASS"; then
+# Check if tests passed; if not, show failed tests in red at the top
+if echo "$TEST_OUTPUT" | grep -qE "All [0-9]+ tests passed|Test suite.*passed"; then
     echo -e "${GREEN}Tests passed!${NC}\n"
 else
-    if echo "$TEST_OUTPUT" | grep -q "FAIL"; then
+    HAS_FAIL=$(echo "$TEST_OUTPUT" | grep -cE "FAIL|tests failed" || true)
+    if [ "${HAS_FAIL:-0}" -gt 0 ]; then
         echo -e "${RED}Some tests failed!${NC}\n"
+        # Summary line (e.g. "19 out of 71 tests failed")
+        while IFS= read -r line; do
+            echo -e "${RED}${line}${NC}"
+        done < <(echo "$TEST_OUTPUT" | grep -E "[0-9]+ out of [0-9]+ tests failed" || true)
+        echo -e "${BOLD}Failed tests:${NC}"
+        # Tasty prints "      Test Name: FAIL (0.xxs)" or "Test Name:   FAIL" - print those lines in red
+        while IFS= read -r line; do
+            echo -e "${RED}${line}${NC}"
+        done < <(echo "$TEST_OUTPUT" | grep "FAIL" || true)
+        echo ""
     fi
 fi
 
@@ -104,6 +115,7 @@ my @results;
 my $total_mem = 0;
 my $total_steps = 0;
 my $total_fee = 0;
+my $total_balance = 0;
 my $count = 0;
 
 # Split by INTERACTION markers (matches "INTERACTION:", "ADMIN INTERACTION:", "PROTOCOL INTERACTION:")
@@ -171,6 +183,12 @@ foreach my $block (@blocks) {
         $fee = $1;
     }
     
+    # Extract user net balance change from block (USER_BALANCE_CHANGE: N lovelace)
+    my $balance_change = 0;
+    if ($block =~ /USER_BALANCE_CHANGE:\s*(-?\d+)\s*(?:lovelace)?/) {
+        $balance_change = $1;
+    }
+    
     # Extract ALL exUnits pairs from this budget section
     my @mem_vals = ($budget_section =~ /exUnitsMem\x27\s*=\s*(\d+)/g);
     my @steps_vals = ($budget_section =~ /exUnitsSteps\x27\s*=\s*(\d+)/g);
@@ -187,14 +205,15 @@ foreach my $block (@blocks) {
     }
     
     if ($script_count > 0) {
-        print "$count|$category|$action|$mem_sum|$steps_sum|$script_count|$fee\n";
+        print "$count|$category|$action|$mem_sum|$steps_sum|$script_count|$fee|$balance_change\n";
         $total_mem += $mem_sum;
         $total_steps += $steps_sum;
         $total_fee += $fee;
+        $total_balance += $balance_change;
     }
 }
 
-print "TOTAL|||$total_mem|$total_steps||$total_fee\n";
+print "TOTAL|||$total_mem|$total_steps||$total_fee|$total_balance\n";
 ' > "$TEMP_FILE"
 
 # Mainnet limits: 14,000,000 memory units, 10,000,000,000 CPU steps per transaction
@@ -202,19 +221,20 @@ MAX_MEM=14000000
 MAX_STEPS=10000000000
 
 # Print the table header
-printf "${YELLOW}+-------+----------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
-printf "${YELLOW}|${NC} ${CYAN}%5s${NC} ${YELLOW}|${NC} ${CYAN}%-8s${NC} ${YELLOW}|${NC} ${CYAN}%-24s${NC} ${YELLOW}|${NC} ${CYAN}%7s${NC} ${YELLOW}|${NC} ${CYAN}%18s${NC} ${YELLOW}|${NC} ${CYAN}%21s${NC} ${YELLOW}|${NC} ${CYAN}%13s${NC} ${YELLOW}|${NC} ${CYAN}%15s${NC} ${YELLOW}|${NC}\n" "#" "Type" "Action" "Scripts" "exUnitsMem" "exUnitsSteps" "Fee (ADA)" "% of Limit"
-printf "${YELLOW}+-------+----------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
+printf "${YELLOW}+-------+----------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+-----------------+${NC}\n"
+printf "${YELLOW}|${NC} ${CYAN}%5s${NC} ${YELLOW}|${NC} ${CYAN}%-8s${NC} ${YELLOW}|${NC} ${CYAN}%-24s${NC} ${YELLOW}|${NC} ${CYAN}%7s${NC} ${YELLOW}|${NC} ${CYAN}%18s${NC} ${YELLOW}|${NC} ${CYAN}%21s${NC} ${YELLOW}|${NC} ${CYAN}%13s${NC} ${YELLOW}|${NC} ${CYAN}%13s${NC} ${YELLOW}|${NC} ${CYAN}%15s${NC} ${YELLOW}|${NC}\n" "#" "Type" "Action" "Scripts" "exUnitsMem" "exUnitsSteps" "Fee (ADA)" "User Δ (ADA)" "% of Limit"
+printf "${YELLOW}+-------+----------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+-----------------+${NC}\n"
 
 # Read and format the data
-while IFS='|' read -r num category action mem steps script_count fee; do
+while IFS='|' read -r num category action mem steps script_count fee balance_change; do
     if [ "$num" = "TOTAL" ]; then
-        printf "${YELLOW}+-------+----------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
+        printf "${YELLOW}+-------+----------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+-----------------+${NC}\n"
         mem_formatted=$(format_number "$mem")
         steps_formatted=$(format_number "$steps")
         fee_ada=$(awk "BEGIN {printf \"%.4f\", $fee / 1000000}")
-        printf "${YELLOW}|${NC} ${GREEN}%-5s${NC} ${YELLOW}|${NC} %8s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %7s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} %15s ${YELLOW}|${NC}\n" "TOTAL" "" "" "" "$mem_formatted" "$steps_formatted" "$fee_ada" ""
-        printf "${YELLOW}+-------+----------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
+        balance_ada=$(awk "BEGIN {printf \"%.4f\", ${balance_change:-0} / 1000000}")
+        printf "${YELLOW}|${NC} ${GREEN}%-5s${NC} ${YELLOW}|${NC} %8s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %7s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} %15s ${YELLOW}|${NC}\n" "TOTAL" "" "" "" "$mem_formatted" "$steps_formatted" "$fee_ada" "$balance_ada" ""
+        printf "${YELLOW}+-------+----------+--------------------------+---------+--------------------+-----------------------+---------------+-----------------+-----------------+${NC}\n"
     else
         # Truncate action name if too long
         if [ ${#action} -gt 24 ]; then
@@ -223,6 +243,7 @@ while IFS='|' read -r num category action mem steps script_count fee; do
         mem_formatted=$(format_number "$mem")
         steps_formatted=$(format_number "$steps")
         fee_ada=$(awk "BEGIN {printf \"%.4f\", $fee / 1000000}")
+        balance_ada=$(awk "BEGIN {printf \"%.4f\", ${balance_change:-0} / 1000000}")
         
         # Calculate percentage of budget used
         mem_pct=$(awk "BEGIN {printf \"%.1f\", ($mem / $MAX_MEM) * 100}")
@@ -238,7 +259,7 @@ while IFS='|' read -r num category action mem steps script_count fee; do
         fi
         
         pct_display="${mem_pct}%/${steps_pct}%"
-        printf "${YELLOW}|${NC} %5s ${YELLOW}|${NC} %-8s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %7s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} ${pct_color}%15s${NC} ${YELLOW}|${NC}\n" "$num" "$category" "$action" "$script_count" "$mem_formatted" "$steps_formatted" "$fee_ada" "$pct_display"
+        printf "${YELLOW}|${NC} %5s ${YELLOW}|${NC} %-8s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %7s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} ${pct_color}%15s${NC} ${YELLOW}|${NC}\n" "$num" "$category" "$action" "$script_count" "$mem_formatted" "$steps_formatted" "$fee_ada" "$balance_ada" "$pct_display"
     fi
 done < "$TEMP_FILE"
 
@@ -246,36 +267,40 @@ echo ""
 
 # Generate summary by action type
 echo -e "${BOLD}${CYAN}Summary by Action:${NC}"
-printf "${YELLOW}+----------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
-printf "${YELLOW}|${NC} ${CYAN}%-8s${NC} ${YELLOW}|${NC} ${CYAN}%-24s${NC} ${YELLOW}|${NC} ${CYAN}%5s${NC} ${YELLOW}|${NC} ${CYAN}%18s${NC} ${YELLOW}|${NC} ${CYAN}%21s${NC} ${YELLOW}|${NC} ${CYAN}%13s${NC} ${YELLOW}|${NC} ${CYAN}%15s${NC} ${YELLOW}|${NC}\n" "Type" "Action" "Count" "Avg Memory" "Avg Steps" "Avg Fee" "Avg % Limit"
-printf "${YELLOW}+----------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
+printf "${YELLOW}+----------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+-----------------+${NC}\n"
+printf "${YELLOW}|${NC} ${CYAN}%-8s${NC} ${YELLOW}|${NC} ${CYAN}%-24s${NC} ${YELLOW}|${NC} ${CYAN}%5s${NC} ${YELLOW}|${NC} ${CYAN}%18s${NC} ${YELLOW}|${NC} ${CYAN}%21s${NC} ${YELLOW}|${NC} ${CYAN}%13s${NC} ${YELLOW}|${NC} ${CYAN}%13s${NC} ${YELLOW}|${NC} ${CYAN}%15s${NC} ${YELLOW}|${NC}\n" "Type" "Action" "Count" "Avg Memory" "Avg Steps" "Avg Fee" "Avg User Δ (ADA)" "Avg % Limit"
+printf "${YELLOW}+----------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+-----------------+${NC}\n"
 
 # Aggregate by category + action type
 awk -F'|' '
 BEGIN { }
-$1 != "TOTAL" && NF >= 7 {
+$1 != "TOTAL" && NF >= 8 {
     cat = $2
     action = $3
     mem = $4
     steps = $5
     fee = $7
+    balance = $8
     key = cat "|" action
     count[key]++
     total_mem[key] += mem
     total_steps[key] += steps
     total_fee[key] += fee
+    total_balance[key] += balance
 }
 END {
     for (key in count) {
         avg_mem = int(total_mem[key] / count[key])
         avg_steps = int(total_steps[key] / count[key])
         avg_fee = int(total_fee[key] / count[key])
-        print key "|" count[key] "|" avg_mem "|" avg_steps "|" avg_fee
+        avg_balance = int(total_balance[key] / count[key])
+        print key "|" count[key] "|" avg_mem "|" avg_steps "|" avg_fee "|" avg_balance
     }
-}' "$TEMP_FILE" | sort -t'|' -k1,2 | while IFS='|' read -r cat action cnt avg_mem avg_steps avg_fee; do
+}' "$TEMP_FILE" | sort -t'|' -k1,2 | while IFS='|' read -r cat action cnt avg_mem avg_steps avg_fee avg_balance; do
     avg_mem_formatted=$(format_number "$avg_mem")
     avg_steps_formatted=$(format_number "$avg_steps")
     avg_fee_ada=$(awk "BEGIN {printf \"%.4f\", $avg_fee / 1000000}")
+    avg_balance_ada=$(awk "BEGIN {printf \"%.4f\", ${avg_balance:-0} / 1000000}")
     mem_pct=$(awk "BEGIN {printf \"%.1f\", ($avg_mem / $MAX_MEM) * 100}")
     steps_pct=$(awk "BEGIN {printf \"%.1f\", ($avg_steps / $MAX_STEPS) * 100}")
     
@@ -287,11 +312,11 @@ END {
         pct_color="${GREEN}"
     fi
     
-    printf "${YELLOW}|${NC} %-8s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %5s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} ${pct_color}%15s${NC} ${YELLOW}|${NC}\n" \
-        "$cat" "$action" "$cnt" "$avg_mem_formatted" "$avg_steps_formatted" "$avg_fee_ada" "${mem_pct}%/${steps_pct}%"
+    printf "${YELLOW}|${NC} %-8s ${YELLOW}|${NC} %-24s ${YELLOW}|${NC} %5s ${YELLOW}|${NC} %18s ${YELLOW}|${NC} %21s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} %13s ${YELLOW}|${NC} ${pct_color}%15s${NC} ${YELLOW}|${NC}\n" \
+        "$cat" "$action" "$cnt" "$avg_mem_formatted" "$avg_steps_formatted" "$avg_fee_ada" "$avg_balance_ada" "${mem_pct}%/${steps_pct}%"
 done
 
-printf "${YELLOW}+----------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+${NC}\n"
+printf "${YELLOW}+----------+--------------------------+-------+--------------------+-----------------------+---------------+-----------------+-----------------+${NC}\n"
 
 echo ""
 echo -e "${CYAN}Budget limits per transaction:${NC}"

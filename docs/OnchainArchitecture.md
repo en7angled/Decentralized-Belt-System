@@ -4,19 +4,64 @@
 - [Onchain Architecture Documentation](#onchain-architecture-documentation)
   - [Overview](#overview)
     - [State NFT Token Name Derivation](#state-nft-token-name-derivation)
-  - [Script Dependencies & Parameterization](#script-dependencies--parameterization)
+  - [Script Dependencies \& Parameterization](#script-dependencies--parameterization)
+    - [Deployment Order](#deployment-order)
+    - [Oracle NFT Policy: Inlined, Not Deployed](#oracle-nft-policy-inlined-not-deployed)
+    - [ProtocolParams Structure](#protocolparams-structure)
+    - [Why This Design?](#why-this-design)
+    - [Security Implications](#security-implications)
+    - [CurrencySymbol Inheritance](#currencysymbol-inheritance)
   - [Oracle Hub for Parameters](#oracle-hub-for-parameters)
+    - [Core Design Decision](#core-design-decision)
+    - [Architecture](#architecture)
+    - [OracleParams](#oracleparams)
+    - [OracleValidator](#oraclevalidator)
+    - [OracleNFTPolicy](#oraclenftpolicy)
+    - [How the MintingPolicy Uses the Oracle](#how-the-mintingpolicy-uses-the-oracle)
+    - [Protocol Operational Parameters](#protocol-operational-parameters)
+    - [Admin CLI Commands](#admin-cli-commands)
+    - [Security Considerations](#security-considerations)
   - [Minting Policy](#minting-policy)
   - [Profiles Validator](#profiles-validator)
   - [Ranks Validator](#ranks-validator)
   - [Memberships Validator](#memberships-validator)
-  - [Achievements Validator](#achievements-validator)
   - [Promotion Flow](#promotion-flow)
+    - [Phase 1: Promotion Creation (Minting Policy)](#phase-1-promotion-creation-minting-policy)
+    - [Phase 2: Promotion Acceptance (Profiles + Ranks Validators)](#phase-2-promotion-acceptance-profiles--ranks-validators)
   - [Membership Flow](#membership-flow)
-  - [Achievement Flow](#achievement-flow)
+    - [Requirements](#requirements)
+    - [Phase 1: Organization Creates Membership (Minting Policy + Memberships Validator)](#phase-1-organization-creates-membership-minting-policy--memberships-validator)
+      - [Case A: New Member (no existing membership history at this organization)](#case-a-new-member-no-existing-membership-history-at-this-organization)
+      - [Case B: Existing Member (membership history already exists)](#case-b-existing-member-membership-history-already-exists)
+    - [Phase 2: Practitioner Accepts Membership (Memberships Validator only)](#phase-2-practitioner-accepts-membership-memberships-validator-only)
+    - [Phase 3: Update Membership End Date (Memberships Validator only)](#phase-3-update-membership-end-date-memberships-validator-only)
+    - [Membership Token ID Derivation](#membership-token-id-derivation)
   - [BJJ Promotion Rules](#bjj-promotion-rules)
+    - [Belt Hierarchy](#belt-hierarchy)
+    - [Validation Rules](#validation-rules)
+    - [Organization Handling](#organization-handling)
+  - [Output Index Optimization](#output-index-optimization)
+    - [How It Works](#how-it-works)
+    - [Output Index Conventions](#output-index-conventions)
+    - [Benefits](#benefits)
+    - [Security](#security)
   - [Security Model](#security-model)
+    - [Multi-Layer Validation](#multi-layer-validation)
+    - [Attack Prevention](#attack-prevention)
+    - [Reference Input Usage](#reference-input-usage)
+    - [Token Flow Summary](#token-flow-summary)
+  - [Achievements Validator](#achievements-validator)
+    - [Achievement Data Model](#achievement-data-model)
+    - [Achievement Redeemers](#achievement-redeemers)
+    - [Security Properties](#security-properties)
+  - [Achievement Flow](#achievement-flow)
   - [Membership Datum Optimization](#membership-datum-optimization)
+    - [Principle: Derive, Don't Store](#principle-derive-dont-store)
+    - [Fields Removed](#fields-removed)
+    - [Why Not Rank Datums?](#why-not-rank-datums)
+    - [Trade-offs](#trade-offs)
+    - [Security Implications](#security-implications-1)
+    - [Convenience Helpers](#convenience-helpers)
 
 
 ## Overview
@@ -48,16 +93,16 @@ The system consists of six main validators and an oracle hub that work together 
 
 All state and user NFTs share the same minting policy (currency symbol). Token names are derived deterministically as below. `blake2b_224` yields 28 bytes; CIP-67 prefixes are 4 bytes.
 
-| Token | Token name derivation | CIP-67 prefix | Size |
-|-------|------------------------|---------------|------|
-| **Profile Ref** (state at Profiles) | `refPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef` | Yes (ref `0x000643b0`) | 32 B (4 + 28) |
-| **Profile User** (held by owner) | `userPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from same seed | Yes (user `0x000de140`) | 32 B (4 + 28) |
-| **First rank** (initial, with practitioner profile) | `blake2b_224(profileRefTokenName \|\| integerToByteString(BigEndian, 0, rankNumber))` | No | 28 B |
-| **Promotion / Accepted rank** (pending then accepted) | `blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef` | No | 28 B |
-| **Membership histories root** (list node at Memberships) | `blake2b_224(organizationProfileRefTokenName)` | No | 28 B |
-| **Membership history** (at Memberships) | `blake2b_224(orgProfileTokenName \|\| practitionerProfileTokenName)` | No | 28 B |
-| **Membership interval** (at Memberships) | `blake2b_224(membershipHistoryTokenName \|\| integerToByteString(BigEndian, 0, intervalNumber))` | No | 28 B |
-| **Achievement** (state at Achievements) | `refPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef` | Yes (ref `0x000643b0`) | 32 B (4 + 28) |
+| Token                                                    | Token name derivation                                                                               | CIP-67 prefix           | Size          |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------- | ------------- |
+| **Profile Ref** (state at Profiles)                      | `refPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef` | Yes (ref `0x000643b0`)  | 32 B (4 + 28) |
+| **Profile User** (held by owner)                         | `userPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from same seed      | Yes (user `0x000de140`) | 32 B (4 + 28) |
+| **First rank** (initial, with practitioner profile)      | `blake2b_224(profileRefTokenName \|\| integerToByteString(BigEndian, 0, rankNumber))`               | No                      | 28 B          |
+| **Promotion / Accepted rank** (pending then accepted)    | `blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef`              | No                      | 28 B          |
+| **Membership histories root** (list node at Memberships) | `blake2b_224(organizationProfileRefTokenName)`                                                      | No                      | 28 B          |
+| **Membership history** (at Memberships)                  | `blake2b_224(orgProfileTokenName \|\| practitionerProfileTokenName)`                                | No                      | 28 B          |
+| **Membership interval** (at Memberships)                 | `blake2b_224(membershipHistoryTokenName \|\| integerToByteString(BigEndian, 0, intervalNumber))`    | No                      | 28 B          |
+| **Achievement** (state at Achievements)                  | `refPrefix <> blake2b_224(txId \|\| integerToByteString(BigEndian, 0, txIdx))` from seed `TxOutRef` | Yes (ref `0x000643b0`)  | 32 B (4 + 28) |
 
 
 ## Script Dependencies & Parameterization
@@ -66,16 +111,25 @@ The BJJ Belt System uses a carefully designed script dependency architecture tha
 
 ### Deployment Order
 
-Scripts must be deployed in a specific order due to hash and oracle dependencies:
+The **only strict ordering constraint** is that the main MintingPolicy is parameterized by the oracle NFT `AssetClass`, so the oracle NFT must exist before the MintingPolicy can be compiled and deployed. The order of deploying the other validators does not matter.
 
-```
-1. ProfilesValidator (unparameterized) → hash known
-2. RanksValidator (unparameterized) → hash known
-3. MembershipsValidator (unparameterized) → hash known
-4. OracleValidator (unparameterized) → deployed as reference script
-5. Mint Oracle NFT (via OracleNFTPolicy one-shot) → lock OracleParams at OracleValidator
-6. MintingPolicy (parameterized by ProtocolParams including oracle AssetClass) → compiled and deployed
-```
+**Required sequence:**
+
+1. **Deploy reference scripts** for the spending validators (Profiles, Ranks, Memberships, Achievements) and the Oracle Validator — in **any order**. All of these are unparameterized, so their script hashes are known at compile time.
+2. **Mint the oracle NFT** in a single transaction that uses the Oracle NFT Policy **inlined** (see below). Lock the oracle NFT and initial `OracleParams` datum at the Oracle Validator address. The Oracle Validator must already be deployed (as ref script or otherwise) so that the lock output is valid.
+3. **Compile and deploy the MintingPolicy** with the newly minted oracle NFT `AssetClass` in `ProtocolParams`, then deploy it as a reference script (or use it inlined; this codebase deploys it as ref script for subsequent minting transactions).
+
+**Why this order:** The MintingPolicy is compiled with `mintingPolicyCompile (mkProtocolParams oracleAC)`; `oracleAC` is only known after the oracle NFT mint transaction is confirmed. No other script depends on another’s hash for deployment — only the MintingPolicy depends on the oracle token identity.
+
+### Oracle NFT Policy: Inlined, Not Deployed
+
+The **Oracle NFT Policy** (OracleNFTPolicy) is a one-shot minting policy parameterized by a seed `TxOutRef`. It is **never deployed as a reference script**. It is compiled on the fly for the single transaction that mints the oracle NFT and is attached to that transaction as an **inlined script** (e.g. `GYMintScript` in the off-chain code).
+
+**Architecture decision — reasons for inlining rather than deploying:**
+
+1. **One-shot, deployment-specific policy:** The policy is parameterized by the seed `TxOutRef` chosen at deployment time. Each deployment uses a different seed, so each deployment produces a **different script** (different currency symbol). There is no single “canonical” Oracle NFT Policy to reuse; the script is unique per protocol instance.
+2. **No reuse:** The oracle NFT is minted exactly once per protocol instance. Deploying the policy as a reference script would consume UTxO space and add a deployment step for a script that is used in only one transaction and never again.
+3. **Simplicity:** Inlining keeps the deployment flow to: (a) deploy the validators that need to be reused (including Oracle Validator), (b) run one mint transaction that carries the one-shot policy, (c) compile and deploy the main MintingPolicy with the resulting oracle `AssetClass`. The main MintingPolicy (used for all profile, rank, membership, and achievement minting) is the one deployed as a reference script for ongoing use.
 
 ### ProtocolParams Structure
 
@@ -93,14 +147,14 @@ The `oracleToken` field (an `AssetClass`) is used by the MintingPolicy to locate
 
 ### Why This Design?
 
-| Script | Parameterized? | How It Gets Cross-Validator Addresses |
-|--------|----------------|--------------------------------------|
-| MintingPolicy | Yes (by ProtocolParams incl. oracle token) | Directly from compiled-in params; reads oracle via reference input |
-| ProfilesValidator | No | From profile datum's `protocolParams` |
-| RanksValidator | No | From rank datum's `promotionProtocolParams` |
-| MembershipsValidator | No | No cross-validator lookups needed (authorization via User NFTs) |
-| OracleValidator | No | N/A (guards oracle UTxO; admin-gated) |
-| OracleNFTPolicy | Yes (by seed TxOutRef) | N/A (one-shot minting; ensures oracle NFT uniqueness) |
+| Script               | Parameterized?                             | How It Gets Cross-Validator Addresses                              |
+| -------------------- | ------------------------------------------ | ------------------------------------------------------------------ |
+| MintingPolicy        | Yes (by ProtocolParams incl. oracle token) | Directly from compiled-in params; reads oracle via reference input |
+| ProfilesValidator    | No                                         | From profile datum's `protocolParams`                              |
+| RanksValidator       | No                                         | From rank datum's `promotionProtocolParams`                        |
+| MembershipsValidator | No                                         | No cross-validator lookups needed (authorization via User NFTs)    |
+| OracleValidator      | No                                         | N/A (guards oracle UTxO; admin-gated)                              |
+| OracleNFTPolicy      | Yes (by seed TxOutRef)                     | N/A (one-shot minting; ensures oracle NFT uniqueness)              |
 
 **Benefits**:
 
@@ -176,6 +230,7 @@ data OracleParams = OracleParams
   { opAdminPkh          :: PubKeyHash      -- admin who can update oracle
   , opPaused            :: Bool             -- global pause gate
   , opFeeConfig         :: Maybe FeeConfig  -- optional fee configuration
+  , opMinUTxOValue      :: Integer          -- minimum lovelace for protocol state outputs (used on-chain; no fixed constant)
   }
 
 data FeeConfig = FeeConfig
@@ -190,7 +245,7 @@ data FeeConfig = FeeConfig
 
 Unparameterized spending validator. Rules:
 - The admin (`opAdminPkh` from the **current** datum) must sign the transaction
-- The oracle UTxO must be returned to the **same address** with the **same value**
+- The oracle UTxO must be returned to the **same address** with value **≥** spent value (min-value check; the tx builder/balancer may add lovelace to script outputs)
 - The new datum is accepted freely (allows updating all oracle parameters including admin key rotation)
 
 ### OracleNFTPolicy
@@ -210,32 +265,42 @@ At runtime, every minting transaction must include the oracle UTxO as a referenc
 3. Checks `opPaused` — if `True`, the transaction fails with "Protocol is paused"
 4. Calls `checkFee oracle feeSelector txInfoOutputs` per redeemer to validate fee payment (if fees are configured)
 
-Minimum output lovelace for protocol UTxO outputs is a fixed constant (3,500,000) in `Onchain.Utils.minLovelaceValue`, not configurable via the oracle.
+Minimum output lovelace for protocol state outputs comes **only** from the oracle: the MintingPolicy and MembershipsValidator use `opMinUTxOValue` from the oracle datum. There is no fixed constant in `Onchain.Utils` for min lovelace.
+
+**Minimum lovelace**: On-chain, validators use only the oracle's `opMinUTxOValue`. Off-chain, the minimum lovelace for each state output can be computed as `max(oracleMinUTxOValue, max(ledgerMinUTxOValue, serializedOutputSize × coinsPerUtxoByte))` using node protocol parameters and the serialized size of the output; the oracle value acts as a floor.
+
+**Output value checks**: When the MintingPolicy (or any validator) checks that a state output is locked, it uses **min-value** checks (output value **≥** expected) via `Onchain.Utils.checkTxOutAtIndexWithDatumMinValueAndAddress`, not exact equality. The actual locked value can exceed the minimum because (1) min-ADA depends on datum size and (2) the tx builder/balancer may add lovelace to script outputs. Continuing outputs (same validator, updated datum) also use min-value with the spent input's value for the same reason.
 
 ### Protocol Operational Parameters
 
-| Parameter | Effect | Default |
-|-----------|--------|---------|
-| `opAdminPkh` | Who can update the oracle | Deployer's PubKeyHash |
-| `opPaused` | Blocks all minting operations when True | False |
-| `opFeeConfig` | Optional per-action fee configuration | Nothing (no fees) |
+| Parameter        | Effect                                      | Default               |
+| ---------------- | ------------------------------------------- | --------------------- |
+| `opAdminPkh`     | Who can update the oracle                   | Deployer's PubKeyHash |
+| `opPaused`       | Blocks all minting operations when True     | False                 |
+| `opFeeConfig`    | Optional per-action fee configuration       | Nothing (no fees)     |
+| `opMinUTxOValue` | Minimum lovelace for protocol state outputs | e.g. 1_000_000        |
 
 ### Admin CLI Commands
 
-| Command | Description |
-|---------|-------------|
-| `pause-protocol` | Set `opPaused = True` |
-| `unpause-protocol` | Set `opPaused = False` |
-| `set-fees --fee-address ADDR --profile-fee N --promotion-fee N --membership-fee N` | Configure fees |
-| `set-fees --clear-fees` | Remove fee configuration |
-| `query-oracle` | Display current oracle parameters |
+| Command                                           | Description                                           |
+| ------------------------------------------------- | ----------------------------------------------------- |
+| `pause-protocol`                                  | Set `opPaused = True`                                 |
+| `unpause-protocol`                                | Set `opPaused = False`                                |
+| `set-fees --fee-address ADDR --profile-fee N ...` | Configure fees                                        |
+| `set-fees --clear-fees`                           | Remove fee configuration                              |
+| `set-min-utxo-value --lovelace N`                 | Set `opMinUTxOValue` (min lovelace for state outputs) |
+| `query-oracle`                                    | Display current oracle parameters                     |
+
+### Oracle datum schema and migration
+
+`OracleParams` has four fields: `opAdminPkh`, `opPaused`, `opFeeConfig`, `opMinUTxOValue`. Existing oracle UTxOs created before this extension have a **3-field** datum (no `opMinUTxOValue`). New validators and off-chain code expect a **4-field** datum. For zero-downtime upgrades, use backward-compatible decoding when reading the oracle: if the datum has only 3 elements, treat `opMinUTxOValue` as a default (e.g. 10_000_000). Otherwise, the admin must update the oracle (e.g. run `set-min-utxo-value`) with new code that can write the 4-field datum; ensure the decoder can read both 3- and 4-field datums so the update transaction can succeed.
 
 ### Security Considerations
 
 - The oracle NFT is unique (one-shot policy ensures exactly one exists)
 - Only the current admin can update oracle parameters (signature check on `opAdminPkh`)
 - Admin key rotation is possible (update `opAdminPkh` in the datum)
-- The oracle UTxO value cannot be changed (output must preserve address + value)
+- The oracle UTxO value cannot be decreased (output must preserve address and value ≥ spent value; min-value check accommodates balancer-added lovelace)
 - The MintingPolicy reads the oracle as a reference input (non-destructive; no contention)
 - If fees are enabled, fee payment is validated on-chain in every minting transaction
 
@@ -372,11 +437,11 @@ This design means the validator dynamically resolves addresses based on datum co
 - **Immutability**: Profiles cannot be deleted once created
 
 **Metadata Size Limits** (enforced during creation and updates):
-| Field | Max Size |
-|-------|----------|
-| `name` | 128 bytes |
+| Field         | Max Size   |
+| ------------- | ---------- |
+| `name`        | 128 bytes  |
 | `description` | 1024 bytes |
-| `imageURI` | 256 bytes |
+| `imageURI`    | 256 bytes  |
 
 **UpdateProfileImage Validation**:
 1. User must spend their Profile User NFT (authorization)
@@ -528,7 +593,7 @@ The root is created atomically with the organization profile (`CreateProfile Org
 **Datum–redeemer restrictions**: `ListNodeDatum` accepts only `InsertNodeToMHList` or `UpdateNodeInMHList`; `IntervalDatum` accepts only `AcceptInterval` or `UpdateEndDate`; `Cleanup` applies when the datum is absent or does not parse as a valid `MembershipDatum`.
 
 **Security Considerations**:
-- Tokens locked at the validator never leave (output checks guarantee same address + same value)
+- Tokens locked at the validator never leave (output checks guarantee same address + value ≥ spent value; min-value check used because balancer may add lovelace; off-chain locks with exact value from spent UTxO)
 - Exact mint checks prevent other-token-name attacks
 - Organization User NFT required for `InsertNodeToMHList` and `UpdateNodeInMHList` (enforced by MintingPolicy)
 - Practitioner User NFT required for `AcceptInterval` (enforced by MembershipsValidator)
@@ -651,11 +716,11 @@ Note: No minting or burning occurs in this phase. This is "Variant A" from the d
 
 ### Membership Token ID Derivation
 
-| Token | Derivation | Purpose |
-|-------|-----------|---------|
-| Membership Histories Root | `blake2b_224(profileRefTokenName)` | One per organization, created with org profile |
-| Membership History | `blake2b_224(orgTokenName ++ practitionerTokenName)` | One per org-practitioner pair |
-| Membership Interval | `blake2b_224(historyTokenName ++ intervalNumber)` | Sequential per history |
+| Token                     | Derivation                                           | Purpose                                        |
+| ------------------------- | ---------------------------------------------------- | ---------------------------------------------- |
+| Membership Histories Root | `blake2b_224(profileRefTokenName)`                   | One per organization, created with org profile |
+| Membership History        | `blake2b_224(orgTokenName ++ practitionerTokenName)` | One per org-practitioner pair                  |
+| Membership Interval       | `blake2b_224(historyTokenName ++ intervalNumber)`    | Sequential per history                         |
 
 All share the same `CurrencySymbol` as other protocol tokens.
 
@@ -666,18 +731,18 @@ The system enforces authentic BJJ promotion rules on-chain via `validatePromotio
 
 ### Belt Hierarchy
 
-| Index | Belt | More Than (months) |
-|-------|------|---------------------|
-| 0 | White | - |
-| 1 | Blue | 12 months |
-| 2 | Purple | 18 months |
-| 3 | Brown | 12 months |
-| 4 | Black | 12 months |
-| 5-10 | Black 1st-6th Degree | 36-60 months |
-| 11 | Red & Black (7th Degree) | 84 months |
-| 12 | Red & White (8th Degree) | 84 months |
-| 13 | Red (9th Degree) | 120 months |
-| 14 | Red 10th Degree | - |
+| Index | Belt                     | More Than (months) |
+| ----- | ------------------------ | ------------------ |
+| 0     | White                    | -                  |
+| 1     | Blue                     | 12 months          |
+| 2     | Purple                   | 18 months          |
+| 3     | Brown                    | 12 months          |
+| 4     | Black                    | 12 months          |
+| 5-10  | Black 1st-6th Degree     | 36-60 months       |
+| 11    | Red & Black (7th Degree) | 84 months          |
+| 12    | Red & White (8th Degree) | 84 months          |
+| 13    | Red (9th Degree)         | 120 months         |
+| 14    | Red 10th Degree          | -                  |
 
 ### Validation Rules
 
@@ -705,7 +770,10 @@ All validators use an **output index optimization** for efficient O(1) output va
 
 ### How It Works
 
-Instead of searching through all transaction outputs to find a specific output (via `hasTxOutWithInlineDatumAndValue`), validators receive the expected output index directly in the redeemer and verify the output at that specific index (via `checkTxOutAtIndex`).
+Instead of searching through all transaction outputs to find a specific output (via `hasTxOutWithInlineDatumAndValue`), validators receive the expected output index directly in the redeemer and verify the output at that specific index. Two helpers in `Onchain.Utils` are used:
+
+- **Min-value** (`checkTxOutAtIndexWithDatumMinValueAndAddress`): Require output value **≥** expected (same datum and address). Use for **continuing outputs** (validator spends a UTxO and locks updated state at the same address) and for **MintingPolicy** checks of newly created state outputs. The tx builder/balancer may add lovelace to script outputs; exact equality would cause validation failures after balancing. Off-chain still locks with the exact value from the spent UTxO where applicable.
+- **Exact-value** (`checkTxOutAtIndexWithDatumValueAndAddress`): Require output value **=** expected. Use only when the output value is not modified by the balancer (rare for script outputs).
 
 **Before** (O(n) search):
 ```haskell
@@ -715,7 +783,8 @@ hasTxOutWithInlineDatumAndValue datum value address txInfoOutputs
 
 **After** (O(1) indexed lookup):
 ```haskell
-checkTxOutAtIndex outputIdx datum value address txInfoOutputs
+checkTxOutAtIndexWithDatumMinValueAndAddress outputIdx datum minValue address txInfoOutputs
+-- or checkTxOutAtIndexWithDatumValueAndAddress for exact value when appropriate
 -- Directly accesses output at specified index
 ```
 
@@ -723,26 +792,26 @@ checkTxOutAtIndex outputIdx datum value address txInfoOutputs
 
 Off-chain transaction builders track output indices and include them in redeemers. The order in the skeleton `mconcat` determines the output indices:
 
-| Transaction | Output 0 | Output 1 | Output 2 | Output 3 |
-|-------------|----------|----------|----------|----------|
-| CreateProfile (Practitioner) | Profile state | User NFT | Rank state | - |
-| CreateProfile (Organization) | Profile state | User NFT | MH Root state | - |
-| UpdateProfile | Updated profile | - | - | - |
-| Promote | Pending rank | - | - | - |
-| AcceptPromotion | Updated profile | Updated rank | - | - |
-| NewMembershipHistory | Updated left node | Inserted MH node | First interval | - |
-| NewMembershipInterval | Updated MH node | New interval | - | - |
-| AcceptInterval | Updated interval | - | - | - |
-| UpdateEndDate | Updated interval | - | - | - |
-| CleanupDust | (dust UTxOs consumed; ADA to caller) | - | - | - |
+| Transaction                  | Output 0                             | Output 1         | Output 2       | Output 3 |
+| ---------------------------- | ------------------------------------ | ---------------- | -------------- | -------- |
+| CreateProfile (Practitioner) | Profile state                        | User NFT         | Rank state     | -        |
+| CreateProfile (Organization) | Profile state                        | User NFT         | MH Root state  | -        |
+| UpdateProfile                | Updated profile                      | -                | -              | -        |
+| Promote                      | Pending rank                         | -                | -              | -        |
+| AcceptPromotion              | Updated profile                      | Updated rank     | -              | -        |
+| NewMembershipHistory         | Updated left node                    | Inserted MH node | First interval | -        |
+| NewMembershipInterval        | Updated MH node                      | New interval     | -              | -        |
+| AcceptInterval               | Updated interval                     | -                | -              | -        |
+| UpdateEndDate                | Updated interval                     | -                | -              | -        |
+| CleanupDust                  | (dust UTxOs consumed; ADA to caller) | -                | -              | -        |
 
 ### Benefits
 
-| Aspect | Before | After |
-|--------|--------|-------|
-| Time complexity | O(n) per output check | O(1) per output check |
-| Execution units | Higher (iteration overhead) | Lower (direct access) |
-| Script size | Slightly smaller | Slightly larger (index params) |
+| Aspect          | Before                      | After                          |
+| --------------- | --------------------------- | ------------------------------ |
+| Time complexity | O(n) per output check       | O(1) per output check          |
+| Execution units | Higher (iteration overhead) | Lower (direct access)          |
+| Script size     | Slightly smaller            | Slightly larger (index params) |
 
 ### Security
 
@@ -756,56 +825,56 @@ The output index is provided by the off-chain code but validated on-chain:
 
 ### Multi-Layer Validation
 
-| Stage | Validator | What's Validated | Who Pays |
-|-------|-----------|-----------------|----------|
-| Promotion Creation | MintingPolicy | Full BJJ rules, master authorization, uniqueness | Master |
-| Promotion Acceptance | ProfilesValidator + RanksValidator | Consent, state validity | Student |
-| Membership History Init | MintingPolicy + MembershipsValidator | Org authorization, linked list integrity, exact mint | Organization |
+| Stage                   | Validator                            | What's Validated                                        | Who Pays     |
+| ----------------------- | ------------------------------------ | ------------------------------------------------------- | ------------ |
+| Promotion Creation      | MintingPolicy                        | Full BJJ rules, master authorization, uniqueness        | Master       |
+| Promotion Acceptance    | ProfilesValidator + RanksValidator   | Consent, state validity                                 | Student      |
+| Membership History Init | MintingPolicy + MembershipsValidator | Org authorization, linked list integrity, exact mint    | Organization |
 | Membership Interval Add | MintingPolicy + MembershipsValidator | Org authorization, interval chain integrity, exact mint | Organization |
-| Membership Acceptance | MembershipsValidator | Practitioner consent, datum update | Practitioner |
+| Membership Acceptance   | MembershipsValidator                 | Practitioner consent, datum update                      | Practitioner |
 
 ### Attack Prevention
 
-| Attack Vector | Prevention Mechanism |
-|--------------|---------------------|
-| Invalid promotion creation | Full `validatePromotion` at mint time |
-| Replay attacks | Seed TxOutRef must be spent (one-time use) |
-| Token name collisions | `blake2b_224` hash-based deterministic naming from TxOutRef or composite keys |
-| Unauthorized promotion | Master must spend their User NFT |
-| Promoting Organizations | `getCurrentRankId` fails for profiles with no rank |
-| Double-acceptance (same rank) | `nextBelt > currentBelt` check at acceptance |
-| Out-of-order acceptance | `nextBeltDate > currentBeltDate` check at acceptance |
-| Unauthorized acceptance | Student must spend User NFT (RanksValidator) |
-| Other-token-name attacks | `mintValueMinted == exact expected tokens` (enforced in both MP and MV) |
-| Oversized metadata | Per-field size limits enforced on-chain |
-| Malicious ProtocolParams | MintingPolicy hash includes params; wrong params = orphaned profiles |
-| Profile deletion | Not supported by design (immutability) |
-| Unauthorized membership creation | Organization must spend their User NFT |
-| Duplicate membership histories | Deterministic ID from org+practitioner; linked list ordering prevents duplicates |
-| Cross-organization manipulation | `organizationId` field checked on all nodes in same transaction; sorted linked list enforces ordering |
-| Membership interval overlap | New interval only allowed if head interval is closed (end date in past) and accepted |
-| Unauthorized membership acceptance | Practitioner must spend their User NFT |
-| Double membership acceptance | `acceptMembershipInterval` fails if `isAck` is already `True` |
-| Foreign token injection | `hasCurrencySymbol` validates all referenced AssetClasses belong to the protocol |
-| Datum type confusion at MV | `MembershipDatum` sum type ensures correct parsing; validator pattern-matches on constructor |
-| Unauthorized oracle update | `opAdminPkh` signature check; only current admin can modify oracle |
-| Oracle value theft | Oracle output must preserve same address + same value |
-| Oracle NFT duplication | One-shot minting policy (seed TxOutRef consumed) prevents duplicate NFTs |
-| Missing oracle reference input | `readOracleParams` fails if oracle NFT not found in reference inputs |
-| Protocol pause bypass | MintingPolicy checks `opPaused` on every mint; cannot be skipped |
-| Fee evasion | `checkFee` validates fee payment output on-chain per redeemer |
+| Attack Vector                      | Prevention Mechanism                                                                                  |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Invalid promotion creation         | Full `validatePromotion` at mint time                                                                 |
+| Replay attacks                     | Seed TxOutRef must be spent (one-time use)                                                            |
+| Token name collisions              | `blake2b_224` hash-based deterministic naming from TxOutRef or composite keys                         |
+| Unauthorized promotion             | Master must spend their User NFT                                                                      |
+| Promoting Organizations            | `getCurrentRankId` fails for profiles with no rank                                                    |
+| Double-acceptance (same rank)      | `nextBelt > currentBelt` check at acceptance                                                          |
+| Out-of-order acceptance            | `nextBeltDate > currentBeltDate` check at acceptance                                                  |
+| Unauthorized acceptance            | Student must spend User NFT (RanksValidator)                                                          |
+| Other-token-name attacks           | `mintValueMinted == exact expected tokens` (enforced in both MP and MV)                               |
+| Oversized metadata                 | Per-field size limits enforced on-chain                                                               |
+| Malicious ProtocolParams           | MintingPolicy hash includes params; wrong params = orphaned profiles                                  |
+| Profile deletion                   | Not supported by design (immutability)                                                                |
+| Unauthorized membership creation   | Organization must spend their User NFT                                                                |
+| Duplicate membership histories     | Deterministic ID from org+practitioner; linked list ordering prevents duplicates                      |
+| Cross-organization manipulation    | `organizationId` field checked on all nodes in same transaction; sorted linked list enforces ordering |
+| Membership interval overlap        | New interval only allowed if head interval is closed (end date in past) and accepted                  |
+| Unauthorized membership acceptance | Practitioner must spend their User NFT                                                                |
+| Double membership acceptance       | `acceptMembershipInterval` fails if `isAck` is already `True`                                         |
+| Foreign token injection            | `hasCurrencySymbol` validates all referenced AssetClasses belong to the protocol                      |
+| Datum type confusion at MV         | `MembershipDatum` sum type ensures correct parsing; validator pattern-matches on constructor          |
+| Unauthorized oracle update         | `opAdminPkh` signature check; only current admin can modify oracle                                    |
+| Oracle value theft                 | Oracle output must preserve same address + value ≥ spent value (min-value check)                      |
+| Oracle NFT duplication             | One-shot minting policy (seed TxOutRef consumed) prevents duplicate NFTs                              |
+| Missing oracle reference input     | `readOracleParams` fails if oracle NFT not found in reference inputs                                  |
+| Protocol pause bypass              | MintingPolicy checks `opPaused` on every mint; cannot be skipped                                      |
+| Fee evasion                        | `checkFee` validates fee payment output on-chain per redeemer                                         |
 
 ### Reference Input Usage
 
-| Transaction | Reference Inputs | Purpose |
-|-------------|-----------------|---------|
-| Create Profile | Oracle UTxO | Read pause gate, fees, minLovelace |
-| Create Promotion | Student profile, student rank, master profile, master rank, Oracle UTxO | Validate BJJ rules + oracle params |
-| Accept Promotion | Student's current rank | Validate state is still valid |
-| Update Profile | None | User NFT sufficient for authorization |
-| New Membership History | Right node (if insert-between) | Validate linked list ordering |
-| New Membership Interval | Last (head) interval | Validate interval is closed and accepted |
-| Accept Interval | None | Practitioner User NFT sufficient |
+| Transaction             | Reference Inputs                                                        | Purpose                                  |
+| ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------- |
+| Create Profile          | Oracle UTxO                                                             | Read pause gate, fees, minLovelace       |
+| Create Promotion        | Student profile, student rank, master profile, master rank, Oracle UTxO | Validate BJJ rules + oracle params       |
+| Accept Promotion        | Student's current rank                                                  | Validate state is still valid            |
+| Update Profile          | None                                                                    | User NFT sufficient for authorization    |
+| New Membership History  | Right node (if insert-between)                                          | Validate linked list ordering            |
+| New Membership Interval | Last (head) interval                                                    | Validate interval is closed and accepted |
+| Accept Interval         | None                                                                    | Practitioner User NFT sufficient         |
 
 ### Token Flow Summary
 
@@ -867,13 +936,13 @@ The Achievements Validator manages achievement NFTs that are awarded to practiti
 
 Each achievement is a CIP-68 token locked at the Achievements Validator with an `OnchainAchievement` datum:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `achievementId` | `AssetClass` | Unique identifier (derived from seed TxOutRef via blake2b_224) |
-| `achievementAwardedTo` | `ProfileId` | Ref AC of the practitioner receiving the achievement |
-| `achievementAwardedBy` | `ProfileId` | Ref AC of the profile granting the achievement |
-| `achievementDate` | `POSIXTime` | Date of the achievement (must be before tx validity range) |
-| `achievementIsAccepted` | `Bool` | Whether the practitioner has acknowledged the achievement |
+| Field                   | Type         | Description                                                    |
+| ----------------------- | ------------ | -------------------------------------------------------------- |
+| `achievementId`         | `AssetClass` | Unique identifier (derived from seed TxOutRef via blake2b_224) |
+| `achievementAwardedTo`  | `ProfileId`  | Ref AC of the practitioner receiving the achievement           |
+| `achievementAwardedBy`  | `ProfileId`  | Ref AC of the profile granting the achievement                 |
+| `achievementDate`       | `POSIXTime`  | Date of the achievement (must be before tx validity range)     |
+| `achievementIsAccepted` | `Bool`       | Whether the practitioner has acknowledged the achievement      |
 
 ### Achievement Redeemers
 
@@ -917,12 +986,12 @@ This principle applies specifically to **membership datums**, where all token ID
 
 ### Fields Removed
 
-| Datum | Removed / Changed Field | Derivation |
-|-------|------------------------|------------|
-| `OnchainMembershipHistory` | `membershipHistoryId :: MembershipHistoryId` (removed) | `deriveMembershipHistoryId(orgId, practitionerId)` — both fields remain in the datum |
-| `OnchainMembershipHistory` | `membershipHistoryIntervalsHeadId :: MembershipIntervalId` → `membershipHistoryIntervalsHeadNumber :: Integer` | `deriveMembershipIntervalId(historyId, headNumber)` — compose with the above |
-| `OnchainMembershipInterval` | `membershipIntervalId :: MembershipIntervalId` (removed) | `deriveMembershipIntervalId(historyId, intervalNumber)` — `intervalNumber` remains in the datum; `historyId` is derived from the parent history |
-| `OnchainMembershipInterval` | `membershipIntervalPrevId :: Maybe MembershipIntervalId` (removed) | Dead field: never read on-chain or off-chain. If needed: `number > 0 → Just(deriveMembershipIntervalId(historyId, number - 1))` |
+| Datum                       | Removed / Changed Field                                                                                        | Derivation                                                                                                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OnchainMembershipHistory`  | `membershipHistoryId :: MembershipHistoryId` (removed)                                                         | `deriveMembershipHistoryId(orgId, practitionerId)` — both fields remain in the datum                                                            |
+| `OnchainMembershipHistory`  | `membershipHistoryIntervalsHeadId :: MembershipIntervalId` → `membershipHistoryIntervalsHeadNumber :: Integer` | `deriveMembershipIntervalId(historyId, headNumber)` — compose with the above                                                                    |
+| `OnchainMembershipInterval` | `membershipIntervalId :: MembershipIntervalId` (removed)                                                       | `deriveMembershipIntervalId(historyId, intervalNumber)` — `intervalNumber` remains in the datum; `historyId` is derived from the parent history |
+| `OnchainMembershipInterval` | `membershipIntervalPrevId :: Maybe MembershipIntervalId` (removed)                                             | Dead field: never read on-chain or off-chain. If needed: `number > 0 → Just(deriveMembershipIntervalId(historyId, number - 1))`                 |
 
 ### Why Not Rank Datums?
 
@@ -936,21 +1005,21 @@ After any promotion, the rank's ID is seed-based and **not recoverable** from `(
 
 **Datum size savings** (~120 bytes per history, ~124 bytes per interval):
 
-| Datum | Before | After | Saving |
-|-------|--------|-------|--------|
-| `OnchainMembershipHistory` | 4 fields (~258 bytes) | 3 fields (~135 bytes) | ~121 bytes |
-| `OnchainMembershipInterval` | 7 fields (~220 bytes) | 5 fields (~93 bytes) | ~124 bytes |
+| Datum                       | Before                | After                 | Saving     |
+| --------------------------- | --------------------- | --------------------- | ---------- |
+| `OnchainMembershipHistory`  | 4 fields (~258 bytes) | 3 fields (~135 bytes) | ~121 bytes |
+| `OnchainMembershipInterval` | 7 fields (~220 bytes) | 5 fields (~93 bytes)  | ~124 bytes |
 
 At `coinsPerUTxOByte = 4,310`, this reduces the chain-required min-ADA by ~0.5 ADA per UTxO. For an organization with 50 members (50 history nodes + 50+ intervals), this saves 50–100 ADA of permanently locked capital.
 
 **Additional hash computation cost** (1–4 extra `blake2b_224` calls per transaction):
 
-| Transaction | Extra hashes | Extra CPU steps | % of 10B limit | Extra ADA fee |
-|-------------|-------------|-----------------|-----------------|---------------|
-| NewMembershipHistory | +2 | ~1,200,000 | 0.012% | < 0.001 |
-| NewMembershipInterval | +4 | ~3,400,000 | 0.034% | < 0.001 |
-| UpdateEndDate | +1 | ~700,000 | 0.007% | < 0.001 |
-| AcceptInterval | 0 | 0 | 0% | 0 |
+| Transaction           | Extra hashes | Extra CPU steps | % of 10B limit | Extra ADA fee |
+| --------------------- | ------------ | --------------- | -------------- | ------------- |
+| NewMembershipHistory  | +2           | ~1,200,000      | 0.012%         | < 0.001       |
+| NewMembershipInterval | +4           | ~3,400,000      | 0.034%         | < 0.001       |
+| UpdateEndDate         | +1           | ~700,000        | 0.007%         | < 0.001       |
+| AcceptInterval        | 0            | 0               | 0%             | 0             |
 
 The datum size savings dominate: ~10x more saved in transaction size fees than spent on extra hashing, plus the locked capital reduction.
 

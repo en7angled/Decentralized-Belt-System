@@ -1,7 +1,7 @@
 @startuml RankPromotion
 
 title: Sequence Diagram : Rank Promotion
-caption: Decentalized Belt System Protocol 
+caption: Decentralized Belt System Protocol 
 
 !theme toy
 

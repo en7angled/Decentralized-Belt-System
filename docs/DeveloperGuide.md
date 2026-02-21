@@ -81,21 +81,21 @@
 └──────────────────────┴──────────────────────────────┘
 ```
 
-| Library | Purpose | Key Constraint |
-|---------|---------|----------------|
-| `onchain-lib` | Plutus validators, minting policies, on-chain types | **No off-chain imports** (no Aeson, Servant, etc.) |
-| `chainsync-lib` | Kupo ↔ Atlas match conversion, Kupo HTTP client | Network-facing only |
-| `offchain-lib` | Tx building, lookups, domain types, storage, ingestion | Core business logic; depends on `onchain-lib` |
-| `webapi-lib` | Auth, CORS middleware, health probes | Shared web infrastructure |
+| Library         | Purpose                                                | Key Constraint                                     |
+| --------------- | ------------------------------------------------------ | -------------------------------------------------- |
+| `onchain-lib`   | Plutus validators, minting policies, on-chain types    | **No off-chain imports** (no Aeson, Servant, etc.) |
+| `chainsync-lib` | Kupo ↔ Atlas match conversion, Kupo HTTP client        | Network-facing only                                |
+| `offchain-lib`  | Tx building, lookups, domain types, storage, ingestion | Core business logic; depends on `onchain-lib`      |
+| `webapi-lib`    | Auth, CORS middleware, health probes                   | Shared web infrastructure                          |
 
 ### 1.2 Executable Services
 
-| Executable | Port | Purpose |
-|-----------|------|---------|
-| `interaction-api` | 8082 | Build and submit transactions (Servant REST) |
-| `query-api` | 8083 | Query profiles, ranks, promotions (Servant REST) |
-| `chainsync-service` | 8084 | Sync chain data → PostgreSQL projections |
-| `admin` | CLI | Deploy scripts, manage oracle, run interactions |
+| Executable          | Port | Purpose                                          |
+| ------------------- | ---- | ------------------------------------------------ |
+| `interaction-api`   | 8082 | Build and submit transactions (Servant REST)     |
+| `query-api`         | 8083 | Query profiles, ranks, promotions (Servant REST) |
+| `chainsync-service` | 8084 | Sync chain data → PostgreSQL projections         |
+| `admin`             | CLI  | Deploy scripts, manage oracle, run interactions  |
 
 ### 1.3 Data Flow
 
@@ -278,9 +278,9 @@ deriveAchievementId profileId achievementName =
 
 The system uses two patterns for cross-validator communication:
 
-| Pattern | Used By | How It Works |
-|---------|---------|-------------|
-| **Compiled-in params** | MintingPolicy | `ProtocolParams` baked in at compile time |
+| Pattern                  | Used By                           | How It Works                                                   |
+| ------------------------ | --------------------------------- | -------------------------------------------------------------- |
+| **Compiled-in params**   | MintingPolicy                     | `ProtocolParams` baked in at compile time                      |
 | **Datum-carried params** | ProfilesValidator, RanksValidator | `protocolParams` field in datum → resolve addresses at runtime |
 
 If your new concept needs to reference another validator's address:
@@ -294,7 +294,7 @@ Every minting transaction reads the oracle via reference input:
 ```haskell
 -- Read oracle params (in MintingPolicy or any tx that needs them)
 let oracle = readOracleParams oracleToken (txInfoReferenceInputs txInfo)
-    minLv  = Utils.minLovelaceValue  -- fixed constant, not from oracle
+    minLv  = lovelaceValue (Lovelace (opMinUTxOValue oracle))  -- from oracle only
 
 -- Check pause gate
 traceIfFalse "Protocol is paused" (not $ opPaused oracle)
@@ -372,23 +372,23 @@ Interaction           →  interactionToTxSkeleton  →  GYTxSkeleton  →  GYTx
 
 ### 3.3 Key Abstractions
 
-| Abstraction | Type | Purpose |
-|-------------|------|---------|
+| Abstraction              | Type       | Purpose                                                   |
+| ------------------------ | ---------- | --------------------------------------------------------- |
 | `GYTxSkeleton 'PlutusV3` | **Monoid** | Composable transaction components; combine with `mconcat` |
-| `DeployedScriptsContext` | Record | Holds script hashes and reference script TxOutRefs |
-| `ProviderCtx` | Record | Network configuration + Cardano providers |
-| `Interaction` | Record | User intent = action + addresses + optional recipient |
-| `TxBuildingException` | Sum type | Domain-specific errors with HTTP status mapping |
+| `DeployedScriptsContext` | Record     | Holds script hashes and reference script TxOutRefs        |
+| `ProviderCtx`            | Record     | Network configuration + Cardano providers                 |
+| `Interaction`            | Record     | User intent = action + addresses + optional recipient     |
+| `TxBuildingException`    | Sum type   | Domain-specific errors with HTTP status mapping           |
 
 **Monad constraints used across the off-chain layer:**
 
-| Constraint | What It Provides |
-|-----------|------------------|
-| `GYTxQueryMonad m` | UTxO lookups, slot/time queries |
-| `GYTxUserQueryMonad m` | Extends `GYTxQueryMonad` with user-specific queries |
-| `GYTxBuilderMonadIO` | Builds transaction bodies from skeletons |
-| `MonadReader DeployedScriptsContext m` | Access to deployed script refs and hashes |
-| `MonadError GYTxMonadException m` | Error handling with `throwError` |
+| Constraint                             | What It Provides                                    |
+| -------------------------------------- | --------------------------------------------------- |
+| `GYTxQueryMonad m`                     | UTxO lookups, slot/time queries                     |
+| `GYTxUserQueryMonad m`                 | Extends `GYTxQueryMonad` with user-specific queries |
+| `GYTxBuilderMonadIO`                   | Builds transaction bodies from skeletons            |
+| `MonadReader DeployedScriptsContext m` | Access to deployed script refs and hashes           |
+| `MonadError GYTxMonadException m`      | Error handling with `throwError`                    |
 
 ### 3.4 TxBuilding/Context — Deployed Scripts Context
 
@@ -405,7 +405,7 @@ data DeployedScriptsContext = DeployedScriptsContext
   }
 ```
 
-**Config file requirement:** The file at `defaultTxBuldingContextFile` (`config/config_bjj_validators.json`) must include all six fields: `mintingPolicyHashAndRef`, `profilesValidatorHashAndRef`, `ranksValidatorHashAndRef`, `membershipsValidatorHashAndRef`, `oracleValidatorHashAndRef`, and `oracleNFTAssetClass`. Chain-sync and interaction-api load this file at startup; missing fields will cause parse failures. After deployment, replace any placeholder values with the actual script hashes, TxOutRefs, and oracle NFT asset class from the deployed scripts.
+**Config file requirement:** The file at `defaultTxBuildingContextFile` (`config/config_bjj_validators.json`) must include all six fields: `mintingPolicyHashAndRef`, `profilesValidatorHashAndRef`, `ranksValidatorHashAndRef`, `membershipsValidatorHashAndRef`, `oracleValidatorHashAndRef`, and `oracleNFTAssetClass`. Chain-sync and interaction-api load this file at startup; missing fields will cause parse failures. After deployment, replace any placeholder values with the actual script hashes, TxOutRefs, and oracle NFT asset class from the deployed scripts.
 
 **When adding a new validator**, you must:
 1. Add a new field: `myValidatorHashAndRef :: (GYScriptHash, GYTxOutRef)`
@@ -416,11 +416,11 @@ data DeployedScriptsContext = DeployedScriptsContext
 
 **Runners** (in the same module):
 
-| Function | Purpose |
-|----------|---------|
-| `runQuery` | Run read-only queries (no tx building) |
-| `runTx` | Build a transaction body from a skeleton |
-| `runTx'` | Build a transaction body (simpler return type) |
+| Function   | Purpose                                        |
+| ---------- | ---------------------------------------------- |
+| `runQuery` | Run read-only queries (no tx building)         |
+| `runTx`    | Build a transaction body from a skeleton       |
+| `runTx'`   | Build a transaction body (simpler return type) |
 
 ### 3.5 TxBuilding/Skeletons — Composable Skeleton Builders
 
@@ -428,40 +428,40 @@ These are the **low-level building blocks** for constructing transactions. Each 
 
 **Minting:**
 
-| Function | Purpose |
-|----------|---------|
-| `txMustMintWithMintRef` | Mint/burn tokens using a reference script |
-| `txMustMintCIP68UserAndRef` | Mint a CIP-68 Ref + User NFT pair |
-| `gyGenerateRefAndUserAC` | Generate CIP-68 asset classes from a seed TxOutRef |
-| `gyDeriveUserFromRefAC` | Derive User NFT asset class from Ref NFT |
+| Function                    | Purpose                                            |
+| --------------------------- | -------------------------------------------------- |
+| `txMustMintWithMintRef`     | Mint/burn tokens using a reference script          |
+| `txMustMintCIP68UserAndRef` | Mint a CIP-68 Ref + User NFT pair                  |
+| `gyGenerateRefAndUserAC`    | Generate CIP-68 asset classes from a seed TxOutRef |
+| `gyDeriveUserFromRefAC`     | Derive User NFT asset class from Ref NFT           |
 
 **Locking (outputs):**
 
-| Function | Purpose |
-|----------|---------|
+| Function                                 | Purpose                                     |
+| ---------------------------------------- | ------------------------------------------- |
 | `txMustLockStateWithInlineDatumAndValue` | Lock state with inline datum at a validator |
-| `txMustPayValueToAddress` | Pay value to an address (no datum) |
+| `txMustPayValueToAddress`                | Pay value to an address (no datum)          |
 
 **Spending (inputs):**
 
-| Function | Purpose |
-|----------|---------|
+| Function                                    | Purpose                                            |
+| ------------------------------------------- | -------------------------------------------------- |
 | `txMustSpendStateFromRefScriptWithRedeemer` | Spend a UTxO at a validator using reference script |
-| `txMustSpendFromRefScriptWithKnownDatum` | Spend with known datum (skip lookup) |
-| `txMustSpendFromAddress` | Spend a User NFT from wallet addresses |
+| `txMustSpendFromRefScriptWithKnownDatum`    | Spend with known datum (skip lookup)               |
+| `txMustSpendFromAddress`                    | Spend a User NFT from wallet addresses             |
 
 **Reference inputs:**
 
-| Function | Purpose |
-|----------|---------|
-| `txMustHaveUTxOAsRefInput` | Add a UTxO as reference input |
+| Function                     | Purpose                       |
+| ---------------------------- | ----------------------------- |
+| `txMustHaveUTxOAsRefInput`   | Add a UTxO as reference input |
 | `txMustHaveUTxOsAsRefInputs` | Add multiple reference inputs |
 
 **Deployment:**
 
-| Function | Purpose |
-|----------|---------|
-| `addRefScriptSkeleton` | Deploy a script as a reference script |
+| Function                        | Purpose                               |
+| ------------------------------- | ------------------------------------- |
+| `addRefScriptSkeleton`          | Deploy a script as a reference script |
 | `addRefScriptToAddressSkeleton` | Deploy a script to a specific address |
 
 ### 3.6 TxBuilding/Operations — Domain Operations
@@ -474,17 +474,17 @@ Operations are **domain-level transaction builders**. Each one:
 
 **Existing operations:**
 
-| Operation | What It Does |
-|-----------|-------------|
-| `createProfileTX` | Creates a profile (mint CIP-68 pair, lock state) |
-| `createProfileWithRankTX` | Creates profile + initial rank or membership root |
-| `updateProfileTX` | Updates profile image URI |
-| `promoteProfileTX` | Creates a pending promotion |
-| `acceptPromotionTX` | Accepts a promotion (updates profile + rank) |
-| `createMembershipHistoryTX` | Creates a membership history for a practitioner at an org (append to list, mint history + first interval) |
-| `addMembershipIntervalTX` | Adds a new membership interval to an existing history |
-| `acceptMembershipIntervalTX` | Practitioner accepts a membership interval |
-| `updateOracleTX` | Admin updates oracle parameters |
+| Operation                    | What It Does                                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `createProfileTX`            | Creates a profile (mint CIP-68 pair, lock state)                                                          |
+| `createProfileWithRankTX`    | Creates profile + initial rank or membership root                                                         |
+| `updateProfileTX`            | Updates profile image URI                                                                                 |
+| `promoteProfileTX`           | Creates a pending promotion                                                                               |
+| `acceptPromotionTX`          | Accepts a promotion (updates profile + rank)                                                              |
+| `createMembershipHistoryTX`  | Creates a membership history for a practitioner at an org (append to list, mint history + first interval) |
+| `addMembershipIntervalTX`    | Adds a new membership interval to an existing history                                                     |
+| `acceptMembershipIntervalTX` | Practitioner accepts a membership interval                                                                |
+| `updateOracleTX`             | Admin updates oracle parameters                                                                           |
 
 **Standard operation signature:**
 
@@ -505,9 +505,8 @@ myOperationTX param1 param2 ownAddrs = do
       mvRef = snd myValidatorHashAndRef
 
   -- 2. Get oracle params (if minting)
-  (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
-  let minLv = protocolMinLovelace  -- fixed constant in Operations.hs
-  feeSkeleton <- getFeeSkeleton oracleParams fcSomeFee
+  (oracleRefSkeleton, oracleParams, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton fcSomeFee
+  let minLv = opMinUTxOValue oracleParams  -- min lovelace for state outputs; off-chain can compute per-output from protocol params and serialized size with oracle as floor
 
   -- 3. Look up existing state
   (existingDatum, existingValue) <- getMyStateDataAndValue myRefAC
@@ -522,7 +521,8 @@ myOperationTX param1 param2 ownAddrs = do
 
   -- 6. Compose and return
   return $ mconcat
-    [ isMinting
+    [ isInvalidBeforeNow
+    , isMinting
     , isSpending
     , isLocking
     , oracleRefSkeleton
@@ -531,6 +531,8 @@ myOperationTX param1 param2 ownAddrs = do
 ```
 
 **Important:** The order of components in `mconcat` determines **output indices**. On-chain validators verify outputs at specific indices passed in redeemers. Keep the order consistent between off-chain skeleton building and on-chain redeemer index values.
+
+**Output value checks:** On-chain validators use **min-value** checks (output value ≥ expected) for continuing outputs and for MintingPolicy checks of new state outputs, because the tx builder/balancer may add lovelace to script outputs. Off-chain must still lock **continuing** outputs (same validator, updated datum) with the **exact** value from the spent UTxO (e.g. from `getMyStateDataAndValue`); the min-value check only accommodates balancer-added lovelace. See OnchainArchitecture.md § Output Index Optimization.
 
 ### 3.7 TxBuilding/Lookups — UTxO and State Lookups
 
@@ -593,13 +595,13 @@ interactionToTxSkeleton ::
 
 ### 3.9 TxBuilding/Transactions — Execution and Submission
 
-| Function | Purpose |
-|----------|---------|
-| `interactionToTxBody` | `Interaction` → `GYTxBody` (for signing) |
-| `interactionToUnsignedTx` | `Interaction` → `GYTx` (unsigned, for API response) |
-| `interactionToHexEncodedCBOR` | `Interaction` → hex string (for wallet integration) |
-| `submitTxAndWaitForConfirmation` | Sign + submit + wait |
-| `deployReferenceScripts` | Full deployment flow (oracle, validators, minting policy) |
+| Function                         | Purpose                                                   |
+| -------------------------------- | --------------------------------------------------------- |
+| `interactionToTxBody`            | `Interaction` → `GYTxBody` (for signing)                  |
+| `interactionToUnsignedTx`        | `Interaction` → `GYTx` (unsigned, for API response)       |
+| `interactionToHexEncodedCBOR`    | `Interaction` → hex string (for wallet integration)       |
+| `submitTxAndWaitForConfirmation` | Sign + submit + wait                                      |
+| `deployReferenceScripts`         | Full deployment flow (oracle, validators, minting policy) |
 
 **When adding a new validator to the deployment flow**, update `deployReferenceScripts` to:
 1. Compile and deploy the new validator as a reference script
@@ -610,14 +612,14 @@ interactionToTxSkeleton ::
 
 Conversions convert between off-chain domain types and on-chain Plutus types:
 
-| Function | Direction |
-|----------|-----------|
-| `profileDataToMetadataFields` | `ProfileData` → `MetadataFields` (off-chain → on-chain) |
-| `metadataFieldsToProfileData` | `MetadataFields` → `ProfileData` (on-chain → off-chain) |
-| `profileDatumToProfile` | `CIP68Datum OnchainProfile` → `Profile` |
-| `onchainRankToRankInformation` | `OnchainRank` → `Maybe Rank` |
-| `profileTypeToOnchainProfileType` | `ProfileType` → `OnchainProfileType` |
-| `textToBuiltinByteString` | `Text` → `BuiltinByteString` |
+| Function                          | Direction                                               |
+| --------------------------------- | ------------------------------------------------------- |
+| `profileDataToMetadataFields`     | `ProfileData` → `MetadataFields` (off-chain → on-chain) |
+| `metadataFieldsToProfileData`     | `MetadataFields` → `ProfileData` (on-chain → off-chain) |
+| `profileDatumToProfile`           | `CIP68Datum OnchainProfile` → `Profile`                 |
+| `onchainRankToRankInformation`    | `OnchainRank` → `Maybe Rank`                            |
+| `profileTypeToOnchainProfileType` | `ProfileType` → `OnchainProfileType`                    |
+| `textToBuiltinByteString`         | `Text` → `BuiltinByteString`                            |
 
 **When adding a new concept:**
 1. Add conversion functions in `TxBuilding/Conversions.hs`
@@ -625,16 +627,19 @@ Conversions convert between off-chain domain types and on-chain Plutus types:
 
 ### 3.11 TxBuilding/Exceptions — Error Handling
 
-```haskell
-data TxBuildingException
-  = ProfileNotFound | WrongProfileType
-  | RankNotFound | RankListEmpty | WrongRankDataType
-  | PromotionNotFound
-  | OracleNotFound | OracleDatumInvalid | ProtocolPaused
-  | ScriptNotFound | DeployedScriptsNotReady
-  | InvalidAssetClass | MultipleUtxosFound | DatumParseError
-  -- Add new exceptions here for your concept
-```
+The full definition lives in `TxBuilding/Exceptions.hs`. Summary of constructors by group:
+
+| Group                       | Constructors                                                                                                                                                                                                                                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Profile**                 | `ProfileNotFound`, `WrongProfileType`, `ProfileHasNoRank`                                                                                                                                                                                                                                                                             |
+| **Rank**                    | `RankNotFound`, `RankListEmpty`, `WrongRankDataType`, `PromotionNotPending`, `PromotionNotFound`                                                                                                                                                                                                                                      |
+| **Membership**              | `MembershipHistoryNotFound`, `MembershipIntervalNotFound`, `MembershipListNodeNotFound`, `MembershipRootNodeHasNoHistory`, `CannotAddMembershipInterval` (with `AddMembershipIntervalReason`), `InitMembershipHistoryInvalidDates`, `MembershipListInsertInvalid`, `MembershipListAppendInvalid`, `MembershipIntervalAlreadyAccepted` |
+| **Achievement**             | `AchievementNotFound`, `AchievementAlreadyAccepted`                                                                                                                                                                                                                                                                                   |
+| **Belt / protocol data**    | `InvalidBeltNumber`                                                                                                                                                                                                                                                                                                                   |
+| **Oracle**                  | `OracleNotFound`, `OracleDatumInvalid`, `ProtocolPaused`                                                                                                                                                                                                                                                                              |
+| **Script / infrastructure** | `ScriptNotFound`, `DeployedScriptsNotReady`                                                                                                                                                                                                                                                                                           |
+| **UTxO / asset**            | `InvalidAssetClass`, `NFTNotFound`, `MultipleUtxosFound`, `DatumParseError`                                                                                                                                                                                                                                                           |
+| **Cleanup**                 | `NoDustFound`                                                                                                                                                                                                                                                                                                                         |
 
 **Key instances:**
 - `Exception` — allows `throw`/`catch`
@@ -1211,20 +1216,20 @@ AchievementProjection
 
 ## 8. Common Pitfalls
 
-| Pitfall | Prevention |
-|---------|-----------|
-| **Output index mismatch** | The order in `mconcat` must match the indices in on-chain redeemers. Add a comment documenting the expected output layout. |
-| **Missing exact mint check** | Every minting redeemer must validate `mintValueMinted == expectedTokens`. Without this, attackers can mint arbitrary tokens. |
-| **Forgetting oracle reference** | All minting transactions must include the oracle as a reference input. Use `getOracleRefInputSkeleton`. |
-| **Constructor index collision** | `makeIsDataSchemaIndexed` indices must be unique and stable. Never reorder existing constructors. |
-| **Missing rollback handling** | Every new projection table needs a `deleteWhere` clause in `rollbackTo`. |
-| **Inconsistent JSON field naming** | Always use `deriving-aeson` with `StripPrefix` + `CamelToSnake` for API types. |
+| Pitfall                                  | Prevention                                                                                                                                     |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Output index mismatch**                | The order in `mconcat` must match the indices in on-chain redeemers. Add a comment documenting the expected output layout.                     |
+| **Missing exact mint check**             | Every minting redeemer must validate `mintValueMinted == expectedTokens`. Without this, attackers can mint arbitrary tokens.                   |
+| **Forgetting oracle reference**          | All minting transactions must include the oracle as a reference input. Use `getOracleRefInputSkeleton`.                                        |
+| **Constructor index collision**          | `makeIsDataSchemaIndexed` indices must be unique and stable. Never reorder existing constructors.                                              |
+| **Missing rollback handling**            | Every new projection table needs a `deleteWhere` clause in `rollbackTo`.                                                                       |
+| **Inconsistent JSON field naming**       | Always use `deriving-aeson` with `StripPrefix` + `CamelToSnake` for API types.                                                                 |
 | **Importing off-chain deps in on-chain** | `onchain-lib` must never import Aeson, Servant, Swagger, etc. Define Plutus instances in `onchain-lib`, off-chain instances in `offchain-lib`. |
-| **Missing `{-# INLINEABLE #-}` pragma** | Every on-chain function used cross-module must have this pragma. Without it, PlutusTx may fail to compile. |
-| **Forgetting to update ProtocolParams** | If a new validator hash needs to be known by other scripts, update `ProtocolParams` and redeploy the minting policy. |
-| **Not checking `opPaused`** | If the new concept involves minting, the pause gate must be checked. |
-| **Missing CurrencySymbol validation** | On-chain code should validate that referenced AssetClasses share the protocol's CurrencySymbol via `hasCurrencySymbol`. |
-| **Datum type confusion** | If multiple datum types live at the same validator address, use a wrapper sum type (like `MembershipDatum`) to distinguish them. |
+| **Missing `{-# INLINEABLE #-}` pragma**  | Every on-chain function used cross-module must have this pragma. Without it, PlutusTx may fail to compile.                                     |
+| **Forgetting to update ProtocolParams**  | If a new validator hash needs to be known by other scripts, update `ProtocolParams` and redeploy the minting policy.                           |
+| **Not checking `opPaused`**              | If the new concept involves minting, the pause gate must be checked.                                                                           |
+| **Missing CurrencySymbol validation**    | On-chain code should validate that referenced AssetClasses share the protocol's CurrencySymbol via `hasCurrencySymbol`.                        |
+| **Datum type confusion**                 | If multiple datum types live at the same validator address, use a wrapper sum type (like `MembershipDatum`) to distinguish them.               |
 
 ---
 
@@ -1232,17 +1237,17 @@ AchievementProjection
 
 Quick reference for which files to modify when adding different types of changes:
 
-| Change | Files to Modify |
-|--------|----------------|
-| **New on-chain type** | `Protocol/Types.hs`, `Protocol/Id.hs`, `.cabal` |
-| **New validator** | `Onchain/MyValidator.hs`, `Protocol.hs`, `Validators.hs`, `Context.hs`, `Transactions.hs`, `.cabal` |
-| **New minting redeemer** | `MintingPolicy.hs` |
-| **New off-chain domain type** | `DomainTypes/Core/Types.hs`, `DomainTypes/Core/Actions.hs` |
-| **New tx operation** | `Operations.hs`, `Lookups.hs`, `Interactions.hs`, `Conversions.hs` |
-| **New error type** | `Exceptions.hs` |
-| **New query endpoint** | `query-api/RestAPI.hs`, `Query/Projected.hs` or `Query/Live.hs` |
-| **New admin command** | `admin/Main.hs` |
-| **New projection** | `Storage.hs`, `Ingestion.hs` |
-| **New fee type** | `Protocol/Types.hs` (FeeConfig), `Operations.hs`, `MintingPolicy.hs` |
-| **Updating oracle format** | `Protocol/Types.hs`, requires migration/redeployment |
-| **New test** | `UnitTests.hs`, `TestRuns.hs` |
+| Change                        | Files to Modify                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| **New on-chain type**         | `Protocol/Types.hs`, `Protocol/Id.hs`, `.cabal`                                                     |
+| **New validator**             | `Onchain/MyValidator.hs`, `Protocol.hs`, `Validators.hs`, `Context.hs`, `Transactions.hs`, `.cabal` |
+| **New minting redeemer**      | `MintingPolicy.hs`                                                                                  |
+| **New off-chain domain type** | `DomainTypes/Core/Types.hs`, `DomainTypes/Core/Actions.hs`                                          |
+| **New tx operation**          | `Operations.hs`, `Lookups.hs`, `Interactions.hs`, `Conversions.hs`                                  |
+| **New error type**            | `Exceptions.hs`                                                                                     |
+| **New query endpoint**        | `query-api/RestAPI.hs`, `Query/Projected.hs` or `Query/Live.hs`                                     |
+| **New admin command**         | `admin/Main.hs`                                                                                     |
+| **New projection**            | `Storage.hs`, `Ingestion.hs`                                                                        |
+| **New fee type**              | `Protocol/Types.hs` (FeeConfig), `Operations.hs`, `MintingPolicy.hs`                                |
+| **Updating oracle format**    | `Protocol/Types.hs`, requires migration/redeployment                                                |
+| **New test**                  | `UnitTests.hs`, `TestRuns.hs`                                                                       |

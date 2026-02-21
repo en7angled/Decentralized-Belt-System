@@ -1,7 +1,7 @@
 @startuml CreateProfile-Organisation
 
 title: Sequence Diagram : Create Organisation Profile
-caption: Decentalized Belt System Protocol
+caption: Decentralized Belt System Protocol
 
 !theme toy
 
@@ -28,7 +28,7 @@ ProfilesMP -> ProfilesMP : Validates\n Profile Rules
 ProfilesMP --> Cardano --: New Profile
 
 Cardano -> ProfilesV : Locks Profile Ref Token
-Cardano -> OrganisationOwner -- : Sents Profile User Token
+Cardano -> OrganisationOwner -- : Sends Profile User Token
 
 @enduml
 

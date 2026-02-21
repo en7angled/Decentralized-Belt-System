@@ -167,7 +167,7 @@ mintOracleNFTAndLockDatum providerCtx skey adminPKH = do
     -- Compile the one-shot oracle NFT policy
     let oracleNFTPolicyGY = compileOracleNFTPolicy seedPlutus
     let oracleNFTMPId = mintingPolicyId oracleNFTPolicyGY
-    let oracleNFTTN = ""  -- empty token name for the NFT
+    let oracleNFTTN = "" -- empty token name for the NFT
     let theOracleNFTAC = GYToken oracleNFTMPId oracleNFTTN
 
     -- Build initial oracle params
@@ -175,7 +175,8 @@ mintOracleNFTAndLockDatum providerCtx skey adminPKH = do
           OracleParams
             { opAdminPkh = paymentKeyHashToPlutus adminPKH,
               opPaused = False,
-              opFeeConfig = Nothing
+              opFeeConfig = Nothing,
+              opMinUTxOValue = 1000000
             }
 
     -- Spend seed UTxO
@@ -197,5 +198,3 @@ mintOracleNFTAndLockDatum providerCtx skey adminPKH = do
 
   putStrLn $ yellowColorString $ "Oracle NFT AssetClass: " <> show oracleNFTAC
   return oracleNFTAC
-
-

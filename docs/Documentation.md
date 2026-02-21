@@ -64,12 +64,12 @@ The application described in this document (the **BJJ-DApp**) is a client that a
 
 ### 1.4 Definitions, Acronyms, and Abbreviations
 
-| Name    | Description |
-| -------- | ------- |
-| **DApp** | Decentralized Application |
+| Name     | Description                           |
+| -------- | ------------------------------------- |
+| **DApp** | Decentralized Application             |
 | **DAO**  | Decentralized Autonomous Organization |
-| **NFT**  |	Non-Fungible Token |
-| **UTxO**  |	Unspent Transaction Output |
+| **NFT**  | Non-Fungible Token                    |
+| **UTxO** | Unspent Transaction Output            |
 
 
 
@@ -116,9 +116,9 @@ The system seeks to:
 >   - **BJJ-DApp Frontend**: The web interface for practitioners, masters, and organizations.  
 >   - **3rd Party Browser Wallet** (e.g., Eternl, Lace): For signing transactions.
 > - **Backend**  
->   - **Interaction API Service**: Builds and submits transactions for promotions, achievements, membership. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth).  
->   - **Query API Service**: Provides queries for profiles, promotions, and belts. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth). Supports `?liveprojection=true` to read directly from chain vs projected DB.  
->   - **Chain Sync Service** : Monitors the Cardano blockchain and projects data into PostgreSQL.  
+>   - **Interaction API Service** (default port 8082): Builds and submits transactions for promotions, achievements, membership. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth).  
+>   - **Query API Service** (default port 8083): Provides queries for profiles, promotions, achievements, and memberships. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth). Supports `?liveprojection=true` to read directly from chain vs projected PostgreSQL DB.  
+>   - **Chain Sync Service**: Monitors the Cardano blockchain and projects data into PostgreSQL.  
 >     - Exposes a probe API: `GET /health`, `GET /ready` (default port 8084)
 >     - Health returns sync metrics including `chain_sync_state`
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
@@ -127,7 +127,7 @@ The system seeks to:
 >   - **webapi**: Web infrastructure (Auth, Health, CORS)
 >   - **chainsync**: Generic chain synchronization utilities  
 >   - **offchain**: Domain logic and supporting infrastructure
-> - **Persistence** : A database or index for quick lookups of ranks, achievements, memberships (off-chain).
+> - **Persistence**: A database or index for quick lookups of ranks, achievements, memberships (off-chain).
 > - **Immutability Principle**: Profiles are permanent by design. BJJ belt records are historical facts that preserve lineage integrity and cannot be deleted.
 
 
@@ -224,7 +224,7 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
 1. **Accept Redeemable Master Rank**  
    - **Goal**: Redeem a voucher to claim Master rank in the system.  
    - **Precondition**: Master has received a valid voucher. 
-   - **Postcondition**: He's practitioner profile is created with he's Master rank.
+   - **Postcondition**: His practitioner profile is created with his Master rank.
 
 2. **Promote Rank**  
    - **Goal**: Promote practitioners to higher ranks.  
@@ -253,9 +253,9 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
 
 ![Sequence-UpdateProfile](../out/puml/SequenceDiagram-UpdateProfile/UpdateProfile.png)
 
-3. **Accept Achievement** *(Not yet implemented)*  
-   - **Goal**: Accept an achievement (competition medals,diplomas etc.)  
-   - **Precondition**: Organization has awarded the achievement.  
+3. **Accept Achievement**  
+   - **Goal**: Accept an achievement (competition medals, diplomas, etc.).  
+   - **Precondition**: Organization (or Master) has awarded the achievement.  
    - **Postcondition**: Practitioner’s achievements list is updated.
   
 ![Sequence-Achievement](../out/puml/SequenceDiagram-Achievements/Achievements.png)
@@ -309,7 +309,7 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
    - **Postcondition**: Membership is marked as ended, with the end date on-chain.
 
 
-5. **Award Achievement** *(Not yet implemented)*  
+5. **Award Achievement**  
    - **Goal**: Grant achievements (seminars, camps, medals, etc.). 
    - **Precondition**: Organisation exists, member's profile exists. 
    - **Postcondition**: Practitioner’s achievement list is updated.
@@ -400,10 +400,10 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
      - Practitioner accepts the promotion.  
      - Rank record is updated on the practitioner’s profile.
 
-3. **Award Achievements** *(Not yet implemented)*  
+3. **Award Achievements**  
    - **As a master**, I want to award stripes or other achievements to students so their progress is recognized between belt promotions.  
    - **Acceptance Criteria**:  
-     - Master creates an achievement record.  
+     - Master (or organization) creates an achievement record.  
      - Practitioner confirms achievement.
 
 
@@ -431,11 +431,11 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
 5. **Accept Membership Request** *(Not yet implemented)*  
    - **As an organization**, I want to approve membership requests of practitioners so that they can officially be affiliated with my academy.  
    - **Acceptance Criteria**:  
-     - Membership is accepted by the organisation
+     - Membership is accepted by the organisation.
      - Membership details (start date, membership type) are added to the practitioner’s profile.
 
-6. **Award Achievements** *(Not yet implemented)*  
-   - **As an organization**, I want to grant achievements (eg. medals , diplomas) so that practitioners can record them.  
+6. **Award Achievements**  
+   - **As an organization**, I want to grant achievements (e.g. medals, diplomas) so that practitioners can record them.  
    - **Acceptance Criteria**:  
      - Organisation creates an achievement record.  
      - Practitioner confirms achievement.
@@ -448,14 +448,14 @@ This **Decentralized Belt System** aims to bring **trust, transparency, and sust
 
 
 > **Current Status**  
-> - **On-chain implementations complete**: Minting policy, profiles validator, ranks validator, memberships validator with full security review
-> - **Off-chain infrastructure complete**: Admin CLI, Interaction API, Query API, Chain Sync Service
-> - **Memberships fully implemented**: On-chain, off-chain, API, and tests
+> - **On-chain implementations complete**: Minting policy, profiles validator, ranks validator, memberships validator, achievements validator; Oracle for dynamic protocol parameters (fees, min UTxO, pause); full security review
+> - **Off-chain infrastructure complete**: Admin CLI, Interaction API (port 8082), Query API (port 8083), Chain Sync Service (port 8084)
+> - **Memberships and achievements fully implemented**: On-chain, off-chain, API, and tests
 > - **Testnet deployments available**: Scripts provided for testing (`populate_testnet.sh`, `test_black_promotes_white_to_blue.sh`)
 >
 > **Next Steps**  
 > - Finalize the BJJ Decentralized Belt System **Frontend Website**  
-> - Implement achievement features
+> - Implement practitioner-initiated membership request flow (organization grant + practitioner accept is already supported)
 > - Onboard pilot academies/masters to validate real-world usage
 
 **End of Document**

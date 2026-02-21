@@ -7,6 +7,6 @@ left to right direction
 state Accepted #gray
 
 [*] --> Awarded : Issuer awards
-Awarded --> Accepted  : Awarded accepts
+Awarded --> Accepted  : Awardee accepts
 
 @enduml

@@ -49,7 +49,7 @@ type AchievementsDatum = CIP68Datum OnchainAchievement
 {-# INLINEABLE achievementsLambda #-}
 achievementsLambda :: ScriptContext -> Bool
 achievementsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
-  let redeemer = unsafeFromBuiltinData @AchievementsRedeemer bredeemer
+  let !redeemer = unsafeFromBuiltinData @AchievementsRedeemer bredeemer
    in case scriptInfo of
         (SpendingScript spendingTxOutRef mdatum) -> case redeemer of
           -- Permissionless cleanup: allow spending if datum is absent or unparseable.
@@ -72,12 +72,12 @@ achievementsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) script
                  in traceIfFalse
                       "A1"
                       $ and
-                        [ Utils.checkTxOutAtIndexWithDatumValueAndAddress
+                        [ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress
                             outputIdx
                             updatedAchievementDatum
                             ownValue
                             ownAddress
-                            txInfoOutputs, -- Lock achievement at AchievementsValidator address
+                            txInfoOutputs, -- Lock achievement; >= ownValue (balancer may add min-ADA)
                           V1.assetClassValueOf
                             (valueSpent txInfo)
                             practitionerUserAC

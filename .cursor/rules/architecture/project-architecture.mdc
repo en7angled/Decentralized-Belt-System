@@ -1,0 +1,39 @@
+---
+description: Library boundaries, executables, and where to change what in the BJJ belt system
+globs: src/**/*
+alwaysApply: false
+---
+# Project Architecture
+
+Overview: four libraries with strict layering; three conceptual flows (type hierarchy, Interactions→Transactions, onchain events→projections) drive where to add new types, operations, and projections. Use the file reference table below and the linked rule files for detail.
+
+- **Library layout**: Four libraries — `onchain-lib`, `chainsync-lib`, `offchain-lib`, `webapi-lib`.
+  - **Cabal dependency flow**: `offchain-lib` depends on `chainsync-lib` and `onchain-lib`; `webapi-lib` has no project-lib deps. Executables depend on `offchain-lib` and `webapi-lib`; `chainsync-service` also depends on `chainsync-lib`.
+  - **Layering** (inner → outer): **onchain-lib** + **chainsync-lib** (inner) → **offchain-lib** (domain, tx building, storage) → **webapi-lib** (HTTP, auth, CORS). Dependencies may only point inward (e.g. offchain-lib → chainsync-lib, offchain-lib → onchain-lib). Do not add cross-library dependencies that invert or bypass this (e.g. no webapi-lib → offchain-lib, no chainsync-lib → offchain-lib).
+- **On-chain purity**: `onchain-lib` must never import off-chain dependencies (no Aeson, Servant, Swagger, etc.). PlutusTx types and instances live in onchain-lib; JSON/Swagger/orphan instances in offchain-lib.
+
+## Conceptual flows
+
+Keep these in mind when adding features. Each has a single canonical rule file for full detail.
+
+- **Type hierarchy**: Transfer types (API DTOs in `DomainTypes/Transfer/Types.hs`) rely on Domain types (`DomainTypes/Core/Types.hs`, `Core/Actions.hs`), which rely on onchain types; `TxBuilding/Conversions.hs` bridges onchain datums ↔ domain. New API shapes in Transfer; new domain entities in Core; new onchain types in `Onchain/Protocol/Types.hs` and `Id.hs`.
+- **Interactions → Transactions**: Interactions (action + user addresses) become transactions via Operations: `interactionToTxSkeleton` → Operations (Skeletons + Lookups) → `GYTxSkeleton` → `interactionToTxBody` → transaction. Do not bypass this pipeline. Execution runs in `TxBuildingContext`: `interactionToTxBody` is run with `runReaderT ... txBuildingCtx` and `runTx`; CLI uses `runBJJActionWithPK`. Build-tx vs submit (unsigned CBOR vs add-witness-and-submit) and provider usage are per executable; see [executables.mdc](executables.mdc) § Build-tx vs submit and provider. Pipeline details: [offchain-rules.mdc](offchain-rules.mdc) § Pipeline.
+- **Context**: Tx building uses `DeployedScriptsContext` (validator refs + oracle; `MonadReader` in Operations/Lookups/Interactions) and `TxBuildingContext` (deployed scripts + provider) for `runTx`, `interactionToTxBody`, and `runBJJActionWithPK`. Executables load and pass context; see [executables.mdc](executables.mdc).
+- **Onchain events → database projections**: Chain-sync consumes validator-output matches; each match becomes a projection row via `projectChainEvent` (Ingestion) and `putMatchAndProjections` (Storage). New projection type → extend `ChainEventProjection`, `projectChainEvent`, Storage `put*`, and **`rollbackTo`**. Details: [storage-ingestion.mdc](../operations/storage-ingestion.mdc).
+- **Executables**: `admin` (CLI), `interaction-api` (port 8082), `query-api` (port 8083), `chainsync-service` (port 8084; sources in `src/exe/chain-sync/`). The interaction-api and query-api expose HTTP APIs and Swagger UI; they are the boundary for UIs and clients (e.g. wallet UIs, future frontends). When adding features: new actions → interaction API; new queries → query API; new projections → chain-sync + Storage/Ingestion. Implementation patterns and startup flow: see [executables.mdc](executables.mdc).
+- **File reference** — where to change what. Paths are under `src/lib/<lib>/` or `src/exe/<exe>/`; onchain = `onchain-lib`, tx/domain/storage = `offchain-lib`.
+
+| Change                    | Files to modify                                                                                                                                             |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New on-chain type         | `Onchain/Protocol/Types.hs`, `Onchain/Protocol/Id.hs`, `.cabal`                                                                                             |
+| New validator             | `Onchain/Validators/<Name>Validator.hs`, `Onchain/Protocol.hs`, `TxBuilding/Validators.hs`, `TxBuilding/Context.hs`, `TxBuilding/Transactions.hs`, `.cabal` |
+| New minting redeemer      | `Onchain/Validators/MintingPolicy.hs`                                                                                                                       |
+| New off-chain domain type | `DomainTypes/Core/Types.hs`, `DomainTypes/Core/Actions.hs`                                                                                                  |
+| New tx operation          | `TxBuilding/Operations.hs`, `TxBuilding/Lookups.hs`, `TxBuilding/Interactions.hs`, `TxBuilding/Conversions.hs`                                              |
+| New error type            | `TxBuilding/Exceptions.hs`                                                                                                                                  |
+| New query endpoint        | `RestAPI.hs`, `Query/Projected.hs` or `Query/Live.hs` (under `src/exe/query-api/`)                                                                          |
+| New admin command         | `Main.hs` (under `src/exe/admin/`)                                                                                                                          |
+| New projection            | `Storage.hs`, `Ingestion.hs`                                                                                                                                |
+| New fee type              | `Onchain/Protocol/Types.hs` (FeeConfig), `TxBuilding/Operations.hs`, `Onchain/Validators/MintingPolicy.hs`                                                  |
+| Updating oracle format    | `Onchain/Protocol/Types.hs` (requires migration/redeployment)                                                                                               |
+| New test                  | `UnitTests.hs`, `TestRuns.hs`, `UnitTests/<Topic>.hs` (under `src/test/`)                                                                                   |

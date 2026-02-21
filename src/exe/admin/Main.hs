@@ -20,10 +20,11 @@ import Onchain.Blueprint (contractBlueprint)
 import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import Options.Applicative
 import PlutusLedgerApi.V3
+import System.Exit (die)
 import Text.Read qualified as Text
 import TxBuilding.Context
 import TxBuilding.Interactions
-import TxBuilding.Lookups (queryOracleParams)
+import TxBuilding.Lookups (getFirstIntervalIdForMembershipNode, queryOracleParams)
 import TxBuilding.Transactions
 import TxBuilding.Utils
 import TxBuilding.Validators (blueprintProtocolParams)
@@ -47,6 +48,7 @@ data Command
   | PauseProtocol
   | UnpauseProtocol
   | SetFees SetFeesArgs
+  | SetMinUTxOValue Integer
   | QueryOracle
   | InitProfile InitProfileArgs
   | UpdateProfileImage UpdateProfileImageArgs
@@ -54,6 +56,7 @@ data Command
   | AcceptPromotion AcceptPromotionArgs
   | CreateProfileWithRank CreateProfileWithRankArgs
   | CreateMembershipHistory CreateMembershipHistoryArgs
+  | GetFirstMembershipIntervalId GetFirstMembershipIntervalIdArgs
   | AddMembershipInterval AddMembershipIntervalArgs
   | AcceptMembershipInterval AcceptMembershipIntervalArgs
   | UpdateEndDate UpdateEndDateArgs
@@ -118,6 +121,11 @@ data CreateMembershipHistoryArgs = CreateMembershipHistoryArgs
     cmhaStartDate :: GYTime,
     cmhaEndDate :: Maybe GYTime,
     cmhaOutputId :: Bool
+  }
+  deriving (Show)
+
+newtype GetFirstMembershipIntervalIdArgs = GetFirstMembershipIntervalIdArgs
+  { gfmiiMembershipNodeId :: GYAssetClass
   }
   deriving (Show)
 
@@ -337,6 +345,12 @@ commandParser =
               (progDesc "Set or clear fee configuration in the oracle")
           )
         <> command
+          "set-min-utxo-value"
+          ( info
+              (SetMinUTxOValue <$> option auto (long "lovelace" <> short 'n' <> metavar "LOVELACE" <> help "Minimum lovelace for protocol state outputs (oracle opMinUTxOValue)"))
+              (progDesc "Set minimum UTxO value (lovelace) for protocol state outputs in the oracle")
+          )
+        <> command
           "query-oracle"
           ( info
               (pure QueryOracle)
@@ -414,6 +428,12 @@ commandParser =
                       )
               )
               (progDesc "Create a new membership history for a practitioner at an organization")
+          )
+        <> command
+          "get-first-interval-id"
+          ( info
+              (GetFirstMembershipIntervalId . GetFirstMembershipIntervalIdArgs <$> option (maybeReader parseAssetClass) (long "membership-node-id" <> metavar "MEMBERSHIP_NODE_ID" <> help "Membership history node asset class"))
+              (progDesc "Get the first (interval 0) membership interval ID for a membership history node (for accepting before adding next interval)")
           )
         <> command
           "add-membership-interval"
@@ -553,8 +573,8 @@ executeCommand (Left pCtx) signKey cmd = case cmd of
   DeployReferenceScripts -> do
     printYellow "Deploying reference scripts..."
     deployedScriptsCtx <- deployReferenceScripts pCtx signKey
-    B.writeFile Constants.defaultTxBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
-    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> Constants.defaultTxBuldingContextFile
+    B.writeFile Constants.defaultTxBuildingContextFile (encode . toJSON $ deployedScriptsCtx)
+    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> Constants.defaultTxBuildingContextFile
   _ -> do
     printYellow "No transaction building context found."
     printYellow "Please run 'deploy-reference-scripts' first to set up the system."
@@ -563,8 +583,8 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
   DeployReferenceScripts -> do
     printYellow "Deploying reference scripts..."
     deployedScriptsCtx <- deployReferenceScripts (providerCtx txBuildingCtx) signKey
-    B.writeFile Constants.defaultTxBuldingContextFile (encode . toJSON $ deployedScriptsCtx)
-    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> Constants.defaultTxBuldingContextFile
+    B.writeFile Constants.defaultTxBuildingContextFile (encode . toJSON $ deployedScriptsCtx)
+    printGreen $ "Reference scripts deployed successfully! \n\t" <> "File: " <> Constants.defaultTxBuildingContextFile
   -- Oracle admin commands — routed through the Interaction pipeline
   PauseProtocol -> do
     printYellow "Pausing protocol..."
@@ -579,6 +599,10 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     let adminAction = setFeesToAdminAction args
     (txId, _) <- runBJJActionWithPK txBuildingCtx signKey (AdminAction adminAction) Nothing
     printGreen $ "Fee configuration updated successfully! TxId: " <> show txId
+  SetMinUTxOValue n -> do
+    printYellow $ "Setting min UTxO value to " <> show n <> " lovelace..."
+    (txId, _) <- runBJJActionWithPK txBuildingCtx signKey (AdminAction (SetMinUTxOValueAction n)) Nothing
+    printGreen $ "Min UTxO value updated successfully! TxId: " <> show txId
   -- Query oracle — read-only, does not go through the Interaction pipeline
   QueryOracle -> do
     printYellow "Querying oracle parameters..."
@@ -590,6 +614,7 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     printGreen $ "  Value:              " <> show oracleVal
     printGreen $ "  Admin PKH:          " <> show (opAdminPkh oracleParams)
     printGreen $ "  Paused:             " <> show (opPaused oracleParams)
+    printGreen $ "  Min UTxO Value:     " <> show (opMinUTxOValue oracleParams) <> " lovelace"
     case opFeeConfig oracleParams of
       Nothing -> printGreen "  Fee Config:          None"
       Just fc -> do
@@ -648,6 +673,13 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     if cmhaOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
       else printGreen $ "Membership History ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
+  GetFirstMembershipIntervalId args -> do
+    printYellow "Looking up first interval ID for membership node..."
+    let pCtx = providerCtx txBuildingCtx
+        dCtx = deployedScriptsCtx txBuildingCtx
+    firstIntervalId <- runQuery pCtx $ runReaderT (getFirstIntervalIdForMembershipNode (gfmiiMembershipNodeId args)) dCtx
+    printGreen "First interval ID:"
+    putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode firstIntervalId
   AddMembershipInterval args -> do
     printYellow "Adding membership interval..."
     let actionType = addMembershipIntervalToActionType args
@@ -718,7 +750,7 @@ main = do
 -- | Execute commands that require blockchain providers and signing keys
 executeOnchainCommand :: Command -> IO ()
 executeOnchainCommand cmd = do
-  mTxBuildingContext <- decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" Constants.defaultTxBuldingContextFile
+  mTxBuildingContext <- decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" Constants.defaultTxBuildingContextFile
   case mTxBuildingContext of
     Nothing -> do
       printYellow "No transaction building context found, please run deploy-reference-scripts first"
@@ -729,7 +761,7 @@ executeOnchainCommand cmd = do
   signKey <- readMnemonicFile mnemonicFilePath
 
   printYellow "Reading atlas configuration file ..."
-  atlasConfig <- maybe (error "Atlas configuration file not found") return =<< decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" Constants.defaultAtlasCoreConfig
+  atlasConfig <- maybe (die "Atlas configuration file not found") return =<< decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" Constants.defaultAtlasCoreConfig
 
   printYellow "Loading Providers ..."
   withCfgProviders atlasConfig (Text.read @GYLogNamespace "bjj-belt-system") $ \providers -> do

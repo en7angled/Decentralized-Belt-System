@@ -17,8 +17,8 @@ where
 
 import Control.Monad (void)
 import Control.Monad.Reader
-import Data.Maybe (fromMaybe)
 import Data.Foldable.Extra
+import Data.Maybe (fromMaybe)
 import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
 import GHC.Stack
@@ -28,11 +28,11 @@ import GeniusYield.TxBuilder hiding (userAddresses)
 import GeniusYield.TxBuilder.User qualified as User
 import GeniusYield.Types
 import Onchain.CIP68
-import Onchain.Validators.ProfilesValidator (ProfilesRedeemer (..))
-import Onchain.Validators.RanksValidator (RanksRedeemer (..))
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), getCurrentRankId, promoteProfile)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types (OracleParams (..))
+import Onchain.Validators.ProfilesValidator (ProfilesRedeemer (..))
+import Onchain.Validators.RanksValidator (RanksRedeemer (..))
 import PlutusLedgerApi.V3
 import TxBuilding.Context
 import TxBuilding.Interactions
@@ -76,14 +76,27 @@ deployBJJValidators w = do
   (mphash, refMintingPolicy) <- deployReferenceScriptRun mpGY w w
 
   -- Log deployed script sizes for reporting
-  gyLogInfo' ("SCRIPTSIZE" :: GYLogNamespace) $ cyanColorString $
-    "SCRIPT_SIZES:\n" <>
-    "  ProfilesValidator: " <> show profilesValidatorSize <> " bytes\n" <>
-    "  RanksValidator: " <> show ranksValidatorSize <> " bytes\n" <>
-    "  MembershipsValidator: " <> show membershipsValidatorSize <> " bytes\n" <>
-    "  AchievementsValidator: " <> show achievementsValidatorSize <> " bytes\n" <>
-    "  OracleValidator: " <> show oracleValidatorSize <> " bytes\n" <>
-    "  MintingPolicy: " <> show (mintingPolicySize (assetClassToPlutus oracleNFTAC)) <> " bytes"
+  gyLogInfo' ("SCRIPTSIZE" :: GYLogNamespace) $
+    cyanColorString $
+      "SCRIPT_SIZES:\n"
+        <> "  ProfilesValidator: "
+        <> show profilesValidatorSize
+        <> " bytes\n"
+        <> "  RanksValidator: "
+        <> show ranksValidatorSize
+        <> " bytes\n"
+        <> "  MembershipsValidator: "
+        <> show membershipsValidatorSize
+        <> " bytes\n"
+        <> "  AchievementsValidator: "
+        <> show achievementsValidatorSize
+        <> " bytes\n"
+        <> "  OracleValidator: "
+        <> show oracleValidatorSize
+        <> " bytes\n"
+        <> "  MintingPolicy: "
+        <> show (mintingPolicySize (assetClassToPlutus oracleNFTAC))
+        <> " bytes"
 
   return
     DeployedScriptsContext
@@ -113,7 +126,7 @@ mintTestOracleNFT w = asUser w $ do
   -- Compile the one-shot oracle NFT policy
   let oracleNFTPolicyGY = compileOracleNFTPolicy seedPlutus
   let oracleNFTMPId = mintingPolicyId oracleNFTPolicyGY
-  let oracleNFTTN = ""  -- empty token name
+  let oracleNFTTN = "" -- empty token name
   let theOracleNFTAC = GYToken oracleNFTMPId oracleNFTTN
 
   -- Build initial oracle params using the deployer wallet's real PubKeyHash.
@@ -122,9 +135,10 @@ mintTestOracleNFT w = asUser w $ do
   let adminPkh = userPlutusPkh w
   let initialOracleParams =
         OracleParams
-          { opAdminPkh = adminPkh
-          , opPaused = False
-          , opFeeConfig = Nothing
+          { opAdminPkh = adminPkh,
+            opPaused = False,
+            opFeeConfig = Nothing,
+            opMinUTxOValue = 1000000
           }
 
   -- Spend seed UTxO
@@ -140,71 +154,91 @@ mintTestOracleNFT w = asUser w $ do
 
   void $ sendSkeleton' $ mconcat [spendSeed, mintNFT, lockOutput]
 
-  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $
-    "Oracle NFT minted and locked: " <> show theOracleNFTAC
+  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $
+    yellowColorString $
+      "Oracle NFT minted and locked: " <> show theOracleNFTAC
 
   return theOracleNFTAC
 
 bjjInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> ProfileActionType -> Maybe GYAddress -> m (GYTxId, GYAssetClass)
 bjjInteraction txBuildingContext user actionType mrecipient = asUser user $ do
-  let interaction =
-        Interaction
-          { action = ProfileAction actionType,
-            userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
-            recipient = mrecipient
-          }
-  (skeleton, mGyAC) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
-  let gyAC = fromMaybe (error "bjjInteraction: ProfileAction returned Nothing for asset class") mGyAC
-  (gyTxBody, gyTxId) <- sendSkeleton' skeleton
-  
-  -- Log execution units / script budget information
-  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $ "INTERACTION: \n" <> show interaction
-  logTxBudget gyTxBody
-  
+  ((gyTxId, gyAC), balanceDelta) <- withBalance "bjjInteraction" user $ do
+    let interaction =
+          Interaction
+            { action = ProfileAction actionType,
+              userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
+              recipient = mrecipient
+            }
+    (skeleton, mGyAC) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
+    let gyAC = fromMaybe (error "bjjInteraction: ProfileAction returned Nothing for asset class") mGyAC
+    (gyTxBody, gyTxId) <- sendSkeleton' skeleton
+
+    -- Log execution units / script budget information
+    gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $ "INTERACTION: \n" <> show interaction
+    logTxBudget gyTxBody
+
+    return (gyTxId, gyAC)
+  gyLogInfo' ("EXUNITS" :: GYLogNamespace) $
+    cyanColorString $
+      "USER_BALANCE_CHANGE: " <> show (valueAda balanceDelta) <> " lovelace"
   return (gyTxId, gyAC)
 
 -- | Execute a protocol maintenance action (e.g., dust cleanup) through the Interaction pipeline.
 protocolInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> ProtocolActionType -> m GYTxId
 protocolInteraction txBuildingContext user protocolAction = asUser user $ do
-  let interaction =
-        Interaction
-          { action = ProtocolAction protocolAction,
-            userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
-            recipient = Nothing
-          }
-  (skeleton, _) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
-  (gyTxBody, gyTxId) <- sendSkeleton' skeleton
+  (gyTxId, balanceDelta) <- withBalance "protocolInteraction" user $ do
+    let interaction =
+          Interaction
+            { action = ProtocolAction protocolAction,
+              userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
+              recipient = Nothing
+            }
+    (skeleton, _) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
+    (gyTxBody, gyTxId) <- sendSkeleton' skeleton
 
-  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $ "PROTOCOL INTERACTION: \n" <> show interaction
-  logTxBudget gyTxBody
+    gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $ "PROTOCOL INTERACTION: \n" <> show interaction
+    logTxBudget gyTxBody
 
+    return gyTxId
+  gyLogInfo' ("EXUNITS" :: GYLogNamespace) $
+    cyanColorString $
+      "USER_BALANCE_CHANGE: " <> show (valueAda balanceDelta) <> " lovelace"
   return gyTxId
 
 -- | Execute an admin action (oracle update) through the Interaction pipeline.
 adminInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> AdminActionType -> m GYTxId
 adminInteraction txBuildingContext user adminAction = asUser user $ do
-  let interaction =
-        Interaction
-          { action = AdminAction adminAction,
-            userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
-            recipient = Nothing
-          }
-  (skeleton, _) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
-  (gyTxBody, gyTxId) <- sendSkeleton' skeleton
+  (gyTxId, balanceDelta) <- withBalance "adminInteraction" user $ do
+    let interaction =
+          Interaction
+            { action = AdminAction adminAction,
+              userAddresses = UserAddresses (toList $ User.userAddresses user) (User.userChangeAddress user) Nothing,
+              recipient = Nothing
+            }
+    (skeleton, _) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
+    (gyTxBody, gyTxId) <- sendSkeleton' skeleton
 
-  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $ "ADMIN INTERACTION: \n" <> show interaction
-  logTxBudget gyTxBody
+    gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $ "ADMIN INTERACTION: \n" <> show interaction
+    logTxBudget gyTxBody
 
+    return gyTxId
+  gyLogInfo' ("EXUNITS" :: GYLogNamespace) $
+    cyanColorString $
+      "USER_BALANCE_CHANGE: " <> show (valueAda balanceDelta) <> " lovelace"
   return gyTxId
 
 -- | Log transaction budget information including fee and script execution units
 logTxBudget :: (GYTxQueryMonad m) => GYTxBody -> m ()
 logTxBudget txBody = do
   let fee = txBodyFee txBody
-  gyLogInfo' ("EXUNITS" :: GYLogNamespace) $ cyanColorString $
-    "TX BUDGET:\n" <>
-    "  Fee: " <> show fee <> " lovelace\n" <>
-    "  TxBody: " <> show txBody
+  gyLogInfo' ("EXUNITS" :: GYLogNamespace) $
+    cyanColorString $
+      "TX BUDGET:\n"
+        <> "  Fee: "
+        <> show fee
+        <> " lovelace\n"
+        <> "  TxBody: "
+        <> show txBody
 
 ------------------------------------------------------------------------------------------------
 
@@ -226,8 +260,9 @@ sendDustToValidator user validator = asUser user $ do
               gyTxOutRefS = Nothing
             }
   void $ sendSkeleton' dustSkeleton
-  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ yellowColorString $
-    "Sent dust UTxO (2 ADA, no datum) to validator: " <> show (scriptHash validator)
+  gyLogInfo' ("TESTLOG" :: GYLogNamespace) $
+    yellowColorString $
+      "Sent dust UTxO (2 ADA, no datum) to validator: " <> show (scriptHash validator)
 
 ------------------------------------------------------------------------------------------------
 
@@ -268,7 +303,8 @@ getProfileAndRank profileRefAC = do
 -- because AcceptPromotion MUST spend the Promotion UTxO, which triggers RanksValidator.
 maliciousAcceptPromotionTX ::
   (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
-  GYAssetClass ->  -- ^ The promotion ID to accept
+  -- | The promotion ID to accept
+  GYAssetClass ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 maliciousAcceptPromotionTX gyPromotionId = do
   rvRef <- asks getRanksValidatorRef
@@ -281,7 +317,7 @@ maliciousAcceptPromotionTX gyPromotionId = do
 
   -- MALICIOUS: We intentionally DO NOT spend the student's User NFT
   -- This is what an attacker would do - they don't have the User NFT!
-  -- 
+  --
   -- Normal code would do:
   --   gyStudentProfileUserAC <- gyDeriveUserFromRefAC gyStudentProfileRefAC
   --   spendsStudentProfileUserNFT <- txMustSpendFromAddress gyStudentProfileUserAC ownAddrs
@@ -325,21 +361,23 @@ maliciousAcceptPromotionTX gyPromotionId = do
   return
     ( mconcat
         [ -- NOTICE: No spendsStudentProfileUserNFT here! This is the attack!
-          spendsStudentProfileRefNFT,           -- Input (no output index)
-          isLockingUpdatedStudentProfile,       -- Output 0: Updated profile state
-          spendsPromotionRank,                  -- Input (no output index)
-          isLockingUpdatedRank,                 -- Output 1: Updated rank state
-          referencesCurrentRank                 -- Reference input (no output index)
+          spendsStudentProfileRefNFT, -- Input (no output index)
+          isLockingUpdatedStudentProfile, -- Output 0: Updated profile state
+          spendsPromotionRank, -- Input (no output index)
+          isLockingUpdatedRank, -- Output 1: Updated rank state
+          referencesCurrentRank -- Reference input (no output index)
         ],
       gyRankAC
     )
 
 -- | Execute a malicious interaction that attempts to accept a promotion without consent
-maliciousBjjAcceptPromotion :: 
-  (GYTxGameMonad m, HasCallStack) => 
-  DeployedScriptsContext -> 
-  User ->  -- ^ The attacker (doesn't own student's User NFT)
-  GYAssetClass ->  -- ^ The promotion to accept
+maliciousBjjAcceptPromotion ::
+  (GYTxGameMonad m, HasCallStack) =>
+  DeployedScriptsContext ->
+  -- | The attacker (doesn't own student's User NFT)
+  User ->
+  -- | The promotion to accept
+  GYAssetClass ->
   m (GYTxId, GYAssetClass)
 maliciousBjjAcceptPromotion txBuildingContext attacker promotionId = asUser attacker $ do
   (skeleton, gyAC) <- runReaderT (maliciousAcceptPromotionTX promotionId) txBuildingContext

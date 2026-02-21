@@ -1,0 +1,64 @@
+---
+description: Consistency checklist and common pitfalls when adding new concepts
+globs: src/lib/onchain-lib/**/*.hs, src/lib/offchain-lib/**/*.hs, src/exe/**/*
+alwaysApply: false
+---
+# New Concept Checklist
+
+**When to use:** Adding a new validator, token kind, projection type, or API surface. Cross-cutting: touches onchain, offchain, storage, API, and tests. Before merging, run through the following. The checklist follows the three conceptual flows: **type hierarchy** (Transfer → Domain → Onchain + Conversions), **Interactions → Transactions** (Interactions → Operations → Skeletons/Lookups → Transactions), **onchain events → projections** (projectChainEvent → Storage put*). See [project-architecture.mdc](../architecture/project-architecture.mdc); onchain concepts in [onchain-rules.mdc](../architecture/onchain-rules.mdc), offchain in [offchain-rules.mdc](../architecture/offchain-rules.mdc).
+
+## Consistency checklist
+
+**On-chain**
+
+- [ ] Datum type in `Protocol/Types.hs`; `makeIsDataSchemaIndexed` with stable constructor indices; `HasBlueprintDefinition`
+- [ ] ID derivation in `Protocol/Id.hs`
+- [ ] Redeemer type if new validator; validator pattern (typed lambda → untyped → compile)
+- [ ] Minting redeemer in `MintingPolicy.hs` if tokens minted; exact mint check; oracle pause gate; fee check if applicable
+- [ ] Output index optimization (no O(n) search); see [onchain-rules.mdc](../architecture/onchain-rules.mdc) § Output layout and redeemers
+- [ ] `traceIfFalse` with descriptive messages; `{-# INLINEABLE #-}` on cross-module functions
+- [ ] Module in cabal `exposed-modules`
+
+**Off-chain**
+
+- [ ] Domain type in `DomainTypes/Core/Types.hs` with JSON/Swagger; action in `DomainTypes/Core/Actions.hs`
+- [ ] Conversions in `TxBuilding/Conversions.hs` (both directions); datum parser in `TxBuilding/Utils.hs`
+- [ ] Lookups in `TxBuilding/Lookups.hs`; errors in `TxBuilding/Exceptions.hs`
+- [ ] Operation in `TxBuilding/Operations.hs`; interaction mapping in `TxBuilding/Interactions.hs`
+- [ ] If new validator: accessor in `Validators.hs`, field in `Context.hs`, deployment in `Transactions.hs`
+- [ ] Output index consistency between Operations and on-chain redeemers
+
+**Storage & ingestion**
+
+- [ ] Event type in `Ingestion.hs`; projection in `projectChainEvent`
+- [ ] Persistent entity and put function in `Storage.hs`; `putMatchAndProjections` updated
+- [ ] `rollbackTo` handles new projection
+
+**API & CLI**
+
+- [ ] Query endpoints in `query-api/RestAPI.hs` if queryable; query handlers
+- [ ] Admin CLI command if admin-controllable; Swagger metadata
+
+**Tests & docs**
+
+- [ ] Unit tests for new operations; property tests if applicable
+- [ ] `OnchainArchitecture.md` updated; blueprint regenerated (`admin write-blueprint`); test scripts updated
+- [ ] When adding a new operation: add a **test runner** in `GYTxGameMonad` (e.g. `asUser user $ … skeleton <- myOp …; buildTxBody skeleton >>= signAndSubmitConfirmed`) so the same operation is testable on emulator (and optionally privnet)
+
+## Common pitfalls
+
+| Pitfall                           | Prevention                                                                                                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Output index mismatch             | Order in `mconcat` must match on-chain redeemer indices; document output layout in a comment (see [onchain-rules.mdc](../architecture/onchain-rules.mdc)). |
+| Missing exact mint check          | Every minting redeemer must validate `mintValueMinted == expectedTokens`.                                                                                  |
+| Forgetting oracle reference       | All minting tx must include oracle as reference input; use `getOracleRefInputSkeleton`.                                                                    |
+| Constructor index collision       | `makeIsDataSchemaIndexed` indices unique and stable; never reorder existing constructors.                                                                  |
+| Missing rollback handling         | Every new projection table needs a `deleteWhere` in `rollbackTo`.                                                                                          |
+| Inconsistent JSON naming          | Use `deriving-aeson` with `StripPrefix` + `CamelToSnake` for API types.                                                                                    |
+| Off-chain deps in on-chain        | `onchain-lib` must not import Aeson, Servant, Swagger; Plutus in onchain-lib, JSON in offchain-lib.                                                        |
+| Missing INLINEABLE                | Every on-chain cross-module function needs `{-# INLINEABLE #-}`.                                                                                           |
+| Forgetting ProtocolParams         | If new validator hash needed elsewhere, update `ProtocolParams` and redeploy minting policy.                                                               |
+| Not checking opPaused             | If concept involves minting, check pause gate.                                                                                                             |
+| Missing CurrencySymbol validation | Validate referenced AssetClasses share protocol CurrencySymbol via `hasCurrencySymbol`.                                                                    |
+| Datum type confusion              | If multiple datum types at same validator, use wrapper sum type (e.g. `MembershipDatum`).                                                                  |
+| Incomplete skeleton               | Include all required ref inputs (e.g. oracle), validity range when the contract checks time, and `mustBeSignedBy` when the contract expects signatories.   |

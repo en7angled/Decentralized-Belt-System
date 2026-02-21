@@ -70,12 +70,35 @@ data OracleParams = OracleParams
     -- | Protocol pause switch
     opPaused :: Bool,
     -- | Optional fee configuration
-    opFeeConfig :: Maybe FeeConfig
+    opFeeConfig :: Maybe FeeConfig,
+    -- | Minimum lovelace for protocol state outputs (used on-chain only from oracle)
+    opMinUTxOValue :: Integer
   }
   deriving stock (Generic, Prelude.Show, Prelude.Eq)
   deriving anyclass (HasBlueprintDefinition)
 
 makeIsDataSchemaIndexed ''OracleParams [('OracleParams, 0)]
+
+-- | On-chain representation of an admin action on the oracle.
+-- Mirrors 'DomainTypes.Core.Actions.AdminActionType' for use in the Oracle redeemer.
+data OracleAdminAction
+  = OraclePause
+  | OracleUnpause
+  | OracleSetFees (Maybe FeeConfig)
+  | OracleSetMinUTxOValue Integer
+  deriving stock (Generic, Prelude.Show, Prelude.Eq)
+  deriving anyclass (HasBlueprintDefinition)
+
+makeIsDataSchemaIndexed ''OracleAdminAction [('OraclePause, 0), ('OracleUnpause, 1), ('OracleSetFees, 2), ('OracleSetMinUTxOValue, 3)]
+
+-- | Apply an admin action to current oracle params to obtain the new params.
+-- Same logic as off-chain 'TxBuilding.Operations.applyAdminAction'.
+{-# INLINEABLE applyOracleAdminAction #-}
+applyOracleAdminAction :: OracleAdminAction -> OracleParams -> OracleParams
+applyOracleAdminAction OraclePause params = params {opPaused = True}
+applyOracleAdminAction OracleUnpause params = params {opPaused = False}
+applyOracleAdminAction (OracleSetFees mFeeConfig) params = params {opFeeConfig = mFeeConfig}
+applyOracleAdminAction (OracleSetMinUTxOValue lovelace) params = params {opMinUTxOValue = lovelace}
 
 -------------------------------------------------------------------------------
 

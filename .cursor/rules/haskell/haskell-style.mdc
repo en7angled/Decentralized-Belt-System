@@ -1,0 +1,12 @@
+---
+description: Naming, formatting, Haddock, and type conventions for Haskell in this project
+globs: src/**/*.hs
+alwaysApply: false
+---
+# Haskell Style
+
+- **Naming**: PascalCase for types/data, camelCase for functions/constants/record fields; `mk` for smart constructors, `unsafe` for unsafe functions; `is`/`has`/`check`/`validate` for predicates; `derive`/`generate` for ID derivation. Avoid redundant record field prefixes (e.g. inside `OnchainMembershipHistory` use `practitionerId` not `membershipHistoryPractitionerId`).
+- **Formatting**: Max 120 characters per line, 2 spaces indent, no tabs; one blank line between top-level declarations; `where` clauses indent 2 spaces from the function body.
+- **Haddock**: Module-level comment and `-- |` on every exported function/type; `-- ^` for record fields. Use `-- *` section headers with 79-character divider.
+- **Types**: Records with 4+ fields use record syntax; for 4+ similar-typed arguments use a small record or newtype to avoid argument-swap bugs.
+- **Constants**: Prefer named constants over literals. For on-chain validator logic, see [plutus-rules.mdc](../plutus/plutus-rules.mdc) (e.g. `Onchain.Utils`).

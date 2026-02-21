@@ -1,7 +1,7 @@
 @startuml Memberships
 
 title: Sequence Diagram : Memberships
-caption: Decentalized Belt System Protocol
+caption: Decentralized Belt System Protocol
 
 !theme toy
 
@@ -82,7 +82,7 @@ end
             ProfilesV -> ProfilesV : Validates\n Profile Rules
             ProfilesV --> Cardano --: ok
             Cardano -> MemberProfile -- : Profile User Token
-    end group
+    end
 
 
 @enduml

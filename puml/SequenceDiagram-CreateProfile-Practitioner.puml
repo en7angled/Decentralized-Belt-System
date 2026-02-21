@@ -1,7 +1,7 @@
 @startuml CreateProfile-Practitioner
 
 title: Sequence Diagram : Create Practitioner Profile
-caption: Decentalized Belt System Protocol
+caption: Decentralized Belt System Protocol
 
 !theme toy
 
@@ -35,7 +35,7 @@ ProfilesMP --> Cardano --: New Profile
 
 Cardano -> RanksV : Locks 1st Rank
 Cardano -> ProfilesV : Locks Profile Ref Token
-Cardano -> Practitioner --: Sents Profile User Token
+Cardano -> Practitioner --: Sends Profile User Token
 
 
 

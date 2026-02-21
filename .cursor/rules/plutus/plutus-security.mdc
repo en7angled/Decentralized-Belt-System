@@ -1,0 +1,91 @@
+---
+description: Plutus script security rules (validators, minting policies) from common vulnerability patterns
+globs: src/lib/onchain-lib/**/*.hs
+alwaysApply: false
+---
+# Plutus Security Rules
+
+Non-exhaustive rules to avoid common Plutus vulnerabilities. Aligned with the [Cardano Developer Portal – Smart Contract Security](https://developers.cardano.org/docs/build/smart-contracts/advanced/security/overview/) and [MLabs – Common Plutus Security Vulnerabilities](https://www.mlabs.city/blog/common-plutus-security-vulnerabilities). For general Plutus style and structure, see [plutus-rules.mdc](plutus-rules.mdc). For how this project implements onchain logic (Utils, oracle, output checks, validators), see [architecture/onchain-rules.mdc](../architecture/onchain-rules.mdc). Section identifiers match the portal for audit cross-reference.
+
+## 1. Other redeemer (`other-redeemer`)
+
+- When script logic **relies on another redeemer** (same or different script), **explicitly require that redeemer** in the script.
+- Adding a new redeemer that skips checks (e.g. only “add rewards”) can let users spend with the easy redeemer and bypass the intended path (e.g. position/timestamp checks).
+
+## 2. Other token name (`other-token-name`)
+
+- Minting policies must constrain **the full minted value**, not only one token name.
+- Prefer `txInfoMint == assetClassValue ownAssetClass qty` (or equivalent) over `assetClassValueOf txInfoMint ownAssetClass == qty`.
+- `assetClassValueOf` with a single `ownAssetClass` only checks that one (currency symbol, token name); attackers can mint the same symbol with **other token names** and impersonate protocol tokens.
+
+## 3. Arbitrary datum (`arbitrary-datum`)
+
+- For every legit UTxO locked by the protocol, **validate that the datum is correct and of the expected type**, even if the current spending path does not “use” the datum.
+- Wrong or arbitrary datums can make the UTxO unspendable (consumption fails when the validator expects a different datum type) → unspendable outputs, protocol halt.
+
+## 4. Unbounded datum (`unbounded-datum`)
+
+- **Upper-bound datum size** for all legit UTxOs; keep it low enough that consuming the UTxO will not hit size or execution limits.
+- Avoid unbounded growth (e.g. ever-growing lists/maps in the datum).
+- Unbounded datums can eventually make consumption exceed network/resources limits and render outputs unspendable.
+
+## 5. Unbounded value (`unbounded-value`)
+
+- **Upper-bound the value** of legit UTxOs and **explicitly disallow extra/foreign tokens** in locked outputs. Do not only check that “expected” tokens are present; require that **only** expected tokens are present.
+- Extra tokens can cause `flattenValue`/pattern-match failures, tx size blow-up, or CPU/memory overuse when the script processes the value.
+
+## 6. Unbounded inputs (`unbounded-inputs`)
+
+- Design so **every protocol transaction can be built with a bounded number of inputs** (and within size/execution limits).
+- Where needed, enforce structure (e.g. single script input and single script output for faucet-style logic) so the protocol cannot reach a state where a valid operation would require too many inputs.
+- Otherwise → unspendable outputs, protocol halt.
+
+## 7. Double / multiple satisfaction (`double-satisfaction`)
+
+- Scripts must reason about **all inputs** to the transaction (and, where relevant, **all minted value** and **withdrawals**), not only the “own” input.
+- Disallow extra inputs from the script(s) or tag outputs so aggregate conditions cannot be bypassed.
+- Spending multiple UTxOs each “correct” in isolation can violate aggregate invariants (e.g. total value leaving the script) → token leakage, unauthorised actions.
+
+## 8. Missing UTxO authentication (`missing-utxo-authentication`)
+
+- **Authenticate** every spend or reference of a “legit” protocol output (e.g. oracle, global state). Use a unique NFT or other unforgeable token in the referenced UTxO so only the intended UTxO can satisfy the check.
+- Anyone can lock outputs at a script address; without authentication, the script may trust a maliciously created UTxO (e.g. fake oracle datum).
+
+## 9. Time handling (`time-handling`)
+
+- Validators **only see the validity interval** (`txInfoValidRange`), not the exact block timestamp. The real time is guaranteed to lie inside that interval (Phase 1 checks this); the script must not assume an exact time.
+- **Choose the correct bound** (lower vs upper) depending on who sets the interval and their incentives: e.g. for "current time ≥ deadline" use the **lower** bound (attacker cannot shrink it past the real time); for "current time ≤ start" use the **upper** bound. Never use the middle of the interval as "current time" — it can be manipulated.
+- Optionally **restrict the length** of the validity range (e.g. max 1 hour) to limit manipulation; still pick the correct bound for the use case.
+
+## 10. Token security (`token-security`)
+
+- **Dust attacks**: A UTxO can hold many token types; value size is bounded (e.g. ~5000 bytes). An attacker can deposit many worthless token types to fill the value and block further deposits or cause failures. Mitigate by allowing only a **fixed set of token types** (or policy IDs) in protocol UTxOs, or by bounding the number of distinct tokens.
+- **Execution limits**: Code that iterates over or parses the value of an input consumes CPU/memory proportional to the number of token types. Enlarge values in tests (many token types, many inputs/outputs) to ensure withdrawal/consumption still fits execution limits.
+- **Validation tokens** (NFTs used to authenticate UTxOs): Control where they can move; count them across inputs/outputs to prevent double-satisfaction "loss"; avoid minting new validation tokens when some already exist on inputs unless required.
+
+## 11. UTxO contention (`utxo-contention`)
+
+- Design to **reduce contention** on a single UTxO (e.g. global state). Prefer **parallelisable transactions** and **distributed state** where possible.
+- A single global UTxO forces serialisation of all updates and can stall the protocol under load.
+
+## 12. Cheap spam (`cheap-spam`)
+
+- Ensure **legit actions can complete in time** even if an attacker is willing to spend up to the gain from disrupting the protocol.
+- Avoid designs where cheap actions can delay or block critical actions (e.g. liquidations). If stalling is cheaper than the harm caused, DoS can stall or halt the protocol.
+
+## 13. Insufficient staking control (`insufficient-staking-control`)
+
+- **Explicitly account for staking credentials** when checking addresses. Reason about **full addresses** (payment + staking), not only the payment credential (validator hash or pubkey).
+- Outputs can be sent to the same payment credential but a **different staking credential**, leaking staking rewards and potentially bypassing “single input from this script” or similar checks.
+
+## 14. Locked value (`locked-value`)
+
+- Designs that **permanently lock** value (no path to spend or burn) cause loss of funds and reduce circulation. Consider whether this is intentional (e.g. single untamperable source of truth) and document the **economic tradeoff**; minimise locked amounts where possible.
+
+---
+
+## References
+
+- [Cardano Developer Portal – Smart Contract Security (overview)](https://developers.cardano.org/docs/build/smart-contracts/advanced/security/overview/)
+- [MLabs – Common Plutus Security Vulnerabilities](https://www.mlabs.city/blog/common-plutus-security-vulnerabilities)
+- [Cardano CTF](https://developers.cardano.org/docs/build/smart-contracts/advanced/security/ctf/) – hands-on vulnerability exercises

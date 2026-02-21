@@ -1,7 +1,7 @@
 @startuml UpdateProfile
 
 title: Sequence Diagram : Update Profile Information
-caption: Decentalized Belt System Protocol
+caption: Decentralized Belt System Protocol
 
 !theme toy
 

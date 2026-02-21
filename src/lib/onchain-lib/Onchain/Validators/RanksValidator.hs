@@ -84,17 +84,17 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
                     -- The promotion was already validated at mint time.
                     -- Ranks cannot be spent
                     -- We only need to verify the student consents by spending their user NFT.
-                    let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
-                        ownValue = txOutValue ownInput
-                        ownAddress = txOutAddress ownInput
+                    let !ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+                        !ownValue = txOutValue ownInput
+                        !ownAddress = txOutAddress ownInput
 
                         -- Getting profiles based on the ids in the rank promotion datum
-                        (studentProfileValue, studentProfileDatum) = unsafeGetProfileDatumAndValue studentProfileId profilesValidatorAddress txInfoInputs
+                        (!studentProfileValue, !studentProfileDatum) = unsafeGetProfileDatumAndValue studentProfileId profilesValidatorAddress txInfoInputs
                         (updatedProfileCIP68Datum, newRank) = promoteProfile studentProfileDatum promotionRankDatum
 
-                        profilesValidatorAddress = V1.scriptHashAddress $ profilesValidatorScriptHash $ promotionProtocolParams promotionRankDatum
-                        studentProfileId = promotionAwardedTo promotionRankDatum -- Fails if trying to spend a rank instead of a promotion
-                        profileUserAssetClass = deriveUserFromRefAC studentProfileId
+                        !profilesValidatorAddress = V1.scriptHashAddress $ profilesValidatorScriptHash $ promotionProtocolParams promotionRankDatum
+                        !studentProfileId = promotionAwardedTo promotionRankDatum -- Fails if trying to spend a rank instead of a promotion
+                        !profileUserAssetClass = deriveUserFromRefAC studentProfileId
                      in -- The "Profile Ref NFT == 1" check was removed because
                         -- unsafeGetProfileDatumAndValue uses checkAndGetCurrentStateDatumAndValue,
                         -- which filters by `geq assetClassValue stateToken 1` and demands exactly
@@ -103,8 +103,8 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
                         -- NFT, so >= 1 implies == 1. PV also independently checks this.
                         and
                           [ traceIfFalse "R2" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT (R2)
-                            traceIfFalse "R3" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs, -- Lock profile at PV (R3)
-                            traceIfFalse "R4" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs -- Lock rank at RV (R4)
+                            traceIfFalse "R3" $ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs, -- Lock profile at PV (R3); >= (balancer may add min-ADA)
+                            traceIfFalse "R4" $ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs -- Lock rank at RV (R4); >= ownValue (balancer may add min-ADA)
                           ]
         _ -> traceError "R1" -- Invalid script info (R1)
 

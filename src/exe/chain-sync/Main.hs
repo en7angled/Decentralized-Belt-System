@@ -15,26 +15,24 @@ import ChainSyncServer (startProbeServer)
 import ChainsyncAPI (ChainSyncState (..), SyncMetrics (..))
 import Constants
 import Control.Concurrent.Extra
-import GeniusYield.GYConfig (GYCoreConfig (..))
 import Control.Monad.Extra
 import Control.Monad.IO.Class
 import Control.Monad.Logger (runStdoutLoggingT)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-
-
+import Data.Time
 import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool)
 import Database.Persist.Sql (runSqlPool)
+import GeniusYield.GYConfig (GYCoreConfig (..))
 import KupoClient (KupoCheckpoint (..))
 import Storage
 import System.Environment (lookupEnv)
+import System.Exit (die)
 import Text.Printf
 import TxBuilding.Context
 import Utils (decodeConfigEnvOrFile)
-import Data.Time
 import WebAPI.Utils
-
 
 defaultConnStr :: String
 defaultConnStr = "host=localhost user=postgres password=postgres dbname=chainsync port=5432"
@@ -53,7 +51,6 @@ main = do
   pool <- runStdoutLoggingT $ createPostgresqlPool connBS 16
   runSqlPool runMigrations pool
 
-
   initialTip <- getLocalTip pool
 
   now <- getCurrentTime
@@ -66,18 +63,17 @@ main = do
           smDbReady = False,
           smMigrationsComplete = False,
           smChainSyncState = Behind True -- by default we are way behind
-        } 
+        }
 
- 
   -- Start probe server
   void $ forkIO $ startProbeServer port metricsVar
 
   -- Chain sync loop
 
-  atlasConfig <- fromMaybe (error "Atlas configuration failed") <$> decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
+  atlasConfig <- maybe (die "Atlas configuration failed") return =<< decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
   let networkId = cfgNetworkId atlasConfig
 
-  deployedScriptsContext <- fromMaybe (error "Deployed validators configuration failed") <$> decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuldingContextFile
+  deployedScriptsContext <- maybe (die "Deployed validators configuration failed") return =<< decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuildingContextFile
   let mpHash = getMintingPolicyHash deployedScriptsContext
 
   let policyHexText = T.pack $ printf "%s" mpHash

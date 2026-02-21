@@ -2,20 +2,18 @@
 
 -- | On-chain utility functions shared across validators.
 -- Provides helpers for untyped lambda conversion, datum/value lookups,
--- output validation, oracle reading, fee checking, and the shared minimum
--- lovelace constant.
+-- output validation, and oracle reading. Minimum lovelace for state outputs
+-- comes from the oracle ('opMinUTxOValue'), not from this module.
 module Onchain.Utils
-  ( -- * Shared Constants
-    protocolMinLovelaceValue,
-    protocolMinLovelace,
-
-    -- * Helper Functions
+  ( -- * Helper Functions
     mkUntypedLambda,
     nameFromTxOutRef,
 
     -- * Datum Helper Functions
     checkTxOutAtIndexWithDatumValueAndAddress,
     isTxOutAtIndexWithDatumValueAndAddress,
+    checkTxOutAtIndexWithDatumMinValueAndAddress,
+    isTxOutAtIndexWithDatumMinValueAndAddress,
     isGivenInlineDatum,
     unsafeFindOwnInputByTxOutRef,
 
@@ -38,21 +36,6 @@ import PlutusLedgerApi.V3
 import PlutusTx.Builtins
 import PlutusTx.List qualified
 import PlutusTx.Prelude
-
--------------------------------------------------------------------------------
-
--- * Shared Constants
-
--------------------------------------------------------------------------------
-
-protocolMinLovelace :: Integer
-protocolMinLovelace = 3_500_000
-{-# INLINEABLE protocolMinLovelace #-}
-
--- | Minimum lovelace value required for UTxO outputs.
-{-# INLINEABLE protocolMinLovelaceValue #-}
-protocolMinLovelaceValue :: Value
-protocolMinLovelaceValue = V1.lovelaceValue (Lovelace protocolMinLovelace)
 
 -------------------------------------------------------------------------------
 
@@ -92,6 +75,18 @@ checkTxOutAtIndexWithDatumValueAndAddress idx datum value address outputs =
 isTxOutAtIndexWithDatumValueAndAddress :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
 isTxOutAtIndexWithDatumValueAndAddress datum value address TxOut {txOutValue, txOutAddress, txOutDatum} =
   (value == txOutValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
+
+-- | Check that the output at a specific index has the expected datum and address, and that its value is >= minValue.
+-- Use this in the minting policy where the exact output value depends on datum size (min-ADA); we only require value >= (minLv + NFT).
+{-# INLINEABLE checkTxOutAtIndexWithDatumMinValueAndAddress #-}
+checkTxOutAtIndexWithDatumMinValueAndAddress :: (ToData a) => Integer -> a -> Value -> Address -> [TxOut] -> Bool
+checkTxOutAtIndexWithDatumMinValueAndAddress idx datum minValue address outputs =
+  isTxOutAtIndexWithDatumMinValueAndAddress datum minValue address (outputs !! idx)
+
+{-# INLINEABLE isTxOutAtIndexWithDatumMinValueAndAddress #-}
+isTxOutAtIndexWithDatumMinValueAndAddress :: (ToData a) => a -> Value -> Address -> TxOut -> Bool
+isTxOutAtIndexWithDatumMinValueAndAddress datum minValue address TxOut {txOutValue, txOutAddress, txOutDatum} =
+  (txOutValue `geq` minValue) && (address == txOutAddress) && isGivenInlineDatum datum txOutDatum
 
 {-# INLINEABLE hasTxInAtAddressWithNFT #-}
 hasTxInAtAddressWithNFT :: AssetClass -> Address -> [TxInInfo] -> Bool

@@ -1,7 +1,7 @@
 @startuml Achievements
 
 title: Sequence Diagram : Achievements
-caption: Decentalized Belt System Protocol
+caption: Decentralized Belt System Protocol
 
 !theme toy
 
@@ -19,6 +19,10 @@ entity Cardano as "Cardano\nTransaction" #blue
 
 control ProfilesV as "Profiles" << Spending Validator >>
 
+note over IssuerProfile, ProfilesV
+  Implemented with AchievementsValidator and MintingPolicy (NewAchievement);
+  diagram simplified to show flow only.
+end note
 
 group Granting
 create Cardano
