@@ -26,11 +26,13 @@ How to add new cursor rules to the project
     ├── operations/
     │   └── storage-ingestion.mdc
     └── workflow/
+        ├── api-versioning.mdc
         ├── build-and-test-after-plan.mdc
+        ├── docs-and-api.mdc
         ├── new-concept-checklist.mdc
-        ├── testing-and-config.mdc
         ├── scripts.mdc
-        └── docs-and-api.mdc
+        ├── testing-and-config.mdc
+        └── versioning.mdc
     ```
 
 2. Follow the naming convention:

@@ -63,4 +63,4 @@ alwaysApply: false
 - **Config**: Use `Constants` for default file paths and app version. Use `decodeConfigEnvOrFile "ENV_VAR" defaultPath` for optional env override. Use `WebAPI.Utils.getPortFromEnvOrDefault` for port (defaults: 8082, 8083, 8084).
 - **Auth**: API servers use `WebAPI.Auth.getBasicAuthFromEnv` and `basicAuthServerContext`; protect private routes with `BasicAuth "user-realm" AuthUser :> ...`.
 - **CORS**: Use `WebAPI.CORS.setupCors` as the outermost middleware for all HTTP services.
-- **Swagger**: APIs write their Swagger JSON to `docs/swagger/` on startup; do not edit these files by hand. See docs-and-api.mdc.
+- **Swagger**: APIs write their Swagger JSON to `docs/swagger/` on startup; do not edit these files by hand. See [docs-and-api.mdc](../workflow/docs-and-api.mdc).
