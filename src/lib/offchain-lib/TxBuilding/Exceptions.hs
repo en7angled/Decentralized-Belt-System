@@ -27,53 +27,70 @@ data AddMembershipIntervalReason
 
 -- | Exceptions raised during offchain transaction building and lookups.
 data TxBuildingException
-  = -- * Profile Lookup Errors
+  = -- \* Profile Lookup Errors
     ProfileNotFound
   | WrongProfileType
-    -- * Rank Lookup Errors
-  | RankNotFound
+  | ProfileHasNoRank
+  | -- \* Rank Lookup Errors
+    RankNotFound
   | RankListEmpty
   | WrongRankDataType
-    -- * Promotion Errors
-  | PromotionNotFound
-    -- * Membership Errors
-  | MembershipHistoryNotFound
+  | PromotionNotPending
+  | -- \* Promotion Errors
+    PromotionNotFound
+  | -- \* Membership Errors
+    MembershipHistoryNotFound
   | MembershipIntervalNotFound
   | MembershipListNodeNotFound
   | MembershipRootNodeHasNoHistory
   | CannotAddMembershipInterval AddMembershipIntervalReason
-    -- * Achievement Errors
-  | AchievementNotFound
-    -- * Oracle Errors
-  | OracleNotFound
+  | InitMembershipHistoryInvalidDates
+  | MembershipListInsertInvalid
+  | MembershipListAppendInvalid
+  | MembershipIntervalAlreadyAccepted
+  | -- \* Achievement Errors
+    AchievementNotFound
+  | AchievementAlreadyAccepted
+  | -- \* Belt / Protocol Data Errors
+    InvalidBeltNumber
+  | -- \* Oracle Errors
+    OracleNotFound
   | OracleDatumInvalid
   | ProtocolPaused
-    -- * Script / Infrastructure Errors
-  | ScriptNotFound
+  | -- \* Script / Infrastructure Errors
+    ScriptNotFound
   | DeployedScriptsNotReady
-    -- * UTxO / Asset Errors
-  | InvalidAssetClass
+  | -- \* UTxO / Asset Errors
+    InvalidAssetClass
   | NFTNotFound
   | MultipleUtxosFound
   | DatumParseError
-    -- * Cleanup Errors
-  | NoDustFound
+  | -- \* Cleanup Errors
+    NoDustFound
   deriving stock (Generic, Show, Eq)
 
 instance Exception TxBuildingException where
   displayException :: TxBuildingException -> String
   displayException ProfileNotFound = "Profile not found"
   displayException WrongProfileType = "Wrong profile type"
+  displayException ProfileHasNoRank = "Profile has no rank (organization or rank not set)"
   displayException RankNotFound = "Rank not found"
   displayException RankListEmpty = "Rank list is empty for this practitioner"
   displayException WrongRankDataType = "Wrong rank data type"
+  displayException PromotionNotPending = "Cannot accept: rank is not a pending promotion"
   displayException PromotionNotFound = "Promotion not found"
   displayException MembershipHistoryNotFound = "Membership history not found"
   displayException MembershipIntervalNotFound = "Membership interval not found"
   displayException MembershipListNodeNotFound = "Membership list node not found"
   displayException MembershipRootNodeHasNoHistory = "Membership list node is the root; it has no history or first interval"
   displayException (CannotAddMembershipInterval reason) = addMembershipIntervalReasonMessage reason
+  displayException InitMembershipHistoryInvalidDates = "Init membership history: end date must be after start date"
+  displayException MembershipListInsertInvalid = "Membership list insert invalid (different orgs or list invariant violated)"
+  displayException MembershipListAppendInvalid = "Membership list append invalid (different orgs or list invariant violated)"
+  displayException MembershipIntervalAlreadyAccepted = "Membership interval is already accepted"
   displayException AchievementNotFound = "Achievement not found"
+  displayException AchievementAlreadyAccepted = "Achievement is already accepted"
+  displayException InvalidBeltNumber = "Invalid belt number (must be 0–14)"
   displayException OracleNotFound = "Oracle UTxO not found"
   displayException OracleDatumInvalid = "Oracle datum invalid or unparseable"
   displayException ProtocolPaused = "Protocol is paused"
@@ -107,15 +124,24 @@ instance IsGYApiError TxBuildingException
 -- Used by the interaction API to return structured error responses.
 txBuildingExceptionToHttpStatus :: TxBuildingException -> Int
 txBuildingExceptionToHttpStatus ProfileNotFound = 404
+txBuildingExceptionToHttpStatus ProfileHasNoRank = 400
 txBuildingExceptionToHttpStatus RankNotFound = 404
 txBuildingExceptionToHttpStatus RankListEmpty = 404
+txBuildingExceptionToHttpStatus WrongRankDataType = 400
+txBuildingExceptionToHttpStatus PromotionNotPending = 400
 txBuildingExceptionToHttpStatus PromotionNotFound = 404
 txBuildingExceptionToHttpStatus MembershipHistoryNotFound = 404
 txBuildingExceptionToHttpStatus MembershipIntervalNotFound = 404
 txBuildingExceptionToHttpStatus MembershipListNodeNotFound = 404
 txBuildingExceptionToHttpStatus MembershipRootNodeHasNoHistory = 404
 txBuildingExceptionToHttpStatus (CannotAddMembershipInterval _) = 400
+txBuildingExceptionToHttpStatus InitMembershipHistoryInvalidDates = 400
+txBuildingExceptionToHttpStatus MembershipListInsertInvalid = 400
+txBuildingExceptionToHttpStatus MembershipListAppendInvalid = 400
+txBuildingExceptionToHttpStatus MembershipIntervalAlreadyAccepted = 400
 txBuildingExceptionToHttpStatus AchievementNotFound = 404
+txBuildingExceptionToHttpStatus AchievementAlreadyAccepted = 400
+txBuildingExceptionToHttpStatus InvalidBeltNumber = 400
 txBuildingExceptionToHttpStatus OracleNotFound = 404
 txBuildingExceptionToHttpStatus DeployedScriptsNotReady = 503
 txBuildingExceptionToHttpStatus ProtocolPaused = 503

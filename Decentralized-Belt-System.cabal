@@ -186,6 +186,7 @@ library offchain-lib
     TxBuilding.Interactions
     TxBuilding.Lookups
     TxBuilding.Operations
+    TxBuilding.SafeOnchainLogic
     TxBuilding.Skeletons
     TxBuilding.Transactions
     TxBuilding.Utils
@@ -423,6 +424,7 @@ test-suite test
     , base
     , offchain-lib
     , onchain-lib
+    , text
 
   build-depends:
     , extra

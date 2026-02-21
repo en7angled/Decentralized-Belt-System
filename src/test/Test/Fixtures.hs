@@ -12,9 +12,14 @@ module Test.Fixtures
     achievementProfileData,
     seminarProfileData,
     cleanupTestProfileData,
+    profileDataMaxLengthMetadata,
+    achievementProfileDataMaxLength,
+    maxLengthImageURI,
+    profileDataOverLongName,
   )
 where
 
+import Data.Text (Text, pack)
 import DomainTypes.Core.Actions (ProfileData (..))
 
 adminTestProfileData :: ProfileData
@@ -103,4 +108,29 @@ cleanupTestProfileData =
     { profileDataName = "Cleanup Test User",
       profileDataDescription = "A test profile to verify dust cleanup safety",
       profileDataImageURI = "ipfs://QmCleanupTest"
+    }
+
+-- Max-length metadata (bytes): name 128, description 1024, image URI 256 (Onchain.CIP68).
+-- ASCII so 1 char = 1 byte.
+maxLengthImageURI :: Text
+maxLengthImageURI = pack ("ipfs://Qm" ++ replicate 246 'x') -- 10 + 246 = 256 bytes
+
+profileDataMaxLengthMetadata :: ProfileData
+profileDataMaxLengthMetadata =
+  ProfileData
+    { profileDataName = pack (replicate 128 'a'),
+      profileDataDescription = pack (replicate 1024 'b'),
+      profileDataImageURI = maxLengthImageURI
+    }
+
+achievementProfileDataMaxLength :: ProfileData
+achievementProfileDataMaxLength = profileDataMaxLengthMetadata
+
+-- 129-byte name (over maxNameLength 128) for negative tests; description and image within limits.
+profileDataOverLongName :: ProfileData
+profileDataOverLongName =
+  ProfileData
+    { profileDataName = pack (replicate 129 'a'),
+      profileDataDescription = "ok",
+      profileDataImageURI = "ipfs://QmOk"
     }

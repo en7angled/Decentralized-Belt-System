@@ -12,8 +12,8 @@ import Onchain.BJJ (BJJBelt (White), beltToInt)
 import Onchain.CIP68 (CIP68Datum (..), ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
 import Onchain.LinkedList (NodeDatum (..))
 import Onchain.Protocol qualified as Onchain
+import Onchain.Protocol.Types (OracleAdminAction (OraclePause, OracleSetFees, OracleSetMinUTxOValue, OracleUnpause))
 import Onchain.Protocol.Types qualified as OnchainTypes
-import Onchain.Utils (protocolMinLovelace)
 import Onchain.Validators.AchievementsValidator (AchievementsRedeemer (..))
 import Onchain.Validators.MembershipsValidator (MembershipsRedeemer (..))
 import Onchain.Validators.MintingPolicy
@@ -26,6 +26,15 @@ import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getAchievementsValidatorRef, getMembershipsValidatorRef, getMintingPolicyFromCtx, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getProtocolParamsFromCtx, getRanksValidatorRef)
 import TxBuilding.Exceptions (AddMembershipIntervalReason (..), TxBuildingException (..))
 import TxBuilding.Lookups (findInsertPointForNewMembership, getAchievementDatumAndValue, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDatumAndValue, getRankStateDatumAndValue, getUTxOWithTokenAtAddresses, queryOracleParams)
+import TxBuilding.SafeOnchainLogic
+  ( safeAcceptAchievement,
+    safeAcceptMembershipInterval,
+    safeAppendMembershipHistory,
+    safeGetCurrentRankId,
+    safeInitMembershipHistory,
+    safeInsertMembershipHistoryInBetween,
+    safePromoteProfile,
+  )
 import TxBuilding.Skeletons
 import TxBuilding.Utils (gySlotFromPOSIXTime, pPOSIXTimeFromGYSlot, txOutRefToV3Plutus)
 import TxBuilding.Validators
@@ -56,19 +65,19 @@ getFeeSkeleton oracle feeSelector = case OnchainTypes.opFeeConfig oracle of
     gyFeeAddr <- addressFromPlutus' plutusFeeAddr
     txMustPayValueToAddress gyFeeAddr (valueFromLovelace feeAmount)
 
--- | Oracle reference input, params, minLovelace, fee skeleton, and validity (invalid-before-now).
+-- | Oracle reference input, params, fee skeleton, and validity (invalid-before-now).
 -- Use when building TXs that require oracle, fee, and a validity window.
+-- Min lovelace for state outputs comes from 'OnchainTypes.opMinUTxOValue' of the returned 'OracleParams'.
 getOracleFeeAndValiditySkeleton ::
   (GYTxQueryMonad m, MonadReader DeployedScriptsContext m) =>
   (OnchainTypes.FeeConfig -> Integer) ->
-  m (GYTxSkeleton 'PlutusV3, OnchainTypes.OracleParams, Integer, GYTxSkeleton 'PlutusV3, GYTxSkeleton 'PlutusV3)
+  m (GYTxSkeleton 'PlutusV3, OnchainTypes.OracleParams, GYTxSkeleton 'PlutusV3, GYTxSkeleton 'PlutusV3)
 getOracleFeeAndValiditySkeleton feeSelector = do
   (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
-  let minLv = protocolMinLovelace
   feeSkeleton <- getFeeSkeleton oracleParams feeSelector
   now <- slotOfCurrentBlock
   let isValidForSafeEra = txIsValidForSafeEra now
-  return (oracleRefSkeleton, oracleParams, minLv, feeSkeleton, isValidForSafeEra)
+  return (oracleRefSkeleton, oracleParams, feeSkeleton, isValidForSafeEra)
 
 -- | Spend the User NFT for a profile (Ref AC) from the given addresses.
 spendUserNFTForProfile ::
@@ -141,7 +150,8 @@ createProfileWithRankTX ::
 createProfileWithRankTX recipient metadata profileType creationDate belt = do
   mpGY <- asks getMintingPolicyFromCtx
   pp <- asks getProtocolParamsFromCtx
-  (oracleRefSkeleton, _oracleParams, minLv, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcProfileCreationFee
+  (oracleRefSkeleton, oracleParams, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcProfileCreationFee
+  let minLv = OnchainTypes.opMinUTxOValue oracleParams
 
   mpRef <- asks getMintingPolicyRef
   seedTxOutRef <- someUTxOWithoutRefScript
@@ -282,7 +292,8 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
   mpGY <- asks getMintingPolicyFromCtx
   pp <- asks getProtocolParamsFromCtx
 
-  (oracleRefSkeleton, _oracleParams, minLv, feeSkeleton, _isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcPromotionFee
+  (oracleRefSkeleton, oracleParams, feeSkeleton, _isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcPromotionFee
+  let minLv = OnchainTypes.opMinUTxOValue oracleParams
 
   mpRef <- asks getMintingPolicyRef
 
@@ -296,12 +307,12 @@ promoteProfileTX gyPromotedProfileId gyPromotedByProfileId achievementDate belt 
   -- Look up student and master profiles to get their current rank IDs
   (plutusStudentProfileDatum, _) <- getProfileStateDatumAndValue gyPromotedProfileId
   let plutusStudentProfile = extra plutusStudentProfileDatum
-  let studentCurrentRankId = Onchain.getCurrentRankId plutusStudentProfile
+  studentCurrentRankId <- safeGetCurrentRankId plutusStudentProfile
   gyStudentCurrentRankAC <- assetClassFromPlutus' studentCurrentRankId
 
   (plutusMasterProfileDatum, _) <- getProfileStateDatumAndValue gyPromotedByProfileId
   let plutusMasterProfile = extra plutusMasterProfileDatum
-  let masterCurrentRankId = Onchain.getCurrentRankId plutusMasterProfile
+  masterCurrentRankId <- safeGetCurrentRankId plutusMasterProfile
   gyMasterCurrentRankAC <- assetClassFromPlutus' masterCurrentRankId
 
   -- ============================================================
@@ -389,10 +400,10 @@ acceptPromotionTX gyPromotionId ownAddrs = do
 
   (plutusProfileDatum, plutusProfileValue) <- getProfileStateDatumAndValue gyStudentProfileRefAC
   let plutusStudentProfile = extra plutusProfileDatum
-  let studentCurrentRankId = Onchain.getCurrentRankId plutusStudentProfile
+  studentCurrentRankId <- safeGetCurrentRankId plutusStudentProfile
   gyStudentCurrentRankAC <- assetClassFromPlutus' studentCurrentRankId
 
-  let (plutusStudentUpdatedProfileDatum, plutusStudentUpdatedRankDatum) = Onchain.promoteProfile plutusProfileDatum plutusPromotionRankDatum
+  (plutusStudentUpdatedProfileDatum, plutusStudentUpdatedRankDatum) <- safePromoteProfile plutusProfileDatum plutusPromotionRankDatum
 
   gyProfileValue <- valueFromPlutus' plutusProfileValue
   -- Output 0: Updated profile state
@@ -456,7 +467,8 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
   mpGY <- asks getMintingPolicyFromCtx
   mpRef <- asks getMintingPolicyRef
   mvRef <- asks getMembershipsValidatorRef
-  (oracleRefSkeleton, _oracleParams, minLv, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcMembershipHistoryFee
+  (oracleRefSkeleton, oracleParams, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcMembershipHistoryFee
+  let minLv = OnchainTypes.opMinUTxOValue oracleParams
 
   spendsOrgUserNFT <- spendUserNFTForProfile gyOrgProfileRefAC ownAddrs
 
@@ -467,21 +479,21 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
   (leftNode, leftNodeValue) <- getMembershipListNodeDatumAndValue leftNodeAC
 
   -- Create the new membership history and first interval
-  let (newHistory, fstInterval) = Onchain.initMembershipHistory plutusPractitionerRefAC plutusOrgRefAC startDate mEndDate
+  (newHistory, fstInterval) <- safeInitMembershipHistory plutusPractitionerRefAC plutusOrgRefAC startDate mEndDate
 
   -- Build newNode and updatedLeftNode, and redeemer fields for append vs insert
   (newNode, updatedLeftNode, maybeRightNodeIdPlutus) <- case maybeRightNodeAC of
     Nothing -> do
       -- Append: new node is last; left's next becomes the new node's key
       let newNode' = Onchain.mkMembershipHistoriesListNode newHistory Nothing
-      let updatedLeftNode' = Onchain.appendMembershipHistory (leftNode, newNode')
+      updatedLeftNode' <- safeAppendMembershipHistory (leftNode, newNode')
       return (newNode', updatedLeftNode', Nothing)
     Just rightNodeAC -> do
       -- Insert: new node goes between left and right; new node's next = right's key
       (rightNode, _) <- getMembershipListNodeDatumAndValue rightNodeAC
       let rightKey = nodeKey (OnchainTypes.nodeInfo rightNode)
       let newNode' = Onchain.mkMembershipHistoriesListNode newHistory rightKey
-      let updatedLeftNode' = Onchain.insertMembershipHistoryInBetween (leftNode, rightNode, newNode')
+      updatedLeftNode' <- safeInsertMembershipHistoryInBetween (leftNode, rightNode, newNode')
       return (newNode', updatedLeftNode', Just (assetClassToPlutus rightNodeAC))
 
   -- Derive GY asset classes for the newly created tokens
@@ -514,6 +526,9 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
     Nothing -> return mempty
     Just rightAC -> txMustHaveUTxOsAsRefInputs [rightAC]
 
+  -- MembershipsValidator InsertNodeToMHList reads oracle for minLv; it needs the org profile ref to get ProtocolParams
+  refOrgProfileSkeleton <- txMustHaveUTxOsAsRefInputs [gyOrgProfileRefAC]
+
   isMintingHistoryNFT <- txMustMintWithMintRef True mpRef mpGY mintRedeemer gyMembershipHistoryAC
   isMintingIntervalNFT <- txMustMintWithMintRef True mpRef mpGY mintRedeemer gyFirstIntervalAC
 
@@ -543,6 +558,7 @@ createMembershipHistoryTX gyOrgProfileRefAC gyPractitionerProfileRefAC startDate
           isInvalidBeforeNow,
           oracleRefSkeleton,
           refRightNodeSkeleton,
+          refOrgProfileSkeleton,
           isMintingHistoryNFT,
           isMintingIntervalNFT,
           isLockingUpdatedLeftNode,
@@ -577,7 +593,8 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
   mpGY <- asks getMintingPolicyFromCtx
   mpRef <- asks getMintingPolicyRef
   mvRef <- asks getMembershipsValidatorRef
-  (oracleRefSkeleton, _oracleParams, minLv, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcMembershipHistoryFee
+  (oracleRefSkeleton, oracleParams, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcMembershipHistoryFee
+  let minLv = OnchainTypes.opMinUTxOValue oracleParams
 
   spendsOrgUserNFT <- spendUserNFTForProfile gyOrgProfileRefAC ownAddrs
 
@@ -701,7 +718,7 @@ acceptMembershipIntervalTX gyIntervalAC ownAddrs = do
   spendsPractitionerUserNFT <- txMustSpendFromAddress gyPractitionerUserAC ownAddrs
 
   -- Compute updated interval using Protocol functions
-  let updatedInterval = Onchain.acceptMembershipInterval interval
+  updatedInterval <- safeAcceptMembershipInterval interval
 
   -- ============================================================
   -- Output index tracking (order must match skeleton mconcat order)
@@ -858,7 +875,8 @@ awardAchievementTX ::
 awardAchievementTX gyAwardedToProfileId gyAwardedByProfileId metadata otherMetadata achievementDate ownAddrs = do
   mpGY <- asks getMintingPolicyFromCtx
   mpRef <- asks getMintingPolicyRef
-  (oracleRefSkeleton, _oracleParams, minLv, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcAchievementFee
+  (oracleRefSkeleton, oracleParams, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcAchievementFee
+  let minLv = OnchainTypes.opMinUTxOValue oracleParams
 
   -- Get a seed TxOutRef for uniqueness
   seedTxOutRef <- someUTxOWithoutRefScript
@@ -945,7 +963,7 @@ acceptAchievementTX gyAchievementAC ownAddrs = do
   spendsPractitionerUserNFT <- txMustSpendFromAddress gyPractitionerUserAC ownAddrs
 
   -- Compute updated achievement
-  let updatedAchievement = Onchain.acceptAchievement (extra achievementDatum)
+  updatedAchievement <- safeAcceptAchievement (extra achievementDatum)
   let updatedAchievementDatum = achievementDatum {extra = updatedAchievement}
 
   -- ============================================================
@@ -990,9 +1008,10 @@ updateOracleTX ::
 updateOracleTX adminAction = do
   ovRef <- asks getOracleValidatorRef
   (currentParams, oracleRef, oracleValue) <- queryOracleParams
-  let gyRedeemer = redeemerFromPlutusData (OracleUpdate 0)
+  let actionPlutus = adminActionToOracleAdminAction adminAction
+  let gyRedeemer = redeemerFromPlutusData (OracleUpdate 0 actionPlutus)
 
-  -- Apply the action to derive the new oracle params
+  -- Apply the action to derive the new oracle params (must match on-chain applyOracleAdminAction)
   let newParams = applyAdminAction adminAction currentParams
 
   -- Convert admin PKH from Plutus to GY for required signer
@@ -1010,11 +1029,20 @@ updateOracleTX adminAction = do
 
   return $ mconcat [spendOracle, lockOracle, requireAdminSig]
 
+-- | Map off-chain admin action to on-chain OracleAdminAction (for the redeemer).
+adminActionToOracleAdminAction :: AdminActionType -> OracleAdminAction
+adminActionToOracleAdminAction PauseProtocolAction = OraclePause
+adminActionToOracleAdminAction UnpauseProtocolAction = OracleUnpause
+adminActionToOracleAdminAction (SetFeesAction mFeeConfig) = OracleSetFees mFeeConfig
+adminActionToOracleAdminAction (SetMinUTxOValueAction lovelace) = OracleSetMinUTxOValue lovelace
+
 -- | Apply an admin action delta to current oracle params to produce new params.
+-- Must stay in sync with on-chain 'Onchain.Protocol.Types.applyOracleAdminAction'.
 applyAdminAction :: AdminActionType -> OnchainTypes.OracleParams -> OnchainTypes.OracleParams
 applyAdminAction PauseProtocolAction params = params {OnchainTypes.opPaused = True}
 applyAdminAction UnpauseProtocolAction params = params {OnchainTypes.opPaused = False}
 applyAdminAction (SetFeesAction mFeeConfig) params = params {OnchainTypes.opFeeConfig = mFeeConfig}
+applyAdminAction (SetMinUTxOValueAction lovelace) params = params {OnchainTypes.opMinUTxOValue = lovelace}
 
 ------------------------------------------------------------------------------------------------
 

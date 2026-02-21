@@ -1,6 +1,8 @@
+
 -- Required for `makeLift`:
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 -- {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:conservative-optimisation #-}
 
 {-# HLINT ignore "Use &&" #-}
@@ -25,8 +27,44 @@ import Onchain.CIP68 (MetadataFields, deriveUserFromRefAC, generateRefAndUserTN,
 import Onchain.Protocol (addMembershipIntervalToHistory, deriveIntervalsHeadId, deriveMembershipHistoriesListId, deriveMembershipHistoryIdFromHistory, deriveMembershipIntervalId, derivePromotionRankId, getCurrentRankId, initEmptyMembershipHistoriesList, initMembershipHistory, mkOrganizationProfile, mkPractitionerProfile, mkPromotion, unsafeGetListNodeDatumAndValue, unsafeGetMembershipHistory, unsafeGetMembershipInterval, unsafeGetProfile, unsafeGetRank)
 import Onchain.Protocol.Lookup (checkFee, readOracleParams)
 import Onchain.Protocol.Types
+  ( FeeConfig
+      ( fcAchievementFee,
+        fcMembershipHistoryFee,
+        fcMembershipIntervalFee,
+        fcProfileCreationFee,
+        fcPromotionFee
+      ),
+    MembershipDatum (IntervalDatum, ListNodeDatum),
+    MembershipHistoriesListNodeId,
+    OnchainAchievement
+      ( OnchainAchievement,
+        achievementAwardedBy,
+        achievementAwardedTo,
+        achievementDate,
+        achievementId,
+        achievementIsAccepted
+      ),
+    OnchainMembershipInterval (membershipIntervalNumber),
+    OnchainProfileType (..),
+    OnchainRank (rankAchievementDate, rankId, rankNumber),
+    OracleParams (opMinUTxOValue, opPaused),
+    ProfileId,
+    ProtocolParams
+      ( achievementsValidatorScriptHash,
+        membershipsValidatorScriptHash,
+        oracleToken,
+        profilesValidatorScriptHash,
+        ranksValidatorScriptHash
+      ),
+  )
 import Onchain.Utils (hasCurrencySymbol)
 import Onchain.Utils qualified as Utils
+  ( checkTxOutAtIndexWithDatumMinValueAndAddress,
+    hasTxInAtAddressWithNFT,
+    inputsSpendTxOutRef,
+    mkUntypedLambda,
+    nameFromTxOutRef,
+  )
 import PlutusCore.Builtin.Debug (plcVersion110)
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V1.Interval (before)
@@ -85,15 +123,15 @@ data MintingContext = MintingContext
 {-# INLINEABLE mintingPolicyLambda #-}
 mintingPolicyLambda :: ProtocolParams -> ScriptContext -> Bool
 mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
-  let redeemer = unsafeFromBuiltinData @MintingRedeemer bredeemer
+  let !redeemer = unsafeFromBuiltinData @MintingRedeemer bredeemer
    in case scriptInfo of
         (MintingScript mintingPolicyCurrencySymbol) ->
           let oracle = readOracleParams (oracleToken protocolParams) txInfoReferenceInputs
-              minLv = Utils.protocolMinLovelaceValue
-              profilesValidatorAddress = V1.scriptHashAddress (profilesValidatorScriptHash protocolParams)
-              ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
-              membershipsValidatorAddress = V1.scriptHashAddress (membershipsValidatorScriptHash protocolParams)
-              achievementsValidatorAddress = V1.scriptHashAddress (achievementsValidatorScriptHash protocolParams)
+              !minLv = V1.lovelaceValue (V1.Lovelace (opMinUTxOValue oracle))
+              !profilesValidatorAddress = V1.scriptHashAddress (profilesValidatorScriptHash protocolParams)
+              !ranksValidatorAddress = V1.scriptHashAddress (ranksValidatorScriptHash protocolParams)
+              !membershipsValidatorAddress = V1.scriptHashAddress (membershipsValidatorScriptHash protocolParams)
+              !achievementsValidatorAddress = V1.scriptHashAddress (achievementsValidatorScriptHash protocolParams)
               ctx =
                 MintingContext
                   { ctxMinLv = minLv,
@@ -151,6 +189,7 @@ handleCreateProfile protocolParams TxInfo {..} mintingPolicyCurrencySymbol ctx s
       profileUserNFT = V1.assetClassValue profileUserAssetClass 1
       minLv = ctxMinLv ctx
       profilesValidatorAddress = ctxProfilesAddress ctx
+      profileValue = (profileRefNFT + minLv)
    in traceIfFalse "M2" (creationDate `before` txInfoValidRange) -- Creation date before validity (M2)
         && traceIfFalse "M3" (Utils.inputsSpendTxOutRef seedTxOutRef txInfoInputs) -- Must spend seed TxOutRef (M3)
         && traceIfFalse "M4" (validateMetadataFields metadata) -- Metadata fields validation failed (M4)
@@ -160,14 +199,15 @@ handleCreateProfile protocolParams TxInfo {..} mintingPolicyCurrencySymbol ctx s
                 profileDatum = mkCIP68Datum profile metadata []
                 rankAssetClass = rankId rankDatum
                 rankNFT = V1.assetClassValue rankAssetClass 1
+                rankValue = (rankNFT + minLv)
              in traceIfFalse
                   "M5" -- Practitioner mint/lock check failed (M5)
-                  ( Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx profileDatum (profileRefNFT + minLv) profilesValidatorAddress txInfoOutputs
+                  ( Utils.checkTxOutAtIndexWithDatumMinValueAndAddress profileOutputIdx profileDatum profileValue profilesValidatorAddress txInfoOutputs
                       && mintValueMinted txInfoMint
                       == profileRefNFT
                       + profileUserNFT
                       + rankNFT
-                      && Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOrMembershipRootOutputIdx rankDatum (rankNFT + minLv) (ctxRanksAddress ctx) txInfoOutputs
+                      && Utils.checkTxOutAtIndexWithDatumMinValueAndAddress rankOrMembershipRootOutputIdx rankDatum rankValue (ctxRanksAddress ctx) txInfoOutputs
                   )
           Organization ->
             let profile = mkOrganizationProfile profileRefAssetClass protocolParams
@@ -175,10 +215,11 @@ handleCreateProfile protocolParams TxInfo {..} mintingPolicyCurrencySymbol ctx s
                 membershipHistoriesRootDatum = initEmptyMembershipHistoriesList profileRefAssetClass
                 membershipHistoriesRootAssetClass = deriveMembershipHistoriesListId profileRefAssetClass
                 membershipHistoriesRootNFT = V1.assetClassValue membershipHistoriesRootAssetClass 1
+                membershipHistoriesRootValue = (membershipHistoriesRootNFT + minLv)
              in traceIfFalse
                   "M6" -- Organization mint/lock check failed (M6)
-                  ( Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx profileDatum (profileRefNFT + minLv) profilesValidatorAddress txInfoOutputs
-                      && Utils.checkTxOutAtIndexWithDatumValueAndAddress rankOrMembershipRootOutputIdx (ListNodeDatum membershipHistoriesRootDatum) (membershipHistoriesRootNFT + minLv) (ctxMembershipsAddress ctx) txInfoOutputs
+                  ( Utils.checkTxOutAtIndexWithDatumMinValueAndAddress profileOutputIdx profileDatum profileValue profilesValidatorAddress txInfoOutputs
+                      && Utils.checkTxOutAtIndexWithDatumMinValueAndAddress rankOrMembershipRootOutputIdx (ListNodeDatum membershipHistoriesRootDatum) membershipHistoriesRootValue (ctxMembershipsAddress ctx) txInfoOutputs
                       && mintValueMinted txInfoMint
                       == profileRefNFT
                       + profileUserNFT
@@ -209,6 +250,8 @@ handlePromote protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx 
       -- Generate unique promotion rank ID from seed
       pendingRankAssetClass = derivePromotionRankId seedTxOutRef mintingPolicyCurrencySymbol
       pendingRankNFT = V1.assetClassValue pendingRankAssetClass 1
+      pendingRankValue = (pendingRankNFT + minLv)
+
       pendingRankDatum = mkPromotion pendingRankAssetClass studentProfileId masterProfileId achievementDate nextRankNum protocolParams
 
       -- Master must spend their user NFT to authorize promotion
@@ -234,7 +277,7 @@ handlePromote protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx 
         && traceIfFalse "M8" (Utils.inputsSpendTxOutRef seedTxOutRef txInfoInputs) -- Must spend seed for uniqueness (M8)
         && traceIfFalse "M9" (V1.assetClassValueOf (valueSpent txInfo) masterUserAC == 1) -- Must spend master user NFT (M9)
         && traceIfFalse "Ma" (mintValueMinted txInfoMint == pendingRankNFT) -- Tx must mint JUST pending rank NFT (Ma)
-        && traceIfFalse "Mb" (Utils.checkTxOutAtIndexWithDatumValueAndAddress pendingRankOutputIdx pendingRankDatum (pendingRankNFT + minLv) ranksValidatorAddress txInfoOutputs) -- Lock pending rank at RV (Mb)
+        && traceIfFalse "Mb" (Utils.checkTxOutAtIndexWithDatumMinValueAndAddress pendingRankOutputIdx pendingRankDatum pendingRankValue ranksValidatorAddress txInfoOutputs) -- Lock pending rank at RV (Mb)
         && traceIfFalse "Mc" isPromotionValid -- Must pass promotion validation (Mc)
 
 {-# INLINEABLE handleNewMembershipHistory #-}
@@ -263,6 +306,7 @@ handleNewMembershipHistory txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx or
       membershipHistoryNFT = V1.assetClassValue historyId 1
       fstIntervalId = deriveIntervalsHeadId newHistory
       fstIntervalNFT = V1.assetClassValue fstIntervalId 1
+      fstIntervalValue = (fstIntervalNFT + minLv)
    in -- Must spend user NFT of the organization profile who is creating the membership history -- enforced here
       -- Must spend the UTxO of the left node of the membership history list (containing LeftNodeId NFT) from membershipsValidator address -- enforced here
       -- Must lock the updated left node with inline datum at membershipsValidator address (output idx) -- enforced by membershipsValidator
@@ -278,7 +322,7 @@ handleNewMembershipHistory txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx or
             && Utils.hasTxInAtAddressWithNFT leftNodeId membershipsValidatorAddress txInfoInputs
             && mintValueMinted txInfoMint
             == (membershipHistoryNFT + fstIntervalNFT)
-            && Utils.checkTxOutAtIndexWithDatumValueAndAddress firstIntervalOutputIdx (IntervalDatum fstInterval) (fstIntervalNFT + minLv) membershipsValidatorAddress txInfoOutputs
+            && Utils.checkTxOutAtIndexWithDatumMinValueAndAddress firstIntervalOutputIdx (IntervalDatum fstInterval) fstIntervalValue membershipsValidatorAddress txInfoOutputs
         )
 
 {-# INLINEABLE handleNewMembershipInterval #-}
@@ -309,6 +353,7 @@ handleNewMembershipInterval txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx o
       (_newHistory, newInterval) = addMembershipIntervalToHistory oldHistory lastIntervalDatum startDate mEndDate
       newIntervalId = deriveMembershipIntervalId historyId (membershipIntervalNumber newInterval)
       newIntervalNFT = V1.assetClassValue newIntervalId 1
+      newIntervalValue = (newIntervalNFT + minLv)
    in -- Must spend user NFT of the organization profile who is creating the membership interval -- enforced here
       -- Must spend the UTxO of the updated membership history (with ListNodeDatum) -- enforced here
       -- Must lock the updated membership history with inline datum at membershipsValidator address (output idx) -- enforced by membershipsValidator
@@ -325,7 +370,7 @@ handleNewMembershipInterval txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx o
             && Utils.hasTxInAtAddressWithNFT membershipNodeId membershipsValidatorAddress txInfoInputs
             && mintValueMinted txInfoMint
             == newIntervalNFT
-            && Utils.checkTxOutAtIndexWithDatumValueAndAddress intervalOutputIdx (IntervalDatum newInterval) (newIntervalNFT + minLv) membershipsValidatorAddress txInfoOutputs
+            && Utils.checkTxOutAtIndexWithDatumMinValueAndAddress intervalOutputIdx (IntervalDatum newInterval) newIntervalValue membershipsValidatorAddress txInfoOutputs
         )
 
 {-# INLINEABLE handleNewAchievement #-}
@@ -350,6 +395,7 @@ handleNewAchievement txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOu
       (achievementRefTN, _) = generateRefAndUserTN (Utils.nameFromTxOutRef seedTxOutRef)
       achievementRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, achievementRefTN)
       achievementNFT = V1.assetClassValue achievementRefAssetClass 1
+      achievementValue = (achievementNFT + minLv)
       achievementInfo =
         OnchainAchievement
           { achievementId = achievementRefAssetClass,
@@ -366,7 +412,7 @@ handleNewAchievement txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOu
         && traceIfFalse "Mg" (isAwardedToValid && isAwardedByValid) -- Profiles must have correct currency symbol (Mg)
         && traceIfFalse "Mh" (Utils.inputsSpendTxOutRef seedTxOutRef txInfoInputs) -- Must spend seed for uniqueness (Mh)
         && traceIfFalse "Mj" (mintValueMinted txInfoMint == achievementNFT) -- Tx must mint JUST achievement NFT (Mj)
-        && traceIfFalse "Mk" (Utils.checkTxOutAtIndexWithDatumValueAndAddress achievementOutputIdx achievementDatum (achievementNFT + minLv) achievementsValidatorAddress txInfoOutputs) -- Lock achievement at AchievementsValidator address (Mk)
+        && traceIfFalse "Mk" (Utils.checkTxOutAtIndexWithDatumMinValueAndAddress achievementOutputIdx achievementDatum achievementValue achievementsValidatorAddress txInfoOutputs) -- Lock achievement at AchievementsValidator address (Mk)
 
 -------------------------------------------------------------------------------
 

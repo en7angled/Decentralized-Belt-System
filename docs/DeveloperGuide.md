@@ -294,7 +294,7 @@ Every minting transaction reads the oracle via reference input:
 ```haskell
 -- Read oracle params (in MintingPolicy or any tx that needs them)
 let oracle = readOracleParams oracleToken (txInfoReferenceInputs txInfo)
-    minLv  = Utils.minLovelaceValue  -- fixed constant, not from oracle
+    minLv  = lovelaceValue (Lovelace (opMinUTxOValue oracle))  -- from oracle only
 
 -- Check pause gate
 traceIfFalse "Protocol is paused" (not $ opPaused oracle)
@@ -505,9 +505,8 @@ myOperationTX param1 param2 ownAddrs = do
       mvRef = snd myValidatorHashAndRef
 
   -- 2. Get oracle params (if minting)
-  (oracleRefSkeleton, oracleParams) <- getOracleRefInputSkeleton
-  let minLv = protocolMinLovelace  -- fixed constant in Operations.hs
-  feeSkeleton <- getFeeSkeleton oracleParams fcSomeFee
+  (oracleRefSkeleton, oracleParams, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton fcSomeFee
+  let minLv = opMinUTxOValue oracleParams  -- min lovelace for state outputs; off-chain can compute per-output from protocol params and serialized size with oracle as floor
 
   -- 3. Look up existing state
   (existingDatum, existingValue) <- getMyStateDataAndValue myRefAC
@@ -522,7 +521,8 @@ myOperationTX param1 param2 ownAddrs = do
 
   -- 6. Compose and return
   return $ mconcat
-    [ isMinting
+    [ isInvalidBeforeNow
+    , isMinting
     , isSpending
     , isLocking
     , oracleRefSkeleton
@@ -531,6 +531,8 @@ myOperationTX param1 param2 ownAddrs = do
 ```
 
 **Important:** The order of components in `mconcat` determines **output indices**. On-chain validators verify outputs at specific indices passed in redeemers. Keep the order consistent between off-chain skeleton building and on-chain redeemer index values.
+
+**Output value checks:** On-chain validators use **min-value** checks (output value ≥ expected) for continuing outputs and for MintingPolicy checks of new state outputs, because the tx builder/balancer may add lovelace to script outputs. Off-chain must still lock **continuing** outputs (same validator, updated datum) with the **exact** value from the spent UTxO (e.g. from `getMyStateDataAndValue`); the min-value check only accommodates balancer-added lovelace. See OnchainArchitecture.md § Output Index Optimization.
 
 ### 3.7 TxBuilding/Lookups — UTxO and State Lookups
 
@@ -625,16 +627,19 @@ Conversions convert between off-chain domain types and on-chain Plutus types:
 
 ### 3.11 TxBuilding/Exceptions — Error Handling
 
-```haskell
-data TxBuildingException
-  = ProfileNotFound | WrongProfileType
-  | RankNotFound | RankListEmpty | WrongRankDataType
-  | PromotionNotFound
-  | OracleNotFound | OracleDatumInvalid | ProtocolPaused
-  | ScriptNotFound | DeployedScriptsNotReady
-  | InvalidAssetClass | MultipleUtxosFound | DatumParseError
-  -- Add new exceptions here for your concept
-```
+The full definition lives in `TxBuilding/Exceptions.hs`. Summary of constructors by group:
+
+| Group                       | Constructors                                                                                                                                                                                                                                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Profile**                 | `ProfileNotFound`, `WrongProfileType`, `ProfileHasNoRank`                                                                                                                                                                                                                                                                             |
+| **Rank**                    | `RankNotFound`, `RankListEmpty`, `WrongRankDataType`, `PromotionNotPending`, `PromotionNotFound`                                                                                                                                                                                                                                      |
+| **Membership**              | `MembershipHistoryNotFound`, `MembershipIntervalNotFound`, `MembershipListNodeNotFound`, `MembershipRootNodeHasNoHistory`, `CannotAddMembershipInterval` (with `AddMembershipIntervalReason`), `InitMembershipHistoryInvalidDates`, `MembershipListInsertInvalid`, `MembershipListAppendInvalid`, `MembershipIntervalAlreadyAccepted` |
+| **Achievement**             | `AchievementNotFound`, `AchievementAlreadyAccepted`                                                                                                                                                                                                                                                                                   |
+| **Belt / protocol data**    | `InvalidBeltNumber`                                                                                                                                                                                                                                                                                                                   |
+| **Oracle**                  | `OracleNotFound`, `OracleDatumInvalid`, `ProtocolPaused`                                                                                                                                                                                                                                                                              |
+| **Script / infrastructure** | `ScriptNotFound`, `DeployedScriptsNotReady`                                                                                                                                                                                                                                                                                           |
+| **UTxO / asset**            | `InvalidAssetClass`, `NFTNotFound`, `MultipleUtxosFound`, `DatumParseError`                                                                                                                                                                                                                                                           |
+| **Cleanup**                 | `NoDustFound`                                                                                                                                                                                                                                                                                                                         |
 
 **Key instances:**
 - `Exception` — allows `throw`/`catch`

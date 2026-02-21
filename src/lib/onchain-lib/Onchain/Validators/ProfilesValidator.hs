@@ -92,10 +92,10 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
             Just (Datum bdatum) -> case fromBuiltinData bdatum of
               Nothing -> traceError "P0" -- Invalid datum (P0)
               Just profileDatum@(CIP68Datum _metadata _version (profile :: OnchainProfile)) ->
-                let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
-                    ownValue = txOutValue ownInput
-                    ownAddress = txOutAddress ownInput
-                    profileRefAssetClass@(V1.AssetClass (mintingPolicyCurrencySymbol, _)) = profileId profile --  as in datum.
+                let !ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+                    !ownValue = txOutValue ownInput
+                    !ownAddress = txOutAddress ownInput
+                    !profileRefAssetClass@(V1.AssetClass (mintingPolicyCurrencySymbol, _)) = profileId profile --  as in datum.
                     -- It is important to validate that the value of this UTxO contains an NFT of this asset class.
                  in case redeemer of
                       (UpdateProfileImage newImageURI profileOutputIdx) ->
@@ -127,7 +127,7 @@ handleUpdateProfileImage txInfo@TxInfo {..} ownValue ownAddress profileRefAssetC
         [ traceIfFalse "P2" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT (P2)
           traceIfFalse "P3" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT (P3)
           traceIfFalse "P4" $ validateImageURI newImageURI, -- Image URI validation failed (P4)
-          traceIfFalse "P5" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile (P5)
+          traceIfFalse "P5" $ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile (P5); >= ownValue (balancer may add min-ADA)
         ]
 
 {-# INLINEABLE handleAcceptPromotion #-}
@@ -184,7 +184,7 @@ handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass minti
       and
         [ traceIfFalse "P9" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT (accept) (P9)
           isPromotionStillValid,
-          traceIfFalse "Pa" $ Utils.checkTxOutAtIndexWithDatumValueAndAddress profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile (accept) (Pa)
+          traceIfFalse "Pa" $ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress profileOutputIdx updatedProfileCIP68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile (accept) (Pa); >= ownValue (balancer may add min-ADA)
         ]
 
 -------------------------------------------------------------------------------

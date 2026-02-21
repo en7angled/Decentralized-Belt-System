@@ -40,14 +40,21 @@ import Onchain.Protocol
     deriveMembershipIntervalId,
     insertMembershipHistoryInBetween,
     mkMembershipHistoriesListNode,
+    opMinUTxOValue,
+    oracleToken,
+    readOracleParams,
     unsafeGetListNodeDatumAndValue,
     unsafeGetMembershipHistory,
     unsafeGetMembershipInterval,
+    unsafeGetProtocolParamsFromProfileRefInput,
     updateMembershipIntervalEndDate,
     updateNodeMembershipHistory,
   )
 import Onchain.Utils (mkUntypedLambda)
 import Onchain.Utils qualified as Utils
+  ( checkTxOutAtIndexWithDatumMinValueAndAddress,
+    unsafeFindOwnInputByTxOutRef,
+  )
 import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Contexts
@@ -106,7 +113,7 @@ makeIsDataSchemaIndexed ''MembershipsRedeemer [('InsertNodeToMHList, 0), ('Updat
 {-# INLINEABLE membershipsLambda #-}
 membershipsLambda :: ScriptContext -> Bool
 membershipsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bsredeemer) scriptInfo) =
-  let redeemer = unsafeFromBuiltinData @MembershipsRedeemer bsredeemer
+  let !redeemer = unsafeFromBuiltinData @MembershipsRedeemer bsredeemer
    in case scriptInfo of
         (SpendingScript spendingTxOutRef mdatum) -> case redeemer of
           -- Permissionless cleanup: allow spending if datum is absent or unparseable.
@@ -116,9 +123,9 @@ membershipsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bsredeemer) script
               Nothing -> True
               Just _ -> traceError "V0" -- Cannot cleanup UTxO with valid protocol datum (V0)
           _ ->
-            let ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
-                ownValue = txOutValue ownInput
-                ownAddress = txOutAddress ownInput
+            let !ownInput = Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs
+                !ownValue = txOutValue ownInput
+                !ownAddress = txOutAddress ownInput
              in case mdatum of
                   Nothing -> traceError "V1" -- No datum (V1)
                   Just (Datum bdatum) -> case fromBuiltinData bdatum of
@@ -165,6 +172,11 @@ handleInsertNode txInfo@TxInfo {..} ownValue ownAddress oldLeftNode maybeRightNo
       newIntervalId = deriveIntervalsHeadId insertedHistory
       newIntervalNFT = V1.assetClassValue newIntervalId 1
 
+      -- Min lovelace from oracle (org profile must be ref input so we can get ProtocolParams and read oracle)
+      protocolParams' = unsafeGetProtocolParamsFromProfileRefInput (organizationId oldLeftNode) txInfoReferenceInputs
+      oracle = readOracleParams (oracleToken protocolParams') txInfoReferenceInputs
+      minLv = V1.lovelaceValue (V1.Lovelace (opMinUTxOValue oracle))
+
       -- nextNodeKey must be the right node's KEY (practitioner id), not its NFT (which is the node id not the node key) .
       (insertedNodeDatum, updatedLeftNode) = case maybeRightNodeId of
         Just rightNodeId ->
@@ -180,9 +192,9 @@ handleInsertNode txInfo@TxInfo {..} ownValue ownAddress oldLeftNode maybeRightNo
    in traceIfFalse "V5" -- Insert node handler failed (V5)
         $ and
           [ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1, -- Must spend org User NFT
-            Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedLeftNodeTxOutIdx (ListNodeDatum updatedLeftNode) ownValue ownAddress txInfoOutputs, -- Lock updated left node
+            Utils.checkTxOutAtIndexWithDatumMinValueAndAddress updatedLeftNodeTxOutIdx (ListNodeDatum updatedLeftNode) ownValue ownAddress txInfoOutputs, -- Lock updated left node (>= ownValue; balancer may add min-ADA)
             mintValueMinted txInfoMint == (insertedNodeNFT + newIntervalNFT), -- Exact mint check
-            Utils.checkTxOutAtIndexWithDatumValueAndAddress insertedNodeTxOutIdx (ListNodeDatum insertedNodeDatum) (insertedNodeNFT + Utils.protocolMinLovelaceValue) ownAddress txInfoOutputs -- Lock inserted node
+            Utils.checkTxOutAtIndexWithDatumMinValueAndAddress insertedNodeTxOutIdx (ListNodeDatum insertedNodeDatum) (insertedNodeNFT + minLv) ownAddress txInfoOutputs -- Lock inserted node (>= minLv + NFT)
           ]
 
 {-# INLINEABLE handleUpdateNode #-}
@@ -213,7 +225,7 @@ handleUpdateNode txInfo@TxInfo {..} ownValue ownAddress spendingNode lastInterva
         $ and
           [ validRedeemerId,
             V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1,
-            Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs,
+            Utils.checkTxOutAtIndexWithDatumMinValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- >= ownValue; balancer may add min-ADA
             mintValueMinted txInfoMint == newIntervalNFT
           ]
 
@@ -230,7 +242,7 @@ handleAcceptInterval txInfo@TxInfo {..} ownValue ownAddress unacceptedInterval u
       profileUserAssetClass = deriveUserFromRefAC (membershipIntervalPractitionerId acceptedInterval)
    in traceIfFalse "V7" -- Accept interval handler failed (V7)
         $ and
-          [ Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedIntervalTxOutIdx (IntervalDatum acceptedInterval) ownValue ownAddress txInfoOutputs, -- Lock updated interval
+          [ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress updatedIntervalTxOutIdx (IntervalDatum acceptedInterval) ownValue ownAddress txInfoOutputs, -- >= ownValue; balancer may add min-ADA
             V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1 -- Must spend practitioner User NFT
           ]
 
@@ -254,8 +266,10 @@ handleUpdateEndDate txInfo@TxInfo {..} ownValue ownAddress interval membershipHi
       historyId = deriveMembershipHistoryIdFromHistory history
       expectedIntervalId = deriveMembershipIntervalId historyId (membershipIntervalNumber interval)
       intervalBelongsToHistory =
-        membershipHistoryPractitionerId history == membershipIntervalPractitionerId interval -- interval datum and history agree on who the practitioner is.
-          && V1.assetClassValueOf ownValue expectedIntervalId == 1 -- the token we’re spending is the one that belongs to this history.
+        membershipHistoryPractitionerId history
+          == membershipIntervalPractitionerId interval -- interval datum and history agree on who the practitioner is.
+          && V1.assetClassValueOf ownValue expectedIntervalId
+          == 1 -- the token we’re spending is the one that belongs to this history.
       orgUserAC = deriveUserFromRefAC (membershipHistoryOrganizationId history)
       practitionerUserAC = deriveUserFromRefAC (membershipIntervalPractitionerId interval)
       spentOrg = V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1
@@ -267,7 +281,7 @@ handleUpdateEndDate txInfo@TxInfo {..} ownValue ownAddress interval membershipHi
         $ and
           [ intervalBelongsToHistory,
             mustSpendOneUserNFT,
-            Utils.checkTxOutAtIndexWithDatumValueAndAddress updatedIntervalTxOutIdx (IntervalDatum updatedInterval) ownValue ownAddress txInfoOutputs
+            Utils.checkTxOutAtIndexWithDatumMinValueAndAddress updatedIntervalTxOutIdx (IntervalDatum updatedInterval) ownValue ownAddress txInfoOutputs -- >= ownValue; balancer may add min-ADA
           ]
 
 -------------------------------------------------------------------------------

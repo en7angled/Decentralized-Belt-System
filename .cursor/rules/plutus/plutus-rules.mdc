@@ -1,11 +1,11 @@
 ---
-description: Plutus/PlutusTx coding style for onchain-lib (validators, tracing, output checks)
+description: Generic Plutus/PlutusTx coding style (validators, tracing, output checks)
 globs: src/lib/onchain-lib/**/*.hs
 alwaysApply: false
 ---
 # Plutus (On-Chain) Coding Rules
 
-Generic Plutus/PlutusTx coding conventions. For this project's onchain *concepts* (ProtocolParams, validators, minting, oracle), see [architecture/onchain-rules.mdc](../architecture/onchain-rules.mdc). For security rules (redeemers, token names, datum/value bounds, multiple satisfaction, staking, etc.), see [plutus-security.mdc](plutus-security.mdc).
+Generic Plutus/PlutusTx coding conventions. For this project's onchain *concepts* and implementation (ProtocolParams, validators, minting, oracle, Utils helpers), see [architecture/onchain-rules.mdc](../architecture/onchain-rules.mdc). For security rules (redeemers, token names, datum/value bounds, multiple satisfaction, staking, etc.), see [plutus-security.mdc](plutus-security.mdc).
 
 ## Pragmas and tracing
 
@@ -15,14 +15,16 @@ Generic Plutus/PlutusTx coding conventions. For this project's onchain *concepts
 ## Validators
 
 - **Size**: Keep validator lambdas under ~80 lines; extract per-redeemer logic into named `INLINEABLE` helpers.
-- **Output checks**: Use **output-index checks** only: `checkTxOutAtIndexWithDatumValueAndAddress` (or `isTxOutAtIndexWithDatumValueAndAddress`) from `Onchain.Utils`. Do not use O(n) search over `txInfoOutputs`. Redeemers carry the expected output index; wrong index causes validation failure.
-- **Validator structure**: Wrap the typed lambda with `mkUntypedLambda` from `Onchain.Utils`. Pattern-match `ScriptContext txInfo (Redeemer bredeemer) scriptInfo`; for spending use `SpendingScript spendingTxOutRef mdatum`. Get own UTxO with `Utils.unsafeFindOwnInputByTxOutRef spendingTxOutRef txInfoInputs`, then use `txOutValue` / `txOutAddress` for output checks.
-- **Multiple datum kinds at one address**: Use a wrapper sum type (e.g. `MembershipDatum = ListNodeDatum ... | IntervalDatum ...`). List which redeemers each datum kind accepts; reject incompatible redeemer with `traceError` (e.g. ListNodeDatum only InsertNodeToMHList/UpdateNodeInMHList; IntervalDatum only AcceptInterval/UpdateEndDate).
+- **Output checks**: Use **output-index checks** only (no O(n) search over `txInfoOutputs`). Redeemers carry the expected output index; wrong index causes validation failure. When the output datum may differ from the input (e.g. admin updates global state), the redeemer must carry enough information (e.g. an action type) so the validator can **compute the expected new datum on-chain** (mirror the off-chain update logic); then pass that expected datum to the check. Do not relax to a custom loose check (e.g. "any valid datum").
+  - **Min-value**: Use for (a) **continuing outputs** — when a validator spends a UTxO and locks an updated state at the **same** address, require output value **≥** spent value (e.g. `ownValue`), because the tx builder/balancer may add lovelace to script outputs; (b) checks of **newly created state outputs** — require output value **≥** (minLv + NFT), because the actual locked value depends on datum size and/or balancer. Using exact equality in these cases causes validation failures after balancing.
+  - **Exact-value**: Use only when the output value is fully under our control and **not** modified by the balancer (rare for script outputs).
+- **Validator structure**: Wrap the typed lambda with `mkUntypedLambda`. Pattern-match `ScriptContext txInfo (Redeemer bredeemer) scriptInfo`; for spending use `SpendingScript spendingTxOutRef mdatum`. Get own UTxO from inputs using the spending ref; use its `txOutValue` / `txOutAddress` for output checks.
+- **Multiple datum kinds at one address**: Use a wrapper sum type. List which redeemers each datum kind accepts; reject incompatible redeemer with `traceError`.
 
 ## Constants
 
-- No magic numbers in validator logic; use named constants from `Onchain.Utils` or similar.
+- No magic numbers in validator logic; use named constants.
 
-## Atlas / Plutus version
+## Plutus version
 
 - When using Plutus V2 with a plutus library that defaults to Plutus Core 1.1.0, set `ghc-options: -fplugin-opt PlutusTx.Plugin:target-version=1.0.0` so the script targets the correct ledger version. Off-chain code must use the matching `PlutusVersion` (e.g. `scriptAddress @_ @'PlutusV2`).

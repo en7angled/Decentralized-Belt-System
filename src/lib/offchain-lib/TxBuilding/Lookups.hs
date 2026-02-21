@@ -20,8 +20,9 @@ import Onchain.Protocol.Id qualified as OnchainId
 import Onchain.Protocol.Types qualified as OnchainTypes
 import PlutusLedgerApi.V1.Value (CurrencySymbol, Value, flattenValue)
 import TxBuilding.Context (DeployedScriptsContext (..))
-import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Conversions (onchainAchievementToAchievement, onchainMembershipHistoryToMembershipHistory, onchainMembershipIntervalToMembershipInterval, onchainPromotionToPromotionInformation, onchainRankToRankInformation, profileDatumToProfile, profileDatumToProfileData)
+import TxBuilding.Exceptions (TxBuildingException (..))
+import TxBuilding.SafeOnchainLogic (safeGetCurrentRankId)
 import TxBuilding.Utils (achievementAndValueFromUTxO, achievementDatumFromDatum, extractNFTAssetClass, getInlineDatumAndValue, membershipDatumFromDatum, oracleParamsFromDatum, profileAndValueFromUTxO, profileDatumFromDatum, rankAndValueFromUTxO, rankDatumFromDatum)
 import TxBuilding.Validators (achievementsValidatorHashGY, membershipsValidatorHashGY, oracleValidatorGY, profilesValidatorHashGY, ranksValidatorHashGY)
 
@@ -88,7 +89,8 @@ getProfileRanks profileRef = do
   case Onchain.profileType profile of
     Onchain.Organization -> throwError (GYApplicationException WrongProfileType)
     Onchain.Practitioner -> do
-      currentRank <- assetClassFromPlutus' $ Onchain.getCurrentRankId profile
+      currentRankId <- safeGetCurrentRankId profile
+      currentRank <- assetClassFromPlutus' currentRankId
       getRankList currentRank
   where
     getRankList :: (GYTxQueryMonad m) => GYAssetClass -> m [Onchain.OnchainRank]
@@ -369,11 +371,12 @@ intervalBelongsToHistory :: MembershipHistory -> MembershipInterval -> Bool
 intervalBelongsToHistory h iv =
   membershipIntervalPractitionerId iv == membershipHistoryPractitionerId h
     && OnchainId.deriveMembershipIntervalId
-      (OnchainId.deriveMembershipHistoryId
-        (assetClassToPlutus (membershipHistoryOrganizationId h))
-        (assetClassToPlutus (membershipHistoryPractitionerId h)))
+      ( OnchainId.deriveMembershipHistoryId
+          (assetClassToPlutus (membershipHistoryOrganizationId h))
+          (assetClassToPlutus (membershipHistoryPractitionerId h))
+      )
       (membershipIntervalNumber iv)
-    == assetClassToPlutus (membershipIntervalId iv)
+      == assetClassToPlutus (membershipIntervalId iv)
 
 -- | Build interval information from interval and owning history's organization id.
 intervalToInformation :: MembershipInterval -> ProfileRefAC -> MembershipIntervalInformation
@@ -394,7 +397,8 @@ getAllMembershipHistoryInformation nid = do
   histories <- getAllMembershipHistories nid
   intervals <- getAllMembershipIntervals nid
   let intervalInfosForHistory h =
-        map (\iv -> intervalToInformation iv (membershipHistoryOrganizationId h))
+        map
+          (\iv -> intervalToInformation iv (membershipHistoryOrganizationId h))
           (filter (intervalBelongsToHistory h) intervals)
   return
     [ MembershipHistoryInformation

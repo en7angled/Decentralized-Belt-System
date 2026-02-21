@@ -57,7 +57,8 @@ membershipTests =
       mkTestFor "Add-membership-interval fails when end date not after start (InvalidNewIntervalEndDate)" addMembershipIntervalFailsInvalidEndDateTest
     ]
   where
-    -- Test Case 4.1: Organization creates a membership history for a practitioner
+    -- Test Case 4.1: Organization creates a membership history for a practitioner.
+    -- Also validates that continuing outputs with balancer-added lovelace pass (min-value check).
     createMembershipHistoryTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
     createMembershipHistoryTest TestInfo {..} = do
       waitNSlots_ 1000
@@ -130,13 +131,17 @@ membershipTests =
 
       -- Create Organization and Practitioner
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
 
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -147,7 +152,9 @@ membershipTests =
       let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
 
       (_txId, _membershipHistoryAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -169,7 +176,9 @@ membershipTests =
       -- Practitioner accepts the first interval
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Practitioner accepting membership interval..."
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptMembershipIntervalAction gyFirstIntervalAC)
           Nothing
       waitNSlots_ 1
@@ -192,13 +201,17 @@ membershipTests =
       -- Step 1: Create Organization and Practitioner
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "=== Step 1: Create profiles ==="
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
 
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -210,7 +223,9 @@ membershipTests =
       let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
 
       (_txId, membershipHistoryAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -232,7 +247,9 @@ membershipTests =
       gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
 
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptMembershipIntervalAction gyFirstIntervalAC)
           Nothing
       waitNSlots_ 1
@@ -294,7 +311,9 @@ membershipTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization creating membership history for Practitioner A..."
       membershipStartDate1 <- startDateBeforeNow
       (_txId, _history1) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC1,
@@ -308,7 +327,9 @@ membershipTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization creating membership history for Practitioner B..."
       membershipStartDate2 <- startDateBeforeNow
       (_txId, _history2) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC2,
@@ -322,7 +343,9 @@ membershipTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization creating membership history for Practitioner C..."
       membershipStartDate3 <- startDateBeforeNow
       (_txId, _history3) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC3,
@@ -376,7 +399,9 @@ membershipTests =
       -- Org creates membership history for A (no end date)
       membershipStartDate1 <- startDateBeforeNow
       (_txId, _history1) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC1,
@@ -391,7 +416,9 @@ membershipTests =
       membershipStartDate2 <- startDateBeforeNow
       let firstIntervalEndDate2 = timeFromPOSIX $ timeToPOSIX membershipStartDate2 + 1000
       (_txId, history2B) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC2,
@@ -405,7 +432,9 @@ membershipTests =
       -- Org creates membership history for C (no end date)
       membershipStartDate3 <- startDateBeforeNow
       (_txId, _history3) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC3,
@@ -423,7 +452,9 @@ membershipTests =
           firstIntervalIdB = Onchain.Protocol.Id.deriveMembershipIntervalId historyIdB 0
       gyFirstIntervalB <- assetClassFromPlutus' firstIntervalIdB
       void $
-        bjjInteraction ctx (w3 testWallets)
+        bjjInteraction
+          ctx
+          (w3 testWallets)
           (AcceptMembershipIntervalAction gyFirstIntervalB)
           Nothing
       waitNSlots_ 1
@@ -433,7 +464,9 @@ membershipTests =
           secondIntervalEnd = timeFromPOSIX $ timeToPOSIX secondIntervalStart + 10000
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization adding second membership interval for Practitioner B..."
       void $
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( AddMembershipIntervalAction
               { ami_organization_profile_id = orgAC,
                 ami_membership_node_id = history2B,
@@ -459,12 +492,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -473,7 +510,9 @@ membershipTests =
       t' <- slotToBeginTime s'
       let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
       (_txId, historyAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -484,15 +523,18 @@ membershipTests =
           Nothing
       waitNSlots_ 1
 
-      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
-            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
-            0
+      let firstIntervalId =
+            Onchain.Protocol.Id.deriveMembershipIntervalId
+              (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+              0
       gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
       -- Org sets end date to a future time (closing the open interval; validator requires newEndDate not before txInfoValidRange)
       now <- slotToBeginTime =<< slotOfCurrentBlock
       let newEndDate = timeFromPOSIX (timeToPOSIX now + 60000)
       void $
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( UpdateEndDateAction
               { ude_membership_interval_id = gyFirstIntervalAC,
                 ude_membership_history_node_id = historyAC,
@@ -516,12 +558,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -531,7 +577,9 @@ membershipTests =
       let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
           membershipEndDate = timeFromPOSIX $ timeToPOSIX membershipStartDate + 10000
       (_txId, historyAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -542,12 +590,15 @@ membershipTests =
           Nothing
       waitNSlots_ 1
 
-      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
-            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
-            0
+      let firstIntervalId =
+            Onchain.Protocol.Id.deriveMembershipIntervalId
+              (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+              0
       gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptMembershipIntervalAction gyFirstIntervalAC)
           Nothing
       waitNSlots_ 1
@@ -558,7 +609,9 @@ membershipTests =
           inFuture = timeToPOSIX now + 1000
           shorterEndDate = timeFromPOSIX (max shortened inFuture)
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           ( UpdateEndDateAction
               { ude_membership_interval_id = gyFirstIntervalAC,
                 ude_membership_history_node_id = historyAC,
@@ -582,12 +635,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -596,7 +653,9 @@ membershipTests =
       t' <- slotToBeginTime s'
       let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
       (_txId, historyAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -607,9 +666,10 @@ membershipTests =
           Nothing
       waitNSlots_ 1
 
-      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
-            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
-            0
+      let firstIntervalId =
+            Onchain.Protocol.Id.deriveMembershipIntervalId
+              (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+              0
       gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
       now <- slotOfCurrentBlock
       nowTime <- slotToBeginTime now
@@ -644,12 +704,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -658,7 +722,9 @@ membershipTests =
       t' <- slotToBeginTime s'
       let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
       (_txId, historyAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -669,15 +735,18 @@ membershipTests =
           Nothing
       waitNSlots_ 1
 
-      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
-            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
-            0
+      let firstIntervalId =
+            Onchain.Protocol.Id.deriveMembershipIntervalId
+              (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+              0
       gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
       now <- slotToBeginTime =<< slotOfCurrentBlock
       let newEndDate = timeFromPOSIX (timeToPOSIX now + 60000)
       mustFail $
         void $
-          bjjInteraction ctx (w2 testWallets)
+          bjjInteraction
+            ctx
+            (w2 testWallets)
             ( UpdateEndDateAction
                 { ude_membership_interval_id = gyFirstIntervalAC,
                   ude_membership_history_node_id = historyAC,
@@ -699,12 +768,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -714,7 +787,9 @@ membershipTests =
       let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
           membershipEndDate = timeFromPOSIX $ timeToPOSIX membershipStartDate + 10000
       (_txId, historyAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -725,12 +800,15 @@ membershipTests =
           Nothing
       waitNSlots_ 1
 
-      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
-            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
-            0
+      let firstIntervalId =
+            Onchain.Protocol.Id.deriveMembershipIntervalId
+              (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+              0
       gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptMembershipIntervalAction gyFirstIntervalAC)
           Nothing
       waitNSlots_ 1
@@ -739,7 +817,9 @@ membershipTests =
       let extendedEndDate = timeFromPOSIX (timeToPOSIX membershipEndDate + 50000)
       mustFail $
         void $
-          bjjInteraction ctx (w2 testWallets)
+          bjjInteraction
+            ctx
+            (w2 testWallets)
             ( UpdateEndDateAction
                 { ude_membership_interval_id = gyFirstIntervalAC,
                   ude_membership_history_node_id = historyAC,
@@ -761,17 +841,23 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC1) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC2) <-
-        bjjInteraction ctx (w3 testWallets)
+        bjjInteraction
+          ctx
+          (w3 testWallets)
           (InitProfileAction practitionerBProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -780,7 +866,9 @@ membershipTests =
       t' <- slotToBeginTime s'
       let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
       (_txId, _historyAC1) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC1,
@@ -791,7 +879,9 @@ membershipTests =
           Nothing
       waitNSlots_ 1
       (_txId, historyAC2) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC2,
@@ -802,16 +892,19 @@ membershipTests =
           Nothing
       waitNSlots_ 1
 
-      let firstIntervalId1 = Onchain.Protocol.Id.deriveMembershipIntervalId
-            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC1))
-            0
+      let firstIntervalId1 =
+            Onchain.Protocol.Id.deriveMembershipIntervalId
+              (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC1))
+              0
       gyFirstIntervalAC1 <- assetClassFromPlutus' firstIntervalId1
       now <- slotToBeginTime =<< slotOfCurrentBlock
       let newEndDate = timeFromPOSIX (timeToPOSIX now + 60000)
       -- Pass interval of history 1 but history node of history 2 (wrong node)
       mustFail $
         void $
-          bjjInteraction ctx (w1 testWallets)
+          bjjInteraction
+            ctx
+            (w1 testWallets)
             ( UpdateEndDateAction
                 { ude_membership_interval_id = gyFirstIntervalAC1,
                   ude_membership_history_node_id = historyAC2,
@@ -833,12 +926,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -848,7 +945,9 @@ membershipTests =
       let startDate = timeFromPOSIX $ timeToPOSIX t' - 1000
           endDate = timeFromPOSIX $ timeToPOSIX startDate + 5000
       void $
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -874,7 +973,9 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
@@ -894,7 +995,9 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
@@ -906,7 +1009,9 @@ membershipTests =
           endDate = timeFromPOSIX $ timeToPOSIX startDate + 5000
       mustFail $
         void $
-          bjjInteraction ctx (w1 testWallets)
+          bjjInteraction
+            ctx
+            (w1 testWallets)
             (AddMembershipIntervalAction orgAC rootNodeAC startDate (Just endDate))
             Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "add-membership-interval fails when root node test passed!"
@@ -922,12 +1027,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -937,7 +1046,9 @@ membershipTests =
       let membershipStart = timeFromPOSIX $ timeToPOSIX t' - 1000
           firstIntervalEnd = timeFromPOSIX $ timeToPOSIX membershipStart + 5000
       (_txId, historyNodeAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -953,7 +1064,9 @@ membershipTests =
           secondEnd = timeFromPOSIX $ timeToPOSIX secondStart + 5000
       mustFail $
         void $
-          bjjInteraction ctx (w1 testWallets)
+          bjjInteraction
+            ctx
+            (w1 testWallets)
             (AddMembershipIntervalAction orgAC historyNodeAC secondStart (Just secondEnd))
             Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "add-membership-interval fails when last not accepted test passed!"
@@ -969,12 +1082,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -983,7 +1100,9 @@ membershipTests =
       t' <- slotToBeginTime s'
       let membershipStart = timeFromPOSIX $ timeToPOSIX t' - 1000
       (_txId, historyNodeAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -999,7 +1118,9 @@ membershipTests =
           secondEnd = timeFromPOSIX $ timeToPOSIX secondStart + 5000
       mustFail $
         void $
-          bjjInteraction ctx (w1 testWallets)
+          bjjInteraction
+            ctx
+            (w1 testWallets)
             (AddMembershipIntervalAction orgAC historyNodeAC secondStart (Just secondEnd))
             Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "add-membership-interval fails when last not closed test passed!"
@@ -1015,12 +1136,16 @@ membershipTests =
       waitNSlots_ 1000
 
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction practitionerProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -1030,7 +1155,9 @@ membershipTests =
       let membershipStart = timeFromPOSIX $ timeToPOSIX t' - 1000
           firstIntervalEnd = timeFromPOSIX $ timeToPOSIX membershipStart + 5000
       (_txId, historyNodeAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( CreateMembershipHistoryAction
               { cmh_organization_profile_id = orgAC,
                 cmh_practitioner_profile_id = practitionerAC,
@@ -1041,12 +1168,15 @@ membershipTests =
           Nothing
       waitNSlots_ 1
 
-      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId
-            (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
-            0
+      let firstIntervalId =
+            Onchain.Protocol.Id.deriveMembershipIntervalId
+              (Onchain.Protocol.Id.deriveMembershipHistoryId (assetClassToPlutus orgAC) (assetClassToPlutus practitionerAC))
+              0
       gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptMembershipIntervalAction gyFirstIntervalAC)
           Nothing
       waitNSlots_ 1
@@ -1056,7 +1186,9 @@ membershipTests =
           badEnd = secondStart
       mustFail $
         void $
-          bjjInteraction ctx (w1 testWallets)
+          bjjInteraction
+            ctx
+            (w1 testWallets)
             (AddMembershipIntervalAction orgAC historyNodeAC secondStart (Just badEnd))
             Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "add-membership-interval fails when end date not after start test passed!"
@@ -1064,4 +1196,3 @@ membershipTests =
 -- ------------------------------------------------------------------------------------------------
 
 -- -- * Achievement Tests
-

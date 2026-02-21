@@ -35,3 +35,11 @@ New validator → new field in Context, JSON config, `deployReferenceScripts` in
 
 - **Errors**: Use `TxBuildingException` and map to HTTP status via `txBuildingExceptionToHttpStatus`; do not throw raw strings.
 - **JSON**: Use `deriving-aeson` with `StripPrefix` + `CamelToSnake` for consistent snake_case API fields.
+
+## Onchain functions used offchain
+
+When calling onchain functions from TxBuilding (e.g. `Onchain.getCurrentRankId`, `Onchain.promoteProfile`, `Onchain.initMembershipHistory`, `Onchain.appendMembershipHistory`, `Onchain.insertMembershipHistoryInBetween`, `Onchain.addMembershipIntervalToHistory`, `Onchain.acceptMembershipInterval`, `Onchain.acceptAchievement`, `Onchain.BJJ.intToBelt`), do **not** call them directly. They can hit `traceError` or pattern-match failure and surface as raw Plutus/Haskell errors.
+
+- **One exception per function**: For each such onchain function, there is a dedicated `TxBuildingException` constructor (e.g. `ProfileHasNoRank`, `PromotionNotPending`, `InitMembershipHistoryInvalidDates`, `MembershipListInsertInvalid`, `MembershipListAppendInvalid`, `MembershipIntervalAlreadyAccepted`, `AchievementAlreadyAccepted`, `InvalidBeltNumber`). Use these so the API can map to HTTP status and return consistent error messages.
+- **Offchain analogue functions**: Call the safe wrappers in `TxBuilding.SafeOnchainLogic` instead of the raw onchain functions. Those wrappers pre-validate (or catch and map) and throw `GYApplicationException` with the corresponding `TxBuildingException`. Example: use `safeGetCurrentRankId` instead of `Onchain.getCurrentRankId`; use `safeIntToBelt` instead of `intToBelt` in Conversions.
+- **Pre-validate where possible**: The safe wrappers mirror on-chain checks and throw the appropriate exception before calling the onchain function, so that invalid data never reaches `traceError`. For conditions that are expensive or impossible to replicate offchain, the wrapper may call the onchain function and rely on correct offchain construction (e.g. list invariants from `findInsertPointForNewMembership`).

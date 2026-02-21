@@ -15,7 +15,7 @@ import GeniusYield.Test.Utils
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ
-import Test.Fixtures (masterBProfileData, masterProfileData, studentProfileData)
+import Test.Fixtures (masterBProfileData, masterProfileData, maxLengthImageURI, profileDataMaxLengthMetadata, profileDataOverLongName, studentProfileData)
 import Test.Tasty
 import TestRuns (bjjInteraction, deployBJJValidators, logPractitionerProfileInformation)
 
@@ -31,7 +31,11 @@ promotionTestsGroup :: (HasCallStack) => TestTree
 promotionTestsGroup =
   testGroup
     "Promotion Tests"
-    [ mkTestFor "Test Case 1.1: Verify that a black belt can promote a white belt to blue belt and the white belt can accept the promotion" blackPromotesWhiteToBlue
+    [ mkTestFor "Test Case 1.1: Verify that a black belt can promote a white belt to blue belt and the white belt can accept the promotion" blackPromotesWhiteToBlue,
+      mkTestFor "Test Case 1.2: Update profile image (UpdateProfileImage / P5)" updateProfileImageTest,
+      mkTestFor "Create profile with max-length metadata (name 128, description 1024, image 256 bytes) succeeds" createProfileMaxLengthMetadataTest,
+      mkTestFor "Update profile image to max-length URI (256 bytes) succeeds" updateProfileImageMaxLengthUriTest,
+      mkTestFor "Create profile with over-length name (129 bytes) fails (M4)" overLengthNameFailsTest
     ]
   where
     blackPromotesWhiteToBlue :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -111,6 +115,90 @@ promotionTestsGroup =
 
       logPractitionerProfileInformation (w1 testWallets) studentAC
 
+      return ()
+
+    updateProfileImageTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateProfileImageTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      (_txId, profileRefAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+      void $
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (UpdateProfileImageAction profileRefAC "ipfs://QmUpdatedImage")
+          Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Update profile image test passed!"
+      return ()
+
+    createProfileMaxLengthMetadataTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    createProfileMaxLengthMetadataTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      void $
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (InitProfileAction profileDataMaxLengthMetadata Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Create profile with max-length metadata test passed!"
+      return ()
+
+    updateProfileImageMaxLengthUriTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateProfileImageMaxLengthUriTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      (_txId, profileRefAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+      void $
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (UpdateProfileImageAction profileRefAC maxLengthImageURI)
+          Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Update profile image to max-length URI test passed!"
+      return ()
+
+    overLengthNameFailsTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    overLengthNameFailsTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      mustFail $
+        void $
+          bjjInteraction
+            ctx
+            (w1 testWallets)
+            (InitProfileAction profileDataOverLongName Practitioner creationDate)
+            Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Over-length name fails test passed!"
       return ()
 
 promotionSecurityTests :: (HasCallStack) => TestTree

@@ -16,12 +16,12 @@ import GeniusYield.TxBuilder
 import GeniusYield.TxBuilder.User qualified as User
 import GeniusYield.Types
 import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
+import PlutusTx.Prelude (isNothing)
 import Test.Fixtures (adminTestProfileData)
 import Test.Helpers (assert, queryOracle)
 import Test.Tasty
 import TestRuns (adminInteraction, bjjInteraction, deployBJJValidators)
 import TxBuilding.Lookups (queryOracleParams)
-import PlutusTx.Prelude (isNothing)
 
 oracleTests :: (HasCallStack) => TestTree
 oracleTests =
@@ -52,6 +52,7 @@ oracleDeploymentTests =
       -- Verify initial oracle params are as expected
       assert (not (opPaused oracleParams))
       assert (isNothing (opFeeConfig oracleParams))
+      assert (opMinUTxOValue oracleParams == 1000000)
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Oracle deployment and query successful!"
       return ()
@@ -62,6 +63,7 @@ oracleAdminTests =
     "Oracle Admin Tests"
     [ mkTestFor "Test Case 0.2: Pause and unpause protocol" pauseAndUnpause,
       mkTestFor "Test Case 0.3: Set fees and clear fees" setAndClearFees,
+      mkTestFor "Test Case 0.4: Set min UTxO value" setMinUTxOValue,
       mkTestFor "Test Case 0.5: Sequential admin actions with profile interactions" sequentialAdminWithProfiles
     ]
   where
@@ -124,6 +126,32 @@ oracleAdminTests =
       params2 <- queryOracle ctx
       assert (isNothing (opFeeConfig params2))
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Fees cleared successfully."
+
+      return ()
+
+    setMinUTxOValue :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    setMinUTxOValue TestInfo {..} = do
+      waitNSlots_ 1000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      params0 <- queryOracle ctx
+      assert (opMinUTxOValue params0 == 1000000)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Initial min UTxO value: 1000000."
+
+      _ <- adminInteraction ctx (w1 testWallets) (SetMinUTxOValueAction 2500000)
+      waitNSlots_ 1
+
+      params1 <- queryOracle ctx
+      assert (opMinUTxOValue params1 == 2500000)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Min UTxO value set to 2500000."
+
+      _ <- adminInteraction ctx (w1 testWallets) (SetMinUTxOValueAction 1000000)
+      waitNSlots_ 1
+
+      params2 <- queryOracle ctx
+      assert (opMinUTxOValue params2 == 1000000)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Min UTxO value reset to 1000000."
 
       return ()
 

@@ -10,7 +10,7 @@ import Data.ByteString.Short (fromShort)
 import Data.Set qualified as Set
 import Onchain.CIP68 (CIP68Datum)
 import Onchain.Protocol (OnchainProfile, OnchainRank, ProtocolParams)
-import Onchain.Protocol.Types (FeeConfig, OracleParams)
+import Onchain.Protocol.Types (FeeConfig, OracleAdminAction, OracleParams)
 import Onchain.Validators.AchievementsValidator (AchievementsRedeemer, achievementsCompile)
 import Onchain.Validators.MembershipsValidator (MembershipsRedeemer, membershipsCompile)
 import Onchain.Validators.MintingPolicy (MintingRedeemer, mintingPolicyCompile)
@@ -39,7 +39,7 @@ contractBlueprint mp =
       -- NodeDatum (polymorphic type from LinkedList.hs) which cannot derive HasBlueprintSchema
       -- for concrete type parameter instantiations. The MembershipsValidator datum uses @() as a placeholder.
       -- OracleParams and FeeConfig are included for the oracle hub.
-      contractDefinitions = deriveDefinitions @[ProtocolParams, CIP68Datum OnchainProfile, OnchainRank, OracleParams, FeeConfig, MintingRedeemer, ProfilesRedeemer, RanksRedeemer, MembershipsRedeemer, AchievementsRedeemer]
+      contractDefinitions = deriveDefinitions @[ProtocolParams, CIP68Datum OnchainProfile, OnchainRank, OracleParams, FeeConfig, OracleAdminAction, OracleRedeemer, MintingRedeemer, ProfilesRedeemer, RanksRedeemer, MembershipsRedeemer, AchievementsRedeemer]
     }
 
 myPreamble :: Preamble
@@ -200,7 +200,7 @@ oracleValidatorBlueprint =
       validatorRedeemer =
         MkArgumentBlueprint
           { argumentTitle = Just "Oracle Redeemer",
-            argumentDescription = Just "OracleUpdate outputIdx — the output index where the oracle UTxO must be returned (output-index check). The validator checks admin signature and that the output at this index preserves datum, value, and address.",
+            argumentDescription = Just "OracleUpdate outputIdx action — output index where the oracle UTxO must be returned and the admin action to apply. The validator computes the new params with applyOracleAdminAction and checks the output at this index has that datum, same value, and address.",
             argumentPurpose = Set.fromList [Spend],
             argumentSchema = definitionRef @OracleRedeemer
           },

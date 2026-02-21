@@ -5,7 +5,7 @@ alwaysApply: false
 ---
 # Plutus Security Rules
 
-Non-exhaustive rules to avoid common Plutus vulnerabilities. Aligned with the [Cardano Developer Portal – Smart Contract Security](https://developers.cardano.org/docs/build/smart-contracts/advanced/security/overview/) and [MLabs – Common Plutus Security Vulnerabilities](https://www.mlabs.city/blog/common-plutus-security-vulnerabilities). For general Plutus style and structure, see [plutus-rules.mdc](plutus-rules.mdc) and [architecture/onchain-rules.mdc](../architecture/onchain-rules.mdc). Section identifiers match the portal for audit cross-reference.
+Non-exhaustive rules to avoid common Plutus vulnerabilities. Aligned with the [Cardano Developer Portal – Smart Contract Security](https://developers.cardano.org/docs/build/smart-contracts/advanced/security/overview/) and [MLabs – Common Plutus Security Vulnerabilities](https://www.mlabs.city/blog/common-plutus-security-vulnerabilities). For general Plutus style and structure, see [plutus-rules.mdc](plutus-rules.mdc). For how this project implements onchain logic (Utils, oracle, output checks, validators), see [architecture/onchain-rules.mdc](../architecture/onchain-rules.mdc). Section identifiers match the portal for audit cross-reference.
 
 ## 1. Other redeemer (`other-redeemer`)
 

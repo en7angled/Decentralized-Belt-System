@@ -15,7 +15,7 @@ import GeniusYield.Test.Utils
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (BJJBelt (Black, White))
-import Test.Fixtures (achievementProfileData, masterProfileData, orgProfileData, seminarProfileData, studentProfileData)
+import Test.Fixtures (achievementProfileData, achievementProfileDataMaxLength, masterProfileData, orgProfileData, seminarProfileData, studentProfileData)
 import Test.Tasty
 import TestRuns (bjjInteraction, deployBJJValidators, protocolInteraction, sendDustToValidator)
 import TxBuilding.Validators (achievementsValidatorGY)
@@ -29,7 +29,8 @@ achievementTests =
       mkTestFor "Test Case 5.3: Full achievement lifecycle (award + accept)" fullAchievementLifecycleTest,
       mkTestFor "Test Case 5.4: Double-accept achievement fails (TA)" doubleAcceptAchievementFailTest,
       mkTestFor "Test Case 5.5: Wrong user cannot accept achievement" wrongUserAcceptAchievementFailTest,
-      mkTestFor "Test Case 5.6: Cleanup dust at AchievementsValidator" cleanupDustAtAchievementsTest
+      mkTestFor "Test Case 5.6: Cleanup dust at AchievementsValidator" cleanupDustAtAchievementsTest,
+      mkTestFor "Award achievement with max-length metadata succeeds" awardAchievementMaxLengthMetadataTest
     ]
   where
     -- Test Case 5.1: Organization awards an achievement to a practitioner
@@ -88,6 +89,54 @@ achievementTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization awards achievement test passed!"
       return ()
 
+    awardAchievementMaxLengthMetadataTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    awardAchievementMaxLengthMetadataTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+
+      (_txId, practitionerAC) <-
+        bjjInteraction
+          ctx
+          (w2 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      achievementDate <- slotToBeginTime s'
+      let achievementDatePast = timeFromPOSIX $ timeToPOSIX achievementDate - 1000
+
+      void $
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          ( AwardAchievementAction
+              { aa_awarded_to_profile_id = practitionerAC,
+                aa_awarded_by_profile_id = orgAC,
+                aa_profile_data = achievementProfileDataMaxLength,
+                aa_other_metadata = [],
+                aa_achievement_date = achievementDatePast
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Award achievement with max-length metadata test passed!"
+      return ()
+
     -- Test Case 5.2: Practitioner accepts an achievement
     practitionerAcceptsAchievementTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
     practitionerAcceptsAchievementTest TestInfo {..} = do
@@ -101,13 +150,17 @@ achievementTests =
 
       -- Create Organization (w1) and Practitioner (w2)
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
 
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction studentProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -118,7 +171,9 @@ achievementTests =
       let achievementDatePast = timeFromPOSIX $ timeToPOSIX achievementDate - 1000
 
       (_txId, achievementAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( AwardAchievementAction
               { aa_awarded_to_profile_id = practitionerAC,
                 aa_awarded_by_profile_id = orgAC,
@@ -133,7 +188,9 @@ achievementTests =
       -- Practitioner accepts the achievement
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Practitioner accepting achievement..."
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptAchievementAction achievementAC)
           Nothing
       waitNSlots_ 1
@@ -155,13 +212,17 @@ achievementTests =
 
       -- Create Master (w1) and Student (w2)
       (_txId, masterAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction masterProfileData Practitioner creationDate Black)
           Nothing
       waitNSlots_ 1
 
       (_txId, studentAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction studentProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -173,7 +234,9 @@ achievementTests =
       let achievementDate1 = timeFromPOSIX $ timeToPOSIX t' - 1000
 
       (_txId, achievement1AC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( AwardAchievementAction
               { aa_awarded_to_profile_id = studentAC,
                 aa_awarded_by_profile_id = masterAC,
@@ -191,7 +254,9 @@ achievementTests =
       let achievementDate2 = timeFromPOSIX $ timeToPOSIX t'' - 1000
 
       (_txId, achievement2AC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( AwardAchievementAction
               { aa_awarded_to_profile_id = studentAC,
                 aa_awarded_by_profile_id = masterAC,
@@ -206,14 +271,18 @@ achievementTests =
       -- Student accepts both achievements
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "=== Accepting first achievement ==="
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptAchievementAction achievement1AC)
           Nothing
       waitNSlots_ 1
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "=== Accepting second achievement ==="
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptAchievementAction achievement2AC)
           Nothing
       waitNSlots_ 1
@@ -234,13 +303,17 @@ achievementTests =
 
       -- Create Organization (w1) and Practitioner (w2)
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
 
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction studentProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -251,7 +324,9 @@ achievementTests =
       let achievementDatePast = timeFromPOSIX $ timeToPOSIX t' - 1000
 
       (_txId, achievementAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( AwardAchievementAction
               { aa_awarded_to_profile_id = practitionerAC,
                 aa_awarded_by_profile_id = orgAC,
@@ -265,7 +340,9 @@ achievementTests =
 
       -- First accept should succeed
       void $
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (AcceptAchievementAction achievementAC)
           Nothing
       waitNSlots_ 1
@@ -275,7 +352,9 @@ achievementTests =
       -- Second accept should fail with on-chain trace "TA" (already accepted)
       mustFail $
         void $
-          bjjInteraction ctx (w2 testWallets)
+          bjjInteraction
+            ctx
+            (w2 testWallets)
             (AcceptAchievementAction achievementAC)
             Nothing
 
@@ -295,13 +374,17 @@ achievementTests =
 
       -- Create Organization (w1) and Practitioner A (w2)
       (_txId, orgAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           (CreateProfileWithRankAction orgProfileData Organization creationDate White)
           Nothing
       waitNSlots_ 1
 
       (_txId, practitionerAC) <-
-        bjjInteraction ctx (w2 testWallets)
+        bjjInteraction
+          ctx
+          (w2 testWallets)
           (InitProfileAction studentProfileData Practitioner creationDate)
           Nothing
       waitNSlots_ 1
@@ -312,7 +395,9 @@ achievementTests =
       let achievementDatePast = timeFromPOSIX $ timeToPOSIX t' - 1000
 
       (_txId, achievementAC) <-
-        bjjInteraction ctx (w1 testWallets)
+        bjjInteraction
+          ctx
+          (w1 testWallets)
           ( AwardAchievementAction
               { aa_awarded_to_profile_id = practitionerAC,
                 aa_awarded_by_profile_id = orgAC,
@@ -329,7 +414,9 @@ achievementTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Wrong user (w3) attempting to accept achievement (should fail)..."
       mustFail $
         void $
-          bjjInteraction ctx (w3 testWallets)
+          bjjInteraction
+            ctx
+            (w3 testWallets)
             (AcceptAchievementAction achievementAC)
             Nothing
 

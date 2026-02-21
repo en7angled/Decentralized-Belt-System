@@ -230,6 +230,7 @@ data OracleParams = OracleParams
   { opAdminPkh          :: PubKeyHash      -- admin who can update oracle
   , opPaused            :: Bool             -- global pause gate
   , opFeeConfig         :: Maybe FeeConfig  -- optional fee configuration
+  , opMinUTxOValue      :: Integer          -- minimum lovelace for protocol state outputs (used on-chain; no fixed constant)
   }
 
 data FeeConfig = FeeConfig
@@ -244,7 +245,7 @@ data FeeConfig = FeeConfig
 
 Unparameterized spending validator. Rules:
 - The admin (`opAdminPkh` from the **current** datum) must sign the transaction
-- The oracle UTxO must be returned to the **same address** with the **same value**
+- The oracle UTxO must be returned to the **same address** with value **≥** spent value (min-value check; the tx builder/balancer may add lovelace to script outputs)
 - The new datum is accepted freely (allows updating all oracle parameters including admin key rotation)
 
 ### OracleNFTPolicy
@@ -264,32 +265,42 @@ At runtime, every minting transaction must include the oracle UTxO as a referenc
 3. Checks `opPaused` — if `True`, the transaction fails with "Protocol is paused"
 4. Calls `checkFee oracle feeSelector txInfoOutputs` per redeemer to validate fee payment (if fees are configured)
 
-Minimum output lovelace for protocol UTxO outputs is a fixed constant (3,500,000) in `Onchain.Utils.minLovelaceValue`, not configurable via the oracle.
+Minimum output lovelace for protocol state outputs comes **only** from the oracle: the MintingPolicy and MembershipsValidator use `opMinUTxOValue` from the oracle datum. There is no fixed constant in `Onchain.Utils` for min lovelace.
+
+**Minimum lovelace**: On-chain, validators use only the oracle's `opMinUTxOValue`. Off-chain, the minimum lovelace for each state output can be computed as `max(oracleMinUTxOValue, max(ledgerMinUTxOValue, serializedOutputSize × coinsPerUtxoByte))` using node protocol parameters and the serialized size of the output; the oracle value acts as a floor.
+
+**Output value checks**: When the MintingPolicy (or any validator) checks that a state output is locked, it uses **min-value** checks (output value **≥** expected) via `Onchain.Utils.checkTxOutAtIndexWithDatumMinValueAndAddress`, not exact equality. The actual locked value can exceed the minimum because (1) min-ADA depends on datum size and (2) the tx builder/balancer may add lovelace to script outputs. Continuing outputs (same validator, updated datum) also use min-value with the spent input's value for the same reason.
 
 ### Protocol Operational Parameters
 
-| Parameter     | Effect                                  | Default               |
-| ------------- | --------------------------------------- | --------------------- |
-| `opAdminPkh`  | Who can update the oracle               | Deployer's PubKeyHash |
-| `opPaused`    | Blocks all minting operations when True | False                 |
-| `opFeeConfig` | Optional per-action fee configuration   | Nothing (no fees)     |
+| Parameter        | Effect                                      | Default               |
+| ---------------- | ------------------------------------------- | --------------------- |
+| `opAdminPkh`     | Who can update the oracle                   | Deployer's PubKeyHash |
+| `opPaused`       | Blocks all minting operations when True     | False                 |
+| `opFeeConfig`    | Optional per-action fee configuration       | Nothing (no fees)     |
+| `opMinUTxOValue` | Minimum lovelace for protocol state outputs | e.g. 1_000_000        |
 
 ### Admin CLI Commands
 
-| Command                                                                            | Description                       |
-| ---------------------------------------------------------------------------------- | --------------------------------- |
-| `pause-protocol`                                                                   | Set `opPaused = True`             |
-| `unpause-protocol`                                                                 | Set `opPaused = False`            |
-| `set-fees --fee-address ADDR --profile-fee N --promotion-fee N --membership-fee N` | Configure fees                    |
-| `set-fees --clear-fees`                                                            | Remove fee configuration          |
-| `query-oracle`                                                                     | Display current oracle parameters |
+| Command                                           | Description                                           |
+| ------------------------------------------------- | ----------------------------------------------------- |
+| `pause-protocol`                                  | Set `opPaused = True`                                 |
+| `unpause-protocol`                                | Set `opPaused = False`                                |
+| `set-fees --fee-address ADDR --profile-fee N ...` | Configure fees                                        |
+| `set-fees --clear-fees`                           | Remove fee configuration                              |
+| `set-min-utxo-value --lovelace N`                 | Set `opMinUTxOValue` (min lovelace for state outputs) |
+| `query-oracle`                                    | Display current oracle parameters                     |
+
+### Oracle datum schema and migration
+
+`OracleParams` has four fields: `opAdminPkh`, `opPaused`, `opFeeConfig`, `opMinUTxOValue`. Existing oracle UTxOs created before this extension have a **3-field** datum (no `opMinUTxOValue`). New validators and off-chain code expect a **4-field** datum. For zero-downtime upgrades, use backward-compatible decoding when reading the oracle: if the datum has only 3 elements, treat `opMinUTxOValue` as a default (e.g. 10_000_000). Otherwise, the admin must update the oracle (e.g. run `set-min-utxo-value`) with new code that can write the 4-field datum; ensure the decoder can read both 3- and 4-field datums so the update transaction can succeed.
 
 ### Security Considerations
 
 - The oracle NFT is unique (one-shot policy ensures exactly one exists)
 - Only the current admin can update oracle parameters (signature check on `opAdminPkh`)
 - Admin key rotation is possible (update `opAdminPkh` in the datum)
-- The oracle UTxO value cannot be changed (output must preserve address + value)
+- The oracle UTxO value cannot be decreased (output must preserve address and value ≥ spent value; min-value check accommodates balancer-added lovelace)
 - The MintingPolicy reads the oracle as a reference input (non-destructive; no contention)
 - If fees are enabled, fee payment is validated on-chain in every minting transaction
 
@@ -582,7 +593,7 @@ The root is created atomically with the organization profile (`CreateProfile Org
 **Datum–redeemer restrictions**: `ListNodeDatum` accepts only `InsertNodeToMHList` or `UpdateNodeInMHList`; `IntervalDatum` accepts only `AcceptInterval` or `UpdateEndDate`; `Cleanup` applies when the datum is absent or does not parse as a valid `MembershipDatum`.
 
 **Security Considerations**:
-- Tokens locked at the validator never leave (output checks guarantee same address + same value)
+- Tokens locked at the validator never leave (output checks guarantee same address + value ≥ spent value; min-value check used because balancer may add lovelace; off-chain locks with exact value from spent UTxO)
 - Exact mint checks prevent other-token-name attacks
 - Organization User NFT required for `InsertNodeToMHList` and `UpdateNodeInMHList` (enforced by MintingPolicy)
 - Practitioner User NFT required for `AcceptInterval` (enforced by MembershipsValidator)
@@ -759,7 +770,10 @@ All validators use an **output index optimization** for efficient O(1) output va
 
 ### How It Works
 
-Instead of searching through all transaction outputs to find a specific output (via `hasTxOutWithInlineDatumAndValue`), validators receive the expected output index directly in the redeemer and verify the output at that specific index (via `checkTxOutAtIndex`).
+Instead of searching through all transaction outputs to find a specific output (via `hasTxOutWithInlineDatumAndValue`), validators receive the expected output index directly in the redeemer and verify the output at that specific index. Two helpers in `Onchain.Utils` are used:
+
+- **Min-value** (`checkTxOutAtIndexWithDatumMinValueAndAddress`): Require output value **≥** expected (same datum and address). Use for **continuing outputs** (validator spends a UTxO and locks updated state at the same address) and for **MintingPolicy** checks of newly created state outputs. The tx builder/balancer may add lovelace to script outputs; exact equality would cause validation failures after balancing. Off-chain still locks with the exact value from the spent UTxO where applicable.
+- **Exact-value** (`checkTxOutAtIndexWithDatumValueAndAddress`): Require output value **=** expected. Use only when the output value is not modified by the balancer (rare for script outputs).
 
 **Before** (O(n) search):
 ```haskell
@@ -769,7 +783,8 @@ hasTxOutWithInlineDatumAndValue datum value address txInfoOutputs
 
 **After** (O(1) indexed lookup):
 ```haskell
-checkTxOutAtIndex outputIdx datum value address txInfoOutputs
+checkTxOutAtIndexWithDatumMinValueAndAddress outputIdx datum minValue address txInfoOutputs
+-- or checkTxOutAtIndexWithDatumValueAndAddress for exact value when appropriate
 -- Directly accesses output at specified index
 ```
 
@@ -843,7 +858,7 @@ The output index is provided by the off-chain code but validated on-chain:
 | Foreign token injection            | `hasCurrencySymbol` validates all referenced AssetClasses belong to the protocol                      |
 | Datum type confusion at MV         | `MembershipDatum` sum type ensures correct parsing; validator pattern-matches on constructor          |
 | Unauthorized oracle update         | `opAdminPkh` signature check; only current admin can modify oracle                                    |
-| Oracle value theft                 | Oracle output must preserve same address + same value                                                 |
+| Oracle value theft                 | Oracle output must preserve same address + value ≥ spent value (min-value check)                      |
 | Oracle NFT duplication             | One-shot minting policy (seed TxOutRef consumed) prevents duplicate NFTs                              |
 | Missing oracle reference input     | `readOracleParams` fails if oracle NFT not found in reference inputs                                  |
 | Protocol pause bypass              | MintingPolicy checks `opPaused` on every mint; cannot be skipped                                      |

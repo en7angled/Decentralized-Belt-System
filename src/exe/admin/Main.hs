@@ -48,6 +48,7 @@ data Command
   | PauseProtocol
   | UnpauseProtocol
   | SetFees SetFeesArgs
+  | SetMinUTxOValue Integer
   | QueryOracle
   | InitProfile InitProfileArgs
   | UpdateProfileImage UpdateProfileImageArgs
@@ -344,6 +345,12 @@ commandParser =
               (progDesc "Set or clear fee configuration in the oracle")
           )
         <> command
+          "set-min-utxo-value"
+          ( info
+              (SetMinUTxOValue <$> option auto (long "lovelace" <> short 'n' <> metavar "LOVELACE" <> help "Minimum lovelace for protocol state outputs (oracle opMinUTxOValue)"))
+              (progDesc "Set minimum UTxO value (lovelace) for protocol state outputs in the oracle")
+          )
+        <> command
           "query-oracle"
           ( info
               (pure QueryOracle)
@@ -592,6 +599,10 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     let adminAction = setFeesToAdminAction args
     (txId, _) <- runBJJActionWithPK txBuildingCtx signKey (AdminAction adminAction) Nothing
     printGreen $ "Fee configuration updated successfully! TxId: " <> show txId
+  SetMinUTxOValue n -> do
+    printYellow $ "Setting min UTxO value to " <> show n <> " lovelace..."
+    (txId, _) <- runBJJActionWithPK txBuildingCtx signKey (AdminAction (SetMinUTxOValueAction n)) Nothing
+    printGreen $ "Min UTxO value updated successfully! TxId: " <> show txId
   -- Query oracle — read-only, does not go through the Interaction pipeline
   QueryOracle -> do
     printYellow "Querying oracle parameters..."
@@ -603,6 +614,7 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     printGreen $ "  Value:              " <> show oracleVal
     printGreen $ "  Admin PKH:          " <> show (opAdminPkh oracleParams)
     printGreen $ "  Paused:             " <> show (opPaused oracleParams)
+    printGreen $ "  Min UTxO Value:     " <> show (opMinUTxOValue oracleParams) <> " lovelace"
     case opFeeConfig oracleParams of
       Nothing -> printGreen "  Fee Config:          None"
       Just fc -> do

@@ -5,7 +5,6 @@ import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
 import GeniusYield.TxBuilder
 import GeniusYield.Types
-import Onchain.BJJ (intToBelt)
 import Onchain.CIP68 (CIP68Datum, MetadataFields (..), extra, getMetadataFields)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Id qualified as OnchainId
@@ -13,6 +12,7 @@ import Onchain.Protocol.Types qualified as OnchainTypes
 import PlutusLedgerApi.V3
 import PlutusTx.Builtins (decodeUtf8)
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteStringUtf8)
+import TxBuilding.SafeOnchainLogic (safeIntToBelt)
 
 profileDataToMetadataFields :: ProfileData -> MetadataFields
 profileDataToMetadataFields ProfileData {profileDataName, profileDataDescription, profileDataImageURI} =
@@ -49,12 +49,13 @@ onchainRankToRankInformation (Onchain.Rank {..}) = do
   gyRankId <- assetClassFromPlutus' rankId
   gyRankAchievedByProfileId <- assetClassFromPlutus' rankAchievedByProfileId
   gyRankAwardedByProfileId <- assetClassFromPlutus' rankAwardedByProfileId
+  rankBelt <- safeIntToBelt rankNumber
 
   return $
     Just
       Rank
         { rankId = gyRankId,
-          rankBelt = intToBelt rankNumber,
+          rankBelt,
           rankAchievedByProfileId = gyRankAchievedByProfileId,
           rankAwardedByProfileId = gyRankAwardedByProfileId,
           rankAchievementDate = timeFromPlutus rankAchievementDate
@@ -66,12 +67,13 @@ onchainPromotionToPromotionInformation (Onchain.Promotion {..}) = do
   gyRankId <- assetClassFromPlutus' promotionId
   gyRankAchievedByProfileId <- assetClassFromPlutus' promotionAwardedTo
   gyRankAwardedByProfileId <- assetClassFromPlutus' promotionAwardedBy
+  promotionBelt <- safeIntToBelt promotionRankNumber
 
   return $
     Just
       Promotion
         { promotionId = gyRankId,
-          promotionBelt = intToBelt promotionRankNumber,
+          promotionBelt,
           promotionAchievedByProfileId = gyRankAchievedByProfileId,
           promotionAwardedByProfileId = gyRankAwardedByProfileId,
           promotionAchievementDate = timeFromPlutus promotionAchievementDate

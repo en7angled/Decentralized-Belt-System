@@ -10,12 +10,13 @@ module Onchain.Protocol.Lookup
     unsafeGetProfileDatumAndValue,
     unsafeGetListNodeDatumAndValue,
     unsafeGetMembershipInterval,
+    unsafeGetProtocolParamsFromProfileRefInput,
     readOracleParams,
     checkFee,
   )
 where
 
-import Onchain.CIP68 (CIP68Datum (..))
+import Onchain.CIP68 (CIP68Datum (..), extra)
 import Onchain.Protocol.Types
 import Onchain.Utils (checkAndGetCurrentStateDatumAndValue)
 import PlutusLedgerApi.V1 qualified as V1
@@ -69,6 +70,24 @@ unsafeGetMembershipInterval intervalId addr txins =
    in case unsafeFromBuiltinData b :: MembershipDatum of
         IntervalDatum interval -> (v, interval)
         _ -> traceError "K0" -- Wrong datum type: expected IntervalDatum (K0)
+
+-- | Get 'ProtocolParams' from the profile UTxO in reference inputs.
+-- Finds the ref input whose value contains the given profile Ref 'AssetClass' (ProfileId)
+-- with quantity 1, parses its inline datum as 'CIP68Datum OnchainProfile', returns 'protocolParams'.
+-- Used by MembershipsValidator when handling InsertNodeToMHList to read the oracle token.
+{-# INLINEABLE unsafeGetProtocolParamsFromProfileRefInput #-}
+unsafeGetProtocolParamsFromProfileRefInput :: ProfileId -> [TxInInfo] -> ProtocolParams
+unsafeGetProtocolParamsFromProfileRefInput profileRefAC refInputs =
+  case PlutusTx.List.find hasProfileRef refInputs of
+    Just (TxInInfo _ TxOut {txOutDatum}) -> case txOutDatum of
+      OutputDatum (Datum bd) ->
+        let profile = extra (unsafeFromBuiltinData bd :: CIP68Datum OnchainProfile)
+         in protocolParams profile
+      _ -> traceError "K3" -- Profile ref input must have inline datum (K3)
+    Nothing -> traceError "K3" -- Profile ref input not found (K3)
+  where
+    hasProfileRef (TxInInfo _ TxOut {txOutValue}) =
+      V1.assetClassValueOf txOutValue profileRefAC == 1
 
 -------------------------------------------------------------------------------
 

@@ -4,6 +4,10 @@ Major changes only, latest first.
 
 ---
 
+## 0.3.1.9 -- 2026-02-21
+
+- **Dynamic min ADA and oracle `opMinUTxOValue`**: Minimum lovelace for protocol state outputs is now taken only from the oracle (`OracleParams.opMinUTxOValue`), not from a fixed constant. MintingPolicy and MembershipsValidator read min lovelace from the oracle; off-chain uses `opMinUTxOValue` for each state output (with optional future use of protocol params and serialized size). Removed `protocolMinLovelace` and `protocolMinLovelaceValue` from `Onchain.Utils`. Admin action `SetMinUTxOValueAction` and CLI `set-min-utxo-value --lovelace N`; initial oracle and tests use `opMinUTxOValue = 1_000_000`. **Breaking**: Oracle datum gains a fourth field (`opMinUTxOValue`); see OnchainArchitecture.md § Oracle datum schema and migration.
+
 ## 0.3.1.8 -- 2026-02-21
 
 - Unit tests split into modules (Achievement, Cleanup, Membership, Oracle, Promotion); Test.Fixtures and Test.Helpers added.

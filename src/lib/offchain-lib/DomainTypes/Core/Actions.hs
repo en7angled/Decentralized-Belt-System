@@ -5,18 +5,18 @@ module DomainTypes.Core.Actions where
 import Data.Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.List.Extra
+import Data.Proxy (Proxy (..))
 import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
 import Data.Swagger.Internal.Schema ()
 import Data.Swagger.ParamSchema
 import Data.Swagger.SchemaOptions (fromAesonOptions)
-import Data.Proxy (Proxy (..))
 import Data.Text hiding (init, tail)
 import Deriving.Aeson
+import DomainTypes.Core.BJJ (BJJBelt)
 import DomainTypes.Core.Types
 import GHC.Generics ()
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
-import DomainTypes.Core.BJJ (BJJBelt)
 import Onchain.Protocol.Types (FeeConfig)
 
 -------------------------------------------------------------------------------
@@ -134,13 +134,17 @@ data ProtocolActionType
 data AdminActionType
   = PauseProtocolAction
   | UnpauseProtocolAction
-  | SetFeesAction (Maybe FeeConfig)  -- ^ Nothing = clear fees, Just fc = set fees
+  | -- | Nothing = clear fees, Just fc = set fees
+    SetFeesAction (Maybe FeeConfig)
+  | -- | Minimum lovelace for protocol state outputs (oracle opMinUTxOValue)
+    SetMinUTxOValueAction Integer
   deriving (Show, Generic)
 
 instance ToJSON AdminActionType where
   toJSON PauseProtocolAction = object ["tag" .= ("PauseProtocolAction" :: Text)]
   toJSON UnpauseProtocolAction = object ["tag" .= ("UnpauseProtocolAction" :: Text)]
   toJSON (SetFeesAction _) = object ["tag" .= ("SetFeesAction" :: Text)]
+  toJSON (SetMinUTxOValueAction n) = object ["tag" .= ("SetMinUTxOValueAction" :: Text), "lovelace" .= n]
 
 instance FromJSON AdminActionType where
   parseJSON = withObject "AdminActionType" $ \o -> do
@@ -148,6 +152,7 @@ instance FromJSON AdminActionType where
     case (tag :: Text) of
       "PauseProtocolAction" -> pure PauseProtocolAction
       "UnpauseProtocolAction" -> pure UnpauseProtocolAction
+      "SetMinUTxOValueAction" -> SetMinUTxOValueAction <$> o .: "lovelace"
       _ -> fail "AdminActionType: unsupported action for JSON deserialization"
 
 instance ToSchema AdminActionType where
