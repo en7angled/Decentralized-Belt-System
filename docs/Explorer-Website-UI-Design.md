@@ -2,7 +2,7 @@
 
 > **Baseline**: DaisyUI **v5** on Tailwind CSS **4**. All component names, class names, and theming APIs in this document target that stack. When DaisyUI ships breaking changes, update this document accordingly.
 
-This document proposes a modern, explorer-first UI for the Decentralized BJJ Belt protocol website, with a split between:
+This document defines the **UI requirements and design** for the Decentralized BJJ Belt protocol explorer website. It covers:
 
 - **Read-side explorer** (public, wallet optional)
 - **Write-side actions** (wallet-connected, role/context-aware)
@@ -13,46 +13,47 @@ The goal is to make it feel like a premium Web3 explorer + social credential net
 
 ## Table of contents
 
-1. [Product principles mapped to UI](#1-product-principles-mapped-to-ui)
+1. [Product principles](#1-product-principles)
 2. [Information architecture (sitemap)](#2-information-architecture-sitemap)
 3. [Reusable UI kit (DaisyUI 5 components)](#3-reusable-ui-kit-daisyui-5-components)
 4. [Page-by-page UX blueprint](#4-page-by-page-ux-blueprint)
-5. [Contextual action system](#5-contextual-action-system-critical-ux-pattern)
+5. [Contextual action system](#5-contextual-action-system)
 6. [Wallet connection flow](#6-wallet-connection-flow)
 7. [Onboarding & first-time experience](#7-onboarding--first-time-experience)
 8. [Notification & pending-actions system](#8-notification--pending-actions-system)
 9. [Error, loading, & empty states](#9-error-loading--empty-states)
 10. [Responsive & mobile design](#10-responsive--mobile-design)
 11. [Visual style: modern and "cool"](#11-visual-style-modern-and-cool)
-12. [API additions required for best UX](#12-api-additions-required-for-best-ux)
-13. [Integration notes](#13-integration-notes)
-14. [Suggested delivery phases](#14-suggested-delivery-phases)
-15. [Appendix A — key component specifications](#appendix-a--key-component-specifications)
+12. [Appendix A — key component specifications](#appendix-a--key-component-specifications)
 
 ---
 
-## 1) Product principles mapped to UI
+## 1) Product principles
 
 ### Explorer-first
-- All browse/search/filter/sort/verify flows work without wallet connection.
+
+- All browse/search/filter/sort flows work **without wallet connection**.
 - Wallet UI should not block public content.
-- Public pages should always display verifiable evidence snippets (IDs, dates, issuer, tx links).
+- Public pages should always display **verifiable evidence snippets** (on-chain tx links for events, asset links for entities).
 
 ### Action-contextual
-- When wallet is connected and authorized, actions appear inline near relevant data:
+
+- When wallet is connected and authorized, actions must be available **inline near relevant data**:
   - On practitioner page: **Promote**, **Award achievement**, **Grant membership**
   - On pending promotion card: **Accept promotion**
   - On pending membership interval: **Accept membership**
   - On pending achievement: **Accept achievement**
-- Actions that cannot be performed by the current wallet are hidden—never greyed out—so the UI stays clean.
+- Actions that cannot be performed by the current wallet are **hidden—never greyed out**—so the UI stays clean.
 
 ### Trust by design
-- Every credential view includes a compact verification panel:
-  - asset class ID (truncated with copy-to-clipboard)
-  - issuer profile (avatar + name link)
-  - date
-  - acceptance state (`badge badge-success` / `badge badge-warning`)
-  - tx hash with Cardano explorer deep-link
+
+- Every credential view includes a compact **verification panel**:
+  - Asset class ID (truncated with copy-to-clipboard)
+  - Issuer profile (avatar + name link)
+  - Date
+  - Acceptance state (`badge badge-success` / `badge badge-warning`)
+  - Tx hash with Cardano explorer deep-link
+- On-chain proof is never more than one click away from any credential display.
 
 ---
 
@@ -60,28 +61,30 @@ The goal is to make it feel like a premium Web3 explorer + social credential net
 
 ### Public routes (no wallet required)
 
-| # | Route | Label |
-|---|---|---|
-| 1 | `/` | Home / Protocol Overview |
-| 2 | `/explore` | Explorer Hub |
-| 3 | `/practitioners` | Practitioner Directory |
-| 4 | `/practitioner/:id` | Practitioner Profile ★ |
-| 5 | `/organizations` | Organization Directory |
-| 6 | `/organization/:id` | Organization Profile |
-| 7 | `/ranks` | Belts & Promotions Explorer |
-| 8 | `/achievements` | Achievements Explorer |
-| 9 | `/memberships` | Membership Explorer |
-| 10 | `/lineage` | Lineage Graph Explorer |
-| 11 | `/verify` | Verify Credential |
-| 12 | `/activity` | Global Activity Feed |
+| # | Route | Label | Child Components |
+|---|---|---|---|
+| 1 | `/` | Home / Explorer Hub | `IntroHero`, `UnifiedSearch`, `CommunityDashboard`, `GlobalActivityFeed` |
+| 2 | `/practitioners` | Practitioner Explorer | `PractitionersStats`, `PractitionersSearch` |
+| 3 | `/practitioner/:id` | Practitioner Profile ★ | `PractitionerInfoCard`, `PractitionerTimeline`, `RankLineageGraph` |
+| 4 | `/organizations` | Organization Explorer | `OrganizationsStats`, `OrganizationsSearch` |
+| 5 | `/organization/:id` | Organization Profile | `OrganizationInfoCard` |
+| 6 | `/ranks` | Belt Promotions Explorer | `BeltPromotionsStats`, `BeltPromotionsSearch` |
+| 7 | `/achievements` | Achievements Explorer | `AchievementStats`, `AchievementsSearch` |
+| 8 | `/memberships` | Membership Explorer | `MembershipStats`, `MembershipsSearch` |
+| 9 | `/lineage` | Lineage Graph Explorer | |
+| 10 | `/about` | About the Protocol | |
 
-### Wallet routes (connected users)
+### Wallet routes (connected users only)
 
-| # | Route | Label |
+| # | Route | Label | Child Components |
+|---|---|---|---|
+| 11 | `/my-dojo` | My Dojo | `WalletSummary`, `PendingActions` (per profile), `AllowedActions` (per profile) |
+
+### Global overlay (public)
+
+| Component | Label | Description |
 |---|---|---|
-| 13 | `/my-dojo` | My Dashboard + Pending Actions |
-| 14 | `/actions/new` | Action Composer |
-| 15 | `/tx/:txId` | Transaction Result / Receipt |
+| `ActionComposer` | Action Wizard | Full-page multi-step wizard with sidebar progress indicator |
 
 ★ = flagship page
 
@@ -112,76 +115,76 @@ Use these as canonical building blocks. Components marked ★ are new or signifi
 
 ## 4) Page-by-page UX blueprint
 
-### 4.1 Home (`/`)
+### 4.1 Home / Explorer Hub (`/`)
+
+The single entry point combining the hero introduction, global search, community statistics, and live activity.
 
 #### Layout
-Full-width hero → 4-col KPI strip → 2-col content (recent promotions + how it works) → CTA footer.
+Full-width hero → unified search → community dashboard → global activity feed.
 
-#### Contains
-- **Hero** with protocol value proposition, animated belt-spectrum gradient bar, and two CTAs: "Explore the Protocol" (primary) + "Connect Wallet" (outline).
-- **KPI strip** (`stat` × 4): Total Profiles, Accepted Promotions, Active Memberships, Achievements Awarded. Each stat shows number + trend arrow (↑ / ↓ vs last 30 days). Use `stat-title`, `stat-value`, `stat-desc`.
+#### Child components
+
+**`IntroHero`**
+- Hero section with protocol value proposition, animated belt-spectrum gradient bar, animated lineage graph visualization, and CTAs to create a profile for practitioners and for organizations.
+- Two CTAs: "Explore the Protocol" (primary) + "Connect Wallet" (outline).
 - **"How It Works"** 3-step horizontal `steps` component:
   1. "Create your on-chain profile" (icon: person+)
   2. "Earn promotions & credentials" (icon: belt)
   3. "Verify anywhere, forever" (icon: shield-check)
-- **"Latest Promotions"** carousel (`carousel carousel-center`) of compact `card` items, each showing: practitioner avatar, name, belt badge, promoter name, date. Auto-scrolls; manual drag.
-- **Protocol Pulse** — small `stat` widget in the footer area showing chain-sync status (slot lag, "Synced" / "Syncing…" / "Behind"), sourced from `/network/sync-status`.
+
+**`UnifiedSearch`**
+- Unified full-text search across practitioners, organizations, ranks, achievements, and memberships.
+- Command-palette trigger (⌘K / Ctrl+K): opens a `modal` with `input input-bordered input-lg` and live results rendered as a `menu` of entity links.
+- Search results grouped by entity type with `divider` separators.
+- Keyboard navigation through search results (↑↓ + Enter).
+- When a record is clicked, the user is redirected to the respective route.
+
+**`CommunityDashboard`**
+- **Stats grid** — Four summary numbers: total achievements, total practitioners, total academies (organizations), and pending promotions. Uses `stat` × 4 with `stat-title`, `stat-value`, `stat-desc`.
+- **RecentlyRegisteredCard** — Bar chart showing how many practitioners are at each belt level (recently registered).
+- **BeltJourneyPyramid** — Pyramid chart of belt distribution across all ranks. Each belt level is a layer, wider at the bottom (White) and narrower at the top (Red). Uses exact belt colors from §11.
+- **Promotions TTM** — Stacked bar chart of belt promotions per month over the last twelve months, colored by belt.
+- **Latest Academies** — List of the most recently registered academies (name, description, short ID).
+- **Latest Practitioners** — List of the most recently registered practitioners (name, belt, short ID).
+- **Recent Belt Promotions** — List of recent promotions: who got which belt, who awarded it, with a link to view on the explorer.
+
+**`GlobalActivityFeed`**
+- Feed with "natural language representation" of each event type, e.g.:
+  - "Andrei Ionescu promoted Marius Georgescu to Blue Belt"
+  - "Marius Georgescu accepted Blue Belt promotion of Andrei Ionescu"
+  - "Ionut Popescu received achievement 'name' from Atos JiuJitsu"
+- Each event shows: actor(s) avatar + name links, summary text, relative timestamp ("3 hours ago"), on-chain tx link.
+- Color-coded left border on each event card matching the event type.
+- **Filter chips** (`filter` ★ pills): All | Profiles | Promotions | Achievements | Memberships.
 
 #### DaisyUI 5
 
 ```
-hero, stat, steps, carousel, card, badge, btn, skeleton
+hero, stat, steps, card, badge, btn, modal, input, menu, filter, timeline, timeline-box, avatar, skeleton, divider, popover
 ```
 
 #### Cool ideas
 - Animated belt-spectrum gradient bar (`@keyframes` shifting hue across the 15 belt colors) under the hero.
-- "Latest lineage events" scrolling ticker using a row of compact `badge` chips with belt colors and practitioner names.
 - Parallax background showing faint BJJ mat pattern.
+- **Live pulse animation**: when a new event arrives, the new item slides in from the top with a subtle green flash border.
+- **"Event bundles"**: when the same actor performs multiple actions in a short window (e.g., master promotes 3 students), collapse into a single bundle with expandable details (`collapse`).
 
 #### Empty state
-On a fresh protocol with zero profiles: replace KPI strip with a single centered `card` inviting the first user to create a profile. Hide carousel.
+On a fresh protocol with zero profiles: replace CommunityDashboard stats with a single centered `card` inviting the first user to create a profile. Hide activity feed.
 
 ---
 
-### 4.2 Explorer Hub (`/explore`)
+### 4.2 Practitioner Explorer (`/practitioners`)
 
 #### Layout
-Full-width search bar → category tile grid (3 × 2) → "Protocol Pulse" live stats.
+Stats summary → sticky filter bar → results area (card grid or table) → pagination.
 
-#### Contains
-- **Command-palette search** (⌘K / Ctrl+K trigger): opens a `modal` with `input input-bordered input-lg` and live results rendered as a `menu` of entity links (practitioners, orgs, belts, achievements). Fuzzy-search with debounce.
-- **Category tiles** — 6 `card card-compact` items in a responsive grid:
-  - Practitioners (icon: 🥋, count badge)
-  - Organizations (icon: 🏢, count badge)
-  - Ranks & Belts (icon: belt icon, count badge)
-  - Achievements (icon: 🏆, count badge)
-  - Memberships (icon: 🤝, count badge)
-  - Lineage Graph (icon: 🌳, no count — action CTA)
-- **View-mode toggle** using DaisyUI 5 `filter` component (pill-style toggle chips): Grid | Table | Timeline.
-- **Protocol Pulse** — real-time-ish sync confidence bar (`radial-progress`) + slot lag stat.
+#### Child components
 
-#### DaisyUI 5
+**`PractitionersStats`**
+- Summary strip at the top showing key practitioner metrics: total count, distribution by belt (compact bar or pills), recent activity count.
 
-```
-modal, input, menu, card, badge, stat, filter, radial-progress, skeleton
-```
-
-#### Cool ideas
-- Category tiles use `hover-card` ★ effect — subtle 3D lift + shadow on hover.
-- Search results grouped by entity type with `divider` separators.
-- Keyboard navigation through search results (↑↓ + Enter).
-
-#### Empty state
-Category tiles always show even with zero items (count = 0). Search returns "No results — try a different query" with suggested links.
-
----
-
-### 4.3 Practitioner Directory (`/practitioners`)
-
-#### Layout
-Sticky filter bar → results area (card grid or table, toggled by `filter`) → pagination.
-
-#### Contains
+**`PractitionersSearch`**
 - **Filter bar** — horizontal strip:
   - `input input-bordered` for name/ID search
   - `select` for current belt level
@@ -190,7 +193,8 @@ Sticky filter bar → results area (card grid or table, toggled by `filter`) →
   - `checkbox` "Has pending actions" (only meaningful when wallet connected)
   - Reset button
 - **Sort dropdown** (`select select-sm`): Newest rank first, Name A→Z, Belt (highest first).
-- **Result cards** (`card card-side card-compact` in grid) or **table rows** (`table table-zebra`), toggled via `filter` component (Grid / Table).
+- **View toggle**: `filter` component (Grid / Table).
+- **Result cards** (`card card-side card-compact` in grid) or **table rows** (`table table-zebra`):
   - Each result shows: `avatar` (or placeholder), name, belt `badge` with belt-color background, organization affiliation (if any), last promotion date.
   - Belt-colored left border (`border-l-4`) on each card/row using the belt palette.
 - **Pagination** (`join` with page buttons) at bottom.
@@ -198,7 +202,7 @@ Sticky filter bar → results area (card grid or table, toggled by `filter`) →
 #### DaisyUI 5
 
 ```
-input, select, checkbox, calendar, filter, card, avatar, badge, table, join, pagination, skeleton, popover
+input, select, checkbox, calendar, filter, card, avatar, badge, table, join, pagination, skeleton, popover, stat
 ```
 
 #### Interactive behaviors
@@ -208,72 +212,80 @@ input, select, checkbox, calendar, filter, card, avatar, badge, table, join, pag
 #### Cool ideas
 - Belt-colored left border on each card/row matching their current rank.
 - Mini sparkline-style dot strip on each card showing recent activity (last 5 events as colored dots: green = promotion accepted, blue = achievement, purple = membership).
-- "Spotlight" section at the top: "Recently Promoted" — 3 highlighted practitioner cards with a subtle gold shimmer border.
 
 #### Empty state
 "No practitioners found" card with CTA: "Be the first — Create your profile" (links to action composer if wallet connected, or to wallet connect flow).
 
 ---
 
-### 4.4 Practitioner Profile (`/practitioner/:id`) — ★ Flagship page
+### 4.3 Practitioner Profile (`/practitioner/:id`) — ★ Flagship page
 
 This is the most important page. It must feel rich, trustworthy, and visually stunning.
 
 #### Layout
-Full-width identity header → tabbed content area (Belt Journey | Achievements | Memberships | Promoted Students | On-Chain) → contextual action bar (floating or sticky bottom).
+Full-width identity card → tabbed content area (Belt Journey | Achievements | Memberships | Promoted Students) → rank lineage graph → contextual action bar (floating or sticky bottom).
 
-#### Contains
+#### Child components
 
-**Identity Header**
+**`PractitionerInfoCard`**
 - Large `avatar avatar-lg` (or `avatar avatar-placeholder` with initials)
 - Name (h1), description excerpt, profile ID (truncated `kbd` with copy)
 - Current belt `badge badge-lg` with belt-color background + glow ring (`ring ring-offset-2` with belt color)
-- Verification chip: `badge badge-success badge-sm` "On-chain verified" with tooltip showing profile ref token asset class
+- Verification chip: `badge badge-success badge-sm` "On-chain verified" with tooltip showing profile ref token asset class and Cardano explorer deep-link
 - If wallet connected and this is the user's profile: `btn btn-outline btn-sm` "Edit Profile"
 
-**Tab: Belt Journey** (default active)
-- Vertical `timeline` with `timeline-box` items, one per rank (current + all previous):
-  - Belt-colored milestone dot (filled circle in belt color)
-  - `timeline-box` content: Belt name + `badge`, promoter name (link to their profile), achievement date, time-in-belt duration label (e.g., "2 years, 3 months at Blue")
-  - Deeplink to on-chain tx
-- Current rank is the topmost item, highlighted with a `ring` glow and "Current" `badge badge-primary`.
-- If there are pending promotions for this practitioner: yellow `alert alert-warning` card above the timeline: "Pending Promotion to [Belt] from [Master]" with "Accept" button (if wallet matches).
+**`PractitionerTimeline`**
+- Tabbed content area with the following tabs:
 
-**Tab: Achievements**
-- Masonry-style grid of achievement `card` items:
-  - Achievement image (if URI set), name, description excerpt
-  - Awarded by (avatar + name link)
-  - Date
-  - Acceptance state: `badge badge-success` "Accepted" or `badge badge-warning` "Pending"
-  - If pending and wallet matches: "Accept" `btn btn-primary btn-sm`
-- Filter sub-bar: `filter` pills for Accepted / Pending / All.
-- If zero achievements: friendly empty card "No achievements yet."
+  **Tab: Belt Journey** (default active)
+  - Vertical `timeline` with `timeline-box` items, one per rank (current + all previous):
+    - Belt-colored milestone dot (filled circle in belt color)
+    - `timeline-box` content: Belt name + `badge`, promoter name (link to their profile), date, time-in-belt duration label (e.g., "2 years, 3 months at Blue")
+    - On-chain tx deep-link
+  - Current rank is the topmost item, highlighted with a `ring` glow and "Current" `badge badge-primary`.
+  - If there are pending promotions for this practitioner: yellow `alert alert-warning` card above the timeline: "Pending Promotion to [Belt] from [Master]" with "Accept" button (if wallet matches).
 
-**Tab: Memberships**
-- `timeline` of membership histories, grouped by organization:
-  - Organization avatar + name (link)
-  - Intervals shown as stacked `card card-compact` items within each history:
-    - Start date → End date (or "Active" `badge badge-info`)
-    - Accepted state (`badge badge-success` / `badge badge-warning`)
-    - Duration label
-  - If pending interval and wallet matches: "Accept" button
-- "Membership lifecycle" ribbon: a horizontal bar per organization, colored segments showing active/ended intervals proportionally.
+  **Tab: Achievements**
+  - Masonry-style grid of achievement `card` items:
+    - Achievement image (if URI set), name, description excerpt
+    - Awarded by (avatar + name link)
+    - Date
+    - Acceptance state: `badge badge-success` "Accepted" or `badge badge-warning` "Pending"
+    - If pending and wallet matches: "Accept" `btn btn-primary btn-sm`
+  - Filter sub-bar: `filter` pills for Accepted / Pending / All.
+  - If zero achievements: friendly empty card "No achievements yet."
 
-**Tab: Promoted Students** (only shown if this practitioner has promoted others)
-- Grid of practitioner `card` items that this master has promoted
-- Each card: student avatar, name, belt promoted to, date
-- Sort by date (newest first)
-- Shows the master's lineage reach. Links to each student's profile.
+  **Tab: Memberships**
+  - `timeline` of membership histories, grouped by organization:
+    - Organization avatar + name (link)
+    - Intervals shown as stacked `card card-compact` items within each history:
+      - Start date → End date (or "Active" `badge badge-info`)
+      - Accepted state (`badge badge-success` / `badge badge-warning`)
+      - Duration label
+    - If pending interval and wallet matches: "Accept" button
+  - "Membership lifecycle" ribbon: a horizontal bar per organization, colored segments showing active/ended intervals proportionally.
 
-**Tab: On-Chain**
-- Raw credential inventory: all protocol tokens associated with this profile
-- `table` of: Token type (Profile Ref, Rank, Achievement, etc.), Asset Class ID (`kbd` with copy), Validator address, Datum summary
-- Deep-link each row to a Cardano explorer (e.g., Cexplorer, CardanoScan)
+  **Tab: Promoted Students** (only shown if this practitioner has promoted others)
+  - Grid of practitioner `card` items that this master has promoted
+  - Each card: student avatar, name, belt promoted to, date
+  - Sort by date (newest first)
+  - Shows the master's lineage reach. Links to each student's profile.
+
+**`RankLineageGraph`**
+- Interactive graph showing this practitioner's promotion lineage:
+  - **Practitioner nodes**: circle, sized by number of promotions given, filled with belt-color ring.
+  - **Promotion edges**: directed arrows (master → student), colored with target belt and labeled with date.
+- **Controls drawer** (`drawer drawer-end`):
+  - Belt filter: checkboxes to show/hide nodes by belt.
+  - Date range: `calendar` to limit edges to a time window.
+  - Depth slider: `range` to control how many levels of lineage to show from the root.
+  - Root profile selector: `input` with autocomplete to pick a starting practitioner.
+- **Node click**: opens `popover` with mini profile card; double-click navigates to profile page.
 
 #### DaisyUI 5
 
 ```
-avatar, badge, tabs, timeline, timeline-box, card, alert, modal, btn, table, kbd, tooltip, popover, filter, skeleton, accordion
+avatar, badge, tabs, timeline, timeline-box, card, alert, modal, btn, table, kbd, tooltip, popover, filter, skeleton, accordion, drawer, range, toggle
 ```
 
 #### Contextual actions (wallet-aware, sticky bottom bar or floating `fab`)
@@ -299,19 +311,24 @@ If profile ID not found: 404 page with "Profile not found" + search bar + "Brows
 
 ---
 
-### 4.5 Organization Directory (`/organizations`)
+### 4.4 Organization Explorer (`/organizations`)
 
 #### Layout
-Filter bar → card grid → pagination.
+Stats summary → filter bar → card grid → pagination.
 
-#### Contains
+#### Child components
+
+**`OrganizationsStats`**
+- Summary strip showing key organization metrics: total count, most active this month, total members across all orgs.
+
+**`OrganizationsSearch`**
 - **Filter/search bar**: name search `input`, activity level `select` (Most active / All), recent awards toggle.
 - **Organization cards** (`card`) in responsive grid:
   - Organization logo/avatar
   - Name, description excerpt
   - `stat` strip: Active Members count, Achievements Issued count, Latest Activity date
   - `badge` chips for quick info (e.g., "12 active members", "47 achievements")
-- **"Most Active This Month" spotlight** — top 3 organizations highlighted in a dedicated row with larger cards and a subtle gold border.
+- **Pagination** at bottom.
 
 #### DaisyUI 5
 
@@ -328,36 +345,35 @@ card, avatar, stat, badge, input, select, pagination, popover, skeleton
 
 ---
 
-### 4.6 Organization Profile (`/organization/:id`)
+### 4.5 Organization Profile (`/organization/:id`)
 
 #### Layout
-Identity header → tabbed content (Members | Achievements Issued | Membership Activity | On-Chain) → contextual actions.
+Identity header → tabbed content (Members | Achievements Issued | Membership Activity) → contextual actions.
 
-#### Contains
+#### Child components
 
-**Identity Header**
+**`OrganizationInfoCard`**
 - Organization avatar, name (h1), description, profile ID (`kbd` with copy)
-- Verification chip
+- Verification chip with Cardano explorer deep-link
 - KPI strip (`stat` × 3): Active Members, Total Achievements Issued, Membership Histories
 
-**Tab: Members**
-- **Member grid**: `card card-compact` items for each practitioner with an active membership:
-  - Practitioner avatar, name, current belt `badge`, membership status (`badge badge-info` "Active" / `badge badge-neutral` "Ended")
-  - Click → practitioner profile
-- Filter: `filter` pills for Active / Historical / All
-- Sort: Name, Belt level, Membership start date
+**Tabs**
 
-**Tab: Achievements Issued**
-- `timeline` of achievements this organization has awarded:
-  - Achievement name, image thumbnail, recipient (avatar + name link), date, accepted state badge
-- Masonry gallery mode toggle.
+  **Tab: Members**
+  - **Member grid**: `card card-compact` items for each practitioner with an active membership:
+    - Practitioner avatar, name, current belt `badge`, membership status (`badge badge-info` "Active" / `badge badge-neutral` "Ended")
+    - Click → practitioner profile
+  - Filter: `filter` pills for Active / Historical / All
+  - Sort: Name, Belt level, Membership start date
 
-**Tab: Membership Activity**
-- Horizontal timeline visualization: each practitioner's membership intervals as colored segments on a horizontal bar (green = active, grey = ended, yellow = pending acceptance).
-- Below: `table` with raw interval data (practitioner, start, end, status).
+  **Tab: Achievements Issued**
+  - `timeline` of achievements this organization has awarded:
+    - Achievement name, image thumbnail, recipient (avatar + name link), date, accepted state badge
+  - Masonry gallery mode toggle.
 
-**Tab: On-Chain**
-- Organization's protocol tokens (Profile Ref, Membership Histories Root) with asset class IDs and explorer deep-links.
+  **Tab: Membership Activity**
+  - Horizontal timeline visualization: each practitioner's membership intervals as colored segments on a horizontal bar (green = active, grey = ended, yellow = pending acceptance).
+  - Below: `table` with raw interval data (practitioner, start, end, status).
 
 #### DaisyUI 5
 
@@ -374,7 +390,7 @@ avatar, badge, tabs, stat, card, timeline, table, filter, kbd, tooltip, skeleton
 | Not connected | None (read-only) |
 
 #### Cool ideas
-- **"Academy network" mini-graph**: a small force-directed graph (D3/vis.js) showing the organization at center with connected practitioners as nodes, sized by belt level, colored by belt. Clickable.
+- **"Academy network" mini-graph**: a small force-directed graph showing the organization at center with connected practitioners as nodes, sized by belt level, colored by belt. Clickable.
 - **Activity heatmap**: a GitHub-style contribution heatmap showing membership grants + achievement awards by week, for the last 12 months.
 
 #### Empty state
@@ -382,29 +398,34 @@ If org ID not found: 404 + search. If org has zero members: "This organization h
 
 ---
 
-### 4.7 Ranks & Promotions Explorer (`/ranks`)
+### 4.6 Belt Promotions Explorer (`/ranks`)
 
 #### Layout
-Tab bar (Accepted Ranks | Pending Promotions) → filter bar → content area → pagination.
+Stats summary → tab bar (Accepted Ranks | Pending Promotions) → filter bar → content area → pagination.
 
-#### Contains
+#### Child components
 
-**Tab: Accepted Ranks** (default)
-- **Belt distribution chart**: horizontal stacked bars, one per belt level, colored with belt palette, showing count. Rendered with a chart library (e.g., Recharts, Chart.js) or pure CSS width-proportional `div` bars.
-- **Belt pyramid**: visual pyramid with each belt level as a layer, wider at the bottom (White) and narrower at the top (Red). Shows count labels. Pure CSS or SVG. The pyramid should use exact belt colors from §11.
-- **Data table** (`table table-zebra`): filterable, sortable list of all accepted ranks.
-  - Columns: Practitioner (avatar + name), Belt (`badge`), Awarded By (name link), Date, Rank ID (`kbd`)
-  - Filters: belt level `select`, awarded by `select`, date range `calendar`
-  - Sort: belt level, date, practitioner name
+**`BeltPromotionsStats`**
+- **Belt distribution chart**: horizontal stacked bars, one per belt level, colored with belt palette, showing count.
+- **Belt pyramid**: visual pyramid with each belt level as a layer, wider at the bottom (White) and narrower at the top (Red). Shows count labels. Uses exact belt colors from §11.
+- Hover tooltips on pyramid showing exact count + percentage per level.
+- "Promotion velocity" stat: average time between promotions across the protocol.
 
-**Tab: Pending Promotions**
-- **"Pending acceptance" urgency cards**: `card card-bordered` items with `alert alert-warning` styling:
-  - Student name + avatar
-  - Promoted to: belt `badge`
-  - Promoted by: master name + avatar
-  - Date issued
-  - If wallet matches student: "Accept Promotion" `btn btn-primary`
-  - Time since issued (e.g., "3 days ago")
+**`BeltPromotionsSearch`**
+- **Tab: Accepted Ranks** (default)
+  - **Data table** (`table table-zebra`): filterable, sortable list of all accepted ranks.
+    - Columns: Practitioner (avatar + name), Belt (`badge`), Awarded By (name link), Date, Rank ID (`kbd`)
+    - Filters: belt level `select`, awarded by `select`, date range `calendar`
+    - Sort: belt level, date, practitioner name
+
+- **Tab: Pending Promotions**
+  - **"Pending acceptance" urgency cards**: `card card-bordered` items with `alert alert-warning` styling:
+    - Student name + avatar
+    - Promoted to: belt `badge`
+    - Promoted by: master name + avatar
+    - Date issued
+    - If wallet matches student: "Accept Promotion" `btn btn-primary`
+    - Time since issued (e.g., "3 days ago")
 
 #### DaisyUI 5
 
@@ -414,7 +435,6 @@ tabs, table, badge, card, alert, stat, select, calendar, pagination, btn, skelet
 
 #### Cool ideas
 - Belt pyramid SVG with hover tooltips showing exact count + percentage per level.
-- "Promotion velocity" stat: average time between promotions across the protocol.
 - Animated confetti burst when viewing a promotion that was just accepted (within last 24h).
 
 #### Empty state
@@ -422,12 +442,17 @@ tabs, table, badge, card, alert, stat, select, calendar, pagination, btn, skelet
 
 ---
 
-### 4.8 Achievements Explorer (`/achievements`)
+### 4.7 Achievements Explorer (`/achievements`)
 
 #### Layout
-Filter bar → view toggle (Gallery | Table) → content → pagination.
+Stats summary → filter bar → view toggle (Gallery | Table) → content → pagination.
 
-#### Contains
+#### Child components
+
+**`AchievementStats`**
+- Summary strip: total achievements, accepted count, pending count, most active awarding organization.
+
+**`AchievementsSearch`**
 - **Filter bar**:
   - `input` name search
   - `select` awarded by (organization/practitioner)
@@ -444,18 +469,17 @@ Filter bar → view toggle (Gallery | Table) → content → pagination.
 - **Drill-down modal**: clicking a card opens `modal` with full details including:
   - Full-size image
   - Complete description
-  - Complete verification details (asset class, issuer profile, date, tx hash)
+  - Complete verification details (asset class, issuer profile, date, tx hash with Cardano explorer link)
   - Acceptance state with "Accept" button if applicable
 
 #### DaisyUI 5
 
 ```
-card, badge, tooltip, modal, kbd, filter, input, select, calendar, table, pagination, skeleton
+card, badge, tooltip, modal, kbd, filter, input, select, calendar, table, pagination, skeleton, stat
 ```
 
 #### Cool ideas
 - Masonry gallery with subtle hover zoom (CSS `scale(1.02)` on hover).
-- "Accepted/Pending split view": two synced columns, accepted on left, pending on right, with `divider` between.
 - Achievement cards have a subtle ribbon in the top-right corner showing acceptance state.
 
 #### Empty state
@@ -463,34 +487,38 @@ card, badge, tooltip, modal, kbd, filter, input, select, calendar, table, pagina
 
 ---
 
-### 4.9 Membership Explorer (`/memberships`)
+### 4.8 Membership Explorer (`/memberships`)
 
 #### Layout
-Sub-tabs (Histories | Intervals) → filter bar → content → pagination.
+Stats summary → sub-tabs (Histories | Intervals) → filter bar → content → pagination.
 
-#### Contains
+#### Child components
 
-**Sub-tab: Histories**
-- `table` of membership histories:
-  - Practitioner (avatar + name link)
-  - Organization (avatar + name link)
-  - Number of intervals
-  - Current status (active / ended / pending)
-  - History ID (`kbd`)
-- Expandable rows (`accordion` ★): click a row to expand and see all intervals inline.
+**`MembershipStats`**
+- Summary strip: total membership histories, active intervals, ended intervals, pending acceptance count.
 
-**Sub-tab: Intervals**
-- `timeline` view: intervals as chronological events.
-  - Each interval: start → end, practitioner name, organization name, acceptance state.
-  - Active intervals: `badge badge-info` "Active" with green left border.
-  - Ended intervals: `badge badge-neutral` "Ended" with grey left border.
-  - Pending acceptance: `badge badge-warning` "Pending" with yellow left border.
-  - If wallet matches and pending: "Accept" `btn btn-sm`.
+**`MembershipsSearch`**
+- **Sub-tab: Histories**
+  - `table` of membership histories:
+    - Practitioner (avatar + name link)
+    - Organization (avatar + name link)
+    - Number of intervals
+    - Current status (active / ended / pending)
+    - History ID (`kbd`)
+  - Expandable rows (`accordion` ★): click a row to expand and see all intervals inline.
+
+- **Sub-tab: Intervals**
+  - `timeline` view: intervals as chronological events.
+    - Each interval: start → end, practitioner name, organization name, acceptance state.
+    - Active intervals: `badge badge-info` "Active" with green left border.
+    - Ended intervals: `badge badge-neutral` "Ended" with grey left border.
+    - Pending acceptance: `badge badge-warning` "Pending" with yellow left border.
+    - If wallet matches and pending: "Accept" `btn btn-sm`.
 
 #### DaisyUI 5
 
 ```
-tabs, table, accordion, timeline, badge, btn, filter, select, calendar, pagination, skeleton
+tabs, table, accordion, timeline, badge, btn, filter, select, calendar, pagination, skeleton, stat
 ```
 
 #### Cool ideas
@@ -502,7 +530,7 @@ tabs, table, accordion, timeline, badge, btn, filter, select, calendar, paginati
 
 ---
 
-### 4.10 Lineage Graph Explorer (`/lineage`)
+### 4.9 Lineage Graph Explorer (`/lineage`)
 
 #### Layout
 Full-screen graph canvas → `drawer` (right-side) for controls/details → breadcrumb path display.
@@ -511,7 +539,7 @@ Full-screen graph canvas → `drawer` (right-side) for controls/details → brea
 - **Interactive graph** (powered by D3-force, vis.js, or Cytoscape.js):
   - **Practitioner nodes**: circle, sized by number of promotions given, filled with belt-color ring.
   - **Organization nodes**: square, with org avatar.
-  - **Promotion edges**: directed arrows (master → student), labeled with target belt.
+  - **Promotion edges**: directed arrows (master → student), colored with target belt and labeled with date.
   - **Achievement edges** (togglable): dashed lines, labeled with achievement name.
 - **Controls drawer** (`drawer drawer-end`):
   - Belt filter: checkboxes to show/hide nodes by belt.
@@ -539,146 +567,77 @@ drawer, badge, tooltip, popover, toggle, range, input, select, calendar, btn, ca
 
 ---
 
-### 4.11 Verify Credential (`/verify`)
+### 4.10 About the Protocol (`/about`)
 
 #### Layout
-Centered single-column: input section → result card.
+Centered single-column content page.
 
 #### Contains
-- **Input section** (`fieldset` ★):
-  - `input input-bordered input-lg` with placeholder "Enter credential ID, profile ID, or tx hash"
-  - "Verify" `btn btn-primary btn-lg`
-  - Or: "Scan QR Code" button → opens camera modal for scanning verification QR codes
-- **Result card** (`card card-bordered`) — appears after verification:
-  - **Status banner**:
-    - ✅ `alert alert-success` "Verified & Accepted" — for accepted credentials
-    - ⏳ `alert alert-warning` "Valid but Pending Acceptance" — for pending credentials
-    - ❌ `alert alert-error` "Not Found or Invalid" — for unknown IDs
-  - **Credential details** (if found):
-    - Type: Rank / Achievement / Membership (`badge`)
-    - Issuer: avatar + name + profile link
-    - Recipient: avatar + name + profile link
-    - Date issued
-    - Acceptance state
-    - On-chain reference: asset class ID (`kbd`), tx hash (`kbd`), Cardano explorer link
-  - **Deep links**: "View Issuer Profile", "View Recipient Profile"
-
-**"Verification Certificate" mode**: button to render the result as a clean, printable card:
-  - White background, centered layout
-  - Protocol logo watermark
-  - All verification details
-  - QR code encoding the verification URL
-  - "Verified by [Protocol Name] on Cardano — [date]" footer
-  - CSS `@media print` styles for clean printing
-
-**QR Code generation**: every verified credential gets a unique URL (`/verify?id=<assetClass>`) and a QR code rendered inline, shareable via copy-link or download-image.
+- **Protocol overview**: brief explanation of what the Decentralized BJJ Belt System is and its mission (transparency, trust, verifiability for BJJ credentials).
+- **How it works**: visual explainer of the core concepts:
+  - Profiles (Practitioner & Organization)
+  - Belt promotions (two-phase: issue + accept)
+  - Achievements (awarded + accepted)
+  - Memberships (grant + accept intervals)
+- **Belt hierarchy**: visual chart showing all belt levels from White to Red 10th Degree, using belt color palette from §11.
+- **Key principles**: Explorer-first, Action-contextual, Trust by design (referencing §1).
+- **Links**: to the project's documentation, source code repository, and Cardano Project Catalyst proposal.
+- **FAQ section** using `accordion` ★:
+  - "What is a belt promotion?"
+  - "What does 'pending acceptance' mean?"
+  - "How do I create a profile?"
+  - "What wallet do I need?"
 
 #### DaisyUI 5
 
 ```
-fieldset, input, btn, card, alert, kbd, badge, avatar, tooltip, modal, skeleton
+card, accordion, steps, badge, btn, divider, kbd, tooltip
 ```
 
-#### Cool ideas
-- Animated green checkmark SVG burst when verification succeeds (CSS animation, 1s duration).
-- Gold/bronze "verified" stamp watermark overlay on the result card (purely visual flourish).
-- "Share verification" button: copies a formatted text snippet + link to clipboard.
-- Social preview: the verification URL generates an Open Graph image showing the credential details.
-
 #### Empty state
-Initial state: just the input form with a brief explainer: "Paste any credential ID, profile ID, or transaction hash to verify it on-chain."
+N/A — this is a static content page.
 
 ---
 
-### 4.12 Activity Feed (`/activity`)
+### 4.11 My Dojo (`/my-dojo`) — Connected users only
 
 #### Layout
-Filter chips (sticky) → infinite-scroll timeline.
+Wallet summary bar → pending-actions inbox (per profile) → allowed actions (per profile).
 
-#### Contains
-- **Filter chips** (`filter` ★ pills, horizontal scrollable row):
-  - All | Profiles | Promotions | Achievements | Memberships
-  - Additional: Accepted | Issued | All States
-- **Unified timeline** (`timeline timeline-vertical`):
-  - Each event is a `timeline-box` with:
-    - Event icon (color-coded by type):
-      - 👤 Profile created (neutral)
-      - 🥋 Promotion issued (belt color) / Promotion accepted (belt color + ✓)
-      - 🏆 Achievement awarded (gold) / Achievement accepted (gold + ✓)
-      - 🤝 Membership created (blue) / Membership accepted (blue + ✓) / Membership ended (grey)
-    - Actor(s): avatar + name links (issuer + recipient)
-    - Summary text: "Master Carlos promoted João to Purple Belt"
-    - Relative timestamp ("3 hours ago")
-    - Quick-verify link (shield icon → opens verify modal)
-  - Color-coded left border on each event card matching the event type.
-- **Infinite scroll**: `loading` spinner at bottom while fetching next page. Uses intersection observer.
+#### Child components
 
-#### DaisyUI 5
-
-```
-timeline, timeline-box, badge, avatar, filter, loading, spinner, skeleton
-```
-
-#### Cool ideas
-- **Live pulse animation**: when a new event arrives (via polling or WebSocket), the new item slides in from the top with a subtle green flash border.
-- **"Event bundles"**: when the same actor performs multiple actions in a short window (e.g., master promotes 3 students), collapse into a single bundle: "Master X promoted 3 practitioners" with expandable details (`collapse`).
-- **Sound effect toggle**: optional subtle "ding" notification sound when new events appear (off by default).
-
-#### Empty state
-"No activity yet — the protocol is waiting for its first action!" with CTA to create a profile.
-
----
-
-### 4.13 My Dojo (`/my-dojo`) — Connected users only
-
-#### Layout
-Wallet summary bar → KPI strip → pending-actions inbox → recent tx history.
-
-#### Contains
-
-**Wallet summary bar**
+**`WalletSummary`**
 - Connected wallet address (truncated, with copy)
 - Wallet identicon/avatar
 - Owned protocol profiles listed as `badge` chips (click → jump to profile)
 - "Disconnect" `btn btn-ghost btn-sm`
 
-**KPI strip** (`stat` × 4)
-- Owned Profiles count
-- Pending Actions (accept promotions + accept achievements + accept memberships)
-- Credentials Earned (total accepted ranks + achievements)
-- Active Memberships
-
-**Pending-actions inbox**
+**`PendingActions`** (per profile)
 - Sorted by urgency (oldest pending first).
 - Each item is a `card card-compact card-bordered` with:
   - Action type icon + label (e.g., "Accept Promotion to Purple Belt")
   - Issuer name + avatar
   - Date issued + "X days ago" relative time
   - "Accept" `btn btn-primary btn-sm` → triggers wallet signing flow inline
-  - "View Details" link → navigates to the relevant entity page
+  - "View Details" → show all details in modal
+- Includes: accept promotions + accept achievements + accept memberships.
 - If zero pending: `alert alert-info` "You're all caught up! No pending actions."
 
-**Suggested actions** (role-based)
-- If user is a master (Black+): "Promote a student" card
-- If user is an organization: "Grant membership" card, "Award achievement" card
-- Always: "Update profile image" card
-
-**Recent tx receipts**
-- `table` of last 10 transactions:
-  - Action type
-  - Date/time
-  - Status (`badge`): Submitted / Confirmed / Failed
-  - Tx hash (`kbd`, clickable → opens `/tx/:txId`)
+**`AllowedActions`** (per profile)
+- Role-based suggested actions for each owned profile:
+  - If user is a master (Black+): "Promote a student" card
+  - If user is an organization: "Grant membership" card, "Award achievement" card
+  - Always: "Update profile image" card
+- Each card links to the Action Composer (§4.12) pre-filled with the relevant action type.
 
 #### DaisyUI 5
 
 ```
-stat, card, alert, badge, btn, table, kbd, toast, avatar, steps, skeleton
+stat, card, alert, badge, btn, table, kbd, toast, avatar, skeleton, modal
 ```
 
 #### Cool ideas
 - **"Action urgency" ranking**: pending items have a color-coded time indicator (green < 7d, yellow 7–30d, red > 30d since issued).
-- **1-click continue flow**: for half-completed interactions (e.g., built tx but didn't sign), show a "Resume" button that re-opens the signing modal with the same tx.
 - **"Daily dojo" summary**: at the top, a one-sentence summary of today's activity: "You accepted 1 promotion and earned 2 achievements today" or "Nothing new today — time to train! 🥋".
 
 #### Empty state
@@ -686,65 +645,77 @@ If wallet has no protocol profiles: large centered CTA card: "Welcome to the Pro
 
 ---
 
-### 4.14 Action Composer (`/actions/new`)
+### 4.12 Action Composer (`ActionComposer` / Action Wizard)
+
+Full-page multi-step wizard with sidebar progress indicator. Available as a global overlay accessible from any page.
 
 #### Layout
-Full-page multi-step wizard with sidebar progress indicator.
+Sidebar progress indicator (desktop) or top bar (mobile) → step content area.
 
-#### Contains
-- **Step indicator** (`steps steps-vertical` on desktop sidebar, `steps steps-horizontal` on mobile top bar):
-  1. Select Action
-  2. Fill Details
-  3. Review & Preview
-  4. Sign in Wallet
-  5. Track Submission
+#### Step indicator
 
-- **Step 1: Select Action**
-  - Grid of action `card` items, each with icon, title, description:
-    - Create Profile (Practitioner / Organization)
-    - Promote Practitioner
-    - Award Achievement
-    - Grant Membership
-    - Add Membership Interval
-    - Accept Promotion / Achievement / Membership
-    - Update Profile Image
-    - Update Membership End Date
-  - Cards that are unavailable (e.g., "Promote" when not a Black belt) are hidden or shown with a lock icon + tooltip explaining why.
+`steps steps-vertical` on desktop sidebar, `steps steps-horizontal` on mobile top bar:
+1. Select Action (available depending if a profile is selected or not, and if yes depending on the profile type)
+2. Fill Details
+3. Review & Preview
+4. Sign in Wallet
+5. Track Submission
 
-- **Step 2: Fill Details**
-  - `fieldset` ★ groups for each form section:
-    - Profile details: name `input`, description `textarea`, image URI `input` (with preview), profile type `select`
-    - Promotion details: student profile `input` (with autocomplete/search), belt `select`, date `calendar`
-    - Achievement details: recipient `input`, name `input`, description `textarea`, image URI `input`, metadata key-value pairs (dynamic `input` rows), date `calendar`
-    - Membership details: organization `select`, practitioner `input`, start date `calendar`, end date `calendar` (optional)
-  - Real-time validation with inline error messages.
+#### Action table
 
-- **Step 3: Review & Preview**
-  - Side-by-side layout:
-    - Left: **"Human summary"** — readable card: "You are promoting João Silva from Blue Belt to Purple Belt, authorized by Master Carlos, effective June 1, 2025."
-    - Right: **"Raw payload"** — `mockup-code` JSON preview of the `Interaction` body that will be sent to `/build-tx`.
-  - Protocol fee breakdown panel (if fees are configured):
-    - Action fee (e.g., 2 ADA promotion fee)
-    - Estimated transaction fee
-    - Total
-  - "Edit" button to go back to Step 2.
+| Accessibility | Action | Wizard Description | Result |
+|---|---|---|---|
+| Public | Create profile | Create practitioner/org | `InitProfileAction` |
+| Connected users only | Update Profile Image | Update image URI | `UpdateProfileImageAction` |
+| Connected users only | Belt Issuance | Master promotes practitioner | `PromoteProfileAction` |
+| Connected users only | Accept Promotion | Practitioner accepts promotion | `AcceptPromotionAction` |
+| Connected users only | Award Achievement | Org/master awards achievement | `AwardAchievementAction` |
+| Connected users only | Accept Achievement | Practitioner accepts | `AcceptAchievementAction` |
+| Connected users only | Grant Membership | Create membership history | `CreateMembershipHistoryAction` |
+| Connected users only | Renew Membership | Add new interval to existing history | `AddMembershipIntervalAction` |
+| Connected users only | Accept Membership | Practitioner accepts interval | `AcceptMembershipIntervalAction` |
+| Connected users only | End Membership | Set end date on interval | `UpdateEndDateAction` |
 
-- **Step 4: Sign in Wallet**
-  - `loading` indicator: "Building transaction…"
-  - On success: "Transaction built. Please sign in your wallet."
-  - Wallet signing prompt (CIP-30 `signTx`).
-  - On signing: "Submitting transaction…"
-  - Error handling: if build fails, show `alert alert-error` with the error message from the API.
+#### Step details
 
-- **Step 5: Track Submission**
-  - `steps` component showing tx lifecycle:
-    1. ✅ Built
-    2. ✅ Signed
-    3. ⏳ Submitted (waiting for confirmation)
-    4. ✅ Confirmed (with tx hash + explorer link)
-  - On confirmation: `toast` "Transaction confirmed!" + confetti animation.
-  - "View Transaction" button → `/tx/:txId`
-  - "Do Another Action" button → resets wizard.
+**Step 1: Select Action**
+- Grid of action `card` items, each with icon, title, description.
+- Cards for actions that require a connected wallet are hidden when no wallet is connected.
+- Cards for actions that require a specific profile type are hidden when no matching profile is available.
+
+**Step 2: Fill Details**
+- `fieldset` ★ groups for each form section:
+  - Profile details: name `input`, description `textarea`, image URI `input` (with preview), profile type `select`
+  - Promotion details: student profile `input` (with autocomplete/search), belt `select`, date `calendar`
+  - Achievement details: recipient `input`, name `input`, description `textarea`, image URI `input`, metadata key-value pairs (dynamic `input` rows), date `calendar`
+  - Membership details: organization `select`, practitioner `input`, start date `calendar`, end date `calendar` (optional)
+- Real-time validation with inline error messages.
+
+**Step 3: Review & Preview**
+- Side-by-side layout:
+  - Left: **"Human summary"** — readable card: "You are promoting João Silva from Blue Belt to Purple Belt, authorized by Master Carlos, effective June 1, 2025."
+  - Right: **"Raw payload"** — `mockup-code` JSON preview of the interaction payload.
+- Protocol fee breakdown panel (if fees are configured):
+  - Action fee (e.g., 2 ADA promotion fee)
+  - Estimated transaction fee
+  - Total
+- "Edit" button to go back to Step 2.
+
+**Step 4: Sign in Wallet**
+- `loading` indicator: "Building transaction…"
+- On success: "Transaction built. Please sign in your wallet."
+- Wallet signing prompt.
+- On signing: "Submitting transaction…"
+- Error handling: if build fails, show `alert alert-error` with the error message.
+
+**Step 5: Track Submission**
+- `steps` component showing tx lifecycle:
+  1. ✅ Built
+  2. ✅ Signed
+  3. ⏳ Submitted (waiting for confirmation)
+  4. ✅ Confirmed (with tx hash + Cardano explorer link)
+- On confirmation: `toast` "Transaction confirmed!" + confetti animation.
+- "Do Another Action" button → resets wizard.
 
 #### DaisyUI 5
 
@@ -754,37 +725,13 @@ steps, fieldset, input, textarea, select, calendar, file-input, toggle, card, mo
 
 #### Cool ideas
 - Side-by-side "Human summary" + "Raw payload" in Step 3 — advanced users can inspect exactly what's being sent.
-- **Gas/fee estimate** with a visual bar: "This transaction will cost approximately 0.3 ADA in network fees + 2 ADA protocol fee."
-- **"Quick action" shortcuts**: from any entity page, clicking "Promote" pre-fills Step 1 + Step 2 with context (student ID, etc.) and jumps directly to Step 2.
+- **Fee estimate** with a visual bar: "This transaction will cost approximately 0.3 ADA in network fees + 2 ADA protocol fee."
+- **"Quick action" shortcuts**: from any entity page, clicking an action button pre-fills the wizard with context (student ID, etc.) and jumps directly to Step 2.
 - **Draft saving**: if the user navigates away mid-wizard, save the draft to localStorage and offer to resume.
 
 ---
 
-### 4.15 Transaction Receipt (`/tx/:txId`)
-
-#### Layout
-Centered single-column card.
-
-#### Contains
-- **Status header**: large status badge (Confirmed ✅ / Pending ⏳ / Failed ❌)
-- **Transaction details** `card`:
-  - Tx hash (`kbd` with copy, explorer deep-link)
-  - Action type (`badge`)
-  - Actor (avatar + name)
-  - Affected entities (links to profiles/credentials)
-  - Timestamp
-  - Block / slot info (if confirmed)
-- **Created assets** (if any): list of newly minted tokens with their asset class IDs
-
-#### DaisyUI 5
-
-```
-card, badge, kbd, btn, alert, avatar, tooltip, skeleton
-```
-
----
-
-## 5) Contextual action system (critical UX pattern)
+## 5) Contextual action system
 
 Use a shared component: `EntityActionBar`.
 
@@ -801,14 +748,14 @@ Use a shared component: `EntityActionBar`.
 ### Inline action triggers
 - On any card with pending state, show primary action button: `btn btn-primary btn-sm` + icon.
 - On immutable facts (accepted ranks, accepted achievements), only show verify/share actions: `btn btn-ghost btn-xs`.
-- Actions that would fail (e.g., promoting someone who outranks you) should be hidden, not disabled.
+- Actions that would fail (e.g., promoting someone who outranks you) are **hidden, not disabled**.
 
-### Action flow
+### Action flow (UX)
 1. User clicks inline action button.
 2. If action needs additional input: open `modal` with the required form (pre-filled with context).
-3. Call `/build-tx` → show `spinner`.
-4. If success: prompt wallet signing (CIP-30 `signTx`).
-5. Call `/submit-tx` → show progress `steps`.
+3. Show `spinner` while the transaction is being built.
+4. Prompt wallet signing.
+5. Show progress `steps` while the transaction is being submitted.
 6. On confirmation: `toast` success + update UI state (refetch data).
 7. On error: `alert alert-error` with message + "Try Again" button.
 
@@ -823,7 +770,7 @@ Triggered by "Connect Wallet" button in the navbar. Opens a `modal modal-bottom`
 - Title: "Connect your Cardano wallet"
 - Grid of wallet option `btn` items with wallet icons:
   - Eternl, Lace, Nami, Flint, GeroWallet, Typhon, Yoroi, NuFi
-  - Each button detects if the wallet extension is installed (`window.cardano.<name>`).
+  - Each button detects if the wallet browser extension is installed.
   - Installed: normal button, icon + name.
   - Not installed: greyed text + "Install →" link to wallet's website.
 - Footer: "What is a Cardano wallet?" `accordion` ★ with brief explainer.
@@ -841,11 +788,11 @@ After connection:
 
 ### Profile linking
 
-On first connection, the BFF checks which protocol profile(s) the wallet's addresses own (by looking for Profile User tokens in the wallet's UTxO set). The result determines contextual action visibility.
+After wallet connection, the system identifies which protocol profile(s) the wallet owns. The result determines contextual action visibility:
 
 - **Zero profiles**: show "Create Profile" CTA.
 - **One profile**: auto-select it as active.
-- **Multiple profiles**: show a profile selector dropdown in the navbar (rare but possible if wallet has multiple addresses or manages multiple profiles).
+- **Multiple profiles**: show a profile selector dropdown in the navbar (rare but possible if wallet manages multiple profiles).
 
 ---
 
@@ -853,13 +800,13 @@ On first connection, the BFF checks which protocol profile(s) the wallet's addre
 
 ### Zero-state home page
 When the protocol has < 10 profiles, the home page shows an "Early Adopter" mode:
-- Replace carousel with a large explainer `card`:
+- Replace CommunityDashboard with a large explainer `card`:
   - "You're early! This protocol has [N] profiles."
   - "Be among the first to bring your BJJ credentials on-chain."
   - "Connect Wallet & Create Profile" `btn btn-primary btn-lg`
 
 ### "Get Started" wizard
-Accessed from the home CTA or "Create Profile" flows. This is the Action Composer (§4.14) with a friendlier wrapper:
+Accessed from the home CTA or "Create Profile" flows. This is the Action Composer (§4.12) with a friendlier wrapper:
 - Pre-selects "Create Profile (Practitioner)" as the action.
 - Adds contextual help tooltips on each field: "Your name as it appears in competitions", "A photo of you — URI to an image hosted anywhere", etc.
 - After successful profile creation: `modal` celebration with confetti + "Welcome to the Protocol!" message + "Explore your profile" link.
@@ -871,7 +818,7 @@ On first visit (tracked via localStorage), show dismissible `tooltip tooltip-ope
 - The lineage graph: "Explore the promotion lineage between practitioners."
 
 ### "What is this?" explainer cards
-On complex pages (Lineage Graph, Verify, Activity Feed), show a collapsible `accordion` at the top:
+On complex pages (Lineage Graph, About, Activity Feed), show a collapsible `accordion` at the top:
 - "What is a belt promotion?" — brief explanation of the two-phase flow (issue + accept).
 - "What is a membership?" — explanation of org-practitioner intervals.
 - "What does 'pending' mean?" — explanation of the acceptance pattern.
@@ -894,7 +841,7 @@ The mobile `dock` ★ bottom navigation bar includes a "My Dojo" item with a `ba
 ### Toast notifications for tx lifecycle
 When a user submits a transaction from any page:
 1. `toast` (bottom-right, auto-dismiss after 5s): "Transaction submitted ⏳" (`alert alert-info`)
-2. When confirmed (via polling): `toast` "Transaction confirmed ✅" (`alert alert-success`) with link to `/tx/:txId`.
+2. When confirmed: `toast` "Transaction confirmed ✅" (`alert alert-success`) with link to view the transaction on a Cardano explorer.
 3. If failed: `toast` "Transaction failed ❌" (`alert alert-error`) — persists until dismissed.
 
 ### "Action required" banners
@@ -919,19 +866,19 @@ On pages where the connected wallet has a pending action related to the displaye
 
 ### Error boundary design
 
-- **Inline error** (API call fails for one section): `alert alert-error alert-sm` replacing the failed section content: "Failed to load [section name]. [Retry →]"
-- **Full-page error** (page-level API failure): centered `card` with error icon, message, "Retry" button, and "Go Home" link.
+- **Inline error** (data load fails for one section): `alert alert-error alert-sm` replacing the failed section content: "Failed to load [section name]. [Retry →]"
+- **Full-page error** (page-level data failure): centered `card` with error icon, message, "Retry" button, and "Go Home" link.
 - **Network error** (no connectivity): full-width sticky `alert alert-error` at top: "Network error — please check your connection."
 
 ### 404 page
 - Centered layout.
 - Large "404" text with a BJJ-themed illustration (e.g., a broken belt or an empty mat).
 - "Page not found" message.
-- Global search bar (same as Explorer Hub command palette).
+- Global search bar (same as UnifiedSearch command palette).
 - Quick links: "Browse Practitioners", "Browse Organizations", "Go Home".
 
 ### Chain-sync lag indicator
-When the query API's sync status is behind:
+When the data source is behind the chain tip:
 - Subtle `alert alert-warning alert-sm` banner at the top of every page:
   - "Data may be up to [N] blocks behind. Last synced: [timestamp]."
   - Auto-dismisses when sync catches up.
@@ -940,11 +887,11 @@ When the query API's sync status is behind:
 
 | Page | Empty state message | CTA |
 |---|---|---|
-| Practitioner Directory | "No practitioners have joined yet." | "Create the first profile" |
-| Organization Directory | "No organizations registered yet." | "Register your academy" |
+| Practitioner Explorer | "No practitioners have joined yet." | "Create the first profile" |
+| Organization Explorer | "No organizations registered yet." | "Register your academy" |
 | Achievements Explorer | "No achievements have been awarded yet." | "Award the first achievement" |
 | Membership Explorer | "No memberships created yet." | "Grant a membership" |
-| Activity Feed | "The protocol is quiet — no activity yet." | "Create a profile to get started" |
+| GlobalActivityFeed | "The protocol is quiet — no activity yet." | "Create a profile to get started" |
 | Lineage Graph | "No promotion lineage exists yet." | "Be the first to promote" |
 | My Dojo (no profiles) | "You don't have any protocol profiles." | "Create your profile" |
 | My Dojo (no pending) | "You're all caught up!" | "Explore the protocol" |
@@ -964,7 +911,7 @@ When the query API's sync status is behind:
 
 ### Mobile navigation (`dock` ★)
 Replace the sidebar `drawer` on mobile with a fixed-bottom `dock`:
-- 5 items: Home 🏠 | Explore 🔍 | Lineage 🌳 | My Dojo 🥋 | More ⋯
+- 5 items: Home 🏠 | Search 🔍 | Lineage 🌳 | My Dojo 🥋 | More ⋯
 - "More" opens a `drawer drawer-bottom` with remaining navigation links.
 - "My Dojo" item has `badge badge-error badge-xs` for pending action count.
 - Active item highlighted with `dock-active`.
@@ -1058,7 +1005,6 @@ Every BJJ belt maps to a CSS custom property and Tailwind utility. Use these con
 | Tx lifecycle `steps` | Step completion | Current step gets a ✓ icon with a 200ms scale-in animation |
 | Search results | Typing | Results fade-in with 100ms stagger as they arrive |
 | Graph nodes | Hover | Scale 1.2× with belt-color highlight ring (200ms) |
-| Verification result | Success | Green checkmark SVG draws in (stroke-dashoffset animation, 800ms) |
 
 ### Trust aesthetics
 
@@ -1070,393 +1016,6 @@ Always show verification chips on credential displays:
 | Pending acceptance | `badge badge-warning badge-sm` | "⏳ Pending" — yellow/amber |
 | Invalid / Not found | `badge badge-error badge-sm` | "✗ Invalid" — red |
 | On-chain verified | `badge badge-info badge-sm` | "⛓ On-chain" — blue, with Cardano explorer link |
-
----
-
-## 12) API additions required for best UX
-
-Current APIs already support strong filtering for core lists, but a modern explorer needs aggregation, search, and graph endpoints.
-
-### 12.1 Existing endpoint leverage (already available)
-
-| Endpoint | Supports | Used by |
-|---|---|---|
-| `GET /profiles` | list, count, frequency by type; filter by ID, type; sort; pagination | Practitioner/Org directories, KPI stats |
-| `GET /practitioner/:id` | full practitioner info: name, description, image, current_rank, previous_ranks | Practitioner profile page |
-| `GET /organization/:id` | full org info: name, description, image | Organization profile page |
-| `GET /belts` | list, count, frequency by belt; filter by rank ID, belt, achieved_by, awarded_by, date range | Ranks explorer, belt distribution charts |
-| `GET /promotions` | list, count, frequency by belt; filter by ID, belt, achieved_by, awarded_by | Pending promotions, action inbox |
-| `GET /achievements` | list, count; filter by ID, awarded_to, awarded_by, is_accepted, date range | Achievements explorer, profile achievements tab |
-| `GET /membership-histories` | list, count; filter by organization, practitioner | Membership explorer, profile memberships tab |
-| `GET /membership-intervals` | list, count; filter by practitioner | Membership explorer, interval details |
-| `POST /build-tx` | builds unsigned tx from `Interaction` (action + userAddresses) | All write actions |
-| `POST /submit-tx` | submits signed tx (unsigned body + witness) | All write actions |
-| `GET /health`, `GET /ready` | service health and readiness status | Protocol Pulse indicator |
-
-### 12.2 Recommended new endpoints
-
-Each endpoint is tagged with a priority:
-- **P0** = required for MVP explorer (Phase 1)
-- **P1** = required for full action UX (Phase 2)
-- **P2** = nice-to-have for wow factor (Phase 3)
-
----
-
-#### `GET /search?q=&type=&limit=` — **P0**
-
-Unified full-text search across profiles, organizations, ranks, achievements, memberships.
-
-**Enables**: Global command palette (⌘K), Explorer Hub search, header search bar.
-
-**Request**:
-```
-GET /search?q=Carlos&type=practitioner&limit=10
-```
-
-**Response shape**:
-```json
-{
-  "results": [
-    {
-      "type": "practitioner",
-      "id": "<asset-class>",
-      "name": "Carlos Gracie Jr.",
-      "description": "...",
-      "image_uri": "...",
-      "current_belt": "Red",
-      "score": 0.95
-    },
-    {
-      "type": "organization",
-      "id": "<asset-class>",
-      "name": "Gracie Barra",
-      "score": 0.87
-    }
-  ],
-  "total": 42
-}
-```
-
-**Client-side fallback**: Can be approximated with `GET /profiles?profile_type=Practitioner` + client-side name filtering, but this is slow and doesn't search across entity types.
-
----
-
-#### `GET /stats/overview` — **P0**
-
-Aggregated protocol-wide statistics in a single call.
-
-**Enables**: Home page KPI strip, Protocol Pulse.
-
-**Response shape**:
-```json
-{
-  "profiles": { "total": 1234, "practitioners": 1100, "organizations": 134 },
-  "belts": { "total": 1100, "frequency": [["White", 400], ["Blue", 300], ...] },
-  "promotions_pending": 23,
-  "achievements": { "total": 567, "accepted": 540, "pending": 27 },
-  "memberships": { "active_intervals": 890, "total_histories": 450 },
-  "sync_status": { "local_slot": 123456, "chain_slot": 123460, "state": "Behind", "last_synced": "2025-06-01T12:00:00Z" }
-}
-```
-
-**Client-side fallback**: Multiple parallel calls to `/profiles/count`, `/profiles/frequency`, `/belts/count`, `/belts/frequency`, `/promotions/count`, `/achievements/count`, `/membership-histories/count`. Works but requires 7+ API calls.
-
----
-
-#### `GET /events?entity_id=&entity_type=&from=&to=&types=&limit=&offset=` — **P1**
-
-Unified event stream for the activity feed.
-
-**Enables**: Activity feed page, profile activity timelines.
-
-**Response shape**:
-```json
-[
-  {
-    "event_type": "promotion_accepted",
-    "timestamp": "2025-06-01T12:00:00Z",
-    "slot": 123456,
-    "block_hash": "abc...",
-    "actor": { "id": "<asset-class>", "name": "Master Carlos", "type": "practitioner" },
-    "subject": { "id": "<asset-class>", "name": "João Silva", "type": "practitioner" },
-    "details": { "belt": "Purple", "promotion_id": "<asset-class>" },
-    "tx_hash": "abc..."
-  }
-]
-```
-
-**Client-side fallback**: Not feasible — no unified event stream exists; would need to poll all list endpoints and merge/sort client-side.
-
----
-
-#### `GET /lineage/{profile-id}?depth=&include_orgs=&include_achievements=` — **P2**
-
-Graph nodes and edges for lineage traversal.
-
-**Enables**: Lineage Graph Explorer.
-
-**Response shape**:
-```json
-{
-  "nodes": [
-    { "id": "<asset-class>", "name": "Master Carlos", "type": "practitioner", "current_belt": "Red", "image_uri": "..." },
-    { "id": "<asset-class>", "name": "Gracie Barra", "type": "organization" }
-  ],
-  "edges": [
-    { "from": "<master-id>", "to": "<student-id>", "type": "promotion", "belt": "Purple", "date": "2025-01-15T00:00:00Z" },
-    { "from": "<org-id>", "to": "<practitioner-id>", "type": "membership" }
-  ]
-}
-```
-
-**Client-side fallback**: Possible with iterative calls to `/belts?awarded_by=<id>` for each level, but performance degrades with depth and requires N+1 queries per level. Not viable for a smooth interactive graph.
-
----
-
-#### `GET /practitioner/{id}/full` — **P0**
-
-Aggregated practitioner payload: profile + all ranks + all achievements + all memberships + pending items.
-
-**Enables**: Fast flagship profile page load (single API call instead of 5+).
-
-**Response shape**:
-```json
-{
-  "profile": { "id": "...", "name": "...", "description": "...", "image_uri": "...", "type": "Practitioner" },
-  "current_rank": { "id": "...", "belt": "Purple", "achieved_by": "...", "awarded_by": "...", "date": "..." },
-  "previous_ranks": [ ... ],
-  "pending_promotions": [ ... ],
-  "achievements": [ ... ],
-  "membership_histories": [ { "organization": "...", "intervals": [ ... ] } ],
-  "promotions_given": [ ... ]
-}
-```
-
-**Client-side fallback**: Parallel calls to `/practitioner/:id`, `/achievements?awarded_to=:id`, `/membership-histories?practitioner=:id`, `/promotions?achieved_by=:id`, `/belts?awarded_by=:id`. Works but requires 5 calls.
-
----
-
-#### `GET /organization/{id}/full` — **P0**
-
-Aggregated organization payload: profile + members + issued credentials + pending items.
-
-**Enables**: Rich organization detail page.
-
-**Response shape**:
-```json
-{
-  "profile": { "id": "...", "name": "...", "description": "...", "image_uri": "..." },
-  "members": [
-    { "practitioner_id": "...", "practitioner_name": "...", "current_belt": "Blue", "membership_status": "active", "latest_interval": { ... } }
-  ],
-  "achievements_issued": [ ... ],
-  "membership_histories_count": 45,
-  "active_members_count": 38
-}
-```
-
-**Client-side fallback**: `/organization/:id` + `/membership-histories?organization=:id` + `/achievements?awarded_by=:id`. Requires 3 calls and manual member enrichment.
-
----
-
-#### `GET /profiles/{id}/pending-actions` — **P1**
-
-Pending acceptables for a profile (promotions, achievements, membership intervals).
-
-**Enables**: My Dojo inbox, notification bell count, inline pending chips.
-
-**Response shape**:
-```json
-{
-  "pending_promotions": [ { "id": "...", "belt": "Purple", "awarded_by": "...", "date": "..." } ],
-  "pending_achievements": [ { "id": "...", "name": "...", "awarded_by": "...", "date": "..." } ],
-  "pending_memberships": [ { "id": "...", "organization": "...", "start_date": "...", "end_date": "..." } ],
-  "total_pending": 5
-}
-```
-
-**Client-side fallback**: `/promotions?achieved_by=:id` + `/achievements?awarded_to=:id&is_accepted=false` + `/membership-intervals?practitioner=:id` (then filter by `is_accepted=false` client-side, since intervals don't have `is_accepted` filter yet). Workable but requires 3 calls + client filtering.
-
----
-
-#### `POST /actions/eligibility-check` — **P1**
-
-Validate if an actor can perform an action before building the tx.
-
-**Enables**: Hide impossible actions early, show informative error messages.
-
-**Request**:
-```json
-{
-  "action": "promote",
-  "actor_profile_id": "<master-id>",
-  "target_profile_id": "<student-id>",
-  "parameters": { "target_belt": "Purple" }
-}
-```
-
-**Response shape**:
-```json
-{
-  "eligible": false,
-  "reasons": [
-    "Master's rank (Black) is not sufficient to promote to Purple — requires at least Black 2nd Degree",
-    "Student has not held Blue belt for the required 18 months (current: 14 months)"
-  ]
-}
-```
-
-**Client-side fallback**: The client can replicate some rules (belt hierarchy checks), but time-in-belt and other on-chain validations require server-side data.
-
----
-
-#### `GET /verify/{credential-id}` — **P1**
-
-One-shot normalized verification result.
-
-**Enables**: Verify page simplicity, QR-code verification flow.
-
-**Response shape**:
-```json
-{
-  "status": "accepted",
-  "type": "rank",
-  "credential": {
-    "id": "<asset-class>",
-    "belt": "Purple",
-    "recipient": { "id": "...", "name": "João Silva" },
-    "issuer": { "id": "...", "name": "Master Carlos" },
-    "date": "2025-06-01T00:00:00Z",
-    "tx_hash": "abc..."
-  }
-}
-```
-
-**Client-side fallback**: Client must determine credential type from the ID, then call the appropriate endpoint (`/belts?rank=<id>`, `/achievements?achievement=<id>`, `/promotions?promotion=<id>`) and normalize. Fragile and complex.
-
----
-
-#### `GET /belts?awarded_by={id}` — **P0** (enhancement to existing)
-
-The existing `/belts` endpoint already supports `awarded_by` filter. This confirms it's usable for "Promoted Students" view on the practitioner profile.
-
-**Enables**: "Promoted Students" tab on practitioner profiles.
-
----
-
-#### `GET /membership-intervals?organization={id}` — **P1** (enhancement to existing)
-
-Add `organization` filter to the existing `/membership-intervals` endpoint (currently only supports `practitioner` filter).
-
-**Enables**: Organization profile "Membership Activity" tab filtered to that org's intervals only.
-
----
-
-#### `GET /achievements/frequency` — **P1** (new, matches existing pattern)
-
-Frequency of achievements by organization (or by accepted/pending state).
-
-**Enables**: Achievements explorer charts, organization profile activity stats.
-
-**Response shape** (matches existing `/belts/frequency` pattern):
-```json
-[["<org-name-or-id>", 42], ["<org-name-or-id>", 31], ...]
-```
-
----
-
-#### `GET /network/sync-status` — **P0**
-
-Combined query-api + chain-sync freshness and lag.
-
-**Enables**: Protocol Pulse indicator, chain-sync lag banner.
-
-**Response shape**:
-```json
-{
-  "query_api": { "status": "healthy", "version": "1.0.0" },
-  "chain_sync": {
-    "state": "UpToDate",
-    "local_slot": 123456,
-    "chain_slot": 123456,
-    "slot_lag": 0,
-    "last_synced": "2025-06-01T12:00:00Z"
-  }
-}
-```
-
-**Client-side fallback**: `/health` and `/ready` endpoints exist but provide less detail. Chain-sync exposes `/health` on port 8084 but that's a separate service not exposed to browsers.
-
----
-
-## 13) Integration notes
-
-1. **BFF/Gateway strongly recommended**: both APIs use Basic Auth; do not expose service credentials in browser clients. The BFF proxies requests, adds auth headers, and can aggregate multiple backend calls into single frontend calls.
-
-2. **Wallet integration stays client-side** (CIP-30): the browser directly calls `window.cardano.<wallet>.enable()`, `getUsedAddresses()`, `getChangeAddress()`, `signTx()`, `getCollateral()`. The BFF never sees the signing key.
-
-3. **Transaction flow** (browser → BFF → APIs):
-   ```
-   Browser                    BFF                     Interaction API
-   ──────                    ───                     ───────────────
-   1. Collect wallet info    →
-   2. Send action + addrs   → Forward to /build-tx  → Build unsigned tx
-   3. Receive unsigned tx    ←                       ← Return CBOR hex
-   4. signTx() in wallet
-   5. Send tx + witness      → Forward to /submit-tx → Submit to Cardano
-   6. Receive txId           ←                       ← Return txId
-   7. Poll for confirmation  → Forward to /ready     → Check sync
-   ```
-
-4. **Feature flags**: use feature flags for endpoints not yet implemented. The UI should show placeholder modules with "Coming Soon" labels rather than hiding entire pages.
-
-5. **Caching**: The BFF should cache read-side responses with short TTLs (30–60s for lists, 5–10s for counts/frequencies, no cache for live-projection queries). Profile detail pages can cache for 60s since profile data changes infrequently.
-
-6. **CORS**: The query API already has CORS middleware (`WebAPI.CORS.setupCors`). The BFF should be the single origin for the frontend, avoiding direct browser-to-API CORS issues.
-
----
-
-## 14) Suggested delivery phases
-
-### Phase 1 — MVP Explorer (read-side core)
-
-**Goal**: public browsing works without a wallet. 
-
-**Pages**: Home, Explorer Hub, Practitioner Directory, Practitioner Profile, Organization Directory, Organization Profile, Verify Credential.
-
-**Components**: App shell (navbar, footer, dock), entity cards, belt badges, data tables, filter bars, search, KPI stats, skeletons.
-
-**API requirements**: `/search`, `/stats/overview`, `/practitioner/:id/full`, `/organization/:id/full`, `/network/sync-status`, existing list/count/frequency endpoints.
-
-**Wallet**: Basic connect/disconnect. "Create Profile" CTA. No write actions yet.
-
----
-
-### Phase 2 — Full Action UX (write-side)
-
-**Goal**: authorized actors can perform all protocol actions through the browser.
-
-**Pages**: My Dojo, Action Composer, Transaction Receipt.
-
-**Components**: Action launcher, form wizard, tx lifecycle steps, toast notifications, contextual action bars on all entity pages.
-
-**API requirements**: `/profiles/:id/pending-actions`, `/actions/eligibility-check`, `/verify/:id`, `/membership-intervals?organization=`, `/achievements/frequency`.
-
-**Wallet**: Full CIP-30 integration. Profile linking. Inline accept/promote/award/grant actions.
-
----
-
-### Phase 3 — Wow Factor (rich visualization + community)
-
-**Goal**: differentiated, visually stunning features that make the explorer a destination.
-
-**Pages**: Lineage Graph Explorer, Activity Feed, Ranks & Promotions Explorer, Achievements Explorer, Membership Explorer.
-
-**Components**: Force-directed graph, unified timeline, belt pyramid, activity heatmaps, event bundles, story mode.
-
-**API requirements**: `/lineage/:id`, `/events`.
-
-**Features**: Share/embed verification cards, QR codes, Open Graph previews, "Story Mode" lineage animation.
 
 ---
 
@@ -1498,7 +1057,7 @@ Displays a practitioner's belt as a colored chip. Accepts `belt` (BJJBelt enum v
 
 ### A.2 `EntityCard`
 
-Summary card for a practitioner or organization. Used in directories and search results.
+Summary card for a practitioner or organization. Used in explorer pages and search results.
 
 ```html
 <!-- EntityCard: practitioner -->
@@ -1615,7 +1174,7 @@ Contextual, wallet-aware action trigger. Renders differently based on wallet sta
   Promote to Purple
 </button>
 
-<!-- ActionButton: action in progress (after click, building tx) -->
+<!-- ActionButton: action in progress (building tx) -->
 <button class="btn btn-primary btn-sm gap-1" disabled>
   <span class="spinner spinner-sm"></span>
   Building…
