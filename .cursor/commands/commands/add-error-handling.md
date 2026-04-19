@@ -2,39 +2,45 @@
 
 ## Overview
 
-Implement comprehensive error handling for the current code to make it robust and resilient to failures while maintaining good user experience.
+Add robust error handling to Haskell code in the Decentralized Belt System, using the project's `TxBuildingException` type and idiomatic Haskell error patterns. Errors must map cleanly to HTTP status codes via `txBuildingExceptionToHttpStatus`.
 
 ## Steps
 
-1. **Error Detection**
-    - Identify potential failure points and edge cases
-    - Find unhandled exceptions and error conditions
-    - Detect missing validation and boundary checks
-    - Analyze async operations and network calls
-2. **Error Handling Strategy**
-    - Implement try-catch blocks where appropriate
-    - Add input validation and sanitization
-    - Create meaningful error messages and logging
-    - Design graceful degradation for non-critical failures
-3. **Recovery Mechanisms**
-    - Implement retry logic for transient failures
-    - Add fallback options for service unavailability
-    - Create circuit breakers for external dependencies
-    - Design proper error propagation and handling
-4. **User Experience**
-    - Provide clear error messages to users
-    - Implement proper error status codes for APIs
-    - Add loading states and error boundaries for UI
-    - Include helpful suggestions for error resolution
+1. **Identify Failure Points**
+    - Find partial functions (`head`, `tail`, `fromJust`, `read`) and replace with total alternatives
+    - Locate uncaught exceptions in `GYTxMonad` and `GYTxQueryMonad` operations
+    - Check UTxO lookups, datum parsing, and script execution paths for missing error handling
+    - Review external calls: Atlas provider queries, IPFS uploads, config file loading
+
+2. **Use TxBuildingException**
+    - Define new error constructors in `TxBuilding/Exceptions.hs` for each failure mode
+    - Use `throwError` / `throwTxBuildingException` rather than raw `error` strings
+    - Ensure every exception constructor maps to the correct HTTP status via `txBuildingExceptionToHttpStatus`
+    - Include context in error values (practitioner ID, action type, expected vs actual)
+
+3. **Haskell Error Patterns**
+    - Use `Either` / `ExceptT` for recoverable errors in pure or monadic code
+    - Use `Maybe` with explicit handling (`maybe`, `fromMaybe`, pattern match) — never `fromJust`
+    - Use `catch` / `try` from `Control.Exception` only at IO boundaries (API handlers)
+    - Prefer `note` or custom helpers to convert `Maybe` → `Either SomeError`
+
+4. **Validator & On-Chain Errors**
+    - Use `traceError` with descriptive trace codes (see `docs/onchain-trace-codes.md`)
+    - Ensure redeemer validation covers all pattern match branches
+    - Guard against impossible states with `traceError` rather than silent pass-through
+
+5. **API Layer Error Mapping**
+    - Confirm `ServiceHandlers` catch `TxBuildingException` and return appropriate HTTP status + JSON body
+    - Return structured error responses: `{ "error": "...", "code": "..." }`
+    - Log errors with enough context for debugging without leaking sensitive data
 
 ## Add Error Handling Checklist
 
-- [ ] Identified all potential failure points and edge cases
-- [ ] Implemented try-catch blocks where appropriate
-- [ ] Added input validation and sanitization
-- [ ] Created meaningful error messages and logging
-- [ ] Implemented retry logic for transient failures
-- [ ] Added fallback options and circuit breakers
-- [ ] Provided clear error messages to users
-- [ ] Implemented proper error status codes for APIs
-- [ ] Added loading states and error boundaries for UI
+- [ ] Replaced all partial functions with total alternatives
+- [ ] Defined new `TxBuildingException` constructors for each failure mode
+- [ ] Mapped exceptions to HTTP status codes via `txBuildingExceptionToHttpStatus`
+- [ ] Used `Either` / `ExceptT` for recoverable errors
+- [ ] Added `traceError` with trace codes for on-chain validation failures
+- [ ] API handlers return structured error JSON with correct status codes
+- [ ] `cabal build all` succeeds
+- [ ] `cabal test` passes

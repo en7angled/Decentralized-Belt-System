@@ -17,14 +17,31 @@ import GeniusYield.Types
 import Onchain.BJJ
 import Test.Fixtures (masterBProfileData, masterProfileData, maxLengthImageURI, profileDataMaxLengthMetadata, profileDataOverLongName, studentProfileData)
 import Test.Tasty
+import Test.Tasty.HUnit (testCase, (@?=))
 import TestRuns (bjjInteraction, deployBJJValidators, logPractitionerProfileInformation)
 
 promotionTests :: (HasCallStack) => TestTree
 promotionTests =
   testGroup
     "Promotion"
-    [ promotionTestsGroup,
+    [ promotionStateFromBeltsTests,
+      promotionTestsGroup,
       promotionSecurityTests
+    ]
+
+-- | Pure logic for query-api promotion @state@ (pending vs superseded).
+promotionStateFromBeltsTests :: TestTree
+promotionStateFromBeltsTests =
+  testGroup
+    "promotionStateFromBelts"
+    [ testCase "no current rank -> pending" $
+        promotionStateFromBelts Nothing White @?= PromotionPending,
+      testCase "current rank above promotion belt -> superseded" $
+        promotionStateFromBelts (Just Blue) White @?= PromotionSuperseded,
+      testCase "current rank below promotion belt -> pending" $
+        promotionStateFromBelts (Just White) Blue @?= PromotionPending,
+      testCase "equal belts -> pending" $
+        promotionStateFromBelts (Just Blue) Blue @?= PromotionPending
     ]
 
 promotionTestsGroup :: (HasCallStack) => TestTree
@@ -32,9 +49,10 @@ promotionTestsGroup =
   testGroup
     "Promotion Tests"
     [ mkTestFor "Test Case 1.1: Verify that a black belt can promote a white belt to blue belt and the white belt can accept the promotion" blackPromotesWhiteToBlue,
-      mkTestFor "Test Case 1.2: Update profile image (UpdateProfileImage / P5)" updateProfileImageTest,
+      mkTestFor "Test Case 1.2: Update profile (UpdateProfile / P5)" updateProfileTest,
       mkTestFor "Create profile with max-length metadata (name 128, description 1024, image 256 bytes) succeeds" createProfileMaxLengthMetadataTest,
       mkTestFor "Update profile image to max-length URI (256 bytes) succeeds" updateProfileImageMaxLengthUriTest,
+      mkTestFor "Update profile with new description and image" updateProfileWithDescriptionTest,
       mkTestFor "Create profile with over-length name (129 bytes) fails (M4)" overLengthNameFailsTest
     ]
   where
@@ -117,8 +135,8 @@ promotionTestsGroup =
 
       return ()
 
-    updateProfileImageTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
-    updateProfileImageTest TestInfo {..} = do
+    updateProfileTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateProfileTest TestInfo {..} = do
       waitNSlots_ 1000
       s <- slotOfCurrentBlock
       t <- slotToBeginTime s
@@ -136,9 +154,9 @@ promotionTestsGroup =
         bjjInteraction
           ctx
           (w1 testWallets)
-          (UpdateProfileImageAction profileRefAC "ipfs://QmUpdatedImage")
+          (UpdateProfileAction profileRefAC Nothing "ipfs://QmUpdatedImage")
           Nothing
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Update profile image test passed!"
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Update profile test passed!"
       return ()
 
     createProfileMaxLengthMetadataTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -178,9 +196,33 @@ promotionTestsGroup =
         bjjInteraction
           ctx
           (w1 testWallets)
-          (UpdateProfileImageAction profileRefAC maxLengthImageURI)
+          (UpdateProfileAction profileRefAC Nothing maxLengthImageURI)
           Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Update profile image to max-length URI test passed!"
+      return ()
+
+    updateProfileWithDescriptionTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    updateProfileWithDescriptionTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      (_txId, profileRefAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+      void $
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (UpdateProfileAction profileRefAC (Just "Updated description") "ipfs://QmUpdatedImage")
+          Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Update profile with description test passed!"
       return ()
 
     overLengthNameFailsTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()

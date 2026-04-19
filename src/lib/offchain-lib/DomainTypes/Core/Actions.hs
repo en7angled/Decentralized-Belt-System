@@ -53,8 +53,9 @@ data ProfileActionType
         profile_type :: ProfileType,
         creation_date :: GYTime
       }
-  | UpdateProfileImageAction
+  | UpdateProfileAction
       { profile_id :: ProfileRefAC,
+        new_desc :: Maybe Text,
         image_uri :: Text
       }
   | PromoteProfileAction

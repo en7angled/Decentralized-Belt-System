@@ -35,6 +35,8 @@
 
 The **Decentralized Belt System** aims to bring **transparency** and **trust** to the Brazilian Jiu Jitsu rank promotion process by recording practitioner profiles, belt lineages, and achievements on the **Cardano** blockchain. This approach eliminates reliance on siloed or inconsistent records, ensuring that every belt rank is **verifiable** by anyone in the community.
 
+> **Product repo.** The web frontend, BFF, and LLM agent-service live in a separate (private) repo, `bjj-frontend`. That repo pulls this repo's Haskell services as published Docker Hub images (`mariusgeorgescu/bjj-{chainsync,interaction-api,query-api,mcp-server}`, pinned by a `PROTOCOL_TAG`). The `docker-compose.yml` in this repo is a **dev/audit** stack for running the protocol services standalone — no TLS, no ingress, localhost ports only.
+
 ---
 
 ## 2. Key Features
@@ -56,14 +58,14 @@ The **Decentralized Belt System** aims to bring **transparency** and **trust** t
 >   - **3rd Party Browser Wallet** (e.g., Eternl, Lace): For signing transactions.
 > - **Backend**  
 >   - **Interaction API Service**: Builds and submits transactions for promotions, achievements, membership.  
->   - **Query API Service**: Provides quick queries for ranks, achievements, profiles, etc.  
+>   - **Query API Service**: Provides quick queries for ranks, achievements, profiles, lineage, etc.
 >   - **Chain Sync Service**: Monitors the Cardano blockchain for updates.  
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
 > - **Persistence** : A database or index for quick lookups of ranks, achievements, memberships (off-chain).
 
 
 
-For more details, see [Detailed Documentation](docs/Documentation.md).  
+For more details, see [Detailed Documentation](docs/specification.md).  
 To regenerate diagram images after editing `puml/*.puml`, run `scripts/regenerate_diagrams.sh` (requires [PlantUML](https://plantuml.com/); e.g. `brew install plantuml`).
 
 ---
@@ -81,17 +83,21 @@ To regenerate diagram images after editing `puml/*.puml`, run `scripts/regenerat
 │   │   ├── chainsync-lib/           # ⛓️ Generic chain sync utilities
 │   │   │   ├── KupoClient.hs        # Kupo API client
 │   │   │   └── KupoAtlas.hs         # Data conversion utilities
-│   │   └── offchain-lib/            # 🏛️ Domain + infrastructure
-│   │       ├── DomainTypes/         # Domain-specific types and DTOs
-│   │       ├── TxBuilding/          # Transaction building utilities
-│   │       ├── Storage.hs           # Database operations
-│   │       ├── Ingestion.hs         # Event projection
-│   │       ├── Constants.hs         # Configuration constants
-│   │       └── Utils.hs             # Common utilities
+│   │   ├── offchain-lib/            # 🏛️ Domain + infrastructure
+│   │   │   ├── DomainTypes/         # Domain-specific types and DTOs
+│   │   │   ├── TxBuilding/          # Transaction building utilities
+│   │   │   ├── Storage.hs           # Database operations
+│   │   │   ├── Ingestion.hs         # Event projection
+│   │   │   ├── Constants.hs         # Configuration constants
+│   │   │   └── Utils.hs             # Common utilities
+│   │   └── mcp-server-lib/          # 🤖 MCP (Model Context Protocol) server
+│   │       ├── MCPServer/           # Tools, resources, handlers
+│   │       └── resources/           # Compile-time-embedded markdown (annex-3, faq)
 │   ├── exe/                         # 📁 Executable applications
 │   │   ├── admin/                   # Command-line admin tool
-│   │   ├── chain-sync/              # Blockchain synchronization service
+│   │   ├── chain-sync/              # Blockchain synchronization service (binary: chainsync-service)
 │   │   ├── interaction-api/         # Transaction building and submission API
+│   │   ├── mcp-server/              # MCP server exposing Query + Interaction APIs to LLM clients
 │   │   └── query-api/               # Data querying API
 │   └── test/                        # Test suites
 │       ├── TestRuns.hs              # Integration tests
@@ -113,19 +119,23 @@ To regenerate diagram images after editing `puml/*.puml`, run `scripts/regenerat
 
 ### 4.1 Library Architecture
 
-The project is organized into **4 distinct libraries** with clear separation of concerns:
+The project is organized into **5 distinct libraries** with clear separation of concerns:
 
-- **📦 onchain** - Plutus smart contracts and blockchain logic
-- **📦 webapi** - Web infrastructure (Auth, Health, CORS)  
-- **📦 chainsync** - Generic chain synchronization utilities
-- **📦 offchain** - Domain logic and supporting infrastructure
+- **📦 onchain-lib** - Plutus smart contracts and blockchain logic
+- **📦 webapi-lib** - Web infrastructure (Auth, CORS, ServiceProbe); no project-library deps
+- **📦 chainsync-lib** - Generic chain synchronization utilities (Kupo client, Atlas adapter)
+- **📦 offchain-lib** - Domain logic, transaction building, storage, ingestion
+- **📦 mcp-server-lib** - MCP (Model Context Protocol) server library, consumed by the `mcp-server` executable
 
-**Dependency Flow:**
+**Dependency layering** (inner → outer; deps only point inward):
 ```
-chainsync → offchain → webapi
-    ↓         ↓         ↓
-   onchain ← onchain ← onchain
+onchain-lib + chainsync-lib  →  offchain-lib  →  webapi-lib
+                                                       ↑
+                                                 mcp-server-lib
+                                       (also depends on offchain-lib + onchain-lib)
 ```
+
+`onchain-lib` must never import off-chain deps (no Aeson, Servant, Swagger). `webapi-lib` carries HTTP/auth/CORS only and has no project-library dependencies.
 
 This architecture ensures:
 - **🔧 Maximum Reusability**: Generic components can be used by other projects
@@ -231,7 +241,7 @@ Available commands:
   set-min-utxo-value         Set minimum UTxO value (lovelace) for protocol state outputs
   query-oracle               Display current oracle parameters (read-only)
   init-profile               Initialize a new profile (White belt)
-  update-profile-image       Update profile image
+  update-profile             Update profile metadata (description, image)
   promote-profile            Promote a profile to a new belt
   accept-promotion           Accept a promotion
   create-profile-with-rank   Create a profile with initial rank (for masters)
@@ -284,7 +294,7 @@ Both scripts:
 
 ### 6.3 API Services
 
-The system provides two independent API services:
+The system provides three independent HTTP services (plus a chain-sync probe):
 
 #### **Interaction API** (Port 8082)
 - **Build Transaction**: `POST /build-tx` - Builds transaction for interactions
@@ -296,11 +306,21 @@ The system provides two independent API services:
 - **Profiles**: `GET /practitioner/{id}`, `GET /organization/{id}`, `GET /profiles`, `GET /profiles/count`, `GET /profiles/frequency`
 - **Promotions**: `GET /promotions`, `GET /promotions/count`
 - **Belts**: `GET /belts`, `GET /belts/count`, `GET /belts/frequency`
-- **Memberships**: `GET /membership-histories`, `GET /membership-histories/count`, `GET /membership-intervals`, `GET /membership-intervals/count`
+- **Memberships**: `GET /memberships`, `GET /memberships/count`, `GET /membership-intervals`, `GET /membership-intervals/count`
 - **Achievements**: `GET /achievements`, `GET /achievements/count`
+- **Lineage**: `GET /lineage?root=...&ancestors=...&descendants=...` (direct lineage tree: ancestor chain + descendant subtree; projected DB only)
+- **Protocol**: `GET /protocol-status` (oracle pause, min UTxO, fee config)
 - **Swagger UI**: `http://localhost:8083/swagger-ui/`
 - **Authentication**: All endpoints require HTTP Basic Auth (same defaults). Swagger UI is public.
-- **Projection mode**: add `?liveprojection=true` to query live data; otherwise the projected SQLite DB is used. Standard `limit`, `offset`, filter params are available per Swagger.
+- **Projection mode**: add `?liveprojection=true` to query live on-chain data; otherwise reads come from the **PostgreSQL** projection populated by **chainsync-service**. Standard `limit`, `offset`, filter params are available per Swagger.
+
+#### **MCP Server** (Port 8085)
+- **Transport**: MCP JSON-RPC over streamable HTTP at `POST /mcp`. Reuses the same probe endpoints as the other services (`/health`, `/ready`).
+- **Tool surface**: read tools wrap Query API endpoints; write tools wrap Interaction API `build-tx` endpoints and return **unsigned** tx bodies for wallet signing downstream.
+- **Resources**: serves authored markdown (`bjj://rules/annex-3`, `bjj://docs/faq`) and a runtime-generated JSON belt hierarchy (`bjj://rules/belt-hierarchy`).
+- **Write-tool gating**: write tools are absent from `tools/list` unless `MCP_ENABLE_WRITE_TX=1`. Off by default.
+- **Authentication**: the `/mcp` endpoint itself has **no** auth — deploy behind a private network or auth proxy. Upstream API credentials are read from `BASIC_USER`/`BASIC_PASS`.
+- See [docs/architecture/mcp-server.md](docs/architecture/mcp-server.md) for the as-built ADR.
 
 ### 6.4 Executables & Local Run
 
@@ -310,6 +330,7 @@ Executables produced by the build:
 - `interaction-api` — HTTP API for building and submitting transactions (port 8082)
 - `query-api` — HTTP API for reading data and statistics (port 8083)
 - `chainsync-service` — Chain sync and probe service (port 8084)
+- `mcp-server` — MCP server exposing Query + Interaction APIs to LLM clients (port 8085)
 
 Run locally:
 
@@ -317,18 +338,22 @@ Run locally:
 # Start interaction API (uses ATLAS_CORE_CONFIG, DEPLOYED_VALIDATORS_CONFIG)
 cabal run interaction-api
 
-# Start query API (uses ATLAS_CORE_CONFIG, LOOKUP_PATH)
+# Start query API (uses ATLAS_CORE_CONFIG, PG_CONN_STR, optional DEPLOYED_VALIDATORS_CONFIG)
 cabal run query-api
 
-# Start chain-sync service (uses KUPO_URL, LOOKUP_PATH)
+# Start chain-sync service (uses KUPO_URL, PG_CONN_STR, ATLAS_CORE_CONFIG, DEPLOYED_VALIDATORS_CONFIG)
 cabal run chainsync-service
+
+# Start MCP server (proxies Query + Interaction APIs; needs both reachable)
+cabal run mcp-server
 ```
 
 Environment variables:
 
 - Interaction API: `ATLAS_CORE_CONFIG` (JSON or default file `config/config_atlas.json`), `DEPLOYED_VALIDATORS_CONFIG` (JSON or default file `config/config_bjj_validators.json`), `BASIC_USER`, `BASIC_PASS`, `PORT` (default 8082)
-- Query API: `ATLAS_CORE_CONFIG`, `LOOKUP_PATH` (default `db/chainsync.sqlite`), `BASIC_USER`, `BASIC_PASS`, `PORT` (default 8083)
-- Chain Sync: `KUPO_URL` (default `http://localhost:1442`), `LOOKUP_PATH` (default `db/chainsync.sqlite`), `BATCH_SIZE`, `FETCH_BATCH_SIZE`, `PORT` (default 8084)
+- Query API: `ATLAS_CORE_CONFIG`, `PG_CONN_STR` (default `host=postgres user=postgres password=postgres dbname=chainsync port=5432` — Docker-oriented; override in `.env` for a local Postgres), `DEPLOYED_VALIDATORS_CONFIG` (JSON or default file `config/config_bjj_validators.json`; used for deployed-script context e.g. protocol status), `BASIC_USER`, `BASIC_PASS`, `PORT` (default 8083)
+- Chain Sync: `ATLAS_CORE_CONFIG`, `DEPLOYED_VALIDATORS_CONFIG`, `KUPO_URL` (default in source is a Demeter preview Kupo URL; set to `http://localhost:1442` or your Kupo when running locally), `PG_CONN_STR` (default `host=localhost user=postgres password=postgres dbname=chainsync port=5432`), `BATCH_SIZE`, `FETCH_BATCH_SIZE`, `PORT` (default 8084)
+- MCP Server: `QUERY_API_URL` (default `http://query-api:8083`), `INTERACTION_API_URL` (default `http://interaction-api:8082`), `BASIC_USER`/`BASIC_PASS` (forwarded to upstream APIs), `MCP_ENABLE_WRITE_TX` (set to `1` to surface write tools; off by default), `MCP_READINESS_TIMEOUT_MS` (default 2000), `PORT` (default 8085)
 
 #### **Chain Sync Probe** (Port 8084)
 - **Health**: `GET /health` - Returns service health and current sync metrics

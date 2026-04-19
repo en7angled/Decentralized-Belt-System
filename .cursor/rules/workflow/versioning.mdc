@@ -7,7 +7,7 @@ alwaysApply: false
 
 ## Use Commitizen (cz) for version bumps
 
-**Always use Commitizen** for bumping the project version. Do not edit version numbers or CHANGELOG by hand for releases.
+**Always use Commitizen** for bumping the project version. Do not edit version numbers or CHANGELOG by hand for releases (see **Recovery** below if files drift).
 
 1. Run **`cz bump`** (interactive: choose patch/minor/major) or **`cz bump --increment PATCH`** (or `MINOR` / `MAJOR`). This updates [.cz.toml](.cz.toml) and [CHANGELOG.md](CHANGELOG.md) (with `update_changelog_on_bump = true`).
 2. **Sync [Decentralized-Belt-System.cabal](Decentralized-Belt-System.cabal)** — set `version:` to the same value as in `.cz.toml` (Commitizen does not update the cabal file).
@@ -15,7 +15,11 @@ alwaysApply: false
 
 ## Single source of truth
 
-The latest release version is defined by the **Version index** table in [CHANGELOG.md](CHANGELOG.md) (the table near the top; the latest row = current version). After a `cz bump`, that table and `.cz.toml` match; cabal must be kept in sync manually.
+The **latest release** is the first **`## X.Y.Z.W`** section under the intro in [CHANGELOG.md](CHANGELOG.md) (four-part version, same form as `.cz.toml`). After a normal `cz bump`, that heading, `.cz.toml`, and cabal match; cabal must still be synced manually.
+
+## Recovery (CHANGELOG ahead of `.cz.toml` / cabal)
+
+If [CHANGELOG.md](CHANGELOG.md) was updated with a new version section before `.cz.toml` and [Decentralized-Belt-System.cabal](Decentralized-Belt-System.cabal) were updated, **align the three by hand** (set `version` in `.cz.toml` and `version:` in cabal to match the new top section). **Do not run `cz bump` again** — it would add a duplicate changelog entry. Resume using `cz bump` on the **next** release after the files are aligned.
 
 ## Must stay in sync
 
@@ -27,11 +31,11 @@ When setting or bumping the project version (via Commitizen), ensure **all** of:
 
 ## Tag format
 
-`.cz.toml` uses `tag_format = "$version"`, so tags are created **without** a `v` prefix (e.g. `0.3.1.8`). Use that format when creating Git tags manually so tags match Commitizen.
+`.cz.toml` uses `tag_format = "$version"`, so tags are created **without** a `v` prefix (e.g. `0.3.2.0`). Use that format when creating Git tags manually so tags match Commitizen.
 
 ## Do not change for app release bumps
 
-- Blueprint version in `docs/bjj-belt-system-blueprint.json` — schema version.
-- Swagger/OpenAPI `version` in `docs/swagger/*.json` — API version.
+- Blueprint version in `docs/generated/bjj-belt-system-blueprint.json` — schema version.
+- Swagger/OpenAPI `version` in `docs/generated/swagger/*.json` — API version.
 
 Those are independent from the project release version.

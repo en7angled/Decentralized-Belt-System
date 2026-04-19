@@ -1,0 +1,2724 @@
+{
+    "definitions": {
+        "AchievementInformationResponse": {
+            "description": "Enriched achievement with full awarded-to and awarded-by profile objects resolved inline",
+            "properties": {
+                "accepted": {
+                    "type": "boolean"
+                },
+                "achievement_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "awarded_by": {
+                    "$ref": "#/definitions/ProfileResponse"
+                },
+                "awarded_to": {
+                    "$ref": "#/definitions/ProfileResponse"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "other_metadata": {
+                    "items": {
+                        "items": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "string"
+                            }
+                        ],
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array"
+                    },
+                    "type": "array"
+                },
+                "thumbnail_uri": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "achievement_date",
+                "accepted",
+                "name",
+                "description",
+                "image_uri",
+                "thumbnail_uri",
+                "other_metadata",
+                "awarded_to",
+                "awarded_by"
+            ],
+            "type": "object"
+        },
+        "AchievementResponse": {
+            "description": "Achievement with awarded-to/by profile IDs and acceptance status",
+            "properties": {
+                "accepted": {
+                    "type": "boolean"
+                },
+                "achievement_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "awarded_by_profile_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "awarded_to_profile_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "other_metadata": {
+                    "items": {
+                        "items": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "string"
+                            }
+                        ],
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array"
+                    },
+                    "type": "array"
+                },
+                "thumbnail_uri": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "awarded_to_profile_id",
+                "awarded_by_profile_id",
+                "achievement_date",
+                "accepted",
+                "name",
+                "description",
+                "image_uri",
+                "thumbnail_uri",
+                "other_metadata"
+            ],
+            "type": "object"
+        },
+        "AchievementsMonthlyStatsResponse": {
+            "properties": {
+                "accepted": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "month": {
+                    "type": "string"
+                },
+                "pending": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "month",
+                "accepted",
+                "pending"
+            ],
+            "type": "object"
+        },
+        "AchievementsPageResponse": {
+            "description": "Achievements explorer page: paginated items + total count + monthly accepted/pending stats",
+            "properties": {
+                "items": {
+                    "items": {
+                        "$ref": "#/definitions/AchievementResponse"
+                    },
+                    "type": "array"
+                },
+                "monthly": {
+                    "items": {
+                        "$ref": "#/definitions/AchievementsMonthlyStatsResponse"
+                    },
+                    "type": "array"
+                },
+                "total": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "items",
+                "total",
+                "monthly"
+            ],
+            "type": "object"
+        },
+        "ActivityEventDetails": {
+            "properties": {
+                "actor_name": {
+                    "type": "string"
+                },
+                "body": {
+                    "type": "string"
+                },
+                "target_name": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "title"
+            ],
+            "type": "object"
+        },
+        "ActivityEventResponse": {
+            "description": "Single activity feed entry with event type, actor/target IDs, timestamp, and human-readable details",
+            "properties": {
+                "actor_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "details": {
+                    "$ref": "#/definitions/ActivityEventDetails"
+                },
+                "event_type": {
+                    "$ref": "#/definitions/ActivityEventType"
+                },
+                "target_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "timestamp": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "event_type",
+                "actor_id",
+                "timestamp",
+                "details"
+            ],
+            "type": "object"
+        },
+        "ActivityEventType": {
+            "description": "Type of activity event: ProfileCreated, PromotionIssued, PromotionAccepted, PromotionSuperseded, AchievementAwarded, AchievementAccepted, MembershipGranted, MembershipAccepted",
+            "enum": [
+                "ProfileCreated",
+                "PromotionIssued",
+                "PromotionAccepted",
+                "PromotionSuperseded",
+                "AchievementAwarded",
+                "AchievementAccepted",
+                "MembershipGranted",
+                "MembershipAccepted"
+            ],
+            "type": "string"
+        },
+        "BJJBelt": {
+            "description": "BJJ belt rank. Values: White, Blue, Purple, Brown, Black, CoralWhite, CoralBlack, Red",
+            "enum": [
+                "White",
+                "Blue",
+                "Purple",
+                "Brown",
+                "Black",
+                "Black1",
+                "Black2",
+                "Black3",
+                "Black4",
+                "Black5",
+                "Black6",
+                "RedAndBlack",
+                "RedAndWhite",
+                "Red",
+                "Red10"
+            ],
+            "type": "string"
+        },
+        "DashboardPageResponse": {
+            "description": "Dashboard aggregate: totals, belt frequency, recent promotions, monthly trends, top organizations",
+            "properties": {
+                "belt_frequency": {
+                    "items": {
+                        "items": [
+                            {
+                                "$ref": "#/definitions/BJJBelt"
+                            },
+                            {
+                                "maximum": 9223372036854775807,
+                                "minimum": -9223372036854775808,
+                                "type": "integer"
+                            }
+                        ],
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array"
+                    },
+                    "type": "array"
+                },
+                "latest_organizations": {
+                    "items": {
+                        "$ref": "#/definitions/OrganizationProfileResponse"
+                    },
+                    "type": "array"
+                },
+                "latest_practitioners": {
+                    "items": {
+                        "$ref": "#/definitions/PractitionerProfileResponse"
+                    },
+                    "type": "array"
+                },
+                "monthly_achievements": {
+                    "items": {
+                        "$ref": "#/definitions/AchievementsMonthlyStatsResponse"
+                    },
+                    "type": "array"
+                },
+                "monthly_promotions": {
+                    "items": {
+                        "$ref": "#/definitions/MonthlyPromotionsDataResponse"
+                    },
+                    "type": "array"
+                },
+                "recent_promotions": {
+                    "items": {
+                        "$ref": "#/definitions/PromotionInformationResponse"
+                    },
+                    "type": "array"
+                },
+                "top_organizations": {
+                    "items": {
+                        "$ref": "#/definitions/TopOrganizationResponse"
+                    },
+                    "type": "array"
+                },
+                "total_achievements": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "total_organizations": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "total_practitioners": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "total_promotions": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "total_practitioners",
+                "total_organizations",
+                "total_promotions",
+                "total_achievements",
+                "belt_frequency",
+                "recent_promotions",
+                "monthly_promotions",
+                "monthly_achievements",
+                "latest_organizations",
+                "latest_practitioners",
+                "top_organizations"
+            ],
+            "type": "object"
+        },
+        "FeeConfigDTO": {
+            "properties": {
+                "achievement_fee": {
+                    "type": "integer"
+                },
+                "fee_address": {
+                    "type": "string"
+                },
+                "membership_history_fee": {
+                    "type": "integer"
+                },
+                "membership_interval_fee": {
+                    "type": "integer"
+                },
+                "profile_creation_fee": {
+                    "type": "integer"
+                },
+                "promotion_fee": {
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "profile_creation_fee",
+                "promotion_fee",
+                "membership_history_fee",
+                "membership_interval_fee",
+                "achievement_fee"
+            ],
+            "type": "object"
+        },
+        "GYAssetClass": {
+            "description": "Cardano native asset identifier in format: <56-char policy ID hex>.<asset name hex>",
+            "example": "ff80aaaf03a273b8f5c558168dc0e2377eea810badbae6eceefc14ef.474f4c44",
+            "type": "string"
+        },
+        "HomeExplorerHubPageResponse": {
+            "description": "Home page: recent promotions and latest practitioner profiles",
+            "properties": {
+                "latest_practitioners": {
+                    "items": {
+                        "$ref": "#/definitions/PractitionerProfileResponse"
+                    },
+                    "type": "array"
+                },
+                "recent_promotions": {
+                    "items": {
+                        "$ref": "#/definitions/PromotionInformationResponse"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "recent_promotions",
+                "latest_practitioners"
+            ],
+            "type": "object"
+        },
+        "LineageEdge": {
+            "properties": {
+                "awarded_belt": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "from": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "to": {
+                    "$ref": "#/definitions/GYAssetClass"
+                }
+            },
+            "required": [
+                "from",
+                "to",
+                "awarded_belt",
+                "date"
+            ],
+            "type": "object"
+        },
+        "LineageGraphData": {
+            "description": "Directed graph of belt lineage: nodes are profiles, edges are promotions (from awarder to recipient)",
+            "properties": {
+                "edges": {
+                    "items": {
+                        "$ref": "#/definitions/LineageEdge"
+                    },
+                    "type": "array"
+                },
+                "nodes": {
+                    "items": {
+                        "$ref": "#/definitions/LineageNode"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "nodes",
+                "edges"
+            ],
+            "type": "object"
+        },
+        "LineageNode": {
+            "properties": {
+                "current_belt": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "is_master_capable": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "profile_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "profile_type": {
+                    "$ref": "#/definitions/ProfileType"
+                },
+                "thumbnail_uri": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "profile_id",
+                "name",
+                "image_uri",
+                "thumbnail_uri",
+                "current_belt",
+                "profile_type",
+                "is_master_capable"
+            ],
+            "type": "object"
+        },
+        "MembershipHistoryInformation": {
+            "properties": {
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "intervals": {
+                    "items": {
+                        "$ref": "#/definitions/MembershipIntervalInformation"
+                    },
+                    "type": "array"
+                },
+                "organization_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "practitioner_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                }
+            },
+            "required": [
+                "id",
+                "practitioner_id",
+                "organization_id",
+                "intervals"
+            ],
+            "type": "object"
+        },
+        "MembershipIntervalInformation": {
+            "properties": {
+                "accepted": {
+                    "type": "boolean"
+                },
+                "end_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "interval_number": {
+                    "type": "integer"
+                },
+                "organization_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "practitioner_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "start_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "start_date",
+                "accepted",
+                "practitioner_id",
+                "interval_number",
+                "organization_id"
+            ],
+            "type": "object"
+        },
+        "MonthlyPromotionsDataResponse": {
+            "properties": {
+                "belt_frequency": {
+                    "items": {
+                        "items": [
+                            {
+                                "$ref": "#/definitions/BJJBelt"
+                            },
+                            {
+                                "maximum": 9223372036854775807,
+                                "minimum": -9223372036854775808,
+                                "type": "integer"
+                            }
+                        ],
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array"
+                    },
+                    "type": "array"
+                },
+                "month": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "month",
+                "belt_frequency"
+            ],
+            "type": "object"
+        },
+        "OrganizationDetailResponse": {
+            "description": "Complete organization profile page: profile, memberships, achievements issued/received, and member profile map",
+            "properties": {
+                "achievements_issued": {
+                    "items": {
+                        "$ref": "#/definitions/AchievementResponse"
+                    },
+                    "type": "array"
+                },
+                "achievements_received": {
+                    "items": {
+                        "$ref": "#/definitions/AchievementResponse"
+                    },
+                    "type": "array"
+                },
+                "member_profiles": {
+                    "additionalProperties": {
+                        "$ref": "#/definitions/PractitionerProfileResponse"
+                    },
+                    "type": "object"
+                },
+                "memberships": {
+                    "items": {
+                        "$ref": "#/definitions/MembershipHistoryInformation"
+                    },
+                    "type": "array"
+                },
+                "organization": {
+                    "$ref": "#/definitions/OrganizationProfileResponse"
+                }
+            },
+            "required": [
+                "organization",
+                "memberships",
+                "achievements_issued",
+                "achievements_received",
+                "member_profiles"
+            ],
+            "type": "object"
+        },
+        "OrganizationProfileResponse": {
+            "description": "Organization (academy/gym) profile",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "thumbnail_uri": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "name",
+                "description",
+                "image_uri",
+                "thumbnail_uri"
+            ],
+            "type": "object"
+        },
+        "PendingActionsPromotionResponse": {
+            "properties": {
+                "achieved_by_profile_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "achievement_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "awarded_by_profile_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "belt": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "state": {
+                    "$ref": "#/definitions/PromotionState"
+                }
+            },
+            "required": [
+                "id",
+                "belt",
+                "achieved_by_profile_id",
+                "awarded_by_profile_id",
+                "achievement_date",
+                "state"
+            ],
+            "type": "object"
+        },
+        "PendingActionsResponse": {
+            "description": "Pending actions inbox for a profile: unaccepted promotions, achievements, and membership intervals",
+            "properties": {
+                "achievements": {
+                    "items": {
+                        "$ref": "#/definitions/AchievementResponse"
+                    },
+                    "type": "array"
+                },
+                "awarded_by_name": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "type": "object"
+                },
+                "memberships": {
+                    "items": {
+                        "$ref": "#/definitions/MembershipIntervalInformation"
+                    },
+                    "type": "array"
+                },
+                "organization_name": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "type": "object"
+                },
+                "promotions": {
+                    "items": {
+                        "$ref": "#/definitions/PendingActionsPromotionResponse"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "promotions",
+                "achievements",
+                "memberships",
+                "awarded_by_name",
+                "organization_name"
+            ],
+            "type": "object"
+        },
+        "PractitionerDetailResponse": {
+            "description": "Complete practitioner profile page: profile, achievements, memberships, promotions given/received, and related org/awarder maps",
+            "properties": {
+                "achievements": {
+                    "items": {
+                        "$ref": "#/definitions/AchievementResponse"
+                    },
+                    "type": "array"
+                },
+                "awarded_by_orgs": {
+                    "additionalProperties": {
+                        "$ref": "#/definitions/OrganizationProfileResponse"
+                    },
+                    "type": "object"
+                },
+                "awarded_by_profiles": {
+                    "additionalProperties": {
+                        "$ref": "#/definitions/PractitionerProfileResponse"
+                    },
+                    "type": "object"
+                },
+                "memberships": {
+                    "items": {
+                        "$ref": "#/definitions/MembershipHistoryInformation"
+                    },
+                    "type": "array"
+                },
+                "org_id_to_name": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "type": "object"
+                },
+                "org_id_to_org": {
+                    "additionalProperties": {
+                        "$ref": "#/definitions/OrganizationProfileResponse"
+                    },
+                    "type": "object"
+                },
+                "practitioner": {
+                    "$ref": "#/definitions/PractitionerProfileResponse"
+                },
+                "promotions_given": {
+                    "items": {
+                        "$ref": "#/definitions/PromotionInformationResponse"
+                    },
+                    "type": "array"
+                },
+                "promotions_received": {
+                    "items": {
+                        "$ref": "#/definitions/PromotionInformationResponse"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "practitioner",
+                "achievements",
+                "memberships",
+                "promotions_given",
+                "promotions_received",
+                "org_id_to_name",
+                "org_id_to_org",
+                "awarded_by_profiles",
+                "awarded_by_orgs"
+            ],
+            "type": "object"
+        },
+        "PractitionerExplorerPageResponse": {
+            "description": "Practitioner explorer page: practitioners with their memberships + org name lookup map",
+            "properties": {
+                "items": {
+                    "items": {
+                        "$ref": "#/definitions/PractitionerExplorerRowResponse"
+                    },
+                    "type": "array"
+                },
+                "org_id_to_name": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "type": "object"
+                },
+                "total": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "items",
+                "total",
+                "org_id_to_name"
+            ],
+            "type": "object"
+        },
+        "PractitionerExplorerRowResponse": {
+            "properties": {
+                "memberships": {
+                    "items": {
+                        "$ref": "#/definitions/MembershipHistoryInformation"
+                    },
+                    "type": "array"
+                },
+                "practitioner": {
+                    "$ref": "#/definitions/PractitionerProfileResponse"
+                }
+            },
+            "required": [
+                "practitioner",
+                "memberships"
+            ],
+            "type": "object"
+        },
+        "PractitionerProfileResponse": {
+            "description": "Practitioner profile with current and previous belt ranks",
+            "properties": {
+                "current_rank": {
+                    "$ref": "#/definitions/Rank"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "previous_ranks": {
+                    "items": {
+                        "$ref": "#/definitions/Rank"
+                    },
+                    "type": "array"
+                },
+                "thumbnail_uri": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "name",
+                "description",
+                "image_uri",
+                "thumbnail_uri",
+                "current_rank",
+                "previous_ranks"
+            ],
+            "type": "object"
+        },
+        "ProfileResponse": {
+            "description": "Basic profile summary with thumbnail URI derived from the on-chain image URI",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "image_uri": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "thumbnail_uri": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/ProfileType"
+                }
+            },
+            "required": [
+                "id",
+                "name",
+                "description",
+                "image_uri",
+                "thumbnail_uri",
+                "type"
+            ],
+            "type": "object"
+        },
+        "ProfileType": {
+            "description": "Profile type: either Practitioner (individual) or Organization (academy/gym)",
+            "enum": [
+                "Practitioner",
+                "Organization"
+            ],
+            "type": "string"
+        },
+        "ProfilesPageResponse": {
+            "description": "Profiles explorer page: paginated items + total count + practitioner/organization frequency",
+            "properties": {
+                "frequency": {
+                    "items": {
+                        "items": [
+                            {
+                                "$ref": "#/definitions/ProfileType"
+                            },
+                            {
+                                "maximum": 9223372036854775807,
+                                "minimum": -9223372036854775808,
+                                "type": "integer"
+                            }
+                        ],
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array"
+                    },
+                    "type": "array"
+                },
+                "items": {
+                    "items": {
+                        "$ref": "#/definitions/ProfileResponse"
+                    },
+                    "type": "array"
+                },
+                "total": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "items",
+                "total",
+                "frequency"
+            ],
+            "type": "object"
+        },
+        "PromotionInformationResponse": {
+            "description": "Enriched promotion with full achieved-by and awarded-by practitioner profiles resolved inline",
+            "properties": {
+                "achieved_by": {
+                    "$ref": "#/definitions/PractitionerProfileResponse"
+                },
+                "achievement_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "awarded_by": {
+                    "$ref": "#/definitions/PractitionerProfileResponse"
+                },
+                "belt": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "state": {
+                    "$ref": "#/definitions/PromotionState"
+                }
+            },
+            "required": [
+                "id",
+                "belt",
+                "achievement_date",
+                "achieved_by",
+                "awarded_by",
+                "state"
+            ],
+            "type": "object"
+        },
+        "PromotionState": {
+            "description": "Promotion lifecycle state: Pending (awaiting acceptance), Accepted (confirmed), or Superseded (replaced by a newer promotion)"
+        },
+        "PromotionsPageResponse": {
+            "description": "Promotions explorer page: paginated items + total count + belt frequency breakdown + monthly trend data",
+            "properties": {
+                "frequency": {
+                    "items": {
+                        "items": [
+                            {
+                                "$ref": "#/definitions/BJJBelt"
+                            },
+                            {
+                                "maximum": 9223372036854775807,
+                                "minimum": -9223372036854775808,
+                                "type": "integer"
+                            }
+                        ],
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array"
+                    },
+                    "type": "array"
+                },
+                "items": {
+                    "items": {
+                        "$ref": "#/definitions/PromotionInformationResponse"
+                    },
+                    "type": "array"
+                },
+                "monthly": {
+                    "items": {
+                        "$ref": "#/definitions/MonthlyPromotionsDataResponse"
+                    },
+                    "type": "array"
+                },
+                "total": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "items",
+                "total",
+                "frequency",
+                "monthly"
+            ],
+            "type": "object"
+        },
+        "ProtocolStatus": {
+            "properties": {
+                "fee_config": {
+                    "$ref": "#/definitions/FeeConfigDTO"
+                },
+                "min_utxo_value": {
+                    "type": "integer"
+                },
+                "op_paused": {
+                    "type": "boolean"
+                },
+                "script_hashes": {
+                    "$ref": "#/definitions/ScriptHashesDTO"
+                }
+            },
+            "required": [
+                "op_paused",
+                "min_utxo_value"
+            ],
+            "type": "object"
+        },
+        "Rank": {
+            "properties": {
+                "achieved_by_profile_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "achievement_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "awarded_by_profile_id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                },
+                "belt": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "id": {
+                    "$ref": "#/definitions/GYAssetClass"
+                }
+            },
+            "required": [
+                "id",
+                "belt",
+                "achieved_by_profile_id",
+                "awarded_by_profile_id",
+                "achievement_date"
+            ],
+            "type": "object"
+        },
+        "ScriptHashesDTO": {
+            "properties": {
+                "achievements_validator": {
+                    "type": "string"
+                },
+                "memberships_validator": {
+                    "type": "string"
+                },
+                "minting_policy": {
+                    "type": "string"
+                },
+                "oracle_validator": {
+                    "type": "string"
+                },
+                "profiles_validator": {
+                    "type": "string"
+                },
+                "ranks_validator": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "minting_policy",
+                "profiles_validator",
+                "ranks_validator",
+                "memberships_validator",
+                "achievements_validator",
+                "oracle_validator"
+            ],
+            "type": "object"
+        },
+        "SearchGroup": {
+            "properties": {
+                "items": {
+                    "items": {
+                        "$ref": "#/definitions/SearchHit"
+                    },
+                    "type": "array"
+                },
+                "total": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "total",
+                "items"
+            ],
+            "type": "object"
+        },
+        "SearchHit": {
+            "properties": {
+                "badges": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subtitle": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/SearchTarget"
+                },
+                "title": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "title",
+                "subtitle",
+                "badges",
+                "target"
+            ],
+            "type": "object"
+        },
+        "SearchResults": {
+            "description": "Unified search results grouped by category (practitioners, organizations, promotions, achievements)",
+            "properties": {
+                "achievements": {
+                    "$ref": "#/definitions/SearchGroup"
+                },
+                "organizations": {
+                    "$ref": "#/definitions/SearchGroup"
+                },
+                "practitioners": {
+                    "$ref": "#/definitions/SearchGroup"
+                },
+                "promotions": {
+                    "$ref": "#/definitions/SearchGroup"
+                },
+                "query": {
+                    "type": "string"
+                },
+                "total": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "query",
+                "total",
+                "practitioners",
+                "organizations",
+                "promotions",
+                "achievements"
+            ],
+            "type": "object"
+        },
+        "SearchTarget": {
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "kind",
+                "id"
+            ],
+            "type": "object"
+        },
+        "ServiceProbeStatus": {
+            "properties": {
+                "service": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "status",
+                "service",
+                "version",
+                "timestamp"
+            ],
+            "type": "object"
+        },
+        "TopOrganizationResponse": {
+            "properties": {
+                "member_count": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "organization": {
+                    "$ref": "#/definitions/OrganizationProfileResponse"
+                }
+            },
+            "required": [
+                "organization",
+                "member_count"
+            ],
+            "type": "object"
+        }
+    },
+    "info": {
+        "description": "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, membership histories and intervals, and achievements",
+        "license": {
+            "name": "GPL-3.0 license"
+        },
+        "title": "Decentralized Belt System Query API",
+        "version": "3.1.0"
+    },
+    "paths": {
+        "/achievement/{achievement-id}": {
+            "get": {
+                "description": "Get a single achievement by its asset class ID",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "achievement-id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/AchievementInformationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Achievement by ID"
+            }
+        },
+        "/achievements": {
+            "get": {
+                "description": "Get achievements with optional filters",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "achievement",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_to",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_by",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "accepted",
+                        "required": false,
+                        "type": "boolean"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "from",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "to",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "date",
+                            "awarded_to",
+                            "awarded_by",
+                            "name"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/AchievementResponse"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Achievements"
+            }
+        },
+        "/activity": {
+            "get": {
+                "description": "Reverse-chronological activity feed across profiles, promotions, achievements, and memberships.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "enum": [
+                            "ProfileCreated",
+                            "PromotionIssued",
+                            "PromotionAccepted",
+                            "PromotionSuperseded",
+                            "AchievementAwarded",
+                            "AchievementAccepted",
+                            "MembershipGranted",
+                            "MembershipAccepted"
+                        ],
+                        "in": "query",
+                        "name": "event_type",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "actor",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "since",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/ActivityEventResponse"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Activity feed"
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns the health status of the service",
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ServiceProbeStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Health Check"
+            }
+        },
+        "/lineage": {
+            "get": {
+                "description": "Direct lineage tree: ancestor chain (upward via awarded_by) and descendant subtree (downward via awarded_to) from root profile; optional minimum belt filter on edges.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "root",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "ancestors",
+                        "required": true,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "descendants",
+                        "required": true,
+                        "type": "integer"
+                    },
+                    {
+                        "enum": [
+                            "White",
+                            "Blue",
+                            "Purple",
+                            "Brown",
+                            "Black",
+                            "Black1",
+                            "Black2",
+                            "Black3",
+                            "Black4",
+                            "Black5",
+                            "Black6",
+                            "RedAndBlack",
+                            "RedAndWhite",
+                            "Red",
+                            "Red10"
+                        ],
+                        "in": "query",
+                        "name": "min_belt",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/LineageGraphData"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Lineage graph"
+            }
+        },
+        "/organization/{profile-id}": {
+            "get": {
+                "description": "Get Organization Profile Information",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "profile-id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/OrganizationProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Organization Profile Information"
+            }
+        },
+        "/organization/{profile-id}/detail": {
+            "get": {
+                "description": "Organization, memberships, achievements issued/received, and member practitioner profiles in one response",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "profile-id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/OrganizationDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Organization Profile Detail"
+            }
+        },
+        "/pages/achievements": {
+            "get": {
+                "description": "Paginated achievements, total, and monthly accepted/pending counts. Same query parameters as GET /achievements.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "achievement",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_to",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_by",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "accepted",
+                        "required": false,
+                        "type": "boolean"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "from",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "to",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "date",
+                            "awarded_to",
+                            "awarded_by",
+                            "name"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/AchievementsPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Achievements explorer page"
+            }
+        },
+        "/pages/dashboard": {
+            "get": {
+                "description": "§12.1 totals, belt frequency, recent promotions, monthly histogram, latest organizations, practitioners, and top organizations by member count.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "recent_promotions_limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "latest_organizations_limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "latest_practitioners_limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "top_organizations_limit",
+                        "required": false,
+                        "type": "integer"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/DashboardPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Dashboard page"
+            }
+        },
+        "/pages/home-explorer-hub": {
+            "get": {
+                "description": "Recent promotions and latest practitioners.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "recent_limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "latest_practitioner_limit",
+                        "required": false,
+                        "type": "integer"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/HomeExplorerHubPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Home explorer hub"
+            }
+        },
+        "/pages/pending-actions/{profile-id}": {
+            "get": {
+                "description": "Pending promotions, unaccepted achievements, and unaccepted membership intervals for a profile.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "profile-id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/PendingActionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Pending actions for a profile"
+            }
+        },
+        "/pages/practitioner-explorer": {
+            "get": {
+                "description": "Practitioner profiles with membership histories and organization id-to-name map. Filters match GET /profiles except profile_type is always Practitioner.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "active_membership_organization",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "membership_organization",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "enum": [
+                                "White",
+                                "Blue",
+                                "Purple",
+                                "Brown",
+                                "Black",
+                                "Black1",
+                                "Black2",
+                                "Black3",
+                                "Black4",
+                                "Black5",
+                                "Black6",
+                                "RedAndBlack",
+                                "RedAndWhite",
+                                "Red",
+                                "Red10"
+                            ],
+                            "type": "string"
+                        },
+                        "name": "belt",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "name",
+                            "description",
+                            "type",
+                            "registered_at"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/PractitionerExplorerPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Practitioner explorer page"
+            }
+        },
+        "/pages/profiles": {
+            "get": {
+                "description": "Paginated profiles, total, and profile-type frequency. Same query parameters as GET /profiles.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
+                        "enum": [
+                            "Practitioner",
+                            "Organization"
+                        ],
+                        "in": "query",
+                        "name": "profile_type",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "active_membership_organization",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "membership_organization",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "enum": [
+                                "White",
+                                "Blue",
+                                "Purple",
+                                "Brown",
+                                "Black",
+                                "Black1",
+                                "Black2",
+                                "Black3",
+                                "Black4",
+                                "Black5",
+                                "Black6",
+                                "RedAndBlack",
+                                "RedAndWhite",
+                                "Red",
+                                "Red10"
+                            ],
+                            "type": "string"
+                        },
+                        "name": "belt",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "name",
+                            "description",
+                            "type",
+                            "registered_at"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ProfilesPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Profiles explorer page"
+            }
+        },
+        "/pages/promotions": {
+            "get": {
+                "description": "Paginated promotion information, total, and monthly belt histogram. Same query parameters as GET /promotions.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "promotion",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "enum": [
+                                "White",
+                                "Blue",
+                                "Purple",
+                                "Brown",
+                                "Black",
+                                "Black1",
+                                "Black2",
+                                "Black3",
+                                "Black4",
+                                "Black5",
+                                "Black6",
+                                "RedAndBlack",
+                                "RedAndWhite",
+                                "Red",
+                                "Red10"
+                            ],
+                            "type": "string"
+                        },
+                        "name": "belt",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "achieved_by",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "awarded_by",
+                        "type": "array"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "from",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "format": "string",
+                        "in": "query",
+                        "name": "to",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {},
+                        "name": "state",
+                        "type": "array"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "belt",
+                            "achieved_by",
+                            "awarded_by",
+                            "date"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/PromotionsPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Promotions explorer page"
+            }
+        },
+        "/practitioner/{profile-id}": {
+            "get": {
+                "description": "Get Practitioner Profile Information",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "profile-id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/PractitionerProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Practitioner Profile Information"
+            }
+        },
+        "/practitioner/{profile-id}/detail": {
+            "get": {
+                "description": "Practitioner, achievements, memberships, promotions, org maps, and awarder profiles in one response",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "profile-id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/PractitionerDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Practitioner Profile Detail"
+            }
+        },
+        "/profiles": {
+            "get": {
+                "description": "Get Profiles",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
+                        "enum": [
+                            "Practitioner",
+                            "Organization"
+                        ],
+                        "in": "query",
+                        "name": "profile_type",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "active_membership_organization",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "membership_organization",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "enum": [
+                                "White",
+                                "Blue",
+                                "Purple",
+                                "Brown",
+                                "Black",
+                                "Black1",
+                                "Black2",
+                                "Black3",
+                                "Black4",
+                                "Black5",
+                                "Black6",
+                                "RedAndBlack",
+                                "RedAndWhite",
+                                "Red",
+                                "Red10"
+                            ],
+                            "type": "string"
+                        },
+                        "name": "belt",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "name",
+                            "description",
+                            "type",
+                            "registered_at"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/ProfileResponse"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Profiles"
+            }
+        },
+        "/profiles/by-wallet/{wallet-address}": {
+            "get": {
+                "description": "Returns profiles owned by a wallet address (checks User NFT ownership on-chain).",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "wallet-address",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/ProfileResponse"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Profiles by Wallet Address"
+            }
+        },
+        "/promotions/frequency": {
+            "get": {
+                "description": "Get Promotions Frequency by Belt",
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "items": [
+                                    {
+                                        "$ref": "#/definitions/BJJBelt"
+                                    },
+                                    {
+                                        "maximum": 9223372036854775807,
+                                        "minimum": -9223372036854775808,
+                                        "type": "integer"
+                                    }
+                                ],
+                                "maxItems": 2,
+                                "minItems": 2,
+                                "type": "array"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Promotions Frequency"
+            }
+        },
+        "/protocol-status": {
+            "get": {
+                "description": "Get protocol operational status including pause state, min UTxO value, and fee configuration",
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ProtocolStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Get Protocol Status"
+            }
+        },
+        "/ready": {
+            "get": {
+                "description": "Returns the readiness status of the service",
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ServiceProbeStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Readiness Check"
+            }
+        },
+        "/search": {
+            "get": {
+                "description": "Search across practitioners, organizations, ranks, promotions, and achievements. Query parameter q is required.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/SearchResults"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Unified search"
+            }
+        }
+    },
+    "swagger": "2.0"
+}

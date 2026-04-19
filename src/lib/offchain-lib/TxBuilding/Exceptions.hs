@@ -51,6 +51,8 @@ data TxBuildingException
   | -- \* Achievement Errors
     AchievementNotFound
   | AchievementAlreadyAccepted
+  | -- | @other_metadata@ keys must not duplicate CIP-68 standard keys @name@, @description@, or @image@.
+    AchievementOtherMetadataReservedKeys
   | -- \* Belt / Protocol Data Errors
     InvalidBeltNumber
   | -- \* Oracle Errors
@@ -90,6 +92,8 @@ instance Exception TxBuildingException where
   displayException MembershipIntervalAlreadyAccepted = "Membership interval is already accepted"
   displayException AchievementNotFound = "Achievement not found"
   displayException AchievementAlreadyAccepted = "Achievement is already accepted"
+  displayException AchievementOtherMetadataReservedKeys =
+    "other_metadata must not use reserved keys: name, description, image (CIP-68 standard fields)"
   displayException InvalidBeltNumber = "Invalid belt number (must be 0–14)"
   displayException OracleNotFound = "Oracle UTxO not found"
   displayException OracleDatumInvalid = "Oracle datum invalid or unparseable"
@@ -141,6 +145,7 @@ txBuildingExceptionToHttpStatus MembershipListAppendInvalid = 400
 txBuildingExceptionToHttpStatus MembershipIntervalAlreadyAccepted = 400
 txBuildingExceptionToHttpStatus AchievementNotFound = 404
 txBuildingExceptionToHttpStatus AchievementAlreadyAccepted = 400
+txBuildingExceptionToHttpStatus AchievementOtherMetadataReservedKeys = 400
 txBuildingExceptionToHttpStatus InvalidBeltNumber = 400
 txBuildingExceptionToHttpStatus OracleNotFound = 404
 txBuildingExceptionToHttpStatus DeployedScriptsNotReady = 503

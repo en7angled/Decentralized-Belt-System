@@ -138,18 +138,24 @@ instance Prelude.Ord BJJBelt where
   compare x y = Prelude.compare (Prelude.fromEnum x) (Prelude.fromEnum y)
 
 instance Enum BJJBelt where
+  {-# INLINEABLE succ #-}
   succ :: BJJBelt -> BJJBelt
   succ Red10 = traceError "B0" -- Belt invariant: cannot succ red10 (B0)
   succ belt = intToBelt . (+ 1) . beltToInt $ belt
+  {-# INLINEABLE pred #-}
   pred :: BJJBelt -> BJJBelt
   pred White = traceError "B0" -- Belt invariant: cannot pred white (B0)
   pred belt = intToBelt . (+ (-1)) . beltToInt $ belt
+  {-# INLINEABLE toEnum #-}
   toEnum :: Integer -> BJJBelt
   toEnum = intToBelt
+  {-# INLINEABLE fromEnum #-}
   fromEnum :: BJJBelt -> Integer
   fromEnum = beltToInt
+  {-# INLINEABLE enumFromTo #-}
   enumFromTo :: BJJBelt -> BJJBelt -> [BJJBelt]
   enumFromTo start end = map toEnum [fromEnum start .. fromEnum end]
+  {-# INLINEABLE enumFromThenTo #-}
   enumFromThenTo :: BJJBelt -> BJJBelt -> BJJBelt -> [BJJBelt]
   enumFromThenTo start next end = map toEnum [fromEnum start, fromEnum next .. fromEnum end]
 
@@ -225,13 +231,13 @@ validatePromotion master studentCurrent studentNext =
   where
     -- Master belt must be greater than the student's next belt
     -- Master belt date must be before the student's next belt date
-    -- Student's next belt must be greater than the student's current belt
+    -- Student's next belt must be exactly the next belt after student's current belt
     -- Student Next belt date must be after the student's current belt date
     -- Time in the current belt must be greater than the minimum time for the next belt
     generalRules =
       (belt master > belt studentNext)
         && (beltDate master < beltDate studentNext)
-        && (belt studentNext > belt studentCurrent)
+        && (belt studentNext == succ (belt studentCurrent))
         && (beltDate studentNext > beltDate studentCurrent)
         && ( beltDate studentNext
                - beltDate studentCurrent

@@ -9,7 +9,7 @@ import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
 import GeniusYield.Types
 import Onchain.BJJ (BJJBelt (White), beltToInt)
-import Onchain.CIP68 (CIP68Datum (..), ImageURI, MetadataFields, extra, mkCIP68Datum, updateCIP68DatumImage)
+import Onchain.CIP68 (CIP68Datum (..), ImageURI, MetadataFields (..), extra, getMetadataFields, mkCIP68Datum, updateCIP68DatumMetadata)
 import Onchain.LinkedList (NodeDatum (..))
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types (OracleAdminAction (OraclePause, OracleSetFees, OracleSetMinUTxOValue, OracleUnpause))
@@ -18,12 +18,13 @@ import Onchain.Validators.AchievementsValidator (AchievementsRedeemer (..))
 import Onchain.Validators.MembershipsValidator (MembershipsRedeemer (..))
 import Onchain.Validators.MintingPolicy
 import Onchain.Validators.OracleValidator (OracleRedeemer (OracleUpdate))
-import Onchain.Validators.ProfilesValidator (ProfilesRedeemer (AcceptPromotion, UpdateProfileImage))
+import Onchain.Validators.ProfilesValidator (ProfilesRedeemer (AcceptPromotion, UpdateProfile))
 import Onchain.Validators.ProfilesValidator qualified (ProfilesRedeemer (Cleanup))
 import Onchain.Validators.RanksValidator (RanksRedeemer (PromotionAcceptance))
 import Onchain.Validators.RanksValidator qualified (RanksRedeemer (Cleanup))
 import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getAchievementsValidatorRef, getMembershipsValidatorRef, getMintingPolicyFromCtx, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getProtocolParamsFromCtx, getRanksValidatorRef)
+import TxBuilding.Conversions (cip68StandardMetadataKeys)
 import TxBuilding.Exceptions (AddMembershipIntervalReason (..), TxBuildingException (..))
 import TxBuilding.Lookups (findInsertPointForNewMembership, getAchievementDatumAndValue, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDatumAndValue, getRankStateDatumAndValue, getUTxOWithTokenAtAddresses, queryOracleParams)
 import TxBuilding.SafeOnchainLogic
@@ -243,10 +244,13 @@ createProfileWithRankTX recipient metadata profileType creationDate belt = do
 updateProfileTX ::
   (GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
   GYAssetClass ->
+  -- | new description (Nothing = keep current)
+  Maybe BuiltinByteString ->
+  -- | new image URI
   ImageURI ->
   [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3)
-updateProfileTX gyProfileRefAC newImageURI ownAddrs = do
+updateProfileTX gyProfileRefAC mbNewDesc newImageURI ownAddrs = do
   pvRef <- asks getProfilesValidatorRef
 
   -- ============================================================
@@ -256,12 +260,22 @@ updateProfileTX gyProfileRefAC newImageURI ownAddrs = do
   let profileOutputIdx = 0 :: Integer
 
   (plutusProfileDatum, plutusProfileValue) <- getProfileStateDatumAndValue gyProfileRefAC
-  let updateRedeemer = UpdateProfileImage newImageURI profileOutputIdx
+
+  -- Merge: preserve name (immutable), use new desc if provided, always use new image
+  let currentFields = getMetadataFields plutusProfileDatum
+      mergedFields =
+        Metadata222
+          { metadataName = metadataName currentFields,
+            metadataDescription = fromMaybe (metadataDescription currentFields) mbNewDesc,
+            metadataImageURI = newImageURI
+          }
+      updateRedeemer = UpdateProfile mergedFields profileOutputIdx
+
   let gyRedeemer = redeemerFromPlutusData updateRedeemer
   spendsProfileRefNFT <- txMustSpendStateFromRefScriptWithRedeemer pvRef gyProfileRefAC gyRedeemer profilesValidatorGY
   gyProfileUserAC <- gyDeriveUserFromRefAC gyProfileRefAC
   spendsProfileUserNFT <- txMustSpendFromAddress gyProfileUserAC ownAddrs
-  let newCip68Datum = updateCIP68DatumImage newImageURI plutusProfileDatum
+  let newCip68Datum = updateCIP68DatumMetadata mergedFields plutusProfileDatum
   gyProfileValue <- valueFromPlutus' plutusProfileValue
 
   -- Output 0: Updated profile state
@@ -788,11 +802,11 @@ updateEndDateTX gyIntervalAC gyHistoryNodeAC newEndDateGY ownAddrs validityOverr
   practitionerUserAC <- gyDeriveUserFromRefAC gyPractitionerRef
 
   -- User must have either org or practitioner User NFT (validator enforces exactly one)
-  hasOrg <- catchError (True <$ getUTxOWithTokenAtAddresses orgUserAC ownAddrs) (const $ return False)
-  hasPractitioner <- catchError (True <$ getUTxOWithTokenAtAddresses practitionerUserAC ownAddrs) (const $ return False)
+  hasOrg <- catchError (True <$ getUTxOWithTokenAtAddresses orgUserAC ownAddrs ProfileNotFound) (const $ return False)
+  hasPractitioner <- catchError (True <$ getUTxOWithTokenAtAddresses practitionerUserAC ownAddrs ProfileNotFound) (const $ return False)
   spendUserNFT <- do
     case (hasOrg, hasPractitioner) of
-      (True, False) -> txMustSpendFromAddress orgUserAC ownAddrs
+      (True, _) -> txMustSpendFromAddress orgUserAC ownAddrs
       (False, True) -> txMustSpendFromAddress practitionerUserAC ownAddrs
       _ -> throwError (GYApplicationException ProfileNotFound) -- must have org or practitioner User NFT
   let newEndDate = timeToPlutus newEndDateGY
@@ -841,8 +855,14 @@ updateEndDateTX gyIntervalAC gyHistoryNodeAC newEndDateGY ownAddrs validityOverr
       let bufferMs = 1000 -- 1 second
       let safeEraMs = fromIntegral safeEraTime * 1000
       let validUntilMs = max (newEndDateMs + bufferMs) (nowMs + safeEraMs)
+      -- When newEndDate <= now (e.g. ending today or in the past), shift validity
+      -- lower bound so newEndDate falls within the validity range (TD check).
+      validFromSlot <-
+        if newEndDateMs <= nowMs
+          then gySlotFromPOSIXTime (POSIXTime (newEndDateMs - bufferMs))
+          else return now
       validUntilSlot <- gySlotFromPOSIXTime (POSIXTime validUntilMs)
-      return (now, validUntilSlot)
+      return (validFromSlot, validUntilSlot)
 
 ------------------------------------------------------------------------------------------------
 
@@ -873,6 +893,12 @@ awardAchievementTX ::
   [GYAddress] ->
   m (GYTxSkeleton 'PlutusV3, GYAssetClass)
 awardAchievementTX gyAwardedToProfileId gyAwardedByProfileId metadata otherMetadata achievementDate ownAddrs = do
+  mapM_
+    ( \(k, _) ->
+        when (k `elem` cip68StandardMetadataKeys) $
+          throwError (GYApplicationException AchievementOtherMetadataReservedKeys)
+    )
+    otherMetadata
   mpGY <- asks getMintingPolicyFromCtx
   mpRef <- asks getMintingPolicyRef
   (oracleRefSkeleton, oracleParams, feeSkeleton, isInvalidBeforeNow) <- getOracleFeeAndValiditySkeleton OnchainTypes.fcAchievementFee

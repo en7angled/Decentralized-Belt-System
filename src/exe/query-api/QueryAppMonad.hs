@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
+-- | Application monad and context for the query API server.
+-- Wraps a 'ReaderT' over Servant's 'Handler' with access to auth, provider,
+-- database pool, and optional deployed-script references.
 module QueryAppMonad where
 
 import Constants qualified
@@ -20,15 +23,19 @@ import WebAPI.ServiceProbe (ServiceProbeStatus (..))
 ------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------
 
+-- | Shared environment for all query-API request handlers.
 data QueryAppContext = QueryAppContext
-  { authContext :: AuthContext,
-    providerContext :: ProviderCtx,
-    pgPool :: ConnectionPool
+  { authContext :: AuthContext, -- ^ Basic-auth credentials for protected routes
+    providerContext :: ProviderCtx, -- ^ Cardano provider for live on-chain queries
+    pgPool :: ConnectionPool, -- ^ PostgreSQL connection pool for projected data
+    deployedScriptsCtx :: Maybe DeployedScriptsContext, -- ^ Deployed validator script references (when available)
+    liveProjection :: Bool -- ^ Use live on-chain queries instead of projected data (default: False)
   }
 
 newtype QueryAppMonad a = QueryAppMonad {unAppMonad :: ReaderT QueryAppContext Servant.Handler a}
   deriving (Functor, Applicative, Monad)
 
+-- | Run a 'QueryAppMonad' computation with the given context.
 runAppMonad :: QueryAppContext -> QueryAppMonad a -> Servant.Handler a
 runAppMonad ctx app = runReaderT (unAppMonad app) ctx
 
@@ -43,6 +50,7 @@ instance MonadReader QueryAppContext QueryAppMonad where
   local :: (QueryAppContext -> QueryAppContext) -> QueryAppMonad a -> QueryAppMonad a
   local f (QueryAppMonad app) = QueryAppMonad (local f app)
 
+-- | Health-check probe: verify the projection database is reachable.
 verifyProjectionDbConnection :: QueryAppMonad (ServiceProbeStatus Text)
 verifyProjectionDbConnection = QueryAppMonad $ do
   QueryAppContext {..} <- ask

@@ -1,6 +1,6 @@
 ---
 description: Keep API and blueprint schema versions up to date; use when changing REST API surface or on-chain blueprint.
-globs: docs/swagger/**/*, docs/bjj-belt-system-blueprint.json, src/exe/interaction-api/**/*, src/exe/query-api/**/*, src/lib/onchain-lib/Onchain/Blueprint.hs
+globs: docs/generated/swagger/**/*, docs/generated/bjj-belt-system-blueprint.json, src/exe/interaction-api/**/*, src/exe/query-api/**/*, src/lib/onchain-lib/Onchain/Blueprint.hs
 alwaysApply: false
 ---
 # Rule: API and blueprint versioning
@@ -11,9 +11,9 @@ API and blueprint versions are **independent** from the project release version.
 
 | Asset               | Source (edit here)                                                                                                                 | Regenerated output                                                       |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **Query API**       | [src/exe/query-api/RestAPI.hs](src/exe/query-api/RestAPI.hs) — `info . Data.Swagger.version .~ "X.Y.Z"`                            | `docs/swagger/query-swagger-api.json` (on query-api startup)             |
-| **Interaction API** | [src/exe/interaction-api/RestAPI.hs](src/exe/interaction-api/RestAPI.hs) — `info . Data.Swagger.version .~ "X.Y.Z"`                | `docs/swagger/interaction-swagger-api.json` (on interaction-api startup) |
-| **Blueprint**       | [src/lib/onchain-lib/Onchain/Blueprint.hs](src/lib/onchain-lib/Onchain/Blueprint.hs) — `preambleVersion = "X.Y.Z"` in `myPreamble` | `docs/bjj-belt-system-blueprint.json` (run `admin write-blueprint`)      |
+| **Query API**       | [src/exe/query-api/RestAPI.hs](src/exe/query-api/RestAPI.hs) — `info . Data.Swagger.version .~ "X.Y.Z"`                            | `docs/generated/swagger/query-swagger-api.json` (on query-api startup)             |
+| **Interaction API** | [src/exe/interaction-api/RestAPI.hs](src/exe/interaction-api/RestAPI.hs) — `info . Data.Swagger.version .~ "X.Y.Z"`                | `docs/generated/swagger/interaction-swagger-api.json` (on interaction-api startup) |
+| **Blueprint**       | [src/lib/onchain-lib/Onchain/Blueprint.hs](src/lib/onchain-lib/Onchain/Blueprint.hs) — `preambleVersion = "X.Y.Z"` in `myPreamble` | `docs/generated/bjj-belt-system-blueprint.json` (run `admin write-blueprint`)      |
 
 Do not edit the JSON files by hand for version alone; change the **source** (RestAPI.hs or Blueprint.hs), then regenerate. After changing version in code, run the corresponding API (query-api / interaction-api) so the Swagger JSON is written, or run `admin write-blueprint` for the blueprint.
 

@@ -18,6 +18,7 @@ module Onchain.CIP68
     mkCIP68Datum,
     getMetadataFields,
     updateCIP68DatumImage,
+    updateCIP68DatumMetadata,
 
     -- * Validation
     validateMetadataFields,
@@ -27,6 +28,9 @@ module Onchain.CIP68
     generateRefAndUserTN,
     deriveUserFromRefAC,
     deriveUserFromRefTN,
+    deriveRefFromUserAC,
+    deriveRefFromUserTN,
+    userTokenPrefixBS,
   )
 where
 
@@ -136,6 +140,14 @@ updateCIP68DatumImage newImageURI oldDatum =
           extra = extra oldDatum
         }
 
+{-# INLINEABLE updateCIP68DatumMetadata #-}
+updateCIP68DatumMetadata :: MetadataFields -> CIP68Datum a -> CIP68Datum a
+updateCIP68DatumMetadata Metadata222 {..} oldDatum =
+  let m0 = metadata oldDatum
+      m1 = PlutusTx.AssocMap.insert (encodeUtf8 "description") metadataDescription m0
+      m2 = PlutusTx.AssocMap.insert (encodeUtf8 "image") metadataImageURI m1
+   in oldDatum {metadata = m2}
+
 {-# INLINEABLE refTokenPrefixBS #-}
 refTokenPrefixBS :: BuiltinByteString
 refTokenPrefixBS = integerToByteString BigEndian 4 (0x000643b0 :: Integer) -- 4 bytes for the prefix according to CIP-67
@@ -155,3 +167,11 @@ deriveUserFromRefTN (TokenName bs) = TokenName (userTokenPrefixBS <> sliceByteSt
 {-# INLINEABLE deriveUserFromRefAC #-}
 deriveUserFromRefAC :: AssetClass -> AssetClass
 deriveUserFromRefAC (AssetClass (cs, tn)) = AssetClass (cs, deriveUserFromRefTN tn)
+
+{-# INLINEABLE deriveRefFromUserTN #-}
+deriveRefFromUserTN :: TokenName -> TokenName
+deriveRefFromUserTN (TokenName bs) = TokenName (refTokenPrefixBS <> sliceByteString 4 (lengthOfByteString bs - 4) bs)
+
+{-# INLINEABLE deriveRefFromUserAC #-}
+deriveRefFromUserAC :: AssetClass -> AssetClass
+deriveRefFromUserAC (AssetClass (cs, tn)) = AssetClass (cs, deriveRefFromUserTN tn)

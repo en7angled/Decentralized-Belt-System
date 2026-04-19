@@ -1,3 +1,5 @@
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module DomainTypes.Core.Types where
@@ -5,7 +7,7 @@ module DomainTypes.Core.Types where
 import Data.Aeson
 import Data.Aeson.Types qualified as AesonTypes
 import Data.List.Extra
-import Data.Swagger (ToSchema (..), genericDeclareNamedSchema)
+import Data.Swagger (NamedSchema (..), ToSchema (..), genericDeclareNamedSchema)
 import Data.Swagger.Internal.Schema ()
 import Data.Swagger.ParamSchema
 import Data.Swagger.SchemaOptions (fromAesonOptions)
@@ -13,10 +15,10 @@ import Data.Text hiding (init, tail)
 import Data.Text as T
 import Database.Persist.TH
 import Deriving.Aeson
+import DomainTypes.Core.BJJ (BJJBelt)
 import GHC.Generics ()
 import GeniusYield.Types (GYAssetClass)
 import GeniusYield.Types.Time
-import DomainTypes.Core.BJJ (BJJBelt)
 import Servant (FromHttpApiData (..))
 import Utils
 
@@ -106,16 +108,56 @@ derivePersistFieldJSON "Rank"
 instance Show Rank where
   show :: Rank -> String
   show (Rank {..}) =
-    Prelude.init $
-      Prelude.unlines
-        [ "┌─────────────────────────────────────────────────────────────",
-          "│ Belt: " <> stringFromJSON rankBelt,
-          "│ ID: " <> stringFromJSON rankId,
-          "│ Achieved by: " <> stringFromJSON rankAchievedByProfileId,
-          "│ Awarded by: " <> stringFromJSON rankAwardedByProfileId,
-          "│ Achievement Date: " <> stringFromJSON rankAchievementDate,
-          "└─────────────────────────────────────────────────────────────"
-        ]
+    Data.List.Extra.intercalate
+      "\n"
+      [ "┌─────────────────────────────────────────────────────────────",
+        "│ Belt: " <> stringFromJSON rankBelt,
+        "│ ID: " <> stringFromJSON rankId,
+        "│ Achieved by: " <> stringFromJSON rankAchievedByProfileId,
+        "│ Awarded by: " <> stringFromJSON rankAwardedByProfileId,
+        "│ Achievement Date: " <> stringFromJSON rankAchievementDate,
+        "└─────────────────────────────────────────────────────────────"
+      ]
+
+-- | Promotion state: pending (not yet accepted), accepted, or superseded.
+data PromotionState = PromotionPending | PromotionAccepted | PromotionSuperseded
+  deriving (Generic, Show, Eq, Ord)
+
+instance ToJSON PromotionState where
+  toJSON PromotionPending = "pending"
+  toJSON PromotionAccepted = "accepted"
+  toJSON PromotionSuperseded = "superseded"
+
+instance FromJSON PromotionState where
+  parseJSON = withText "PromotionState" $ \case
+    "pending" -> pure PromotionPending
+    "accepted" -> pure PromotionAccepted
+    "superseded" -> pure PromotionSuperseded
+    other -> fail $ "Unknown PromotionState: " <> T.unpack other
+
+instance ToSchema PromotionState where
+  declareNamedSchema _ = pure $ NamedSchema (Just "PromotionState") mempty
+
+instance ToParamSchema PromotionState where
+  toParamSchema _ = mempty
+
+derivePersistFieldJSON "PromotionState"
+
+instance FromHttpApiData PromotionState where
+  parseQueryParam :: Text -> Either Text PromotionState
+  parseQueryParam t = case T.toLower t of
+    "pending" -> Right PromotionPending
+    "accepted" -> Right PromotionAccepted
+    "superseded" -> Right PromotionSuperseded
+    _ -> Left "Invalid promotion state. Use 'pending', 'accepted', or 'superseded'"
+
+-- | API promotion state from the practitioner\'s current rank belt (latest by date) vs this
+-- promotion belt. @Nothing@ = no rank rows for that practitioner.
+promotionStateFromBelts :: Maybe BJJBelt -> BJJBelt -> PromotionState
+promotionStateFromBelts Nothing _ = PromotionPending
+promotionStateFromBelts (Just current) proposed
+  | current > proposed = PromotionSuperseded
+  | otherwise = PromotionPending
 
 data Promotion
   = Promotion
@@ -123,7 +165,8 @@ data Promotion
     promotionBelt :: BJJBelt,
     promotionAchievedByProfileId :: ProfileRefAC,
     promotionAwardedByProfileId :: ProfileRefAC,
-    promotionAchievementDate :: GYTime
+    promotionAchievementDate :: GYTime,
+    promotionState :: PromotionState
   }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "promotion", CamelToSnake]] Promotion
@@ -133,16 +176,17 @@ derivePersistFieldJSON "Promotion"
 instance Show Promotion where
   show :: Promotion -> String
   show (Promotion {..}) =
-    Prelude.init $
-      Prelude.unlines
-        [ "┌─────────────────────────────────────────────────────────────",
-          "│ Promotion: " <> stringFromJSON promotionBelt,
-          "│ ID: " <> stringFromJSON promotionId,
-          "│ Achieved by: " <> stringFromJSON promotionAchievedByProfileId,
-          "│ Awarded by: " <> stringFromJSON promotionAwardedByProfileId,
-          "│ Achievement Date: " <> stringFromJSON promotionAchievementDate,
-          "└─────────────────────────────────────────────────────────────"
-        ]
+    Data.List.Extra.intercalate
+      "\n"
+      [ "┌─────────────────────────────────────────────────────────────",
+        "│ Promotion: " <> stringFromJSON promotionBelt,
+        "│ ID: " <> stringFromJSON promotionId,
+        "│ Achieved by: " <> stringFromJSON promotionAchievedByProfileId,
+        "│ Awarded by: " <> stringFromJSON promotionAwardedByProfileId,
+        "│ Achievement Date: " <> stringFromJSON promotionAchievementDate,
+        "│ State: " <> show promotionState,
+        "└─────────────────────────────────────────────────────────────"
+      ]
 
 instance ToSchema Promotion where
   declareNamedSchema = genericDeclareNamedSchema promotionSchemaOptions
@@ -153,6 +197,18 @@ instance ToSchema Promotion where
           AesonTypes.defaultOptions
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "promotion"
             }
+
+-- | Convert an accepted 'Rank' to a 'Promotion' with state 'PromotionAccepted'.
+rankToPromotion :: Rank -> Promotion
+rankToPromotion r =
+  Promotion
+    { promotionId = rankId r,
+      promotionBelt = rankBelt r,
+      promotionAchievedByProfileId = rankAchievedByProfileId r,
+      promotionAwardedByProfileId = rankAwardedByProfileId r,
+      promotionAchievementDate = rankAchievementDate r,
+      promotionState = PromotionAccepted
+    }
 
 -- | A practitioner's membership history with an organization.
 data MembershipHistory = MembershipHistory
@@ -168,14 +224,14 @@ derivePersistFieldJSON "MembershipHistory"
 instance Show MembershipHistory where
   show :: MembershipHistory -> String
   show (MembershipHistory {..}) =
-    Prelude.init $
-      Prelude.unlines
-        [ "┌─────────────────────────────────────────────────────────────",
-          "│ MembershipHistory ID: " <> stringFromJSON membershipHistoryId,
-          "│ Practitioner: " <> stringFromJSON membershipHistoryPractitionerId,
-          "│ Organization: " <> stringFromJSON membershipHistoryOrganizationId,
-          "└─────────────────────────────────────────────────────────────"
-        ]
+    Data.List.Extra.intercalate
+      "\n"
+      [ "┌─────────────────────────────────────────────────────────────",
+        "│ MembershipHistory ID: " <> stringFromJSON membershipHistoryId,
+        "│ Practitioner: " <> stringFromJSON membershipHistoryPractitionerId,
+        "│ Organization: " <> stringFromJSON membershipHistoryOrganizationId,
+        "└─────────────────────────────────────────────────────────────"
+      ]
 
 instance ToSchema MembershipHistory where
   declareNamedSchema = genericDeclareNamedSchema membershipHistorySchemaOptions
@@ -192,9 +248,9 @@ data MembershipInterval = MembershipInterval
   { membershipIntervalId :: MembershipIntervalAC,
     membershipIntervalStartDate :: GYTime,
     membershipIntervalEndDate :: Maybe GYTime,
-    membershipIntervalIsAccepted :: Bool,
+    membershipIntervalAccepted :: Bool,
     membershipIntervalPractitionerId :: ProfileRefAC,
-    membershipIntervalNumber :: Integer
+    membershipIntervalIntervalNumber :: Integer
   }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "membershipInterval", CamelToSnake]] MembershipInterval
@@ -204,17 +260,17 @@ derivePersistFieldJSON "MembershipInterval"
 instance Show MembershipInterval where
   show :: MembershipInterval -> String
   show (MembershipInterval {..}) =
-    Prelude.init $
-      Prelude.unlines
-        [ "┌─────────────────────────────────────────────────────────────",
-          "│ MembershipInterval ID: " <> stringFromJSON membershipIntervalId,
-          "│ Start Date: " <> stringFromJSON membershipIntervalStartDate,
-          "│ End Date: " <> stringFromJSON membershipIntervalEndDate,
-          "│ Accepted: " <> show membershipIntervalIsAccepted,
-          "│ Practitioner: " <> stringFromJSON membershipIntervalPractitionerId,
-          "│ Interval #: " <> show membershipIntervalNumber,
-          "└─────────────────────────────────────────────────────────────"
-        ]
+    Data.List.Extra.intercalate
+      "\n"
+      [ "┌─────────────────────────────────────────────────────────────",
+        "│ MembershipInterval ID: " <> stringFromJSON membershipIntervalId,
+        "│ Start Date: " <> stringFromJSON membershipIntervalStartDate,
+        "│ End Date: " <> stringFromJSON membershipIntervalEndDate,
+        "│ Accepted: " <> show membershipIntervalAccepted,
+        "│ Practitioner: " <> stringFromJSON membershipIntervalPractitionerId,
+        "│ Interval #: " <> show membershipIntervalIntervalNumber,
+        "└─────────────────────────────────────────────────────────────"
+      ]
 
 instance ToSchema MembershipInterval where
   declareNamedSchema = genericDeclareNamedSchema membershipIntervalSchemaOptions
@@ -226,36 +282,59 @@ instance ToSchema MembershipInterval where
             { AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "membershipInterval"
             }
 
+-- | JSON-serialized @[(Text, Text)]@ for achievement projections (array of @[key, value]@ string pairs).
+newtype AchievementOtherMetadataJson = AchievementOtherMetadataJson
+  { fromAchievementOtherMetadataJson :: [(Text, Text)]
+  }
+  deriving stock (Show, Eq, Generic)
+  deriving newtype (FromJSON, ToJSON)
+
 -- | An achievement awarded to a practitioner.
 data Achievement = Achievement
   { achievementId :: AchievementAC,
-    achievementAwardedTo :: ProfileRefAC,
-    achievementAwardedBy :: ProfileRefAC,
-    achievementDate :: GYTime,
-    achievementIsAccepted :: Bool,
+    achievementAwardedToProfileId :: ProfileRefAC,
+    achievementAwardedByProfileId :: ProfileRefAC,
+    achievementAchievementDate :: GYTime,
+    achievementAccepted :: Bool,
     achievementName :: Text,
     achievementDescription :: Text,
-    achievementImageURI :: Text
+    achievementImageURI :: Text,
+    achievementOtherMetadata :: [(Text, Text)]
   }
   deriving (Generic)
-  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "achievement", CamelToSnake]] Achievement
+  deriving (ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "achievement", CamelToSnake]] Achievement
+
+instance FromJSON Achievement where
+  parseJSON = withObject "Achievement" $ \o ->
+    Achievement
+      <$> o .: "id"
+      <*> o .: "awarded_to_profile_id"
+      <*> o .: "awarded_by_profile_id"
+      <*> o .: "achievement_date"
+      <*> o .: "accepted"
+      <*> o .: "name"
+      <*> o .: "description"
+      <*> o .: "image_uri"
+      <*> o .:? "other_metadata" .!= []
 
 derivePersistFieldJSON "Achievement"
+derivePersistFieldJSON "AchievementOtherMetadataJson"
 
 instance Show Achievement where
   show :: Achievement -> String
   show (Achievement {..}) =
-    Prelude.init $
-      Prelude.unlines
-        [ "┌─────────────────────────────────────────────────────────────",
-          "│ Achievement ID: " <> stringFromJSON achievementId,
-          "│ Name: " <> stringFromJSON achievementName,
-          "│ Awarded To: " <> stringFromJSON achievementAwardedTo,
-          "│ Awarded By: " <> stringFromJSON achievementAwardedBy,
-          "│ Date: " <> stringFromJSON achievementDate,
-          "│ Accepted: " <> show achievementIsAccepted,
-          "└─────────────────────────────────────────────────────────────"
-        ]
+    Data.List.Extra.intercalate
+      "\n"
+      [ "┌─────────────────────────────────────────────────────────────",
+        "│ Achievement ID: " <> stringFromJSON achievementId,
+        "│ Name: " <> stringFromJSON achievementName,
+        "│ Awarded To: " <> stringFromJSON achievementAwardedToProfileId,
+        "│ Awarded By: " <> stringFromJSON achievementAwardedByProfileId,
+        "│ Date: " <> stringFromJSON achievementAchievementDate,
+        "│ Accepted: " <> show achievementAccepted,
+        "│ Other metadata pairs: " <> show (Prelude.length achievementOtherMetadata),
+        "└─────────────────────────────────────────────────────────────"
+      ]
 
 instance ToSchema Achievement where
   declareNamedSchema = genericDeclareNamedSchema achievementSchemaOptions

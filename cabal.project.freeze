@@ -704,4 +704,4 @@ constraints: any.Boolean ==0.2.4,
              yaml +no-examples +no-exe,
              any.zlib ==0.7.1.0,
              zlib -bundled-c-zlib +non-blocking-ffi +pkg-config
-index-state: cardano-haskell-packages 2025-04-11T16:42:25Z, hackage.haskell.org 2025-04-15T19:49:23Z
+index-state: cardano-haskell-packages 2025-04-11T16:42:25Z, hackage.haskell.org 2026-02-20T00:00:00Z

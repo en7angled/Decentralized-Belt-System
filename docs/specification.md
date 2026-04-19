@@ -2,6 +2,9 @@ This project is part of
 [F13 - Project Catalyst ID: #1300081](https://projectcatalyst.io/funds/10/f13-cardano-use-cases-concept/decentralized-belt-system-for-brazilian-jiu-jitsu-bjj-a438b)
 
 # Decentralized Belt System for Brazilian Jiu Jitsu
+
+*Audience: product readers, reviewers, and protocol newcomers — the formal functional spec (scope, actors, use cases, user stories). For implementation mechanics see [`onchain-architecture.md`](onchain-architecture.md) and [`developer-guide.md`](developer-guide.md).*
+
 - [Decentralized Belt System for Brazilian Jiu Jitsu](#decentralized-belt-system-for-brazilian-jiu-jitsu)
   - [1. Introduction](#1-introduction)
     - [1.1 Motivation](#11-motivation)
@@ -60,16 +63,17 @@ The application described in this document (the **BJJ-DApp**) is a client that a
 - **Anyone**  to verify belt rankings and lineages.  
 - **Practitioners** to maintain an immutable record of ranks, achievements, and memberships.  
 - **Organizations** to manage and award promotions, memberships, and achievements.  
-- **Community** to self-organise and sustain with goverance mechanisms based on rank power.
+- **Community** to self-organise and sustain with governance mechanisms based on rank power.
 
 ### 1.4 Definitions, Acronyms, and Abbreviations
 
-| Name     | Description                           |
-| -------- | ------------------------------------- |
-| **DApp** | Decentralized Application             |
-| **DAO**  | Decentralized Autonomous Organization |
-| **NFT**  | Non-Fungible Token                    |
-| **UTxO** | Unspent Transaction Output            |
+| Name         | Description                           |
+| ------------ | ------------------------------------- |
+| **DApp**     | Decentralized Application             |
+| **DAO**      | Decentralized Autonomous Organization |
+| **NFT**      | Non-Fungible Token                    |
+| **UTxO**     | Unspent Transaction Output            |
+| **Lineage**  | The direct chain of instructor–student relationships formed by belt promotions. A practitioner's lineage traces upward through the instructors who promoted them (and who promoted those instructors) and downward through the students they promoted (and their students in turn). Lineage does not include collateral branches such as fellow students of the same instructor. |
 
 
 
@@ -117,16 +121,18 @@ The system seeks to:
 >   - **3rd Party Browser Wallet** (e.g., Eternl, Lace): For signing transactions.
 > - **Backend**  
 >   - **Interaction API Service** (default port 8082): Builds and submits transactions for promotions, achievements, membership. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth).  
->   - **Query API Service** (default port 8083): Provides queries for profiles, promotions, achievements, and memberships. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth). Supports `?liveprojection=true` to read directly from chain vs projected PostgreSQL DB.  
->   - **Chain Sync Service**: Monitors the Cardano blockchain and projects data into PostgreSQL.  
+>   - **Query API Service** (default port 8083): Provides queries for profiles, promotions, achievements, memberships, and lineage. Requires HTTP Basic Auth. Swagger UI available at `/swagger-ui` (no auth). Supports `?liveprojection=true` to read directly from chain vs projected PostgreSQL DB (lineage is projected-only).
+>   - **Chain Sync Service**: Monitors the Cardano blockchain and projects data into PostgreSQL.
 >     - Exposes a probe API: `GET /health`, `GET /ready` (default port 8084)
 >     - Health returns sync metrics including `chain_sync_state`
+>   - **MCP Server** (default port 8085): Exposes the query + interaction surface as an MCP tool set for any MCP-speaking client (Claude Desktop, IDE agents, third-party BFFs). Write tools are gated by `MCP_ENABLE_WRITE_TX`.
 >   - **Cardano Node**: Submits signed transactions to the Cardano network.
 > - **Libraries**  
->   - **onchain**: Plutus smart contracts and blockchain logic
->   - **webapi**: Web infrastructure (Auth, Health, CORS)
->   - **chainsync**: Generic chain synchronization utilities  
->   - **offchain**: Domain logic and supporting infrastructure
+>   - **onchain-lib**: Plutus smart contracts and blockchain logic
+>   - **chainsync-lib**: Generic chain synchronization utilities
+>   - **offchain-lib**: Domain types, tx building, storage, ingestion (depends on onchain-lib + chainsync-lib)
+>   - **webapi-lib**: Shared web infrastructure (Auth, Health, CORS)
+>   - **mcp-server-lib**: MCP tool/resource surface (consumed only by `mcp-server`)
 > - **Persistence**: A database or index for quick lookups of ranks, achievements, memberships (off-chain).
 > - **Immutability Principle**: Profiles are permanent by design. BJJ belt records are historical facts that preserve lineage integrity and cannot be deleted.
 
@@ -340,11 +346,12 @@ In the DAO phase all **core features** of the Legacy Phase remain available but 
      - Initial rank is assigned (e.g., White Belt).  
      - Profile is visible in on-chain explorer.
 
-2. **View Progress & Lineage**  
-   - **As a practitioner**, I want to view my entire promotion history (current and past ranks) so I can see how I’ve progressed over time.  
-   - **Acceptance Criteria**:  
-     - System displays a chronological list of ranks and awarding authority.  
+2. **View Progress & Lineage**
+   - **As a practitioner**, I want to view my entire promotion history (current and past ranks) so I can see how I’ve progressed over time. I also want to explore my lineage — the direct chain of instructors who promoted me (and who promoted them) as well as the students I promoted (and their students in turn).
+   - **Acceptance Criteria**:
+     - System displays a chronological list of ranks and awarding authority.
      - Achievements & memberships are listed in the timeline.
+     - Lineage graph shows the direct ancestor chain (upward through promoters) and descendant subtree (downward through students), excluding collateral branches (e.g., other students of the same instructor).
 
 3. **Update Profile Info**  
    - **As a practitioner**, I want to update my profile (e.g., if I switch academies or add a new affiliation) so that the system accurately reflects my current status.  
@@ -448,10 +455,10 @@ This **Decentralized Belt System** aims to bring **trust, transparency, and sust
 
 
 > **Current Status**  
-> - **On-chain implementations complete**: Minting policy, profiles validator, ranks validator, memberships validator, achievements validator; Oracle for dynamic protocol parameters (fees, min UTxO, pause); full security review
-> - **Off-chain infrastructure complete**: Admin CLI, Interaction API (port 8082), Query API (port 8083), Chain Sync Service (port 8084)
-> - **Memberships and achievements fully implemented**: On-chain, off-chain, API, and tests
-> - **Testnet deployments available**: Scripts provided for testing (`populate_testnet.sh`, `test_black_promotes_white_to_blue.sh`)
+> - **On-chain implementations complete**: Minting policy, profiles validator, ranks validator, memberships validator, achievements validator, oracle validator + oracle NFT policy; security review complete for the four original validators (Achievements, Oracle, OracleNFT added post-audit — see [`onchain-security-audit.md`](onchain-security-audit.md) §Scope).
+> - **Off-chain infrastructure complete**: Admin CLI, Interaction API (port 8082), Query API (port 8083), Chain Sync Service (port 8084), MCP Server (port 8085).
+> - **Memberships and achievements fully implemented**: On-chain, off-chain, API, and tests.
+> - **Testnet deployments available**: Scripts provided for testing (`populate_testnet.sh`, `test_black_promotes_white_to_blue.sh`).
 >
 > **Next Steps**  
 > - Finalize the BJJ Decentralized Belt System **Frontend Website**  

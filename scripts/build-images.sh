@@ -41,13 +41,22 @@ echo "Local mode: building for ${NATIVE_PLATFORM} and loading locally"
 
 cd "${ROOT_DIR}"
 
-# Build shared builder base (local tag used by service Dockerfiles)
+# Build shared builder base (toolchain + cached deps; stable across source changes)
 BUILDER_VERSION="9.6.6"
 echo "Building shared builder base: bjj-builder:${BUILDER_VERSION}"
 docker buildx build \
   "${BUILDX_FLAGS[@]}" \
   -f Dockerfile.base \
   -t bjj-builder:${BUILDER_VERSION} \
+  .
+
+# Build shared runtime base (crypto libs; stable unless versions change)
+RUNTIME_TAG="3.20"
+echo "Building shared runtime base: bjj-runtime-base:${RUNTIME_TAG}"
+docker buildx build \
+  "${BUILDX_FLAGS[@]}" \
+  -f Dockerfile.runtime-base \
+  -t bjj-runtime-base:${RUNTIME_TAG} \
   .
 
 # Interaction API
@@ -71,9 +80,17 @@ docker buildx build \
   -t "${IMAGE_PREFIX}/bjj-chainsync:${TAG}" \
   .
 
+# MCP Server
+docker buildx build \
+  "${BUILDX_FLAGS[@]}" \
+  -f Dockerfile.mcp-server \
+  -t "${IMAGE_PREFIX}/bjj-mcp-server:${TAG}" \
+  .
+
 echo "\nBuilt images:"
 echo "  ${IMAGE_PREFIX}/bjj-interaction-api:${TAG}"
 echo "  ${IMAGE_PREFIX}/bjj-query-api:${TAG}"
 echo "  ${IMAGE_PREFIX}/bjj-chainsync:${TAG}"
+echo "  ${IMAGE_PREFIX}/bjj-mcp-server:${TAG}"
 
 

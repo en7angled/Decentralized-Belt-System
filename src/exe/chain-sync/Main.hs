@@ -38,7 +38,7 @@ defaultConnStr :: String
 defaultConnStr = "host=localhost user=postgres password=postgres dbname=chainsync port=5432"
 
 defaultKupoUrl :: String
-defaultKupoUrl = "https://kupo16cdjk05emessgrpy45t.preview-v2.kupo-m1.demeter.run"
+defaultKupoUrl = "https://kupo16cdjk05emessgrpy45t.cardano-preview-v2.kupo-m1.dmtr.host:443/"
 
 main :: IO ()
 main = do
@@ -57,10 +57,10 @@ main = do
   deployedScriptsContext <- maybe (die "Deployed validators configuration failed") return =<< decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuildingContextFile
   let policyHexText = T.pack $ printf "%s" (getMintingPolicyHash deployedScriptsContext)
 
-  batch_size <- do
+  batchSize <- do
     mb <- lookupEnv "BATCH_SIZE"
     pure $ maybe (100_000_000 :: Integer) read mb
-  fetch_batch_size <- do
+  fetchBatchSize <- do
     mb <- lookupEnv "FETCH_BATCH_SIZE"
     pure $ maybe (10_000_000 :: Integer) read mb
 
@@ -80,7 +80,7 @@ main = do
           runSqlPool (putStoredPolicyHexText policyHexText) pool
 
   initialTip <- getLocalTip pool
-  startingCheckPoint <- findCheckpoint kupoUrl batch_size (ck_slot_no initialTip)
+  startingCheckPoint <- findCheckpoint kupoUrl batchSize (ck_slot_no initialTip)
   updateLocalTip pool startingCheckPoint
 
   now <- getCurrentTime
@@ -119,7 +119,7 @@ main = do
       Behind _isWayBehind -> do
         liftIO $ putStrLn "Chain is behind"
         liftIO $ putStrLn "Fetching matches"
-        fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetch_batch_size
+        fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetchBatchSize
         blockchainTip' <- getBlockchainTip kupoUrl
         updateLocalTip pool blockchainTip'
       Ahead -> do

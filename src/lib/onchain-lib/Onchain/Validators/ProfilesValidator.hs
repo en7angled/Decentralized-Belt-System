@@ -27,7 +27,7 @@ module Onchain.Validators.ProfilesValidator
 where
 
 import GHC.Generics (Generic)
-import Onchain.CIP68 (CIP68Datum (CIP68Datum), ImageURI, deriveUserFromRefAC, updateCIP68DatumImage, validateImageURI)
+import Onchain.CIP68 (CIP68Datum (CIP68Datum), MetadataFields (..), deriveUserFromRefAC, updateCIP68DatumMetadata, validateMetadataFields)
 import Onchain.Protocol (OnchainProfile (..), OnchainRank (..), RankId, getCurrentRankId, promoteProfileDatum, protocolParams, ranksValidatorScriptHash, unsafeGetRankDatumAndValue)
 import Onchain.Protocol qualified as Onchain
 import Onchain.Utils (hasCurrencySymbol)
@@ -51,10 +51,10 @@ import Prelude qualified
 -- BJJ belt records are permanent historical facts that should not be erasable.
 -- Output indices are passed in the redeemer for efficient O(1) lookup instead of O(n) search.
 data ProfilesRedeemer
-  = -- | UpdateProfileImage newImageURI profileOutputIdx
-    UpdateProfileImage ImageURI Integer
+  = -- | UpdateProfile newMetadataFields profileOutputIdx
+    UpdateProfile MetadataFields Integer
   | -- | AcceptPromotion rankId profileOutputIdx
-    -- NOTE: rankOutputIdx was removed (R2 redundancy — see OnchainSecurityAudit.md).
+    -- NOTE: rankOutputIdx was removed (R2 redundancy — see onchain-security-audit.md).
     -- RanksValidator has only one redeemer (PromotionAcceptance) and always validates
     -- the rank output, so PV's rank output check was genuinely redundant.
     AcceptPromotion RankId Integer
@@ -65,7 +65,7 @@ data ProfilesRedeemer
   deriving stock (Generic, Prelude.Show)
   deriving anyclass (HasBlueprintDefinition)
 
-makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfileImage, 0), ('AcceptPromotion, 1), ('Cleanup, 2)]
+makeIsDataSchemaIndexed ''ProfilesRedeemer [('UpdateProfile, 0), ('AcceptPromotion, 1), ('Cleanup, 2)]
 
 type ProfilesDatum = CIP68Datum Onchain.OnchainProfile
 
@@ -98,8 +98,8 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
                     !profileRefAssetClass@(V1.AssetClass (mintingPolicyCurrencySymbol, _)) = profileId profile --  as in datum.
                     -- It is important to validate that the value of this UTxO contains an NFT of this asset class.
                  in case redeemer of
-                      (UpdateProfileImage newImageURI profileOutputIdx) ->
-                        handleUpdateProfileImage txInfo ownValue ownAddress profileRefAssetClass profileDatum newImageURI profileOutputIdx
+                      (UpdateProfile newFields profileOutputIdx) ->
+                        handleUpdateProfile txInfo ownValue ownAddress profileRefAssetClass profileDatum newFields profileOutputIdx
                       (AcceptPromotion promotionId profileOutputIdx) ->
                         handleAcceptPromotion txInfo ownValue ownAddress profileRefAssetClass mintingPolicyCurrencySymbol profile profileDatum promotionId profileOutputIdx
         _ -> traceError "P1" -- Invalid purpose (P1)
@@ -110,23 +110,23 @@ profilesLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo
 
 -------------------------------------------------------------------------------
 
-{-# INLINEABLE handleUpdateProfileImage #-}
-handleUpdateProfileImage ::
+{-# INLINEABLE handleUpdateProfile #-}
+handleUpdateProfile ::
   TxInfo ->
   Value ->
   Address ->
   V1.AssetClass ->
   CIP68Datum OnchainProfile ->
-  ImageURI ->
+  MetadataFields ->
   Integer ->
   Bool
-handleUpdateProfileImage txInfo@TxInfo {..} ownValue ownAddress profileRefAssetClass profileDatum newImageURI profileOutputIdx =
-  let newCip68Datum = updateCIP68DatumImage newImageURI profileDatum
+handleUpdateProfile txInfo@TxInfo {..} ownValue ownAddress profileRefAssetClass profileDatum newFields profileOutputIdx =
+  let newCip68Datum = updateCIP68DatumMetadata newFields profileDatum
       profileUserAssetClass = deriveUserFromRefAC profileRefAssetClass
    in and
         [ traceIfFalse "P2" $ V1.assetClassValueOf ownValue profileRefAssetClass == 1, -- Own value has Ref NFT (P2)
           traceIfFalse "P3" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT (P3)
-          traceIfFalse "P4" $ validateImageURI newImageURI, -- Image URI validation failed (P4)
+          traceIfFalse "P4" $ validateMetadataFields newFields, -- Metadata fields validation failed (P4)
           traceIfFalse "P5" $ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress profileOutputIdx newCip68Datum ownValue ownAddress txInfoOutputs -- Lock updated profile (P5); >= ownValue (balancer may add min-ADA)
         ]
 
@@ -175,7 +175,7 @@ handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass minti
       -- 4. RanksValidator checks User NFT consent (deriveUserFromRefAC)
       -- Therefore, RanksValidator guarantees user consent for this transaction.
       --
-      -- NOTE (R2 redundancy removed — see OnchainSecurityAudit.md):
+      -- NOTE (R2 redundancy removed — see onchain-security-audit.md):
       -- The rank output check was removed from PV because RV has only one
       -- redeemer (PromotionAcceptance) and always validates the rank output.
       -- When PV forces the promotion to be in txInfoInputs, RV must run,

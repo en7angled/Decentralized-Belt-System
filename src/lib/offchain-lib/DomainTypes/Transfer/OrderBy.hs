@@ -3,7 +3,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Types where
+module DomainTypes.Transfer.OrderBy where
 
 import Control.Lens
 import Data.Aeson
@@ -16,6 +16,7 @@ import Data.Text hiding (init, tail)
 import Data.Text qualified as T
 import Deriving.Aeson
 import GHC.Generics ()
+import GeniusYield.Types (GYAddress, addressFromTextMaybe)
 import Servant (FromHttpApiData (..))
 
 data SortOrder = Asc | Desc
@@ -44,6 +45,7 @@ data ProfilesOrderBy
   | ProfilesOrderByName
   | ProfilesOrderByDescription
   | ProfilesOrderByType
+  | ProfilesOrderByRegisteredAt
   deriving (Show, Generic, Eq)
   deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripPrefix "ProfilesOrderBy", CamelToSnake]] ProfilesOrderBy
 
@@ -56,7 +58,8 @@ instance ToParamSchema ProfilesOrderBy where
         ?~ [ Aeson.String (T.pack "id"),
              Aeson.String (T.pack "name"),
              Aeson.String (T.pack "description"),
-             Aeson.String (T.pack "type")
+             Aeson.String (T.pack "type"),
+             Aeson.String (T.pack "registered_at")
            ]
 
 instance ToSchema ProfilesOrderBy where
@@ -101,38 +104,6 @@ instance ToParamSchema PromotionsOrderBy where
              Aeson.String (T.pack "date")
            ]
 
-data RanksOrderBy
-  = RanksOrderById
-  | RanksOrderByBelt
-  | RanksOrderByAchievedBy
-  | RanksOrderByAwardedBy
-  | RanksOrderByDate
-  deriving (Show, Generic, Eq)
-  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripPrefix "RanksOrderBy", CamelToSnake]] RanksOrderBy
-
-instance ToSchema RanksOrderBy where
-  declareNamedSchema = genericDeclareNamedSchema ranksOrderBySchemaOptions
-    where
-      ranksOrderBySchemaOptions :: SchemaOptions
-      ranksOrderBySchemaOptions =
-        fromAesonOptions $
-          AesonTypes.defaultOptions
-            { AesonTypes.constructorTagModifier = camelTo2 '_' . dropPrefix "RanksOrderBy"
-            }
-
-instance ToParamSchema RanksOrderBy where
-  toParamSchema _ =
-    mempty
-      & type_
-        ?~ SwaggerString
-      & enum_
-        ?~ [ Aeson.String (T.pack "id"),
-             Aeson.String (T.pack "belt"),
-             Aeson.String (T.pack "achieved_by"),
-             Aeson.String (T.pack "awarded_by"),
-             Aeson.String (T.pack "date")
-           ]
-
 instance FromHttpApiData SortOrder where
   parseQueryParam :: Text -> Either Text SortOrder
   parseQueryParam t =
@@ -149,7 +120,8 @@ instance FromHttpApiData ProfilesOrderBy where
       "id" -> Right ProfilesOrderById
       "description" -> Right ProfilesOrderByDescription
       "type" -> Right ProfilesOrderByType
-      _ -> Left "Invalid order by. Use 'name', 'id', 'description', or 'type'"
+      "registered_at" -> Right ProfilesOrderByRegisteredAt
+      _ -> Left "Invalid order by. Use 'name', 'id', 'description', 'type', or 'registered_at'"
 
 instance FromHttpApiData PromotionsOrderBy where
   parseQueryParam :: Text -> Either Text PromotionsOrderBy
@@ -160,17 +132,6 @@ instance FromHttpApiData PromotionsOrderBy where
       "achieved_by" -> Right PromotionsOrderByAchievedBy
       "awarded_by" -> Right PromotionsOrderByAwardedBy
       "date" -> Right PromotionsOrderByDate
-      _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
-
-instance FromHttpApiData RanksOrderBy where
-  parseQueryParam :: Text -> Either Text RanksOrderBy
-  parseQueryParam t =
-    case T.toLower t of
-      "id" -> Right RanksOrderById
-      "belt" -> Right RanksOrderByBelt
-      "achieved_by" -> Right RanksOrderByAchievedBy
-      "awarded_by" -> Right RanksOrderByAwardedBy
-      "date" -> Right RanksOrderByDate
       _ -> Left "Invalid order by. Use 'id', 'belt', 'achieved_by', 'awarded_by', or 'date'"
 
 data AchievementsOrderBy
@@ -292,3 +253,82 @@ instance FromHttpApiData MembershipIntervalsOrderBy where
       "interval_number" -> Right MembershipIntervalsOrderByIntervalNumber
       "practitioner" -> Right MembershipIntervalsOrderByPractitioner
       _ -> Left "Invalid order by. Use 'id', 'start_date', 'interval_number', or 'practitioner'"
+
+-- | Activity event type enum for the activity feed endpoint.
+-- Constructors prefixed with @Evt@ to avoid clashing with
+-- 'DomainTypes.Core.Types.PromotionAccepted' / 'PromotionSuperseded'.
+-- JSON serialization strips the prefix so the wire values are unchanged
+-- (e.g. @"ProfileCreated"@, @"PromotionAccepted"@).
+data ActivityEventType
+  = EvtProfileCreated
+  | EvtPromotionIssued
+  | EvtPromotionAccepted
+  | EvtPromotionSuperseded
+  | EvtAchievementAwarded
+  | EvtAchievementAccepted
+  | EvtMembershipGranted
+  | EvtMembershipAccepted
+  deriving (Show, Generic, Eq)
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripPrefix "Evt"]] ActivityEventType
+
+instance ToSchema ActivityEventType where
+  declareNamedSchema = genericDeclareNamedSchema activityEventTypeSchemaOptions
+    where
+      activityEventTypeSchemaOptions :: SchemaOptions
+      activityEventTypeSchemaOptions =
+        fromAesonOptions $
+          AesonTypes.defaultOptions
+            { AesonTypes.constructorTagModifier = dropPrefix "Evt"
+            }
+
+instance ToParamSchema ActivityEventType where
+  toParamSchema _ =
+    mempty
+      & type_
+        ?~ SwaggerString
+      & enum_
+        ?~ [ Aeson.String "ProfileCreated",
+             Aeson.String "PromotionIssued",
+             Aeson.String "PromotionAccepted",
+             Aeson.String "PromotionSuperseded",
+             Aeson.String "AchievementAwarded",
+             Aeson.String "AchievementAccepted",
+             Aeson.String "MembershipGranted",
+             Aeson.String "MembershipAccepted"
+           ]
+
+instance FromHttpApiData ActivityEventType where
+  parseQueryParam t =
+    case t of
+      "ProfileCreated" -> Right EvtProfileCreated
+      "PromotionIssued" -> Right EvtPromotionIssued
+      "PromotionAccepted" -> Right EvtPromotionAccepted
+      "PromotionSuperseded" -> Right EvtPromotionSuperseded
+      "AchievementAwarded" -> Right EvtAchievementAwarded
+      "AchievementAccepted" -> Right EvtAchievementAccepted
+      "MembershipGranted" -> Right EvtMembershipGranted
+      "MembershipAccepted" -> Right EvtMembershipAccepted
+      _ -> Left "Invalid event_type. Use 'ProfileCreated', 'PromotionIssued', 'PromotionAccepted', 'PromotionSuperseded', 'AchievementAwarded', 'AchievementAccepted', 'MembershipGranted', or 'MembershipAccepted'"
+
+-- | Newtype for wallet address URL capture (bech32 encoded).
+newtype WalletAddress = WalletAddress {unWalletAddress :: GYAddress}
+
+instance FromHttpApiData WalletAddress where
+  parseUrlPiece t = case addressFromTextMaybe t of
+    Just addr -> Right (WalletAddress addr)
+    Nothing -> Left "Invalid bech32 wallet address"
+
+instance ToParamSchema WalletAddress where
+  toParamSchema _ =
+    mempty
+      & type_
+        ?~ SwaggerString
+
+instance ToSchema WalletAddress where
+  declareNamedSchema _ = do
+    return $
+      NamedSchema (Just "WalletAddress") $
+        mempty
+          & type_ ?~ SwaggerString
+          & description ?~ "Bech32-encoded Cardano address"
+          & example ?~ toJSON (T.pack "addr_test1...")

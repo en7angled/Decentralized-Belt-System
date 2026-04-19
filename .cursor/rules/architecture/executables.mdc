@@ -7,8 +7,8 @@ alwaysApply: false
 
 **Contents:** Admin CLI · HTTP API servers (interaction-api, query-api) · Build-tx vs submit and provider · Query API specifics · Chain-sync service · **Shared conventions** (applies to all executables below).
 
-- **Available executables**: `admin` (CLI), `interaction-api` (8082), `query-api` (8083), `chainsync-service` (8084). Sources live under `src/exe/<name>/`; Cabal `hs-source-dirs` is `src/exe/admin`, `src/exe/interaction-api`, `src/exe/query-api`, `src/exe/chain-sync` (directory name `chain-sync` for chainsync-service).
-- **Cabal**: Each executable uses `import: common-options`, `main-is: Main.hs`, and its own `hs-source-dirs` and `other-modules`. Dependencies: admin → offchain-lib, onchain-lib; interaction-api / query-api → offchain-lib, onchain-lib, webapi-lib; chainsync-service → chainsync-lib, offchain-lib, onchain-lib, webapi-lib.
+- **Available executables**: `admin` (CLI), `interaction-api` (8082), `query-api` (8083), `chainsync-service` (8084), `mcp-server` (8085). Sources live under `src/exe/<name>/`; Cabal `hs-source-dirs` is `src/exe/admin`, `src/exe/interaction-api`, `src/exe/query-api`, `src/exe/chain-sync` (directory name `chain-sync` for chainsync-service), `src/exe/mcp-server`.
+- **Cabal**: Each executable uses `import: common-options`, `main-is: Main.hs`, and its own `hs-source-dirs` and `other-modules`. Dependencies: admin → offchain-lib, onchain-lib; interaction-api / query-api → offchain-lib, onchain-lib, webapi-lib; chainsync-service → chainsync-lib, offchain-lib, onchain-lib, webapi-lib; mcp-server → mcp-server-lib (which in turn depends on offchain-lib + onchain-lib + webapi-lib + atlas-cardano for shared domain / transfer / GYTime types).
 
 ------------------------------------------------------------------------------------------------
 * Admin CLI
@@ -24,7 +24,7 @@ alwaysApply: false
 * HTTP API servers (interaction-api, query-api)
 ------------------------------------------------------------------------------------------------
 
-- **Main.hs**: (1) Write Swagger file on startup: `BL8.writeFile "docs/swagger/<api>-swagger-api.json" (encodePretty apiSwagger)`. (2) Load config: `decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" Constants.defaultAtlasCoreConfig`; interaction-api also loads `DEPLOYED_VALIDATORS_CONFIG`. (3) Run inside `withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do`. (4) Build app context (auth from `getBasicAuthFromEnv`, plus tx-building context or provider + PG pool). (5) Port via `getPortFromEnvOrDefault <defaultPort>`. (6) `runSettings (setHost "0.0.0.0" . setPort port $ defaultSettings) (mkBJJApp appContext)`.
+- **Main.hs**: (1) Write Swagger file on startup: `BL8.writeFile "docs/generated/swagger/<api>-swagger-api.json" (encodePretty apiSwagger)`. (2) Load config: `decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" Constants.defaultAtlasCoreConfig`; interaction-api also loads `DEPLOYED_VALIDATORS_CONFIG`. (3) Run inside `withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do`. (4) Build app context (auth from `getBasicAuthFromEnv`, plus tx-building context or provider + PG pool). (5) Port via `getPortFromEnvOrDefault <defaultPort>`. (6) `runSettings (setHost "0.0.0.0" . setPort port $ defaultSettings) (mkBJJApp appContext)`.
 - **App monad**: Define `*AppContext` (e.g. `InteractionAppContext`, `QueryAppContext`) with auth and service-specific data. Define `newtype *AppMonad a = *AppMonad (ReaderT *AppContext Handler a)` with `run*AppMonad`, and derive `Functor`, `Applicative`, `Monad`, `MonadIO`, `MonadReader *AppContext`. Handlers run in this monad; hoist it with `hoistServerWithContext` when building the WAI app.
 - **RestAPI module**: Define API types with `Summary` and `Description` on routes. Include `ProbeAPI` (or `ServiceProbeAPI`) and domain APIs; use `SwaggerSchemaUI "swagger-ui" "swagger-api.json"` for Swagger. Build `apiSwagger` with `toSwagger proxyPublicAPI` and lens-set title, version, description. Full server = swagger server :<|> probe server :<|> private (auth-protected) server. Build WAI app: `mkBJJApp ctx = WebAPI.CORS.setupCors . provideOptions proxyPublicAPI $ serveWithContext proxyFullAPI basicCtx (hoistServerWithContext ... run*AppMonad ctx ... fullServer)` with `basicCtx = basicAuthServerContext (authContext ctx)`.
 - **Error handling**: Map domain exceptions to HTTP status (e.g. `txBuildingExceptionToHttpStatus`) and use `throwError (err404 { errBody = ... })` etc. in the app monad; centralize in a `runWith*ErrorHandling`-style wrapper if many handlers share the same pattern.
@@ -46,7 +46,7 @@ alwaysApply: false
 
 - **Context**: `QueryAppContext` = auth + `ProviderCtx` + PostgreSQL `ConnectionPool`. Pool from `PG_CONN_STR` env (default `host=postgres user=postgres password=postgres dbname=chainsync port=5432`), created with `createPostgresqlPool` (e.g. 10 connections).
 - **Live vs projected**: Use `QueryFlag "liveprojection"` on read endpoints; in handlers call `withBackend liveFlag liveHandler projectedHandler` so one route can serve either live (chain) or projected (DB) data. Implement live in `Query.Live`, projected in `Query.Projected`; shared types/helpers in `Query.Common`.
-- **RestAPI.Common**: Centralize building of filter types from query params (e.g. `profileFilterFromParams`, `rankFilterFromParams`) and use `withBackend` so RestAPI stays thin and handlers delegate to Query.*.
+- **RestAPI.Common**: Holds only `withBackend` (bound to `QueryAppMonad`) so RestAPI stays thin and handlers delegate to Query.*. Filter record types and their `*FromParams` builders (e.g. `profileFilterFromParams`, `promotionsFilterFromParams`) live in `offchain-lib/DomainTypes/Transfer/Filters.hs` so other executables (e.g. the MCP server) can reuse them.
 
 ------------------------------------------------------------------------------------------------
 * Chain-sync service
@@ -63,4 +63,4 @@ alwaysApply: false
 - **Config**: Use `Constants` for default file paths and app version. Use `decodeConfigEnvOrFile "ENV_VAR" defaultPath` for optional env override. Use `WebAPI.Utils.getPortFromEnvOrDefault` for port (defaults: 8082, 8083, 8084).
 - **Auth**: API servers use `WebAPI.Auth.getBasicAuthFromEnv` and `basicAuthServerContext`; protect private routes with `BasicAuth "user-realm" AuthUser :> ...`.
 - **CORS**: Use `WebAPI.CORS.setupCors` as the outermost middleware for all HTTP services.
-- **Swagger**: APIs write their Swagger JSON to `docs/swagger/` on startup; do not edit these files by hand. See [docs-and-api.mdc](../workflow/docs-and-api.mdc).
+- **Swagger**: APIs write their Swagger JSON to `docs/generated/swagger/` on startup; do not edit these files by hand. See [docs-and-api.mdc](../workflow/docs-and-api.mdc).

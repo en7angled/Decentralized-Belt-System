@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Core chain-sync logic: tip comparison, checkpoint discovery, and
+-- batch match fetching against the Kupo indexer.
 module ChainSyncLogic
   ( evaluateChainSyncState,
     updateLocalTip,
@@ -22,14 +24,17 @@ import GeniusYield.Types (GYNetworkId)
 import KupoClient (KupoCheckpoint (..), KupoMatch (..), runKupoCheckpointBySlot, runKupoCheckpointsList, runKupoMatches)
 import Storage (ChainCursor (..), getCursorValue, putCursor, putMatchAndProjections)
 
+-- | Compare local and blockchain tips to derive the current sync state.
 evaluateChainSyncState :: KupoCheckpoint -> KupoCheckpoint -> ChainSyncState
 evaluateChainSyncState localTip@(KupoCheckpoint localSlot localHeader) blockchainTip@(KupoCheckpoint blockchainSlot blockchainHeader)
   | localTip == blockchainTip = UpToDate
   | localSlot == blockchainSlot && localHeader /= blockchainHeader = UpToDateButDifferentBlockHash
   | localSlot < blockchainSlot = Behind (blockchainSlot - localSlot > 1200) -- if the difference is more than 1200 slots, we consider it way behind
   | localSlot > blockchainSlot = Ahead
-  | otherwise = error "Impossible state in evaluateChainSyncState"
+  -- All cases are covered by the guards above; GHC needs a fallback for exhaustiveness.
+  | otherwise = UpToDate
 
+-- | Persist the given checkpoint as the new local tip in the database.
 updateLocalTip :: ConnectionPool -> KupoCheckpoint -> IO ()
 updateLocalTip pool tip = do
   runSqlPool
@@ -39,6 +44,7 @@ updateLocalTip pool tip = do
     pool
   putStrLn $ "Local tip updated to: " <> show tip
 
+-- | Read the last-persisted local tip from the database (slot 0 if none).
 getLocalTip :: ConnectionPool -> IO KupoCheckpoint
 getLocalTip pool = do
   runSqlPool
@@ -50,6 +56,7 @@ getLocalTip pool = do
     )
     pool
 
+-- | Walk forward from a slot in increments of @stepSize@ until Kupo returns a checkpoint.
 findCheckpoint :: String -> Integer -> Integer -> IO KupoCheckpoint
 findCheckpoint kupoUrl stepSize curSlot = do
   eCk <- liftIO $ runKupoCheckpointBySlot kupoUrl curSlot
@@ -67,6 +74,7 @@ findCheckpoint kupoUrl stepSize curSlot = do
       liftIO $ putStrLn ("Checkpoint found: " <> show (ck_slot_no tip))
       return tip
 
+-- | Fetch the current blockchain tip from Kupo, retrying on failure.
 getBlockchainTip :: String -> IO KupoCheckpoint
 getBlockchainTip kupoUrl = do
   eCk <- liftIO $ runKupoCheckpointsList kupoUrl
@@ -76,16 +84,21 @@ getBlockchainTip kupoUrl = do
       liftIO $ putStrLn "Retrying in 10 seconds"
       liftIO $ threadDelay 10000000
       getBlockchainTip kupoUrl
-    Right cks -> return (head cks)
+    Right (ck : _) -> return ck
+    Right [] -> do
+      liftIO $ putStrLn "No checkpoints returned from Kupo"
+      liftIO $ threadDelay 10000000
+      getBlockchainTip kupoUrl
 
+-- | Recursively fetch and project Kupo matches in batches from @start@ to @end@.
 fetchingMatches :: MVar SyncMetrics -> String -> T.Text -> T.Text -> GYNetworkId -> ConnectionPool -> Integer -> Integer -> Integer -> IO ()
-fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batch_size =
+fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batchSize =
   if end <= start
     then do
       liftIO $ putStrLn "No more matches to fetch"
     else do
       let startInterval = start
-      let endInterval = if (start + batch_size) > end then end else start + batch_size
+      let endInterval = if (start + batchSize) > end then end else start + batchSize
       liftIO $ putStrLn ("Fetching matches from " <> show start <> " to " <> show endInterval)
       eMatches <-
         liftIO $
@@ -110,13 +123,13 @@ fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool sta
           liftIO $ putStrLn ("Kupo client error: " <> show err)
           liftIO $ putStrLn "Retrying in 10 seconds"
           liftIO $ threadDelay 10000000
-          fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batch_size
+          fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batchSize
         Right matches -> do
           applyMatches networkId pool matches
           now <- getCurrentTime
           modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = endInterval, smLastSyncTime = now}
 
-      fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool endInterval end batch_size
+      fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool endInterval end batchSize
 
 applyMatches :: GYNetworkId -> ConnectionPool -> [KupoMatch] -> IO ()
 applyMatches _networkId _pool [] = return ()

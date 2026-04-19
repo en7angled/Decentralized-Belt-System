@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Converts raw Kupo match data ('KupoMatch') into Atlas (GeniusYield) types ('AtlasMatch').
 module KupoAtlas where
 
 import qualified Cardano.Api as C
@@ -33,12 +34,15 @@ data AtlasMatch = AtlasMatch
   }
   deriving (Show)
 
+-- | Decode a hex-encoded datum hash into an Atlas 'GYDatumHash'.
 decodeGYDatumHash :: Text -> Either String GYDatumHash
 decodeGYDatumHash t = maybeToEither "Invalid datum hash" (datumHashFromHex (T.unpack t))
 
+-- | Decode a hex-encoded script hash into an Atlas 'GYScriptHash'.
 decodeGYScriptHash :: Text -> GYScriptHash
 decodeGYScriptHash t = fromString (T.unpack t)
 
+-- | Decode a hex-encoded CBOR datum into an Atlas 'GYDatum'.
 decodeGYDatum :: Text -> Either String GYDatum
 decodeGYDatum t =
   case B16.decode (TE.encodeUtf8 t) of
@@ -48,6 +52,7 @@ decodeGYDatum t =
         Left decErr -> Left ("Invalid CBOR datum: " <> show decErr)
         Right scriptData -> Right (datumFromApi' scriptData)
 
+-- | Convert Kupo's datum representation (raw, hash, and type fields) into an Atlas 'GYOutDatum'.
 kupoDatumToGYDatum :: Maybe Text -> Maybe Text -> Maybe Text -> Either String GYOutDatum
 kupoDatumToGYDatum datum datumHash datumType =
   case (datum, datumHash, datumType) of
@@ -59,6 +64,7 @@ kupoDatumToGYDatum datum datumHash datumType =
       Right hash -> Right (GYOutDatumHash hash)
     _ -> Right GYOutDatumNone
 
+-- | Decode a hex-encoded CBOR redeemer into an Atlas 'GYRedeemer'.
 kupoRedeemerToGYRedeemer :: Text -> Either String GYRedeemer
 kupoRedeemerToGYRedeemer t =
   case B16.decode (TE.encodeUtf8 t) of
@@ -68,9 +74,11 @@ kupoRedeemerToGYRedeemer t =
         Left decErr -> Left ("Invalid CBOR redeemer: " <> show decErr)
         Right scriptData -> Right (redeemerFromApi scriptData)
 
+-- | Parse a hex-encoded transaction ID into an Atlas 'GYTxId'.
 decodeTxId :: Text -> Either String GYTxId
 decodeTxId t = maybeToEither "Invalid transaction ID" (txIdFromHex (T.unpack t))
 
+-- | Convert a raw 'KupoMatch' into an 'AtlasMatch', decoding all fields into Atlas types.
 kupoMatchToAtlasMatch :: KupoMatch -> Either String AtlasMatch
 kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index, address, value, datum, datum_hash, datum_type, script_hash, created_at, spent_at} = do
   txId <- decodeTxId transaction_id
@@ -99,12 +107,14 @@ kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index
         amSpentAtRedeemer = amSpentWithRedeemer
       }
 
+-- | Convert a Kupo value (lovelace + native assets) into an Atlas 'GYValue'.
 kupoValueToGYValue :: KupoValue -> GYValue
 kupoValueToGYValue KupoValue {coins, assets} =
   let listOfAssets = Map.toList assets
       listOfAssetsGY = (GYLovelace, coins) : map (Data.Bifunctor.first toGYAssetClass) listOfAssets
    in valueFromList listOfAssetsGY
 
+-- | Parse a dot-separated @policyId.assetName@ text into an Atlas 'GYAssetClass'.
 toGYAssetClass :: Text -> GYAssetClass
 toGYAssetClass assetName = case parseAssetClassWithSep '.' assetName of
   Left err -> error $ "Invalid asset name: " <> show err

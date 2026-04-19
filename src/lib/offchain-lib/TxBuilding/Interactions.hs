@@ -1,3 +1,5 @@
+-- | Interaction dispatch: maps API-level 'Interaction' values to transaction skeletons
+-- by delegating to the appropriate 'TxBuilding.Operations' functions.
 module TxBuilding.Interactions where
 
 import Control.Monad.Reader.Class (MonadReader)
@@ -68,6 +70,8 @@ data Interaction
   }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
+-- | Dispatch an 'Interaction' to the corresponding operation, producing a tx skeleton
+-- and optionally the asset class of the newly minted or consumed token.
 interactionToTxSkeleton ::
   (HasCallStack, GYTxUserQueryMonad m, MonadReader DeployedScriptsContext m) =>
   Interaction ->
@@ -92,10 +96,11 @@ interactionToTxSkeleton Interaction {..} = do
             (profileDataToMetadataFields profileData)
             (profileTypeToOnchainProfileType profileType)
             (timeToPlutus creationDate)
-        UpdateProfileImageAction profileRefAC imgURI -> do
+        UpdateProfileAction profileRefAC mbDesc imgURI -> do
           (,profileRefAC)
             <$> updateProfileTX
               profileRefAC
+              (textToBuiltinByteString <$> mbDesc)
               (textToBuiltinByteString imgURI)
               usedAddrs
         PromoteProfileAction promotedProfileId promotedByProfileId achievementDate belt ->

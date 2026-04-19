@@ -1,3 +1,4 @@
+-- | Default file paths for configuration, validators, and blueprint artifacts.
 module Constants where
 
 defaultAtlasCoreConfig :: FilePath
@@ -25,7 +26,7 @@ defaultOracleValidatorFile :: FilePath
 defaultOracleValidatorFile = "docs/validators/oracle_validator.plutus"
 
 defaultBlueprintFile :: FilePath
-defaultBlueprintFile = "docs/bjj-belt-system-blueprint.json"
+defaultBlueprintFile = "docs/generated/bjj-belt-system-blueprint.json"
 
 -- | Application version used in service probe responses.
 appVersion :: String

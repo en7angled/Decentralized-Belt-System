@@ -5,7 +5,7 @@ alwaysApply: false
 ---
 # Onchain Project Rules
 
-**Reference**: Full flows, token derivation, and security model: `docs/OnchainArchitecture.md`.
+**Reference**: Full flows, token derivation, and security model: `docs/onchain-architecture.md`.
 
 Plutus/PlutusTx *coding* style (INLINEABLE, tracing, validator structure): see [plutus/plutus-rules.mdc](../plutus/plutus-rules.mdc).
 
@@ -19,8 +19,8 @@ Plutus/PlutusTx *coding* style (INLINEABLE, tracing, validator structure): see [
 
 ## Deployment
 
-- **Deployment order**: The only strict ordering is that the oracle NFT must be minted before the main MintingPolicy can be compiled (it is parameterized by the oracle `AssetClass`). Other validators can be deployed in any order. See OnchainArchitecture.md § Deployment Order.
-- **Oracle NFT Policy**: It is **not** deployed as a reference script; it is compiled per deployment and used **inlined** in the single transaction that mints the oracle NFT. Rationale (one-shot, deployment-specific, no reuse): OnchainArchitecture.md § Oracle NFT Policy: Inlined, Not Deployed.
+- **Deployment order**: The only strict ordering is that the oracle NFT must be minted before the main MintingPolicy can be compiled (it is parameterized by the oracle `AssetClass`). Other validators can be deployed in any order. See onchain-architecture.md § Deployment Order.
+- **Oracle NFT Policy**: It is **not** deployed as a reference script; it is compiled per deployment and used **inlined** in the single transaction that mints the oracle NFT. Rationale (one-shot, deployment-specific, no reuse): onchain-architecture.md § Oracle NFT Policy: Inlined, Not Deployed.
 
 ## Types and IDs
 
@@ -45,7 +45,7 @@ Plutus/PlutusTx *coding* style (INLINEABLE, tracing, validator structure): see [
 ## Security and invariants
 
 - **No profile deletion**: Profiles are permanent by design; do not add a path to delete or burn profile state (lineage integrity).
-- **Reference inputs**: Use reference inputs for non-destructive reads (oracle, current rank on accept, last membership interval). See OnchainArchitecture.md "Reference Input Usage" table.
+- **Reference inputs**: Use reference inputs for non-destructive reads (oracle, current rank on accept, last membership interval). See onchain-architecture.md "Reference Input Usage" table.
 - **Token flow**: Tokens locked at a validator must remain at that validator (same address and value on output) unless the design explicitly burns or moves them (e.g. promotion consumption). Membership intervals use "Variant A": acceptance only updates the datum, no mint/burn.
 - **Continuing outputs**: When a validator spends a UTxO and produces an output at the same address with updated datum, the on-chain check must allow output value **≥** spent value (use `Utils.checkTxOutAtIndexWithDatumMinValueAndAddress` with the spent input's value). The tx builder/balancer may add lovelace to script outputs; exact-value checks would fail. Off-chain must still lock with the **exact** value from the spent UTxO; the min-value check only accommodates balancer-added lovelace.
 

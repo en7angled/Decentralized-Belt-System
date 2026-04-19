@@ -1,6 +1,6 @@
 module Main where
 
-import Constants (defaultAtlasCoreConfig)
+import Constants (defaultAtlasCoreConfig, defaultTxBuildingContextFile)
 import Control.Monad.Logger (runStdoutLoggingT)
 import Data.Aeson.Encode.Pretty
 import Data.ByteString.Lazy.Char8 qualified as BL8
@@ -27,7 +27,7 @@ defaultConnStr = "host=postgres user=postgres password=postgres dbname=chainsync
 main :: IO ()
 main = do
   putStrLn "Writing Swagger file ..."
-  BL8.writeFile "docs/swagger/query-swagger-api.json" (encodePretty apiSwagger)
+  BL8.writeFile "docs/generated/swagger/query-swagger-api.json" (encodePretty apiSwagger)
 
   atlasConfig <- maybe (die "Atlas configuration failed") return =<< decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
 
@@ -36,7 +36,9 @@ main = do
     authContext <- getBasicAuthFromEnv
     connStr <- fromMaybe defaultConnStr <$> lookupEnv "PG_CONN_STR"
     pool <- runStdoutLoggingT $ createPostgresqlPool (T.encodeUtf8 (T.pack connStr)) 10
-    let appContext = QueryAppContext authContext providerContext pool
+    mDeployedCtx <- decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuildingContextFile
+    liveProj <- (Just "true" ==) <$> lookupEnv "LIVE_PROJECTION"
+    let appContext = QueryAppContext authContext providerContext pool mDeployedCtx liveProj
     let host = "0.0.0.0"
     port <- getPortFromEnvOrDefault 8083
 

@@ -6,6 +6,7 @@ import GHC.Stack
 import Test.Tasty
 import UnitTests.Achievement (achievementTests)
 import UnitTests.Cleanup (cleanupTests)
+import UnitTests.MCPTools (mcpToolsTests)
 import UnitTests.Membership (membershipTests)
 import UnitTests.Oracle (oracleTests)
 import UnitTests.Promotion (promotionTests)
@@ -18,5 +19,6 @@ unitTests =
       promotionTests,
       membershipTests,
       achievementTests,
-      cleanupTests
+      cleanupTests,
+      mcpToolsTests
     ]

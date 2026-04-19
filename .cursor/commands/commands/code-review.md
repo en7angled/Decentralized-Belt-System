@@ -2,57 +2,68 @@
 
 ## Overview
 
-Perform a thorough code review that verifies functionality, maintainability, and
-security before approving a change. Focus on architecture, readability,
-performance implications, and provide actionable suggestions for improvement.
+Perform a thorough code review of changes in the Decentralized Belt System, verifying functionality, Haskell style, library layering, and Cardano-specific correctness.
 
 ## Steps
 
-1. **Understand the change**
-    - Read the PR description and related issues for context
-    - Identify the scope of files and features impacted
-    - Note any assumptions or questions to clarify with the author
-2. **Validate functionality**
+1. **Understand the Change**
+    - Read the PR description and related issues/CR docs for context
+    - Identify which layers are affected (onchain-lib, offchain-lib, webapi-lib, executables)
+    - Note the phase order: were changes made in the correct sequence?
+
+2. **Validate Functionality**
     - Confirm the code delivers the intended behavior
-    - Exercise edge cases or guard conditions mentally or by running locally
-    - Check error handling paths and logging for clarity
-3. **Assess quality**
-    - Ensure functions are focused, names are descriptive, and code is readable
-    - Watch for duplication, dead code, or missing tests
-    - Verify documentation and comments reflect the latest changes
-4. **Review security and risk**
-    - Look for injection points, insecure defaults, or missing validation
-    - Confirm secrets or credentials are not exposed
-    - Evaluate performance or scalability impacts of the change
+    - Check error handling uses `TxBuildingException`, not raw strings
+    - Verify on-chain validation logic: all redeemer branches covered, no silent pass-through
+    - Test edge cases mentally: empty inputs, missing UTxOs, unauthorized callers
+
+3. **Check Library Layering**
+    - `onchain-lib` must not import Aeson, Servant, Swagger, or any off-chain dependency
+    - `offchain-lib` imports only from `onchain-lib` (project libs)
+    - `webapi-lib` has no project-library dependencies
+    - Executables depend on `offchain-lib` + `webapi-lib`
+
+4. **Assess Haskell Style**
+    - PascalCase types, camelCase functions, `mk` smart constructors, `is`/`has`/`check` predicates
+    - Max 120 characters per line, 2-space indent, no tabs
+    - Haddock (`-- |`) on exports, `-- ^` on non-obvious record fields
+    - `deriving-aeson` with `StripPrefix` + `CamelToSnake` for JSON
+    - No partial functions (`head`, `tail`, `fromJust`) — use total alternatives
+    - No redundant record field prefixes
+
+5. **Review Type-Level Correctness**
+    - New types follow the hierarchy: onchain → domain → transfer (API DTOs)
+    - Conversions between layers are explicit, not implicit coercions
+    - Records used for 4+ fields; newtypes for type-safe wrappers
+    - Deriving strategies are explicit (`stock`, `newtype`, `anyclass`)
+
+6. **Check Tests & Versioning**
+    - New behavior has corresponding tests in `src/test/UnitTests/`
+    - Property tests cover new invariants where applicable
+    - API version bumped in `RestAPI.hs` if endpoints changed
+    - Blueprint version bumped in `Blueprint.hs` if on-chain types changed
+    - CHANGELOG.md updated
 
 ## Review Checklist
 
 ### Functionality
-
 - [ ] Intended behavior works and matches requirements
-- [ ] Edge cases handled gracefully
-- [ ] Error handling is appropriate and informative
+- [ ] Error handling uses `TxBuildingException` with proper HTTP mapping
+- [ ] On-chain validation covers all redeemer branches
 
-### Code Quality
+### Architecture
+- [ ] Library layering respected (onchain-lib has no off-chain deps)
+- [ ] Phase order followed for new features
+- [ ] Type hierarchy maintained (onchain → domain → transfer)
 
-- [ ] Code structure is clear and maintainable
-- [ ] No unnecessary duplication or dead code
-- [ ] Tests/documentation updated as needed
+### Haskell Style
+- [ ] Naming conventions followed
+- [ ] Line length ≤ 120, 2-space indent
+- [ ] No partial functions
+- [ ] Haddock on exports and non-obvious fields
+- [ ] `deriving-aeson` with correct modifiers for JSON
 
-### Security & Safety
-
-- [ ] No obvious security vulnerabilities introduced
-- [ ] Inputs validated and outputs sanitized
-- [ ] Sensitive data handled correctly
-
-## Additional Review Notes
-
-- Architecture and design decisions considered
-- Performance bottlenecks or regressions assessed
-- Coding standards and best practices followed
-- Resource management, error handling, and logging reviewed
-- Suggested alternatives, additional test cases, or documentation updates
-  captured
-
-Provide constructive feedback with concrete examples and actionable guidance for
-the author.
+### Tests & Versioning
+- [ ] New tests cover the change
+- [ ] API/blueprint versions bumped if needed
+- [ ] CHANGELOG.md updated

@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1.4
+
+### STAGE 1: Build ###
+FROM --platform=$TARGETPLATFORM bjj-builder:9.6.6 AS builder
+
+WORKDIR /Decentralized-Belt-System
+
+ENV PATH="/root/.cabal/bin:$PATH"
+ENV CC=musl-gcc
+ENV LD=musl-gcc
+
+# Source copy (only layer that changes on code edits). `config` is kept in
+# the builder stage because cabal walks the whole project tree during
+# dependency resolution, but it is NOT copied into the runtime image —
+# the mcp-server binary has no Atlas provider or deployed-validators config.
+COPY src ./src
+COPY config ./config
+
+RUN cabal install mcp-server \
+    --enable-executable-static \
+    --overwrite-policy=always \
+    --installdir=. \
+    --install-method=copy \
+    --ghc-options="-optl=-static -optl=-pthread -optc=-static"
+
+### STAGE 2: Runtime ###
+FROM --platform=$TARGETPLATFORM bjj-runtime-base:3.20 AS runtime
+
+WORKDIR /app
+COPY --from=builder /Decentralized-Belt-System/mcp-server /app/mcp-server
+
+ENTRYPOINT ["/app/mcp-server"]

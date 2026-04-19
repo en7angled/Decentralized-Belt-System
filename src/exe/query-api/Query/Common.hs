@@ -1,10 +1,13 @@
+-- | Shared pagination helpers and ordering utilities used by both live
+-- ('Query.Live') and projected ('Query.Projected') query modules.
 module Query.Common where
 
-import Data.Text (Text)
-import DomainTypes.Core.BJJ (BJJBelt)
-import DomainTypes.Core.Types
-import GeniusYield.Types (GYTime)
-import Types (SortOrder (Asc))
+import DomainTypes.Core.BJJ (BJJBelt (..))
+import DomainTypes.Transfer.OrderBy (SortOrder (Asc))
+
+-- | True when the belt is Black or higher (can award promotions per protocol UX).
+beltIsMasterCapable :: BJJBelt -> Bool
+beltIsMasterCapable b = b >= Black
 
 type Limit = Int
 
@@ -25,10 +28,7 @@ normalizeOrder orderBy sortOrder = case (orderBy, sortOrder) of
   (Just ob, Nothing) -> Just (ob, Asc)
   _ -> Nothing
 
--- | Nothing for empty list, Just for non-empty.
-optionalNonEmpty :: [a] -> Maybe [a]
-optionalNonEmpty xs = if null xs then Nothing else Just xs
-
+-- | Slice a list by the given limit and offset. 'Nothing' returns all items.
 applyLimits :: Maybe (Limit, Offset) -> [a] -> [a]
 applyLimits Nothing xs = xs
 applyLimits (Just (limit, offset)) xs =
@@ -38,53 +38,13 @@ applyLimits (Just (limit, offset)) xs =
 
 -- | Apply optional filter, then optional ordering, then optional limit/offset.
 -- Caller supplies the list and the two optional-argument list transformers.
-applyFilterOrderLimit
-  :: Maybe (Limit, Offset)
-  -> Maybe f
-  -> Maybe (ob, SortOrder)
-  -> (Maybe f -> [a] -> [a])
-  -> (Maybe (ob, SortOrder) -> [a] -> [a])
-  -> [a]
-  -> [a]
+applyFilterOrderLimit ::
+  Maybe (Limit, Offset) ->
+  Maybe f ->
+  Maybe (ob, SortOrder) ->
+  (Maybe f -> [a] -> [a]) ->
+  (Maybe (ob, SortOrder) -> [a] -> [a]) ->
+  [a] ->
+  [a]
 applyFilterOrderLimit maybeLimitOffset maybeFilter maybeOrder applyFilter applyOrder =
   applyLimits maybeLimitOffset . applyOrder maybeOrder . applyFilter maybeFilter
-
-data ProfileFilter = ProfileFilter
-  { profileFilterId :: Maybe [ProfileRefAC],
-    profileFilterType :: Maybe ProfileType,
-    profileFilterName :: Maybe Text,
-    profileFilterDescription :: Maybe Text
-  }
-
-data PromotionFilter = PromotionFilter
-  { promotionFilterId :: Maybe [RankAC],
-    promotionFilterBelt :: Maybe [BJJBelt],
-    promotionFilterAchievedByProfileId :: Maybe [ProfileRefAC],
-    promotionFilterAwardedByProfileId :: Maybe [ProfileRefAC],
-    promotionFilterAchievementDateInterval :: (Maybe GYTime, Maybe GYTime)
-  }
-
-data RankFilter = RankFilter
-  { rankFilterId :: Maybe [RankAC],
-    rankFilterBelt :: Maybe [BJJBelt],
-    rankFilterAchievedByProfileId :: Maybe [ProfileRefAC],
-    rankFilterAwardedByProfileId :: Maybe [ProfileRefAC],
-    rankFilterAchievementDateInterval :: (Maybe GYTime, Maybe GYTime)
-  }
-
-data MembershipHistoryFilter = MembershipHistoryFilter
-  { membershipHistoryFilterOrganizationProfileId :: Maybe [ProfileRefAC],
-    membershipHistoryFilterPractitionerProfileId :: Maybe [ProfileRefAC]
-  }
-
-newtype MembershipIntervalFilter = MembershipIntervalFilter
-  { membershipIntervalFilterPractitionerProfileId :: Maybe [ProfileRefAC]
-  }
-
-data AchievementFilter = AchievementFilter
-  { achievementFilterId :: Maybe [AchievementAC],
-    achievementFilterAwardedToProfileId :: Maybe [ProfileRefAC],
-    achievementFilterAwardedByProfileId :: Maybe [ProfileRefAC],
-    achievementFilterIsAccepted :: Maybe Bool,
-    achievementFilterDateInterval :: (Maybe GYTime, Maybe GYTime)
-  }

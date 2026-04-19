@@ -47,7 +47,7 @@ myPreamble =
   MkPreamble
     { preambleTitle = "BJJ Belt System",
       preambleDescription = Just "A decentralized belt system for Brazilian Jiu-Jitsu practitioners and organizations that implements a comprehensive smart contract architecture for managing BJJ practitioner profiles, rank promotions, and membership histories on the Cardano blockchain. The system consists of four main validators: Minting Policy (controls token creation), Profiles Validator (manages profile lifecycle and updates), Ranks Validator (enforces promotion acceptance and rank state transitions), and Memberships Validator (manages membership histories and intervals in a sorted linked list).",
-      preambleVersion = "1.0.0",
+      preambleVersion = "2.0.0",
       preamblePlutusVersion = PlutusV3,
       preambleLicense = Just "MIT"
     }
@@ -85,12 +85,12 @@ profilesValidatorBlueprint :: ProtocolParams -> ValidatorBlueprint referencedTyp
 profilesValidatorBlueprint _mp =
   MkValidatorBlueprint
     { validatorTitle = "BJJ Belt System Profiles Validator",
-      validatorDescription = Just "Governs the rules for profile lifecycle and promotion acceptance. Handles profile information updates (image URI) and allows practitioners to accept pending promotions. Profile deletion is intentionally unsupported to preserve lineage integrity — BJJ belt records are permanent historical facts. Features token-based authorization requiring user tokens for profile modifications, full CIP-68 metadata support with size-limited fields, and atomic promotion acceptance. Uses the lightweight promoteProfileDatum function (R4 optimization) to avoid unnecessary Rank record construction.",
+      validatorDescription = Just "Governs the rules for profile lifecycle and promotion acceptance. Handles profile metadata updates (description and image; name is immutable after minting) and allows practitioners to accept pending promotions. Profile deletion is intentionally unsupported to preserve lineage integrity — BJJ belt records are permanent historical facts. Features token-based authorization requiring user tokens for profile modifications, full CIP-68 metadata support with size-limited fields, and atomic promotion acceptance. Uses the lightweight promoteProfileDatum function (R4 optimization) to avoid unnecessary Rank record construction.",
       validatorParameters = [], -- No parameters for this validator
       validatorRedeemer =
         MkArgumentBlueprint
           { argumentTitle = Just "Profiles Redeemer",
-            argumentDescription = Just "Redeemer for profile operations: UpdateProfileImage (updates profile image metadata with size validation) or AcceptPromotion (accepts pending promotion by updating the profile's currentRank pointer). Requires user token authorization for UpdateProfileImage; AcceptPromotion defers consent to RanksValidator via forced co-execution.",
+            argumentDescription = Just "Redeemer for profile operations: UpdateProfile (updates profile metadata — description and image — with size validation; name is immutable) or AcceptPromotion (accepts pending promotion by updating the profile's currentRank pointer). Requires user token authorization for UpdateProfile; AcceptPromotion defers consent to RanksValidator via forced co-execution.",
             argumentPurpose = Set.fromList [Spend],
             argumentSchema = definitionRef @ProfilesRedeemer
           },

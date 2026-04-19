@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 
+-- | Chain event projection: maps raw on-chain UTxO datums to domain-level events.
 module Ingestion where
 
 import Data.Maybe (isJust)
@@ -14,6 +15,7 @@ import TxBuilding.Conversions
 import TxBuilding.Utils
 import TxBuilding.Validators (achievementsValidatorHashGY, membershipsValidatorHashGY, profilesValidatorHashGY, ranksValidatorHashGY)
 
+-- | Classified domain event produced by projecting an on-chain UTxO datum.
 data ChainEventProjection
   = RankEvent Rank
   | ProfileEvent Profile
@@ -24,6 +26,8 @@ data ChainEventProjection
   | NoEvent AtlasMatch
   deriving (Show)
 
+-- | Project an 'AtlasMatch' into a domain event by inspecting the validator address and datum.
+-- Spent UTxOs are ignored (returned as 'NoEvent').
 projectChainEvent :: (MonadError GYTxMonadException m) => GYNetworkId -> AtlasMatch -> m ChainEventProjection
 projectChainEvent nid am@AtlasMatch {..} =
   if isJust amSpentAt

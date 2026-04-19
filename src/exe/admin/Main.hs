@@ -51,7 +51,7 @@ data Command
   | SetMinUTxOValue Integer
   | QueryOracle
   | InitProfile InitProfileArgs
-  | UpdateProfileImage UpdateProfileImageArgs
+  | UpdateProfile UpdateProfileArgs
   | PromoteProfile PromoteProfileArgs
   | AcceptPromotion AcceptPromotionArgs
   | CreateProfileWithRank CreateProfileWithRankArgs
@@ -85,10 +85,11 @@ data InitProfileArgs = InitProfileArgs
   }
   deriving (Show)
 
-data UpdateProfileImageArgs = UpdateProfileImageArgs
-  { upiaProfileId :: GYAssetClass,
-    upiaImageURI :: T.Text,
-    upiaOutputId :: Bool
+data UpdateProfileArgs = UpdateProfileArgs
+  { upaProfileId :: GYAssetClass,
+    upaDescription :: Maybe T.Text,
+    upaImageURI :: T.Text,
+    upaOutputId :: Bool
   }
   deriving (Show)
 
@@ -370,16 +371,17 @@ commandParser =
               (progDesc "Initialize a new profile")
           )
         <> command
-          "update-profile-image"
+          "update-profile"
           ( info
-              ( UpdateProfileImage
-                  <$> ( UpdateProfileImageArgs
+              ( UpdateProfile
+                  <$> ( UpdateProfileArgs
                           <$> assetClassParser
+                          <*> optional (fmap T.pack (strOption (long "description" <> metavar "DESCRIPTION" <> help "New profile description (omit to keep current)")))
                           <*> fmap T.pack (strOption (long "image-uri" <> metavar "IMAGE_URI" <> help "New image URI"))
                           <*> outputIdParser
                       )
               )
-              (progDesc "Update profile image")
+              (progDesc "Update profile metadata (description, image)")
           )
         <> command
           "promote-profile"
@@ -506,9 +508,9 @@ initProfileToActionType :: InitProfileArgs -> ActionType
 initProfileToActionType InitProfileArgs {ipaProfileData, ipaProfileType, ipaCreationDate} =
   ProfileAction $ InitProfileAction ipaProfileData ipaProfileType ipaCreationDate
 
-updateProfileImageToActionType :: UpdateProfileImageArgs -> ActionType
-updateProfileImageToActionType UpdateProfileImageArgs {upiaProfileId, upiaImageURI} =
-  ProfileAction $ UpdateProfileImageAction upiaProfileId upiaImageURI
+updateProfileToActionType :: UpdateProfileArgs -> ActionType
+updateProfileToActionType UpdateProfileArgs {upaProfileId, upaDescription, upaImageURI} =
+  ProfileAction $ UpdateProfileAction upaProfileId upaDescription upaImageURI
 
 promoteProfileToActionType :: PromoteProfileArgs -> ActionType
 promoteProfileToActionType PromoteProfileArgs {ppaPromotedProfileId, ppaPromotedByProfileId, ppaAchievementDate, ppaPromotedBelt} =
@@ -634,12 +636,12 @@ executeCommand (Right txBuildingCtx) signKey cmd = case cmd of
     if ipaOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
       else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
-  UpdateProfileImage args -> do
-    printYellow "Updating profile image..."
-    let actionType = updateProfileImageToActionType args
+  UpdateProfile args -> do
+    printYellow "Updating profile..."
+    let actionType = updateProfileToActionType args
     (_txId, mAssetClass) <- runBJJActionWithPK txBuildingCtx signKey actionType Nothing
-    printGreen "Profile image updated successfully!"
-    if upiaOutputId args
+    printGreen "Profile updated successfully!"
+    if upaOutputId args
       then putStrLn $ LSB8.unpack $ LSB8.toStrict $ Aeson.encode mAssetClass
       else printGreen $ "Profile ID: " <> LSB8.unpack (LSB8.toStrict (Aeson.encode mAssetClass))
   PromoteProfile args -> do

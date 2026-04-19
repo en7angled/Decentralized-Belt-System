@@ -32,24 +32,31 @@ data DeployedScriptsContext = DeployedScriptsContext
   deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON)
 
+-- | Get the minting policy script hash.
 getMintingPolicyHash :: DeployedScriptsContext -> GYScriptHash
 getMintingPolicyHash ctx = fst $ mintingPolicyHashAndRef ctx
 
+-- | Get the minting policy reference script UTxO.
 getMintingPolicyRef :: DeployedScriptsContext -> GYTxOutRef
 getMintingPolicyRef ctx = snd $ mintingPolicyHashAndRef ctx
 
+-- | Get the profiles validator reference script UTxO.
 getProfilesValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getProfilesValidatorRef ctx = snd $ profilesValidatorHashAndRef ctx
 
+-- | Get the ranks validator reference script UTxO.
 getRanksValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getRanksValidatorRef ctx = snd $ ranksValidatorHashAndRef ctx
 
+-- | Get the memberships validator reference script UTxO.
 getMembershipsValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getMembershipsValidatorRef ctx = snd $ membershipsValidatorHashAndRef ctx
 
+-- | Get the achievements validator reference script UTxO.
 getAchievementsValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getAchievementsValidatorRef ctx = snd $ achievementsValidatorHashAndRef ctx
 
+-- | Get the oracle validator reference script UTxO.
 getOracleValidatorRef :: DeployedScriptsContext -> GYTxOutRef
 getOracleValidatorRef ctx = snd $ oracleValidatorHashAndRef ctx
 
@@ -69,6 +76,7 @@ getProtocolParamsFromCtx ctx =
 
 ------------------------------------------------------------------------------------------------
 
+-- | Atlas provider configuration and resolved providers for chain queries and tx submission.
 data ProviderCtx = ProviderCtx
   { ctxCoreCfg :: !GYCoreConfig,
     ctxProviders :: !GYProviders
@@ -134,6 +142,7 @@ runTx ctx addrs addr collateral skeleton = do
     (collateralToRunParam collateral)
     (skeleton >>= \(txSklt, mac) -> (,mac) <$> buildTxBody txSklt)
 
+-- | Combined context holding deployed script references and the chain provider.
 data TxBuildingContext = TxBuildingContext
   { deployedScriptsCtx :: DeployedScriptsContext,
     providerCtx :: ProviderCtx

@@ -2,28 +2,39 @@
 
 ## Overview
 
-Run project linters, apply fixes, and ensure the codebase meets formatting and
-style requirements before merging changes.
+Run Haskell linting tools across the codebase, apply fixes, and ensure the code meets the project's formatting and style standards.
 
 ## Steps
 
-1. **Execute linters**
-    - Run the standard lint command with autofix enabled if available
-    - Capture any remaining errors or warnings from the output
-    - Identify files requiring manual attention
-2. **Resolve findings**
-    - Apply targeted fixes, keeping edits minimal and idiomatic
-    - Refactor repeated issues such as unused variables or long functions
-    - Update configuration or suppressions only when justified
-3. **Verify cleanliness**
-    - Re-run the lint command to ensure a zero-issue result
-    - Spot-check key files for formatting and readability
-    - Stage the changes with clear commit messages when satisfied
+1. **Run Linters**
+    - Run `hlint src/` to get suggestions (if available in the Nix shell)
+    - Check GHC warnings: `cabal build all` with default warning flags
+    - Review `-Wunused-imports`, `-Wunused-binds`, `-Wincomplete-patterns` warnings
+
+2. **Resolve Findings**
+    - Apply HLint suggestions that improve clarity (eta-reduce, use `<$>`, remove redundant `do`)
+    - Skip suggestions that obscure intent in complex Plutus validator code
+    - Fix all GHC warnings — especially incomplete pattern matches and unused imports
+    - Ensure naming matches conventions: PascalCase types, camelCase functions, `mk` constructors
+
+3. **Verify Style Compliance**
+    - Max 120 characters per line
+    - 2-space indentation, no tabs
+    - One blank line between top-level declarations
+    - Haddock (`-- |`) on module exports; `-- ^` on non-obvious record fields
+    - `deriving-aeson` with `StripPrefix` + `CamelToSnake` for JSON instances
+
+4. **Final Verification**
+    - Re-run `cabal build all` — no warnings or errors
+    - Re-run `hlint src/` — no remaining actionable suggestions
+    - Stage changes with clear commit messages
 
 ## Lint Checklist
 
-- [ ] Linter executed with latest config
-- [ ] Autofix results reviewed
-- [ ] Manual issues resolved
-- [ ] Final lint run passes cleanly
-- [ ] Changes staged or ready for PR
+- [ ] HLint executed on `src/`
+- [ ] GHC warnings reviewed and fixed
+- [ ] Incomplete pattern matches resolved
+- [ ] Unused imports and bindings removed
+- [ ] Style conventions verified (line length, indentation, naming)
+- [ ] `cabal build all` clean
+- [ ] Changes staged and ready for commit

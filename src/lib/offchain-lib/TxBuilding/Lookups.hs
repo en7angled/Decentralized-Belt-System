@@ -6,19 +6,22 @@ import Control.Monad.Reader.Class (MonadReader, asks)
 import Data.Maybe
 import Data.Typeable (cast)
 import DomainTypes.Core.Actions
+import DomainTypes.Core.BJJ (BJJBelt)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
 import GeniusYield.TxBuilder
 import GeniusYield.TxBuilder.Errors ()
-import GeniusYield.Types (GYDatum, GYNetworkId, GYScriptHash, GYTxOutRef, GYUTxO, filterUTxOs, utxoRef, utxoValue, utxosToList)
+import GeniusYield.Types (GYDatum, GYNetworkId, GYScriptHash, GYTxOutRef, GYUTxO, filterUTxOs, mintingPolicyIdFromCurrencySymbol, utxoRef, utxoValue, utxosToList)
 import GeniusYield.Types.Address
 import GeniusYield.Types.Value
-import Onchain.CIP68 (CIP68Datum (..))
+import Onchain.CIP68 (CIP68Datum (..), deriveRefFromUserAC, userTokenPrefixBS)
 import Onchain.LinkedList (NodeDatum (..))
 import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Id qualified as OnchainId
 import Onchain.Protocol.Types qualified as OnchainTypes
-import PlutusLedgerApi.V1.Value (CurrencySymbol, Value, flattenValue)
+import PlutusLedgerApi.V1.Value (CurrencySymbol, Value, adaSymbol, flattenValue)
+import PlutusTx.Builtins (sliceByteString, lengthOfByteString)
+import PlutusLedgerApi.V1.Value qualified as PlutusValue
 import TxBuilding.Context (DeployedScriptsContext (..))
 import TxBuilding.Conversions (onchainAchievementToAchievement, onchainMembershipHistoryToMembershipHistory, onchainMembershipIntervalToMembershipInterval, onchainPromotionToPromotionInformation, onchainRankToRankInformation, profileDatumToProfile, profileDatumToProfileData)
 import TxBuilding.Exceptions (TxBuildingException (..))
@@ -55,11 +58,11 @@ getUTxOWithNFTOrThrow gyAC onNotFound =
           _ -> throwError e
       _ -> throwError e
 
-getUTxOWithTokenAtAddresses :: (GYTxQueryMonad m) => GYAssetClass -> [GYAddress] -> m GYUTxO
-getUTxOWithTokenAtAddresses nftAC addrs = do
+getUTxOWithTokenAtAddresses :: (GYTxQueryMonad m) => GYAssetClass -> [GYAddress] -> TxBuildingException -> m GYUTxO
+getUTxOWithTokenAtAddresses nftAC addrs onNotFound = do
   utxos <- utxosAtAddresses addrs
   let utxosWithNFT = filterUTxOs (\utxo -> valueAssetPresent (utxoValue utxo) nftAC) utxos
-  singleUTxOOrThrow (utxosToList utxosWithNFT) ProfileNotFound MultipleUtxosFound
+  singleUTxOOrThrow (utxosToList utxosWithNFT) onNotFound MultipleUtxosFound
 
 getUTxOWithNFT :: (GYTxQueryMonad m) => GYAssetClass -> m GYUTxO
 getUTxOWithNFT gyAC = do
@@ -104,6 +107,17 @@ getProfileRanks profileRef = do
             gyPreviousRankId <- assetClassFromPlutus' previousRankId
             previousRanks <- getRankList gyPreviousRankId
             return (rankData : previousRanks)
+
+-- | Current rank belt for a practitioner (head of 'getProfileRanks' = newest); 'Nothing' if no rank.
+getCurrentBeltForPractitioner ::
+  (GYTxQueryMonad m) =>
+  ProfileRefAC ->
+  m (Maybe BJJBelt)
+getCurrentBeltForPractitioner profileRef = do
+  ranks <- getProfileRanks profileRef
+  case ranks of
+    [] -> return Nothing
+    (r : _) -> fmap rankBelt <$> onchainRankToRankInformation r
 
 -- | Query all UTxOs at a validator script address and parse their inline datums.
 getAllParsedDatumsAtValidator :: (GYTxQueryMonad m) => GYNetworkId -> GYScriptHash -> (GYDatum -> Maybe a) -> m [a]
@@ -150,8 +164,9 @@ getPractitionerInformation profileRefAC = do
     Onchain.Practitioner -> do
       ranks <- getProfileRanks profileRefAC
       ranksInfos <- catMaybes <$> mapM onchainRankToRankInformation ranks
-      let currentRank = head ranksInfos
-      let previousRanks = tail ranksInfos
+      (currentRank, previousRanks) <- case ranksInfos of
+        (r : rs) -> return (r, rs)
+        [] -> throwError (GYApplicationException RankListEmpty)
       return $
         PractitionerProfileInformation
           { practitionerId = profileRefAC,
@@ -193,7 +208,7 @@ queryOracleParams ::
 queryOracleParams = do
   oracleAC <- asks oracleNFTAssetClass
   oracleAddr <- scriptAddress oracleValidatorGY
-  utxo <- getUTxOWithTokenAtAddresses oracleAC [oracleAddr]
+  utxo <- getUTxOWithTokenAtAddresses oracleAC [oracleAddr] OracleNotFound
   case getInlineDatumAndValue utxo of
     Just (gyDatum, _) ->
       case oracleParamsFromDatum gyDatum of
@@ -375,7 +390,7 @@ intervalBelongsToHistory h iv =
           (assetClassToPlutus (membershipHistoryOrganizationId h))
           (assetClassToPlutus (membershipHistoryPractitionerId h))
       )
-      (membershipIntervalNumber iv)
+      (membershipIntervalIntervalNumber iv)
       == assetClassToPlutus (membershipIntervalId iv)
 
 -- | Build interval information from interval and owning history's organization id.
@@ -385,9 +400,9 @@ intervalToInformation iv orgId =
     { membershipIntervalInformationId = membershipIntervalId iv,
       membershipIntervalInformationStartDate = membershipIntervalStartDate iv,
       membershipIntervalInformationEndDate = membershipIntervalEndDate iv,
-      membershipIntervalInformationIsAccepted = membershipIntervalIsAccepted iv,
+      membershipIntervalInformationAccepted = membershipIntervalAccepted iv,
       membershipIntervalInformationPractitionerId = membershipIntervalPractitionerId iv,
-      membershipIntervalInformationNumber = membershipIntervalNumber iv,
+      membershipIntervalInformationIntervalNumber = membershipIntervalIntervalNumber iv,
       membershipIntervalInformationOrganizationId = orgId
     }
 
@@ -443,3 +458,30 @@ getAllAchievements nid = do
   catMaybes <$> mapM safeConvert allDatums
   where
     safeConvert datum = catchError (Just <$> onchainAchievementToAchievement datum) (const $ return Nothing)
+
+-- | Find profile reference NFT AssetClasses for User NFTs held at the given addresses.
+-- Scans UTxO values for tokens whose Plutus token name starts with the CIP-67 user prefix,
+-- then derives the corresponding reference token name.
+getProfileRefACsAtAddress :: (GYTxQueryMonad m) => [GYAddress] -> m [ProfileRefAC]
+getProfileRefACsAtAddress addrs = do
+  utxos <- utxosAtAddresses addrs
+  let allValues = map utxoValue (utxosToList utxos)
+      userNFTs =
+        [ (cs, tn)
+          | v <- allValues,
+            (cs, tn, amt) <- flattenValue (valueToPlutus v),
+            amt > 0,
+            cs /= adaSymbol,
+            isUserTokenName tn
+        ]
+      refACs = mapMaybe plutusUserNFTToRefAC userNFTs
+  return refACs
+  where
+    isUserTokenName (PlutusValue.TokenName bs) =
+      lengthOfByteString bs >= 4
+        && sliceByteString 0 4 bs == userTokenPrefixBS
+    plutusUserNFTToRefAC (cs, tn) =
+      let PlutusValue.AssetClass (refCS, refTN) = deriveRefFromUserAC (PlutusValue.AssetClass (cs, tn))
+       in case (mintingPolicyIdFromCurrencySymbol refCS, tokenNameFromPlutus refTN) of
+            (Right mpid, Just gyTN) -> Just (GYToken mpid gyTN)
+            _ -> Nothing

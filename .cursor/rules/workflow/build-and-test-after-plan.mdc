@@ -9,8 +9,9 @@ alwaysApply: false
 
 ## Requirement
 
-1. From repo root, run **`cabal build all`** then **`cabal test`**.
-2. If either fails, fix the failures before proceeding.
-3. Do not treat the implementation as complete, and do not start the next task or step, until both succeed.
+1. From repo root, ensure the Nix/direnv toolchain is active: run **`direnv allow`** once (or when `.envrc` changes), then work inside a shell where direnv has loaded the flake (see [environment.mdc](../environment.mdc)). Without this, `cabal build` may fail on missing GHC, `libpq`, `libblst`, or wrong `PKG_CONFIG_PATH`.
+2. Run **`cabal build all`** then **`cabal test`**.
+3. If either fails, fix the failures before proceeding.
+4. Do not treat the implementation as complete, and do not start the next task or step, until both succeed.
 
-For the exact commands and test layout, see [testing-and-config.mdc](testing-and-config.mdc). For build/test environment (e.g. `CABAL_DIR`), see [environment.mdc](../environment.mdc).
+For the exact commands and test layout, see [testing-and-config.mdc](testing-and-config.mdc). For build/test environment (e.g. `CABAL_DIR`, direnv), see [environment.mdc](../environment.mdc).

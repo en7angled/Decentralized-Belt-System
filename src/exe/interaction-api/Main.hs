@@ -9,6 +9,7 @@ import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.String (IsString (..))
 import GeniusYield.GYConfig
 import GeniusYield.Types
+import IPFS (initIPFSConfig)
 import InteractionAppMonad (InteractionAppContext (..))
 import Network.Wai.Handler.Warp
 import RestAPI (apiSwagger, mkBJJApp)
@@ -21,7 +22,7 @@ import WebAPI.Utils (getPortFromEnvOrDefault)
 main :: IO ()
 main = do
   putStrLn "Writing Swagger file ..."
-  BL8.writeFile "docs/swagger/interaction-swagger-api.json" (encodePretty apiSwagger)
+  BL8.writeFile "docs/generated/swagger/interaction-swagger-api.json" (encodePretty apiSwagger)
 
   atlasConfig <- maybe (die "Atlas configuration failed") return =<< decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
   deployedScriptsContext <- maybe (die "Deployed validators configuration failed") return =<< decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuildingContextFile
@@ -30,7 +31,8 @@ main = do
     let providersContext = ProviderCtx atlasConfig providers
     let txBuildingContext = TxBuildingContext deployedScriptsContext providersContext
     authContext <- getBasicAuthFromEnv
-    let appContext = InteractionAppContext authContext txBuildingContext
+    ipfsCfg <- initIPFSConfig
+    let appContext = InteractionAppContext authContext txBuildingContext ipfsCfg
 
     let host = "0.0.0.0"
     port <- getPortFromEnvOrDefault 8082

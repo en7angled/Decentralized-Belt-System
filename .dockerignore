@@ -72,3 +72,6 @@ tests/
 # Docker files (avoid recursive copying)
 Dockerfile*
 .dockerignore
+
+# MCP resources live under src/lib/mcp-server-lib/resources/ and come along
+# with the `COPY src ./src` in each Dockerfile (src/ is not excluded above).

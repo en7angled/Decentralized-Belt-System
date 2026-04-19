@@ -1,5 +1,7 @@
 # On-chain trace codes reference
 
+*Audience: operators, auditors, and developers debugging failed transactions. Lookup table only — read alongside [`onchain-architecture.md`](onchain-architecture.md) when a code points you into a specific validator.*
+
 Trace codes are **two-character** and **globally unique**. The first character identifies the module, the second is sequential within that module. When a transaction fails, the reported code identifies the exact failure point without needing the script hash.
 
 ## Module prefixes
@@ -65,7 +67,7 @@ Trace codes are **two-character** and **globally unique**. The first character i
 | P1 | ProfilesValidator | Invalid purpose |
 | P2 | ProfilesValidator | Own value has Ref NFT |
 | P3 | ProfilesValidator | Must spend User NFT |
-| P4 | ProfilesValidator | Image URI validation failed |
+| P4 | ProfilesValidator | Metadata fields validation failed |
 | P5 | ProfilesValidator | Lock updated profile |
 | P6 | ProfilesValidator | Promotion ID CS check |
 | P7 | ProfilesValidator | Already at or past this rank |

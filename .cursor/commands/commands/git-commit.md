@@ -19,6 +19,7 @@ Create a short, focused commit message and commit staged changes.
     - Base the message on the actual changes in the diff
     - Example: `git commit -m "fix(auth): handle expired token refresh"`
     - Example with issue key: `git commit -m "PROJ-123: fix(auth): handle expired token refresh"`
+    - **Multi-scope changes:** When a single commit spans multiple scopes (onchain, API, tests, docs), use the primary scope and mention others in a multi-line body if needed.
     - **Version bumps:** If the diff includes `.cz.toml`, `CHANGELOG.md`, and `Decentralized-Belt-System.cabal` version changes, the bump must have been done via Commitizen (`cz bump`) and cabal sync first — see [versioning rule](../../rules/workflow/versioning.mdc). Use: `git commit -m "chore: bump version to X.Y.Z.W"` (replace with actual version from `.cz.toml`).
 
 ## Template

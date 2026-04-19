@@ -1,3 +1,4 @@
+-- | CORS middleware that dynamically reflects the request's @Origin@ header.
 module WebAPI.CORS where
 
 import qualified Data.List
@@ -6,6 +7,7 @@ import Network.HTTP.Types.Header
 import Network.Wai
 import Network.Wai.Middleware.Cors
 
+-- | CORS policy that reflects the request's @Origin@ and allows common HTTP methods.
 defaultCorsPolicy :: Request -> Maybe CorsResourcePolicy
 defaultCorsPolicy req =
   let originHeader = Data.List.lookup hOrigin (requestHeaders req)
@@ -24,5 +26,6 @@ defaultCorsPolicy req =
               }
         Nothing -> Nothing -- If no origin set skips cors headers
 
+-- | WAI middleware that applies the dynamic CORS policy to all requests.
 setupCors :: Middleware
 setupCors = cors defaultCorsPolicy

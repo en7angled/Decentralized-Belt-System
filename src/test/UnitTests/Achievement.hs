@@ -30,7 +30,9 @@ achievementTests =
       mkTestFor "Test Case 5.4: Double-accept achievement fails (TA)" doubleAcceptAchievementFailTest,
       mkTestFor "Test Case 5.5: Wrong user cannot accept achievement" wrongUserAcceptAchievementFailTest,
       mkTestFor "Test Case 5.6: Cleanup dust at AchievementsValidator" cleanupDustAtAchievementsTest,
-      mkTestFor "Award achievement with max-length metadata succeeds" awardAchievementMaxLengthMetadataTest
+      mkTestFor "Award achievement with max-length metadata succeeds" awardAchievementMaxLengthMetadataTest,
+      mkTestFor "Award achievement with other_metadata succeeds" awardAchievementWithOtherMetadataTest,
+      mkTestFor "Award achievement with reserved other_metadata key fails" awardAchievementReservedMetadataKeyFailTest
     ]
   where
     -- Test Case 5.1: Organization awards an achievement to a practitioner
@@ -87,6 +89,99 @@ achievementTests =
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Achievement awarded: " <> show achievementAC
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Organization awards achievement test passed!"
+      return ()
+
+    awardAchievementWithOtherMetadataTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    awardAchievementWithOtherMetadataTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+
+      (_txId, practitionerAC) <-
+        bjjInteraction
+          ctx
+          (w2 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      achievementDate <- slotToBeginTime s'
+      let achievementDatePast = timeFromPOSIX $ timeToPOSIX achievementDate - 1000
+
+      void $
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          ( AwardAchievementAction
+              { aa_awarded_to_profile_id = practitionerAC,
+                aa_awarded_by_profile_id = orgAC,
+                aa_profile_data = achievementProfileData,
+                aa_other_metadata = [("Tournament", "Pan Ams 2024"), ("Division", "Adult Purple")],
+                aa_achievement_date = achievementDatePast
+              }
+          )
+          Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Award with other_metadata succeeded!"
+      return ()
+
+    awardAchievementReservedMetadataKeyFailTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    awardAchievementReservedMetadataKeyFailTest TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+
+      (_txId, practitionerAC) <-
+        bjjInteraction
+          ctx
+          (w2 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      achievementDate <- slotToBeginTime s'
+      let achievementDatePast = timeFromPOSIX $ timeToPOSIX achievementDate - 1000
+
+      mustFail $
+        void $
+          bjjInteraction
+            ctx
+            (w1 testWallets)
+            ( AwardAchievementAction
+                { aa_awarded_to_profile_id = practitionerAC,
+                  aa_awarded_by_profile_id = orgAC,
+                  aa_profile_data = achievementProfileData,
+                  aa_other_metadata = [("name", "shadow")],
+                  aa_achievement_date = achievementDatePast
+                }
+            )
+            Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Reserved other_metadata key rejected as expected!"
       return ()
 
     awardAchievementMaxLengthMetadataTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()

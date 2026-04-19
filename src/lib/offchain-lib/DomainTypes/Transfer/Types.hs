@@ -64,9 +64,9 @@ data MembershipIntervalInformation = MembershipIntervalInformation
   { membershipIntervalInformationId :: MembershipIntervalAC,
     membershipIntervalInformationStartDate :: GYTime,
     membershipIntervalInformationEndDate :: Maybe GYTime,
-    membershipIntervalInformationIsAccepted :: Bool,
+    membershipIntervalInformationAccepted :: Bool,
     membershipIntervalInformationPractitionerId :: ProfileRefAC,
-    membershipIntervalInformationNumber :: Integer,
+    membershipIntervalInformationIntervalNumber :: Integer,
     membershipIntervalInformationOrganizationId :: ProfileRefAC
   }
   deriving (Generic)
@@ -144,8 +144,8 @@ instance Show MembershipIntervalInformation where
         "│ Practitioner: " <> stringFromJSON membershipIntervalInformationPractitionerId,
         "│ Start: " <> stringFromJSON membershipIntervalInformationStartDate,
         "│ End: " <> stringFromJSON membershipIntervalInformationEndDate,
-        "│ Accepted: " <> show membershipIntervalInformationIsAccepted,
-        "│ Number: " <> show membershipIntervalInformationNumber,
+        "│ Accepted: " <> show membershipIntervalInformationAccepted,
+        "│ Number: " <> show membershipIntervalInformationIntervalNumber,
         "└─────────────────────────────────────────────────────────────"
       ]
 
@@ -159,6 +159,52 @@ instance Show MembershipHistoryInformation where
         "│ Intervals: " <> show (Prelude.length membershipHistoryInformationIntervals),
         "└─────────────────────────────────────────────────────────────"
       ]
+
+-- | Protocol status response DTO.
+data ProtocolStatus = ProtocolStatus
+  { protocolStatusOpPaused :: Bool,
+    protocolStatusMinUtxoValue :: Integer,
+    protocolStatusFeeConfig :: Maybe FeeConfigDTO,
+    protocolStatusScriptHashes :: Maybe ScriptHashesDTO
+  }
+  deriving (Generic, Show)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "protocolStatus", CamelToSnake]] ProtocolStatus
+
+instance ToSchema ProtocolStatus where
+  declareNamedSchema = genericDeclareNamedSchema $
+    fromAesonOptions AesonTypes.defaultOptions {AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "protocolStatus"}
+
+-- | Fee configuration response DTO.
+data FeeConfigDTO = FeeConfigDTO
+  { feeConfigProfileCreationFee :: Integer,
+    feeConfigPromotionFee :: Integer,
+    feeConfigMembershipHistoryFee :: Integer,
+    feeConfigMembershipIntervalFee :: Integer,
+    feeConfigAchievementFee :: Integer,
+    feeConfigFeeAddress :: Maybe Text
+  }
+  deriving (Generic, Show)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "feeConfig", CamelToSnake]] FeeConfigDTO
+
+instance ToSchema FeeConfigDTO where
+  declareNamedSchema = genericDeclareNamedSchema $
+    fromAesonOptions AesonTypes.defaultOptions {AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "feeConfig"}
+
+-- | Script hashes of all deployed validators and the minting policy.
+data ScriptHashesDTO = ScriptHashesDTO
+  { scriptHashesMintingPolicy :: Text,
+    scriptHashesProfilesValidator :: Text,
+    scriptHashesRanksValidator :: Text,
+    scriptHashesMembershipsValidator :: Text,
+    scriptHashesAchievementsValidator :: Text,
+    scriptHashesOracleValidator :: Text
+  }
+  deriving (Generic, Show)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "scriptHashes", CamelToSnake]] ScriptHashesDTO
+
+instance ToSchema ScriptHashesDTO where
+  declareNamedSchema = genericDeclareNamedSchema $
+    fromAesonOptions AesonTypes.defaultOptions {AesonTypes.fieldLabelModifier = camelTo2 '_' . dropPrefix "scriptHashes"}
 
 -- Helper function to display rank chain
 showRankChain :: [Rank] -> String

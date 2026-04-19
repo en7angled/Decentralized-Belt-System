@@ -1,5 +1,6 @@
 # Onchain Architecture Documentation
 
+*Audience: auditors, reviewers, and engineers who need validator internals — redeemers, output-index conventions, oracle hub, security model. For extension workflows see [`developer-guide.md`](developer-guide.md); for trace-code lookups see [`onchain-trace-codes.md`](onchain-trace-codes.md).*
 
 - [Onchain Architecture Documentation](#onchain-architecture-documentation)
   - [Overview](#overview)
@@ -68,15 +69,15 @@
 
 The Decentralized BJJ Belt System implements a comprehensive smart contract architecture for managing Brazilian Jiu-Jitsu (BJJ) practitioner profiles, rank promotions, and organization memberships on the Cardano blockchain. 
 
-The system consists of six main validators and an oracle hub that work together to manage the complete BJJ belt system:
+The system consists of seven on-chain scripts that work together to manage the complete BJJ belt system:
 
-1. **Oracle Validator** - Guards the oracle UTxO containing dynamic protocol parameters
-2. **Oracle NFT Policy** - One-shot minting policy to create the unique oracle identifier
-3. **Minting Policy** - Controls token creation and validates promotions/memberships/achievements at creation time; reads oracle parameters via reference input
-4. **Profiles Validator** - Manages profile updates and validates promotion acceptance
-5. **Ranks Validator** - Handles promotion consumption with consent validation
-6. **Memberships Validator** - Manages membership histories and intervals for organization-practitioner relationships
-7. **Achievements Validator** - Manages achievement NFTs awarded to practitioners, supporting acceptance and permissionless dust cleanup
+1. **Oracle Validator** — guards the oracle UTxO containing dynamic protocol parameters.
+2. **Oracle NFT Policy** — one-shot minting policy that creates the unique oracle identifier.
+3. **Minting Policy** — controls token creation and validates promotions/memberships/achievements at creation time; reads oracle parameters via reference input.
+4. **Profiles Validator** — manages profile updates and validates promotion acceptance.
+5. **Ranks Validator** — handles promotion consumption with consent validation.
+6. **Memberships Validator** — manages membership histories and intervals for organization-practitioner relationships.
+7. **Achievements Validator** — manages achievement NFTs awarded to practitioners, supporting acceptance and permissionless dust cleanup.
 
 **Immutability Principle**: Profiles are permanent by design. BJJ belt records are historical facts that should not be erasable, preserving lineage integrity and verification.
 
@@ -134,40 +135,47 @@ The **Oracle NFT Policy** (OracleNFTPolicy) is a one-shot minting policy paramet
 ### ProtocolParams Structure
 
 ```haskell
-data ProtocolParams = ProtocolParams ScriptHash ScriptHash ScriptHash AssetClass
--- Fields: RanksValidatorHash, ProfilesValidatorHash, MembershipsValidatorHash, OracleToken
+data ProtocolParams = ProtocolParams
+  { ranksValidatorScriptHash        :: ScriptHash
+  , profilesValidatorScriptHash     :: ScriptHash
+  , membershipsValidatorScriptHash  :: ScriptHash
+  , achievementsValidatorScriptHash :: ScriptHash
+  , oracleToken                     :: AssetClass
+  }
 ```
 
 The `ProtocolParams` is embedded in:
-- **MintingPolicy**: At compile time via `mintingPolicyCompile params`
-- **OnchainProfile datum**: Via `protocolParams :: ProtocolParams` field
-- **OnchainRank datum**: Via `rankProtocolParams` / `promotionProtocolParams` field
+- **MintingPolicy**: At compile time via `mintingPolicyCompile params`.
+- **OnchainProfile datum**: Via a `protocolParams :: ProtocolParams` field.
+- **OnchainRank datum**: Via a `rankProtocolParams` / `promotionProtocolParams` field.
+- **OnchainAchievement datum**: Via its own `protocolParams` field.
 
 The `oracleToken` field (an `AssetClass`) is used by the MintingPolicy to locate the oracle UTxO in the transaction's reference inputs at runtime.
 
 ### Why This Design?
 
-| Script               | Parameterized?                             | How It Gets Cross-Validator Addresses                              |
-| -------------------- | ------------------------------------------ | ------------------------------------------------------------------ |
-| MintingPolicy        | Yes (by ProtocolParams incl. oracle token) | Directly from compiled-in params; reads oracle via reference input |
-| ProfilesValidator    | No                                         | From profile datum's `protocolParams`                              |
-| RanksValidator       | No                                         | From rank datum's `promotionProtocolParams`                        |
-| MembershipsValidator | No                                         | No cross-validator lookups needed (authorization via User NFTs)    |
-| OracleValidator      | No                                         | N/A (guards oracle UTxO; admin-gated)                              |
-| OracleNFTPolicy      | Yes (by seed TxOutRef)                     | N/A (one-shot minting; ensures oracle NFT uniqueness)              |
+| Script                 | Parameterized?                             | How It Gets Cross-Validator Addresses                              |
+| ---------------------- | ------------------------------------------ | ------------------------------------------------------------------ |
+| MintingPolicy          | Yes (by ProtocolParams incl. oracle token) | Directly from compiled-in params; reads oracle via reference input |
+| ProfilesValidator      | No                                         | From profile datum's `protocolParams`                              |
+| RanksValidator         | No                                         | From rank datum's `promotionProtocolParams`                        |
+| MembershipsValidator   | No                                         | No cross-validator lookups needed (authorization via User NFTs)    |
+| AchievementsValidator  | No                                         | From achievement datum's `protocolParams`                          |
+| OracleValidator        | No                                         | N/A (guards oracle UTxO; admin-gated)                              |
+| OracleNFTPolicy        | Yes (by seed TxOutRef)                     | N/A (one-shot minting; ensures oracle NFT uniqueness)              |
 
 **Benefits**:
 
-1. **Single Point of Truth**: ProtocolParams defined once at deployment, then propagated through datums
-2. **Unparameterized Validators**: ProfilesValidator, RanksValidator, and MembershipsValidator have fixed script hashes, making them reusable across protocol instances
-3. **Self-Contained Datums**: Each profile/rank datum carries the protocol configuration, enabling cross-validator lookups at runtime
-4. **Upgrade Path**: New MintingPolicy versions can be deployed without changing validator hashes
+1. **Single Point of Truth**: ProtocolParams defined once at deployment, then propagated through datums.
+2. **Unparameterized Validators**: Profiles, Ranks, Memberships, and Achievements validators have fixed script hashes, so they are reusable across protocol instances.
+3. **Self-Contained Datums**: Each state datum carries the protocol configuration, enabling cross-validator lookups at runtime.
+4. **Upgrade Path**: New MintingPolicy versions can be deployed without changing validator hashes.
 
 **Trade-offs**:
 
-1. **Larger Datums**: Each datum carries ProtocolParams (~96 bytes for three script hashes)
-2. **Trust at Creation**: The MintingPolicy embeds correct addresses at profile creation; profiles trust the params they were created with
-3. **No Runtime Flexibility**: A profile cannot switch to a different protocol instance after creation
+1. **Larger Datums**: Each datum carries `ProtocolParams` — four 28-byte script hashes plus an `AssetClass` pair (≈140+ bytes serialized).
+2. **Trust at Creation**: The MintingPolicy embeds correct addresses at profile creation; profiles trust the params they were created with.
+3. **No Runtime Flexibility**: A profile cannot switch to a different protocol instance after creation.
 
 ### Security Implications
 
@@ -234,10 +242,12 @@ data OracleParams = OracleParams
   }
 
 data FeeConfig = FeeConfig
-  { fcFeeAddress         :: Address   -- where fees are sent
-  , fcProfileCreationFee :: Integer   -- fee for creating a profile
-  , fcPromotionFee       :: Integer   -- fee for creating a promotion
-  , fcMembershipFee      :: Integer   -- fee for membership operations
+  { fcFeeAddress            :: Address   -- where fees are sent
+  , fcProfileCreationFee    :: Integer   -- fee for creating a profile
+  , fcPromotionFee          :: Integer   -- fee for creating a promotion
+  , fcMembershipHistoryFee  :: Integer   -- fee for creating a new membership history
+  , fcMembershipIntervalFee :: Integer   -- fee for adding a new interval to an existing history
+  , fcAchievementFee        :: Integer   -- fee for awarding a new achievement
   }
 ```
 
@@ -280,16 +290,18 @@ Minimum output lovelace for protocol state outputs comes **only** from the oracl
 | `opFeeConfig`    | Optional per-action fee configuration       | Nothing (no fees)     |
 | `opMinUTxOValue` | Minimum lovelace for protocol state outputs | e.g. 1_000_000        |
 
-### Admin CLI Commands
+### Admin CLI Commands (oracle)
 
-| Command                                           | Description                                           |
-| ------------------------------------------------- | ----------------------------------------------------- |
-| `pause-protocol`                                  | Set `opPaused = True`                                 |
-| `unpause-protocol`                                | Set `opPaused = False`                                |
-| `set-fees --fee-address ADDR --profile-fee N ...` | Configure fees                                        |
-| `set-fees --clear-fees`                           | Remove fee configuration                              |
-| `set-min-utxo-value --lovelace N`                 | Set `opMinUTxOValue` (min lovelace for state outputs) |
-| `query-oracle`                                    | Display current oracle parameters                     |
+Only the commands that touch the oracle UTxO are listed here. For the full admin CLI surface (profile creation, promotions, memberships, achievements, deployment), see [`../src/exe/admin/Main.hs`](../src/exe/admin/Main.hs).
+
+| Command                                                                        | Description                                           |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `pause-protocol`                                                               | Set `opPaused = True`                                 |
+| `unpause-protocol`                                                             | Set `opPaused = False`                                |
+| `set-fees --fee-address ADDR --profile-fee N --promotion-fee N ...`            | Configure each fee in `FeeConfig`                     |
+| `set-fees --clear-fees`                                                        | Remove fee configuration                              |
+| `set-min-utxo-value --lovelace N`                                              | Set `opMinUTxOValue` (min lovelace for state outputs) |
+| `query-oracle`                                                                 | Display current oracle parameters                     |
 
 ### Oracle datum schema and migration
 
@@ -307,22 +319,24 @@ Minimum output lovelace for protocol state outputs comes **only** from the oracl
 
 ## Minting Policy
 
-**Purpose**: 
-Governs the rules for issuing new profiles, ranks, promotions, and membership tokens. It is **parameterized by `ProtocolParams`** (containing ProfilesValidator, RanksValidator, MembershipsValidator script hashes, and the oracle NFT `AssetClass`), enabling secure cross-validator communication and dynamic parameter reading. At runtime, it reads `OracleParams` from the oracle UTxO (via reference input) to enforce the global pause gate, fee payments, and minimum output lovelace. It handles:
-- Profile creation with CIP-68 standard metadata 
+**Purpose**:
+Governs the rules for issuing every protocol token: profiles, ranks, promotions, membership nodes, membership intervals, and achievements. It is **parameterized by `ProtocolParams`** (containing the four validator script hashes — Profiles, Ranks, Memberships, Achievements — plus the oracle NFT `AssetClass`), enabling secure cross-validator communication and dynamic parameter reading. At runtime, it reads `OracleParams` from the oracle UTxO (via reference input) to enforce the global pause gate, fee payments, and minimum output lovelace. It handles:
+- Profile creation with CIP-68 standard metadata
 - Initial rank assignment for practitioners
 - **Organization profile creation with membership histories root**
 - **Promotion creation with full BJJ rule validation**
 - **Membership history initialization (new member enrollment)**
 - **Membership interval creation (adding intervals to existing members)**
+- **Achievement award** (mint a new achievement NFT; lock at AchievementsValidator)
 
 Note: Profile deletion is intentionally NOT supported to preserve lineage integrity.
 
 **Redeemers**:
-- `CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer Integer Integer` - Create a new profile (seedTxOutRef, metadata, profileType, creationDate, rankNumber, profileOutputIdx, rankOrMembershipRootOutputIdx). For Organization profiles, also creates the membership histories root.
-- `Promote TxOutRef ProfileId ProfileId POSIXTime Integer Integer` - Create a promotion (seedTxOutRef, studentProfileId, masterProfileId, achievementDate, rankNumber, pendingRankOutputIdx)
-- `NewMembershipHistory ProfileId ProfileId POSIXTime (Maybe POSIXTime) MembershipHistoriesListNodeId Integer` - Initialize a membership history for a new member (organizationProfileId, practitionerId, startDate, maybeEndDate, leftNodeId, firstIntervalOutputIdx)
-- `NewMembershipInterval ProfileId MembershipHistoriesListNodeId POSIXTime (Maybe POSIXTime) Integer` - Add a new interval to an existing membership history (organizationProfileId, membershipNodeId, startDate, maybeEndDate, intervalOutputIdx)
+- `CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer Integer Integer` — Create a new profile (seedTxOutRef, metadata, profileType, creationDate, rankNumber, profileOutputIdx, rankOrMembershipRootOutputIdx). For Organization profiles, also creates the membership histories root.
+- `Promote TxOutRef ProfileId ProfileId POSIXTime Integer Integer` — Create a promotion (seedTxOutRef, studentProfileId, masterProfileId, achievementDate, rankNumber, pendingRankOutputIdx).
+- `NewMembershipHistory ProfileId ProfileId POSIXTime (Maybe POSIXTime) MembershipHistoriesListNodeId Integer` — Initialize a membership history for a new member (organizationProfileId, practitionerId, startDate, maybeEndDate, leftNodeId, firstIntervalOutputIdx).
+- `NewMembershipInterval ProfileId MembershipHistoriesListNodeId POSIXTime (Maybe POSIXTime) Integer` — Add a new interval to an existing membership history (organizationProfileId, membershipNodeId, startDate, maybeEndDate, intervalOutputIdx).
+- `NewAchievement TxOutRef MetadataFields [(BuiltinByteString, BuiltinByteString)] ProfileId ProfileId POSIXTime Integer` — Award an achievement NFT (seedTxOutRef, metadata, extraFields, awardedTo, awardedBy, achievementDate, achievementOutputIdx). Requires the awarder's user NFT; lock at AchievementsValidator.
 
 **Parameterization**:
 ```haskell
@@ -412,14 +426,14 @@ The `ProtocolParams` is **baked into the compiled script** at deployment time. T
 
 **Purpose**:  
 Governs the rules for profile updates and promotion acceptance. It handles:
-- Profile image updates (with metadata size validation)
+- Profile metadata updates — description and image (with metadata size validation; name is immutable)
 - **Promotion acceptance with state validation**
 
 Note: Profile deletion is intentionally NOT supported to preserve lineage integrity.
 
 **Redeemers**:
-- `UpdateProfileImage ImageURI Integer` - Update the profile's image URI (newImageURI, profileOutputIdx). The profile identity is derived from the spent UTxO's datum, not passed as a redeemer parameter.
-- `AcceptPromotion RankId Integer` - Accept a pending promotion (rankId, profileOutputIdx). Rank output validation is delegated to RanksValidator (R2 redundancy removed — see OnchainSecurityAudit.md).
+- `UpdateProfile MetadataFields Integer` - Update the profile's metadata — description and image (newMetadataFields, profileOutputIdx). Name is immutable after minting. The profile identity is derived from the spent UTxO's datum, not passed as a redeemer parameter.
+- `AcceptPromotion RankId Integer` - Accept a pending promotion (rankId, profileOutputIdx). Rank output validation is delegated to RanksValidator (R2 redundancy removed — see onchain-security-audit.md).
 - `Cleanup` - Permissionless dust cleanup: anyone can spend a UTxO at this address if its datum is absent or does not parse as a valid profile datum.
 
 **Cross-Validator Communication**:
@@ -443,10 +457,10 @@ This design means the validator dynamically resolves addresses based on datum co
 | `description` | 1024 bytes |
 | `imageURI`    | 256 bytes  |
 
-**UpdateProfileImage Validation**:
+**UpdateProfile Validation**:
 1. User must spend their Profile User NFT (authorization)
-2. Image URI must pass size validation (`validateImageURI`)
-3. Updated datum must be locked at the same address with same value
+2. Metadata fields must pass size validation (`validateMetadataFields` — name, description, image)
+3. Updated datum (description + image merged; name preserved) must be locked at the same address with same value
 
 **AcceptPromotion Validation**:
 1. Reads promotion from `txInfoInputs` (spending the Promotion UTxO)

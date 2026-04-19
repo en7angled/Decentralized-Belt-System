@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name:          Decentralized-Belt-System
-version:       0.3.1.8
+version:       0.4.0
 synopsis:
   A DApp to standardize BJJ belt rankings and lineages, ensuring global consistency and transparency, thus solving the issue of varying standards and unclear lineages in the BJJ community.
 
@@ -14,7 +14,14 @@ maintainer:    georgescumarius@live.com
 category:      Web3
 build-type:    Simple
 
--- extra-source-files:
+-- Required so `cabal install` / `cabal sdist` ship static assets embedded
+-- at compile time via Template Haskell (`file-embed`) in
+-- src/lib/mcp-server-lib/MCPServer/Resources.hs. Without this, the sdist
+-- omits the file and Docker builds fail with
+-- "src/lib/mcp-server-lib/resources/annex-3.md: openFile: does not exist".
+extra-source-files:
+  src/lib/mcp-server-lib/resources/annex-3.md
+  src/lib/mcp-server-lib/resources/bjj-faq.md
 
 
 common common-options
@@ -177,6 +184,10 @@ library offchain-lib
     DomainTypes.Core.Actions
     DomainTypes.Core.BJJ
     DomainTypes.Core.Types
+    DomainTypes.Rules.Promotion
+    DomainTypes.Transfer.Filters
+    DomainTypes.Transfer.OrderBy
+    DomainTypes.Transfer.QueryResponses
     DomainTypes.Transfer.Types
     Ingestion
     Storage
@@ -197,8 +208,10 @@ library offchain-lib
     , aeson
     , bytestring
     , chainsync-lib
+    , containers
     , deriving-aeson
     , extra
+    , lens
     , mtl
     , onchain-lib
     , persistent
@@ -233,7 +246,9 @@ library webapi-lib
 
   build-depends:
     , aeson
+    , deriving-aeson
     , http-types
+    , lens
     , servant
     , servant-server
     , swagger2
@@ -273,8 +288,11 @@ executable interaction-api
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -with-rtsopts=-N -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
+    IPFS
     InteractionAppMonad
     RestAPI
+    ServiceHandlers
+    ServiceRequests
     Types
 
   build-depends:
@@ -290,6 +308,8 @@ executable interaction-api
     , deriving-aeson
     , esqueleto
     , extra
+    , http-client
+    , http-client-tls
     , http-types             ^>=0.12.4
     , lens                   ^>=5.2.3
     , monad-logger
@@ -297,6 +317,7 @@ executable interaction-api
     , multiset
     , persistent
     , persistent-postgresql
+    , servant-multipart
     , servant-options
     , servant-server
     , servant-swagger
@@ -318,13 +339,17 @@ executable query-api
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -with-rtsopts=-N -O2
   extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
+    Query.Aggregates
     Query.Common
+    Query.ExplorerMonthly
     Query.Live
+    Query.Pages
     Query.Projected
+    Query.Rules
+    Query.ServiceStatus
     QueryAppMonad
     RestAPI
     RestAPI.Common
-    Types
 
   build-depends:
     , base
@@ -336,6 +361,7 @@ executable query-api
     , aeson
     , aeson-pretty
     , bytestring             ^>=0.11.5
+    , containers
     , deriving-aeson
     , esqueleto
     , extra
@@ -357,7 +383,9 @@ executable query-api
     , warp
 
   --- Cardano specific dependencies
-  build-depends:    atlas-cardano
+  build-depends:
+    , atlas-cardano
+    , plutus-ledger-api
 
 executable chainsync-service
   import:           common-options
@@ -416,25 +444,125 @@ test-suite test
     UnitTests
     UnitTests.Achievement
     UnitTests.Cleanup
+    UnitTests.MCPTools
     UnitTests.Membership
     UnitTests.Oracle
     UnitTests.Promotion
 
   build-depends:
     , base
+    , mcp
+    , mcp-server-lib
     , offchain-lib
     , onchain-lib
     , text
 
   build-depends:
+    , aeson
+    , bytestring
+    , containers
     , extra
     , hedgehog
+    , http-client
+    , http-client-tls
+    , http-types
     , mtl
+    , servant
+    , servant-client
     , tasty
     , tasty-hedgehog
+    , tasty-hunit
+    , wai
+    , warp
 
   --- Cardano specific dependencies
   build-depends:
     , atlas-cardano
     , plutus-ledger-api
     , plutus-tx
+
+library mcp-server-lib
+  import:             common-options
+  default-language:   GHC2021
+  hs-source-dirs:     src/lib/mcp-server-lib
+  exposed-modules:
+    MCPServer.Api.Interaction
+    MCPServer.Api.Query
+    MCPServer.App
+    MCPServer.Clients
+    MCPServer.Orphans
+    MCPServer.Readiness
+    MCPServer.Resources
+    MCPServer.Schema
+    MCPServer.Server
+    MCPServer.Tools.Achievements
+    MCPServer.Tools.Common
+    MCPServer.Tools.Docs
+    MCPServer.Tools.Memberships
+    MCPServer.Tools.Profiles
+    MCPServer.Tools.Promotions
+    MCPServer.Tools.Search
+    MCPServer.Tools.Transactions
+
+  build-depends:
+    , base
+    , offchain-lib
+    , onchain-lib
+    , webapi-lib
+
+  build-depends:
+    , aeson
+    , async
+    , bytestring
+    , containers
+    , file-embed
+    , http-api-data
+    , http-client
+    , http-client-tls
+    , http-types
+    , mcp
+    , mtl
+    , servant
+    , servant-client
+    , servant-client-core
+    , servant-server
+    , text
+    , time
+    , wai
+    , warp
+
+  --- Cardano specific dependencies
+  build-depends:
+    , atlas-cardano
+
+executable mcp-server
+  import:           common-options
+  main-is:          Main.hs
+  hs-source-dirs:   src/exe/mcp-server
+  default-language: GHC2021
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-T -with-rtsopts=-N -O2
+  build-depends:
+    , base
+    , mcp-server-lib
+
+test-suite mcp-integration
+  import:           common-options
+  default-language: GHC2021
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   src/test-mcp-integration
+  main-is:          Main.hs
+  other-modules:
+    IntegrationTests.MCPTools
+  build-depends:
+    , base
+    , aeson
+    , bytestring
+    , http-client
+    , http-client-tls
+    , mcp-server-lib
+    , offchain-lib
+    , servant
+    , servant-client
+    , tasty
+    , tasty-hunit
+    , text

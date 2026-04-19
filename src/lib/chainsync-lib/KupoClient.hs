@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE InstanceSigs #-}
 
+-- | Servant client for the Kupo chain-indexer HTTP API (matches, checkpoints, health, metrics).
 module KupoClient where
 
 import Data.Aeson (FromJSON (..), ToJSON (..), withObject, (.:), (.:?))
@@ -162,6 +163,7 @@ type MatchesAPI =
     :> QueryFlag "resolve_hashes"
     :> Get '[JSON] [KupoMatch]
 
+-- | Low-level Servant client function for the Kupo matches endpoint.
 matchesClient ::
   Text ->
   Maybe Text ->
@@ -222,6 +224,7 @@ runKupoMatches baseUrlStr pattern polId assetName txId outIx cAfter cBefore sAft
   let env = mkClientEnv manager baseUrl
   kupoMatches env pattern polId assetName txId outIx cAfter cBefore sAfter sBefore order spent unspent resolveHashes
 
+-- | Parse a URL string into a Servant 'BaseUrl', failing with a descriptive error on invalid input.
 parseKupoBaseUrl :: String -> IO BaseUrl
 parseKupoBaseUrl url =
   case parseBaseUrl url of

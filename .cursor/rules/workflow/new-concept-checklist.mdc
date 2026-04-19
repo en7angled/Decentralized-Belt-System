@@ -37,13 +37,15 @@ alwaysApply: false
 
 **API & CLI**
 
-- [ ] Query endpoints in `query-api/RestAPI.hs` if queryable; query handlers
+- [ ] Query routes in `query-api/RestAPI.hs` and handlers in `Query/Projected.hs` or `Query/Live.hs` if queryable
+- [ ] `query-api/RestAPI/Common.hs` when adding or changing query params / filters
+- [ ] `DomainTypes/Transfer/QueryResponses.hs` for response DTOs, `DomainTypes/Transfer/Filters.hs` for filter types / `*FromParams`, `DomainTypes/Transfer/OrderBy.hs` for sort enums (all in `offchain-lib`); and/or `DomainTypes/Transfer/Types.hs` — plus `ToSchema` when response or request shapes are new
 - [ ] Admin CLI command if admin-controllable; Swagger metadata
 
 **Tests & docs**
 
 - [ ] Unit tests for new operations; property tests if applicable
-- [ ] `OnchainArchitecture.md` updated; blueprint regenerated (`admin write-blueprint`); test scripts updated
+- [ ] `onchain-architecture.md` updated; blueprint regenerated (`admin write-blueprint`); test scripts updated
 - [ ] When adding a new operation: add a **test runner** in `GYTxGameMonad` (e.g. `asUser user $ … skeleton <- myOp …; buildTxBody skeleton >>= signAndSubmitConfirmed`) so the same operation is testable on emulator (and optionally privnet)
 
 ## Common pitfalls

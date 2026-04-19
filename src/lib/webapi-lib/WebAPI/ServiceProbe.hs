@@ -42,30 +42,22 @@ type ServiceProbe h r =
         :> Get '[JSON] (ServiceProbeStatus r)
     )
 
--- Generic health handlers that take service name as parameter
-alwaysHealthy :: (MonadIO m) => Text -> m (ServiceProbeStatus Text)
-alwaysHealthy serviceName = do
+-- | Build a 'ServiceProbeStatus' with the given status text, service name, and current timestamp.
+mkProbeStatus :: (MonadIO m) => Text -> Text -> Text -> m (ServiceProbeStatus Text)
+mkProbeStatus statusText versionText serviceName = do
   now <- liftIO getCurrentTime
   return $
     ServiceProbeStatus
-      { status = "healthy",
+      { status = statusText,
         service = serviceName,
-        version = "1.0.0",
+        version = versionText,
         timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
       }
 
-alwaysReady :: (MonadIO m) => Text -> m (ServiceProbeStatus Text)
-alwaysReady serviceName = do
-  -- Check if the service is ready to accept requests
-  -- This could check:
-  -- - Database connectivity
-  -- - External service dependencies
-  -- - Configuration validity
-  now <- liftIO getCurrentTime
-  return $
-    ServiceProbeStatus
-      { status = "ready",
-        service = serviceName,
-        version = "1.0.0",
-        timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
-      }
+-- | Always-healthy probe handler.
+alwaysHealthy :: (MonadIO m) => Text -> Text -> m (ServiceProbeStatus Text)
+alwaysHealthy = mkProbeStatus "healthy"
+
+-- | Always-ready probe handler.
+alwaysReady :: (MonadIO m) => Text -> Text -> m (ServiceProbeStatus Text)
+alwaysReady = mkProbeStatus "ready"

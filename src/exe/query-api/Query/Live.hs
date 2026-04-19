@@ -1,20 +1,80 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Query.Live where
 
+import Control.Exception (SomeException, try)
 import Control.Monad.Reader
+import Data.Aeson (ToJSON)
+import Data.Either.Extra (fromRight)
 import Data.List qualified as L
-import Data.MultiSet (fromList, toOccurList)
+import Data.Map.Strict qualified as M
+import Data.MultiSet qualified as MultiSet
 import Data.Ord (Down (..))
+import Data.Set qualified as S
+import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Time (UTCTime)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Database.Persist.Sql (Entity (..), runSqlPool, selectList)
+import DomainTypes.Core.BJJ (BJJBelt)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
-import DomainTypes.Core.BJJ (BJJBelt)
+import GeniusYield.Types (GYAddress, timeFromPOSIX)
+import DomainTypes.Transfer.Filters
+  ( AchievementFilter (..)
+  , ActivityFilter (..)
+  , MembershipHistoryFilter (..)
+  , MembershipIntervalFilter (..)
+  , ProfileFilter (..)
+  , PromotionFilter (..)
+  )
+import DomainTypes.Transfer.QueryResponses (ActivityEventDetails (..), ActivityEventResponse (..), SearchGroup (..), SearchResults (..))
 import Query.Common
+import Query.Projected
+  ( achievementMatchesSearch,
+    achievementSearchFilter,
+    achievementToHit,
+    profileSearchFilter,
+    profileToHitOrganization,
+    profileToHitPractitioner,
+    promotionMatchesSearchWithNames,
+    promotionToHit,
+    searchGroupLimit,
+  )
 import QueryAppMonad (QueryAppContext (..))
+import Storage (ProfileProjection (..))
 import TxBuilding.Context
 import TxBuilding.Lookups
-import Types
+import DomainTypes.Transfer.OrderBy
+import DomainTypes.Transfer.OrderBy qualified as Types
+import Utils (stringFromJSON)
+
+-- | Build a filter from an optional list of values: when @Just@, keep items whose
+-- projected field is in the set; when @Nothing@, pass everything through.
+-- Uses 'S.Set' for O(log n) membership instead of O(n) list 'elem'.
+filterBySet :: (Ord b) => Maybe [b] -> (a -> b) -> [a] -> [a]
+filterBySet Nothing _ = id
+filterBySet (Just ids) proj = let s = S.fromList ids in Prelude.filter ((`S.member` s) . proj)
+
+-- | Substring match on membership history ids (aligned with projected SQL @q@).
+membershipHistoryMatchesSearch :: Text -> MembershipHistoryInformation -> Bool
+membershipHistoryMatchesSearch q info =
+  let q' = Text.toLower q
+      t :: (ToJSON a) => a -> Text
+      t = Text.pack . stringFromJSON
+   in Text.isInfixOf q' (t (membershipHistoryInformationId info))
+        || Text.isInfixOf q' (t (membershipHistoryInformationPractitionerId info))
+        || Text.isInfixOf q' (t (membershipHistoryInformationOrganizationId info))
+
+-- | Substring match on interval id and practitioner id (aligned with projected SQL @q@).
+membershipIntervalMatchesSearch :: Text -> MembershipIntervalInformation -> Bool
+membershipIntervalMatchesSearch q info =
+  let q' = Text.toLower q
+      t :: (ToJSON a) => a -> Text
+      t = Text.pack . stringFromJSON
+   in Text.isInfixOf q' (t (membershipIntervalInformationId info))
+        || Text.isInfixOf q' (t (membershipIntervalInformationPractitionerId info))
 
 getPractitionerProfile :: (MonadReader QueryAppContext m, MonadIO m) => ProfileRefAC -> m PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
@@ -32,11 +92,104 @@ getProfilesCount maybeProfileFilter = Prelude.length <$> getProfiles Nothing may
 getProfiles :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe ProfileFilter -> Maybe (ProfilesOrderBy, SortOrder) -> m [Profile]
 getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
   providerCtx <- asks providerContext
-  allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (getNetworkId providerCtx))
-  return $ applyFilterOrderLimit maybeLimitOffset maybeProfileFilter maybeOrder applyProfileFilter applyOrdering allProfiles
+  let nid = getNetworkId providerCtx
+  allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles nid)
+  -- When ordering by registered_at, fetch timestamps from the projected DB
+  regTsMap <- case maybeOrder of
+    Just (ProfilesOrderByRegisteredAt, _) -> fetchRegistrationTimestamps
+    _ -> pure M.empty
+  let practitionerQ = case maybeProfileFilter of
+        Just ProfileFilter {profileFilterType = Just Practitioner, profileFilterTextSearch = Just q} -> Just q
+        _ -> Nothing
+      filterPass1 = case maybeProfileFilter of
+        Just pf@ProfileFilter {profileFilterType = Just Practitioner, profileFilterTextSearch = Just _} ->
+          Just pf {profileFilterTextSearch = Nothing}
+        _ -> maybeProfileFilter
+      base = applyFilterOrderLimit maybeLimitOffset filterPass1 maybeOrder applyProfileFilter (applyOrdering regTsMap) allProfiles
+
+  -- Post-filter: practitioner text search including affiliated org names
+  afterQ <- case practitionerQ of
+    Just q -> do
+      allMh <- liftIO $ runQuery providerCtx (getAllMembershipHistoryInformation nid)
+      let orgs = Prelude.filter ((== Organization) . profileType) allProfiles
+          orgMap = M.fromList [(profileId o, o) | o <- orgs]
+          q' = Text.toLower q
+          t :: (ToJSON a) => a -> Text
+          t = Text.pack . stringFromJSON
+          orgMatches oid =
+            q' `Text.isInfixOf` Text.toLower (t oid)
+              || maybe False (\o -> q' `Text.isInfixOf` Text.toLower (profileName o)) (M.lookup oid orgMap)
+          selfMatch p =
+            q' `Text.isInfixOf` Text.toLower (t (profileId p))
+              || q' `Text.isInfixOf` Text.toLower (profileName p)
+              || q' `Text.isInfixOf` Text.toLower (profileDescription p)
+          orgAffiliateMatch p =
+            profileType p == Practitioner
+              && any (\mh -> membershipHistoryInformationPractitionerId mh == profileId p && orgMatches (membershipHistoryInformationOrganizationId mh)) allMh
+      return $ Prelude.filter (\p -> selfMatch p || orgAffiliateMatch p) base
+    Nothing -> return base
+  -- Post-filter: membership organization (all-time)
+  afterMembershipOrg <- case maybeProfileFilter >>= profileFilterMembershipOrganization of
+    Nothing -> return afterQ
+    Just orgId -> do
+      allMh <- liftIO $ runQuery providerCtx (getAllMembershipHistoryInformation nid)
+      let practitionerIds =
+            S.fromList
+              [ membershipHistoryInformationPractitionerId mh
+                | mh <- allMh,
+                  membershipHistoryInformationOrganizationId mh == orgId
+              ]
+      return $ Prelude.filter (\p -> profileId p `S.member` practitionerIds) afterQ
+  -- Post-filter: active membership organization (accepted + no end date or end >= now)
+  afterActiveOrg <- case maybeProfileFilter >>= profileFilterActiveMembershipOrganization of
+    Nothing -> return afterMembershipOrg
+    Just orgId -> do
+      allMh <- liftIO $ runQuery providerCtx (getAllMembershipHistoryInformation nid)
+      now <- liftIO $ timeFromPOSIX <$> getPOSIXTime
+      let isActiveInterval iv =
+            membershipIntervalInformationAccepted iv
+              && case membershipIntervalInformationEndDate iv of
+                Nothing -> True
+                Just end -> end >= now
+          activePractitionerIds =
+            S.fromList
+              [ membershipHistoryInformationPractitionerId mh
+                | mh <- allMh,
+                  membershipHistoryInformationOrganizationId mh == orgId,
+                  any isActiveInterval (membershipHistoryInformationIntervals mh)
+              ]
+      return $ Prelude.filter (\p -> profileId p `S.member` activePractitionerIds) afterMembershipOrg
+  -- Post-filter: belt (current rank matches given belts)
+  case maybeProfileFilter >>= profileFilterBelt of
+    Nothing -> return afterActiveOrg
+    Just belts -> do
+      allRanks <- liftIO $ runQuery providerCtx (getAllRanks nid)
+      let beltSet = S.fromList belts
+          -- Latest rank by achievement date per practitioner
+          currentBeltMap =
+            M.fromListWith
+              (\(b1, d1) (b2, d2) -> if d1 >= d2 then (b1, d1) else (b2, d2))
+              [ (rankAchievedByProfileId r, (rankBelt r, rankAchievementDate r))
+                | r <- allRanks
+              ]
+          hasBelt p = case M.lookup (profileId p) currentBeltMap of
+            Just (b, _) -> b `S.member` beltSet
+            Nothing -> False
+      return $ Prelude.filter hasBelt afterActiveOrg
   where
-    applyOrdering Nothing profiles = profiles
-    applyOrdering (Just (orderBy, order)) profiles =
+    fetchRegistrationTimestamps :: (MonadReader QueryAppContext m, MonadIO m) => m (M.Map ProfileRefAC UTCTime)
+    fetchRegistrationTimestamps = do
+      pool <- asks pgPool
+      rows <- liftIO $ runSqlPool (selectList [] []) pool
+      return $
+        M.fromList
+          [ (profileProjectionProfileId (entityVal e), profileProjectionInsertedAt (entityVal e))
+            | e <- rows :: [Entity ProfileProjection]
+          ]
+
+    applyOrdering :: M.Map ProfileRefAC UTCTime -> Maybe (ProfilesOrderBy, SortOrder) -> [Profile] -> [Profile]
+    applyOrdering _ Nothing profiles = profiles
+    applyOrdering regTsMap (Just (orderBy, order)) profiles =
       case (orderBy, order) of
         (ProfilesOrderById, Types.Asc) -> L.sortOn profileId profiles
         (ProfilesOrderById, Types.Desc) -> L.sortOn (Down . profileId) profiles
@@ -46,13 +199,13 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
         (ProfilesOrderByDescription, Types.Desc) -> L.sortOn (Down . profileDescription) profiles
         (ProfilesOrderByType, Types.Asc) -> L.sortOn profileType profiles
         (ProfilesOrderByType, Types.Desc) -> L.sortOn (Down . profileType) profiles
+        -- Use projected DB registration timestamps when available; fall back to id ordering
+        (ProfilesOrderByRegisteredAt, Types.Asc) -> L.sortOn (\p -> M.lookup (profileId p) regTsMap) profiles
+        (ProfilesOrderByRegisteredAt, Types.Desc) -> L.sortOn (\p -> Down (M.lookup (profileId p) regTsMap)) profiles
 
     applyProfileFilter Nothing profiles = profiles
     applyProfileFilter (Just ProfileFilter {..}) profiles =
-      let idFilter = case profileFilterId of
-            Just ids -> Prelude.filter ((`elem` ids) . profileId)
-            Nothing -> id
-          typeFilter = case profileFilterType of
+      let typeFilter = case profileFilterType of
             Just pt -> Prelude.filter ((== pt) . profileType)
             Nothing -> id
           nameFilter = case profileFilterName of
@@ -61,14 +214,62 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
           descriptionFilter = case profileFilterDescription of
             Just descriptionSubstring -> Prelude.filter ((Text.toLower descriptionSubstring `Text.isInfixOf`) . Text.toLower . profileDescription)
             Nothing -> id
-       in idFilter . typeFilter . nameFilter . descriptionFilter $ profiles
+          textSearchFilter = case profileFilterTextSearch of
+            Just q ->
+              let q' = Text.toLower q
+                  hay p =
+                    q' `Text.isInfixOf` Text.toLower (Text.pack $ stringFromJSON (profileId p))
+                      || q' `Text.isInfixOf` Text.toLower (profileName p)
+                      || q' `Text.isInfixOf` Text.toLower (profileDescription p)
+               in Prelude.filter hay
+            Nothing -> id
+       in filterBySet profileFilterId profileId . typeFilter . nameFilter . descriptionFilter . textSearchFilter $ profiles
 
+-- | Unified promotions query: fetches pending/superseded from on-chain promotions and
+-- accepted from on-chain ranks (via 'rankToPromotion'), merges, applies state filter,
+-- ordering, and limit/offset in Haskell.
+-- Self-promotions (where awardedBy == achievedBy) are excluded as they are not legitimate.
 getPromotions :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe PromotionFilter -> Maybe (PromotionsOrderBy, SortOrder) -> m [Promotion]
 getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
   providerCtx <- asks providerContext
-  allPromotions <- liftIO $ runQuery providerCtx (getAllPromotions (getNetworkId providerCtx))
-  return $ applyFilterOrderLimit maybeLimitOffset maybePromotionFilter maybeOrder applyPromotionFilter applyOrdering allPromotions
+  let nid = getNetworkId providerCtx
+      stateFilter = maybePromotionFilter >>= promotionFilterState
+      wantsAccepted = maybe True (elem PromotionAccepted) stateFilter
+      wantsPendingOrSuperseded = maybe True (\ss -> PromotionPending `elem` ss || PromotionSuperseded `elem` ss) stateFilter
+  pendingPromotions <-
+    if wantsPendingOrSuperseded
+      then do
+        allPromotions <- liftIO $ runQuery providerCtx (getAllPromotions nid)
+        liftIO $ mapM (assignPromotionState providerCtx) allPromotions
+      else pure []
+  acceptedPromotions <-
+    if wantsAccepted
+      then do
+        allRanks <- liftIO $ runQuery providerCtx (getAllRanks nid)
+        pure $ map rankToPromotion allRanks
+      else pure []
+  -- Build profile name map for name-aware text search (only when q is present)
+  names <- case maybePromotionFilter >>= promotionFilterTextSearch of
+    Just _ -> do
+      allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles nid)
+      pure $ M.fromList [(profileId p, profileName p) | p <- allProfiles]
+    Nothing -> pure M.empty
+  -- Self-promotions (awardedBy == achievedBy) are not legitimate; filter them out.
+  let merged = Prelude.filter (\p -> promotionAchievedByProfileId p /= promotionAwardedByProfileId p) $ pendingPromotions ++ acceptedPromotions
+      afterState = case stateFilter of
+        Nothing -> merged
+        Just ss -> let sSet = S.fromList ss in Prelude.filter ((`S.member` sSet) . promotionState) merged
+      afterFilter = applyPromotionFilter names (fmap (\f -> f {promotionFilterState = Nothing}) maybePromotionFilter) afterState
+      afterOrder = applyOrdering maybeOrder afterFilter
+  return $ applyLimits maybeLimitOffset afterOrder
   where
+    assignPromotionState ctx promotion = do
+      let pid = promotionAchievedByProfileId promotion
+          belt = promotionBelt promotion
+      r <- try @SomeException (runQuery ctx (getCurrentBeltForPractitioner pid))
+      let currentBelt = fromRight Nothing r
+      return promotion {promotionState = promotionStateFromBelts currentBelt belt}
+
     applyOrdering Nothing promotions = promotions
     applyOrdering (Just (orderBy, order)) promotions =
       case (orderBy, order) of
@@ -83,95 +284,52 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
         (PromotionsOrderByDate, Types.Asc) -> L.sortOn promotionAchievementDate promotions
         (PromotionsOrderByDate, Types.Desc) -> L.sortOn (Down . promotionAchievementDate) promotions
 
-    applyPromotionFilter Nothing promotions = promotions
-    applyPromotionFilter (Just PromotionFilter {..}) promotions =
-      let idFilter = case promotionFilterId of
-            Just ids -> Prelude.filter ((`elem` ids) . promotionId)
-            Nothing -> id
-          beltFilter = case promotionFilterBelt of
-            Just belts -> Prelude.filter ((`elem` belts) . promotionBelt)
-            Nothing -> id
-          achievedByFilter = case promotionFilterAchievedByProfileId of
-            Just ids -> Prelude.filter ((`elem` ids) . promotionAchievedByProfileId)
-            Nothing -> id
-          awardedByFilter = case promotionFilterAwardedByProfileId of
-            Just ids -> Prelude.filter ((`elem` ids) . promotionAwardedByProfileId)
-            Nothing -> id
-          achievementDateFilter = case promotionFilterAchievementDateInterval of
-            (Just from, Just to) -> Prelude.filter (\promotion -> promotionAchievementDate promotion >= from && promotionAchievementDate promotion <= to)
-            (Nothing, Just to) -> Prelude.filter (\promotion -> promotionAchievementDate promotion <= to)
-            (Just from, Nothing) -> Prelude.filter (\promotion -> promotionAchievementDate promotion >= from)
+    applyPromotionFilter _ Nothing promotions = promotions
+    applyPromotionFilter names (Just PromotionFilter {..}) promotions =
+      let dateFilter = case promotionFilterAchievementDateInterval of
+            (Just from, Just to) -> Prelude.filter (\p -> promotionAchievementDate p >= from && promotionAchievementDate p <= to)
+            (Nothing, Just to) -> Prelude.filter (\p -> promotionAchievementDate p <= to)
+            (Just from, Nothing) -> Prelude.filter (\p -> promotionAchievementDate p >= from)
             (Nothing, Nothing) -> id
-       in idFilter . beltFilter . achievedByFilter . awardedByFilter . achievementDateFilter $ promotions
+          textSearchFilter = case promotionFilterTextSearch of
+            Just q -> Prelude.filter (promotionMatchesSearchWithNames names q)
+            Nothing -> id
+       in filterBySet promotionFilterId promotionId
+            . filterBySet promotionFilterBelt promotionBelt
+            . filterBySet promotionFilterAchievedByProfileId promotionAchievedByProfileId
+            . filterBySet promotionFilterAwardedByProfileId promotionAwardedByProfileId
+            . dateFilter
+            . textSearchFilter
+            $ promotions
 
--- | Count by loading all matching rows then taking length. Use projected backend for large result sets if a dedicated count is needed.
+-- | Count by loading all matching rows then taking length.
 getPromotionsCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe PromotionFilter -> m Int
 getPromotionsCount maybePromotionFilter = Prelude.length <$> getPromotions Nothing maybePromotionFilter Nothing
 
-getRanks :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe RankFilter -> Maybe (RanksOrderBy, SortOrder) -> m [Rank]
-getRanks maybeLimitOffset maybeRankFilter maybeOrder = do
+-- | Internal: get all ranks for profile belt filtering.
+getAllRanksLive :: (MonadReader QueryAppContext m, MonadIO m) => m [Rank]
+getAllRanksLive = do
   providerCtx <- asks providerContext
-  allRanks <- liftIO $ runQuery providerCtx (getAllRanks (getNetworkId providerCtx))
-  return $ applyFilterOrderLimit maybeLimitOffset maybeRankFilter maybeOrder applyRankFilter applyOrdering allRanks
-  where
-    applyOrdering Nothing ranks = ranks
-    applyOrdering (Just (orderBy, order)) ranks =
-      case (orderBy, order) of
-        (RanksOrderById, Types.Asc) -> L.sortOn rankId ranks
-        (RanksOrderById, Types.Desc) -> L.sortOn (Down . rankId) ranks
-        (RanksOrderByBelt, Types.Asc) -> L.sortOn rankBelt ranks
-        (RanksOrderByBelt, Types.Desc) -> L.sortOn (Down . rankBelt) ranks
-        (RanksOrderByAchievedBy, Types.Asc) -> L.sortOn rankAchievedByProfileId ranks
-        (RanksOrderByAchievedBy, Types.Desc) -> L.sortOn (Down . rankAchievedByProfileId) ranks
-        (RanksOrderByAwardedBy, Types.Asc) -> L.sortOn rankAwardedByProfileId ranks
-        (RanksOrderByAwardedBy, Types.Desc) -> L.sortOn (Down . rankAwardedByProfileId) ranks
-        (RanksOrderByDate, Types.Asc) -> L.sortOn rankAchievementDate ranks
-        (RanksOrderByDate, Types.Desc) -> L.sortOn (Down . rankAchievementDate) ranks
+  liftIO $ runQuery providerCtx (getAllRanks (getNetworkId providerCtx))
 
-    applyRankFilter Nothing ranks = ranks
-    applyRankFilter (Just RankFilter {..}) ranks =
-      let idFilter = case rankFilterId of
-            Just ids -> Prelude.filter ((`elem` ids) . rankId)
-            Nothing -> id
-          beltFilter = case rankFilterBelt of
-            Just belts -> Prelude.filter ((`elem` belts) . rankBelt)
-            Nothing -> id
-          achievedByFilter = case rankFilterAchievedByProfileId of
-            Just ids -> Prelude.filter ((`elem` ids) . rankAchievedByProfileId)
-            Nothing -> id
-          awardedByFilter = case rankFilterAwardedByProfileId of
-            Just ids -> Prelude.filter ((`elem` ids) . rankAwardedByProfileId)
-            Nothing -> id
-          achievementDateFilter = case rankFilterAchievementDateInterval of
-            (Just from, Just to) -> Prelude.filter (\rank -> rankAchievementDate rank >= from && rankAchievementDate rank <= to)
-            (Nothing, Just to) -> Prelude.filter (\rank -> rankAchievementDate rank <= to)
-            (Just from, Nothing) -> Prelude.filter (\rank -> rankAchievementDate rank >= from)
-            (Nothing, Nothing) -> id
-       in idFilter . beltFilter . achievedByFilter . awardedByFilter . achievementDateFilter $ ranks
+-- | Internal: count all accepted ranks (used by dashboard).
+getRanksCount :: (MonadReader QueryAppContext m, MonadIO m) => m Int
+getRanksCount = Prelude.length <$> getAllRanksLive
 
-getRanksCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe RankFilter -> m Int
-getRanksCount maybeRankFilter = Prelude.length <$> getRanks Nothing maybeRankFilter Nothing
+-- | Count occurrences of each value extracted by @proj@ from a list.
+frequencyOf :: (Ord b) => (a -> b) -> [a] -> [(b, Int)]
+frequencyOf proj = MultiSet.toOccurList . MultiSet.fromList . map proj
 
+-- | Internal: belt frequency from accepted ranks only (used by dashboard).
 getBeltTotals :: (MonadReader QueryAppContext m, MonadIO m) => m [(BJJBelt, Int)]
-getBeltTotals = do
-  allRanks <- getRanks Nothing Nothing Nothing
-  let allBelts = Prelude.map rankBelt allRanks
-  let beltTotals = toOccurList . fromList $ allBelts
-  return beltTotals
+getBeltTotals = frequencyOf rankBelt <$> getAllRanksLive
 
 getProfileTypeTotals :: (MonadReader QueryAppContext m, MonadIO m) => m [(ProfileType, Int)]
-getProfileTypeTotals = do
-  allProfiles <- getProfiles Nothing Nothing Nothing
-  let allTypes = Prelude.map profileType allProfiles
-  let typeTotals = toOccurList . fromList $ allTypes
-  return typeTotals
+getProfileTypeTotals = frequencyOf profileType <$> getProfiles Nothing Nothing Nothing
 
+-- | Unified belt frequency: counts from both promotions and ranks.
 getPromotionBeltTotals :: (MonadReader QueryAppContext m, MonadIO m) => m [(BJJBelt, Int)]
-getPromotionBeltTotals = do
-  allPromotions <- getPromotions Nothing Nothing Nothing
-  let allBelts = Prelude.map promotionBelt allPromotions
-  let beltTotals = toOccurList . fromList $ allBelts
-  return beltTotals
+getPromotionBeltTotals = frequencyOf promotionBelt <$> getPromotions Nothing Nothing Nothing
 
 getAchievements :: (MonadReader QueryAppContext m, MonadIO m) => Maybe (Limit, Offset) -> Maybe AchievementFilter -> Maybe (AchievementsOrderBy, SortOrder) -> m [Achievement]
 getAchievements maybeLimitOffset maybeAchievementFilter maybeOrder = do
@@ -184,35 +342,35 @@ getAchievements maybeLimitOffset maybeAchievementFilter maybeOrder = do
       case (orderBy, order) of
         (AchievementsOrderById, Types.Asc) -> L.sortOn achievementId achievements
         (AchievementsOrderById, Types.Desc) -> L.sortOn (Down . achievementId) achievements
-        (AchievementsOrderByDate, Types.Asc) -> L.sortOn achievementDate achievements
-        (AchievementsOrderByDate, Types.Desc) -> L.sortOn (Down . achievementDate) achievements
-        (AchievementsOrderByAwardedTo, Types.Asc) -> L.sortOn achievementAwardedTo achievements
-        (AchievementsOrderByAwardedTo, Types.Desc) -> L.sortOn (Down . achievementAwardedTo) achievements
-        (AchievementsOrderByAwardedBy, Types.Asc) -> L.sortOn achievementAwardedBy achievements
-        (AchievementsOrderByAwardedBy, Types.Desc) -> L.sortOn (Down . achievementAwardedBy) achievements
+        (AchievementsOrderByDate, Types.Asc) -> L.sortOn achievementAchievementDate achievements
+        (AchievementsOrderByDate, Types.Desc) -> L.sortOn (Down . achievementAchievementDate) achievements
+        (AchievementsOrderByAwardedTo, Types.Asc) -> L.sortOn achievementAwardedToProfileId achievements
+        (AchievementsOrderByAwardedTo, Types.Desc) -> L.sortOn (Down . achievementAwardedToProfileId) achievements
+        (AchievementsOrderByAwardedBy, Types.Asc) -> L.sortOn achievementAwardedByProfileId achievements
+        (AchievementsOrderByAwardedBy, Types.Desc) -> L.sortOn (Down . achievementAwardedByProfileId) achievements
         (AchievementsOrderByName, Types.Asc) -> L.sortOn achievementName achievements
         (AchievementsOrderByName, Types.Desc) -> L.sortOn (Down . achievementName) achievements
 
     applyAchievementFilter Nothing achievements = achievements
     applyAchievementFilter (Just AchievementFilter {..}) achievements =
-      let idFilter = case achievementFilterId of
-            Just ids -> Prelude.filter ((`elem` ids) . achievementId)
-            Nothing -> id
-          awardedToFilter = case achievementFilterAwardedToProfileId of
-            Just ids -> Prelude.filter ((`elem` ids) . achievementAwardedTo)
-            Nothing -> id
-          awardedByFilter = case achievementFilterAwardedByProfileId of
-            Just ids -> Prelude.filter ((`elem` ids) . achievementAwardedBy)
-            Nothing -> id
-          isAcceptedFilter = case achievementFilterIsAccepted of
-            Just ac -> Prelude.filter ((== ac) . achievementIsAccepted)
+      let isAcceptedFilter = case achievementFilterIsAccepted of
+            Just ac -> Prelude.filter ((== ac) . achievementAccepted)
             Nothing -> id
           dateFilter = case achievementFilterDateInterval of
-            (Just from, Just to) -> Prelude.filter (\a -> achievementDate a >= from && achievementDate a <= to)
-            (Nothing, Just to) -> Prelude.filter (\a -> achievementDate a <= to)
-            (Just from, Nothing) -> Prelude.filter (\a -> achievementDate a >= from)
+            (Just from, Just to) -> Prelude.filter (\a -> achievementAchievementDate a >= from && achievementAchievementDate a <= to)
+            (Nothing, Just to) -> Prelude.filter (\a -> achievementAchievementDate a <= to)
+            (Just from, Nothing) -> Prelude.filter (\a -> achievementAchievementDate a >= from)
             (Nothing, Nothing) -> id
-       in idFilter . awardedToFilter . awardedByFilter . isAcceptedFilter . dateFilter $ achievements
+          textSearchFilter = case achievementFilterTextSearch of
+            Just q -> Prelude.filter (achievementMatchesSearch q)
+            Nothing -> id
+       in filterBySet achievementFilterId achievementId
+            . filterBySet achievementFilterAwardedToProfileId achievementAwardedToProfileId
+            . filterBySet achievementFilterAwardedByProfileId achievementAwardedByProfileId
+            . isAcceptedFilter
+            . dateFilter
+            . textSearchFilter
+            $ achievements
 
 getAchievementsCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe AchievementFilter -> m Int
 getAchievementsCount maybeAchievementFilter = Prelude.length <$> getAchievements Nothing maybeAchievementFilter Nothing
@@ -237,13 +395,13 @@ getMembershipHistories maybeLimitOffset maybeFilter maybeOrder = do
 
     applyMembershipHistoryFilter Nothing infos = infos
     applyMembershipHistoryFilter (Just MembershipHistoryFilter {..}) infos =
-      let orgFilter = case membershipHistoryFilterOrganizationProfileId of
-            Just ids -> Prelude.filter ((`elem` ids) . membershipHistoryInformationOrganizationId)
+      let textSearchFilter = case membershipHistoryFilterTextSearch of
+            Just q -> Prelude.filter (membershipHistoryMatchesSearch q)
             Nothing -> id
-          practFilter = case membershipHistoryFilterPractitionerProfileId of
-            Just ids -> Prelude.filter ((`elem` ids) . membershipHistoryInformationPractitionerId)
-            Nothing -> id
-       in orgFilter . practFilter $ infos
+       in filterBySet membershipHistoryFilterOrganizationProfileId membershipHistoryInformationOrganizationId
+            . filterBySet membershipHistoryFilterPractitionerProfileId membershipHistoryInformationPractitionerId
+            . textSearchFilter
+            $ infos
 
 getMembershipHistoriesCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe MembershipHistoryFilter -> m Int
 getMembershipHistoriesCount maybeFilter = Prelude.length <$> getMembershipHistories Nothing maybeFilter Nothing
@@ -261,16 +419,217 @@ getMembershipIntervals maybeLimitOffset maybeFilter maybeOrder = do
         (MembershipIntervalsOrderById, Types.Desc) -> L.sortOn (Down . membershipIntervalInformationId) infos
         (MembershipIntervalsOrderByStartDate, Types.Asc) -> L.sortOn membershipIntervalInformationStartDate infos
         (MembershipIntervalsOrderByStartDate, Types.Desc) -> L.sortOn (Down . membershipIntervalInformationStartDate) infos
-        (MembershipIntervalsOrderByIntervalNumber, Types.Asc) -> L.sortOn membershipIntervalInformationNumber infos
-        (MembershipIntervalsOrderByIntervalNumber, Types.Desc) -> L.sortOn (Down . membershipIntervalInformationNumber) infos
+        (MembershipIntervalsOrderByIntervalNumber, Types.Asc) -> L.sortOn membershipIntervalInformationIntervalNumber infos
+        (MembershipIntervalsOrderByIntervalNumber, Types.Desc) -> L.sortOn (Down . membershipIntervalInformationIntervalNumber) infos
         (MembershipIntervalsOrderByPractitioner, Types.Asc) -> L.sortOn membershipIntervalInformationPractitionerId infos
         (MembershipIntervalsOrderByPractitioner, Types.Desc) -> L.sortOn (Down . membershipIntervalInformationPractitionerId) infos
 
     applyMembershipIntervalFilter Nothing infos = infos
     applyMembershipIntervalFilter (Just MembershipIntervalFilter {..}) infos =
-      case membershipIntervalFilterPractitionerProfileId of
-        Just ids -> Prelude.filter ((`elem` ids) . membershipIntervalInformationPractitionerId) infos
-        Nothing -> infos
+      let textSearchFilter = case membershipIntervalFilterTextSearch of
+            Just q -> Prelude.filter (membershipIntervalMatchesSearch q)
+            Nothing -> id
+          acceptedFilter = case membershipIntervalFilterIsAccepted of
+            Just acc -> Prelude.filter (\i -> membershipIntervalInformationAccepted i == acc)
+            Nothing -> id
+       in filterBySet membershipIntervalFilterPractitionerProfileId membershipIntervalInformationPractitionerId
+            . acceptedFilter
+            . textSearchFilter
+            $ infos
 
 getMembershipIntervalsCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe MembershipIntervalFilter -> m Int
 getMembershipIntervalsCount maybeFilter = Prelude.length <$> getMembershipIntervals Nothing maybeFilter Nothing
+
+-- | Unified search over live chain reads (filters match projected semantics where implemented).
+searchLive :: (MonadReader QueryAppContext m, MonadIO m) => Text -> m SearchResults
+searchLive q = do
+  practitionerProfiles <- getProfiles Nothing (Just (profileSearchFilter Practitioner q)) Nothing
+  organizationProfiles <- getProfiles Nothing (Just (profileSearchFilter Organization q)) Nothing
+  -- Load all promotions (unified: pending + accepted) unfiltered; post-filter with name-aware matchers
+  allPromotions <- getPromotions Nothing Nothing Nothing
+  achievements <- getAchievements Nothing (Just (achievementSearchFilter q)) Nothing
+  -- Build profile name map from all loaded profiles for name-aware search + hit enrichment
+  providerCtx <- asks providerContext
+  allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles (getNetworkId providerCtx))
+  let names = M.fromList [(profileId p, profileName p) | p <- allProfiles]
+      promotions = Prelude.filter (promotionMatchesSearchWithNames names q) allPromotions
+      prItems = map profileToHitPractitioner practitionerProfiles
+      orgItems = map profileToHitOrganization organizationProfiles
+      promItems = map (promotionToHit names) promotions
+      achItems = map achievementToHit achievements
+      mkGroup items =
+        SearchGroup
+          { searchGroupTotal = length items,
+            searchGroupItems = take searchGroupLimit items
+          }
+      total =
+        length prItems
+          + length orgItems
+          + length promItems
+          + length achItems
+  return
+    SearchResults
+      { searchResultsQuery = q,
+        searchResultsTotal = total,
+        searchResultsPractitioners = mkGroup prItems,
+        searchResultsOrganizations = mkGroup orgItems,
+        searchResultsPromotions = mkGroup promItems,
+        searchResultsAchievements = mkGroup achItems
+      }
+
+-- ---------------------------------------------------------------------------
+-- Activity feed (live chain)
+-- ---------------------------------------------------------------------------
+
+-- | Live-chain activity feed: builds events from on-chain profiles,
+-- promotions, ranks, achievements, and membership intervals, resolves
+-- actor/target names, merges + sorts by timestamp descending.
+getActivityFeed ::
+  (MonadReader QueryAppContext m, MonadIO m) =>
+  Maybe (Limit, Offset) ->
+  Maybe ActivityFilter ->
+  m [ActivityEventResponse]
+getActivityFeed maybeLimitOffset maybeFilter = do
+  providerCtx <- asks providerContext
+  let nid = getNetworkId providerCtx
+      wantType et = case maybeFilter >>= activityFilterEventType of
+        Nothing -> True
+        Just t -> t == et
+      actorMatch pid = case maybeFilter >>= activityFilterActor of
+        Nothing -> True
+        Just a -> a == pid
+  -- Load all data sources
+  allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles nid)
+  let nameMap = M.fromList [(profileId p, profileName p) | p <- allProfiles]
+      lookupName pid = M.lookup pid nameMap
+  -- Profile events
+  let profileEvents =
+        [ ActivityEventResponse
+            { activityEventEventType = EvtProfileCreated,
+              activityEventActorId = profileId p,
+              activityEventTargetId = Nothing,
+              activityEventTimestamp = timeFromPOSIX 0, -- No timestamp on live profiles (known limitation: sorts to epoch)
+              activityEventDetails =
+                ActivityEventDetails
+                  { activityEventDetailsTitle = "Profile Created",
+                    activityEventDetailsBody = Just $ "New " <> Text.toLower (Text.pack (show (profileType p))) <> " profile registered",
+                    activityEventDetailsActorName = Just (profileName p),
+                    activityEventDetailsTargetName = Nothing
+                  }
+            }
+          | wantType EvtProfileCreated,
+            p <- allProfiles,
+            actorMatch (profileId p)
+        ]
+  -- Promotion events (pending/superseded = PromotionIssued)
+  allPromotions <-
+    if wantType EvtPromotionIssued || wantType EvtPromotionSuperseded
+      then liftIO $ runQuery providerCtx (getAllPromotions nid)
+      else pure []
+  -- Self-promotions (awardedBy == achievedBy) are not legitimate; filter them out.
+  let promoEvents =
+        [ ActivityEventResponse
+            { activityEventEventType = EvtPromotionIssued,
+              activityEventActorId = promotionAchievedByProfileId p,
+              activityEventTargetId = Just (promotionAwardedByProfileId p),
+              activityEventTimestamp = promotionAchievementDate p,
+              activityEventDetails =
+                ActivityEventDetails
+                  { activityEventDetailsTitle = "Promotion Issued",
+                    activityEventDetailsBody = Just $ "Promoted to " <> Text.pack (show (promotionBelt p)) <> " belt",
+                    activityEventDetailsActorName = lookupName (promotionAchievedByProfileId p),
+                    activityEventDetailsTargetName = lookupName (promotionAwardedByProfileId p)
+                  }
+            }
+          | wantType EvtPromotionIssued,
+            p <- allPromotions,
+            promotionAchievedByProfileId p /= promotionAwardedByProfileId p,
+            actorMatch (promotionAchievedByProfileId p)
+        ]
+  -- Rank events (accepted promotions)
+  allRanks <-
+    if wantType EvtPromotionAccepted
+      then liftIO $ runQuery providerCtx (getAllRanks nid)
+      else pure []
+  let rankEvents =
+        [ ActivityEventResponse
+            { activityEventEventType = EvtPromotionAccepted,
+              activityEventActorId = rankAchievedByProfileId r,
+              activityEventTargetId = Just (rankAwardedByProfileId r),
+              activityEventTimestamp = rankAchievementDate r,
+              activityEventDetails =
+                ActivityEventDetails
+                  { activityEventDetailsTitle = "Belt Promotion Accepted",
+                    activityEventDetailsBody = Just $ "Promoted to " <> Text.pack (show (rankBelt r)) <> " belt",
+                    activityEventDetailsActorName = lookupName (rankAchievedByProfileId r),
+                    activityEventDetailsTargetName = lookupName (rankAwardedByProfileId r)
+                  }
+            }
+          | r <- allRanks,
+            rankAchievedByProfileId r /= rankAwardedByProfileId r,
+            actorMatch (rankAchievedByProfileId r)
+        ]
+  -- Achievement events
+  allAchievements <-
+    if wantType EvtAchievementAwarded || wantType EvtAchievementAccepted
+      then liftIO $ runQuery providerCtx (getAllAchievements nid)
+      else pure []
+  let achEvents =
+        [ ActivityEventResponse
+            { activityEventEventType = if achievementAccepted a then EvtAchievementAccepted else EvtAchievementAwarded,
+              activityEventActorId = achievementAwardedToProfileId a,
+              activityEventTargetId = Just (achievementAwardedByProfileId a),
+              activityEventTimestamp = achievementAchievementDate a,
+              activityEventDetails =
+                ActivityEventDetails
+                  { activityEventDetailsTitle = if achievementAccepted a then "Achievement Accepted" else "Achievement Awarded",
+                    activityEventDetailsBody = Just $ "Achievement: " <> achievementName a,
+                    activityEventDetailsActorName = lookupName (achievementAwardedToProfileId a),
+                    activityEventDetailsTargetName = lookupName (achievementAwardedByProfileId a)
+                  }
+            }
+          | a <- allAchievements,
+            let evtType = if achievementAccepted a then EvtAchievementAccepted else EvtAchievementAwarded,
+            wantType evtType,
+            actorMatch (achievementAwardedToProfileId a)
+        ]
+  -- Membership interval events
+  allIntervals <-
+    if wantType EvtMembershipGranted || wantType EvtMembershipAccepted
+      then liftIO $ runQuery providerCtx (getAllMembershipIntervalInformation nid)
+      else pure []
+  let mbrEvents =
+        [ ActivityEventResponse
+            { activityEventEventType = if membershipIntervalInformationAccepted iv then EvtMembershipAccepted else EvtMembershipGranted,
+              activityEventActorId = membershipIntervalInformationPractitionerId iv,
+              activityEventTargetId = Just (membershipIntervalInformationOrganizationId iv),
+              activityEventTimestamp = membershipIntervalInformationStartDate iv,
+              activityEventDetails =
+                ActivityEventDetails
+                  { activityEventDetailsTitle = if membershipIntervalInformationAccepted iv then "Membership Accepted" else "Membership Granted",
+                    activityEventDetailsBody = Just $ if membershipIntervalInformationAccepted iv then "Membership interval accepted" else "New membership interval created",
+                    activityEventDetailsActorName = lookupName (membershipIntervalInformationPractitionerId iv),
+                    activityEventDetailsTargetName = Just (membershipIntervalInformationOrganizationId iv) >>= lookupName
+                  }
+            }
+          | iv <- allIntervals,
+            let evtType = if membershipIntervalInformationAccepted iv then EvtMembershipAccepted else EvtMembershipGranted,
+            wantType evtType,
+            actorMatch (membershipIntervalInformationPractitionerId iv)
+        ]
+  let allEvents = profileEvents <> promoEvents <> rankEvents <> achEvents <> mbrEvents
+      sorted = L.sortOn (Down . activityEventTimestamp) allEvents
+  return $ applyLimits maybeLimitOffset sorted
+
+-- | Look up profiles owned by a wallet address (User NFT ownership).
+getProfilesByWalletAddress :: (MonadReader QueryAppContext m, MonadIO m) => GYAddress -> m [Profile]
+getProfilesByWalletAddress walletAddr = do
+  providerCtx <- asks providerContext
+  let nid = getNetworkId providerCtx
+  refACs <- liftIO $ runQuery providerCtx (getProfileRefACsAtAddress [walletAddr])
+  if null refACs
+    then return []
+    else do
+      allProfiles <- liftIO $ runQuery providerCtx (getAllProfiles nid)
+      let refSet = S.fromList refACs
+      return $ Prelude.filter (\p -> profileId p `S.member` refSet) allProfiles

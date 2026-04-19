@@ -15,6 +15,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
+-- | Persistent storage layer for chain-sync projections, cursor management, and rollback.
 module Storage where
 
 import Control.Monad (forM_, void)
@@ -23,7 +24,9 @@ import Control.Monad.IO.Class (MonadIO (..))
 import Data.List qualified as L
 import Data.Maybe (isNothing)
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Time (UTCTime, getCurrentTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import Database.Persist
 import Database.Persist.Sql
 import Database.Persist.TH
@@ -37,8 +40,31 @@ import Onchain.Protocol.Id (deriveMembershipHistoryId, deriveMembershipIntervalI
 
 derivePersistFieldJSON "BJJBelt"
 derivePersistFieldJSON "GYAssetClass"
-derivePersistFieldJSON "GYTime"
 derivePersistFieldJSON "Integer"
+
+-- | Custom PersistField for GYTime stored as @timestamptz@ in PostgreSQL.
+-- Converts via UTCTime so the column type matches the parameter type,
+-- avoiding @varchar >= timestamptz@ mismatches in SQL comparisons.
+-- Reads back both @PersistUTCTime@ (native timestamptz) and @PersistText@
+-- (legacy rows written before this change) for backward compatibility.
+instance PersistField GYTime where
+  toPersistValue gt =
+    PersistUTCTime $ posixSecondsToUTCTime (timeToPOSIX gt)
+  fromPersistValue (PersistUTCTime utc) =
+    Right $ timeFromPOSIX (utcTimeToPOSIXSeconds utc)
+  fromPersistValue (PersistText t) =
+    case gyIso8601ParseM (Text.unpack (stripQuotes t)) of
+      Just gt -> Right gt
+      Nothing -> Left $ "Cannot parse GYTime from: " <> t
+    where
+      -- Handle legacy data stored via derivePersistFieldJSON with surrounding quotes
+      stripQuotes s
+        | Just rest <- Text.stripPrefix "\"" s, Just inner <- Text.stripSuffix "\"" rest = inner
+        | otherwise = s
+  fromPersistValue x = Left $ "Expected PersistUTCTime or PersistText for GYTime, got: " <> Text.pack (show x)
+
+instance PersistFieldSql GYTime where
+  sqlType _ = SqlDayTime
 
 -- Persistent entities for chain sync state and events.
 -- We store a singleton cursor row keyed by a Unique flag to always upsert/update the same row.
@@ -142,6 +168,7 @@ AchievementProjection
     achievementName           Text
     achievementDescription    Text
     achievementImageURI       Text
+    otherMetadata             (Maybe AchievementOtherMetadataJson)
     insertedAt                UTCTime
     UniqueAchievementProjection achievementId
     deriving Show
@@ -202,6 +229,7 @@ wipeChainSyncTables = do
     rawExecute ("DROP TABLE IF EXISTS " <> tableName <> " CASCADE") []
   runMigrations
 
+-- | Convert a raw Kupo match to domain projections and upsert them alongside the raw match.
 putMatchAndProjections :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
 putMatchAndProjections networkId km = do
   liftIO $ putStrLn ("Putting match and projections for " <> show (slot_no (created_at km)))
@@ -227,6 +255,7 @@ putMatchAndProjections networkId km = do
           AchievementEvent a -> putAchievementProjection slotNoInt header a
           NoEvent _ -> pure ()
 
+-- | Store a raw Kupo match event, upserting by slot + header hash.
 putKupoMatch :: (MonadIO m) => KupoMatch -> SqlPersistT m ()
 putKupoMatch km = do
   let cSlot = slot_no (created_at km)
@@ -234,6 +263,7 @@ putKupoMatch km = do
       ev = OnchainMatchEvent cSlot cHash km
   upsertByUnique (\e -> UniqueKupoMatch (onchainMatchEventCreatedSlot e) (onchainMatchEventCreatedHeader e)) ev
 
+-- | Store a rank projection, upserting by rank ID.
 putRankProjection :: (MonadIO m) => Integer -> Text -> Rank -> SqlPersistT m ()
 putRankProjection createdSlot createdHash r = do
   now <- liftIO getCurrentTime
@@ -249,6 +279,7 @@ putRankProjection createdSlot createdHash r = do
           now
   upsertByUnique (UniqueRankProjection . rankProjectionRankId) ev
 
+-- | Store a profile projection, upserting by profile ID.
 putProfileProjection :: (MonadIO m) => Integer -> Text -> Profile -> SqlPersistT m ()
 putProfileProjection createdSlot createdHash p = do
   now <- liftIO getCurrentTime
@@ -264,6 +295,7 @@ putProfileProjection createdSlot createdHash p = do
           now
   upsertByUnique (UniqueProfileProjection . profileProjectionProfileId) ev
 
+-- | Store a promotion projection, upserting by promotion ID.
 putPromotionProjection :: (MonadIO m) => Integer -> Text -> Promotion -> SqlPersistT m ()
 putPromotionProjection createdSlot createdHash pr = do
   now <- liftIO getCurrentTime
@@ -279,9 +311,97 @@ putPromotionProjection createdSlot createdHash pr = do
           now
   upsertByUnique (UniquePromotionProjection . promotionProjectionPromotionId) ev
 
+-- | Remove a promotion projection when the corresponding rank is confirmed on-chain.
 deletePromotionProjection :: (MonadIO m) => GYAssetClass -> SqlPersistT m ()
-deletePromotionProjection promotionId = do
-  deleteBy (UniquePromotionProjection promotionId)
+deletePromotionProjection pid =
+  deleteBy (UniquePromotionProjection pid)
+
+-- | Store a membership history projection and backfill any interval projections missing their organization.
+putMembershipHistoryProjection :: (MonadIO m) => Integer -> Text -> MembershipHistory -> SqlPersistT m ()
+putMembershipHistoryProjection createdSlot createdHash mh = do
+  now <- liftIO getCurrentTime
+  let ev =
+        MembershipHistoryProjection
+          createdSlot
+          createdHash
+          (membershipHistoryId mh)
+          (membershipHistoryPractitionerId mh)
+          (membershipHistoryOrganizationId mh)
+          now
+  upsertByUnique (UniqueMembershipHistoryProjection . membershipHistoryProjectionMembershipHistoryId) ev
+  backfillIntervalOrganizationsForHistory mh
+
+-- | Resolve the organization profile id for an interval by matching against stored membership histories.
+-- Filters by practitioner to avoid loading all history rows.
+resolveOrganizationForInterval :: (MonadIO m) => MembershipInterval -> SqlPersistT m (Maybe ProfileRefAC)
+resolveOrganizationForInterval mi = do
+  histories <-
+    selectList
+      [MembershipHistoryProjectionPractitionerProfileId ==. membershipIntervalPractitionerId mi]
+      []
+  let plutusIntervalId = assetClassToPlutus (membershipIntervalId mi)
+      matches (Entity _ proj) =
+        let plutusOrg = assetClassToPlutus (membershipHistoryProjectionOrganizationProfileId proj)
+            plutusPract = assetClassToPlutus (membershipHistoryProjectionPractitionerProfileId proj)
+            historyId = deriveMembershipHistoryId plutusOrg plutusPract
+            derivedIntervalId = deriveMembershipIntervalId historyId (membershipIntervalIntervalNumber mi)
+         in derivedIntervalId == plutusIntervalId
+  pure $ membershipHistoryProjectionOrganizationProfileId . entityVal <$> L.find matches histories
+
+-- | When a membership history is stored, backfill organizationProfileId on any interval
+-- projections that belong to this history and currently have NULL org (e.g. interval was
+-- processed before the history event in the same block).
+backfillIntervalOrganizationsForHistory :: (MonadIO m) => MembershipHistory -> SqlPersistT m ()
+backfillIntervalOrganizationsForHistory mh = do
+  candidates <-
+    selectList [MembershipIntervalProjectionPractitionerProfileId ==. membershipHistoryPractitionerId mh] []
+  let plutusOrg = assetClassToPlutus (membershipHistoryOrganizationId mh)
+      plutusPract = assetClassToPlutus (membershipHistoryPractitionerId mh)
+      historyId = deriveMembershipHistoryId plutusOrg plutusPract
+      belongsToHistory (Entity _ proj) =
+        isNothing (membershipIntervalProjectionOrganizationProfileId proj)
+          && deriveMembershipIntervalId historyId (membershipIntervalProjectionIntervalNumber proj)
+            == assetClassToPlutus (membershipIntervalProjectionMembershipIntervalId proj)
+  forM_ (filter belongsToHistory candidates) $ \entity ->
+    update (entityKey entity) [MembershipIntervalProjectionOrganizationProfileId =. Just (membershipHistoryOrganizationId mh)]
+
+-- | Store a membership interval projection, upserting by interval ID.
+putMembershipIntervalProjection :: (MonadIO m) => Integer -> Text -> MembershipInterval -> Maybe ProfileRefAC -> SqlPersistT m ()
+putMembershipIntervalProjection createdSlot createdHash mi mOrganizationProfileId = do
+  now <- liftIO getCurrentTime
+  let ev =
+        MembershipIntervalProjection
+          createdSlot
+          createdHash
+          (membershipIntervalId mi)
+          (membershipIntervalStartDate mi)
+          (membershipIntervalEndDate mi)
+          (membershipIntervalAccepted mi)
+          (membershipIntervalPractitionerId mi)
+          mOrganizationProfileId
+          (membershipIntervalIntervalNumber mi)
+          now
+  upsertByUnique (UniqueMembershipIntervalProjection . membershipIntervalProjectionMembershipIntervalId) ev
+
+-- | Store an achievement projection, upserting by achievement ID.
+putAchievementProjection :: (MonadIO m) => Integer -> Text -> Achievement -> SqlPersistT m ()
+putAchievementProjection createdSlot createdHash a = do
+  now <- liftIO getCurrentTime
+  let ev =
+        AchievementProjection
+          createdSlot
+          createdHash
+          (achievementId a)
+          (achievementAwardedToProfileId a)
+          (achievementAwardedByProfileId a)
+          (achievementAchievementDate a)
+          (achievementAccepted a)
+          (achievementName a)
+          (achievementDescription a)
+          (achievementImageURI a)
+          (Just $ AchievementOtherMetadataJson $ achievementOtherMetadata a)
+          now
+  upsertByUnique (UniqueAchievementProjection . achievementProjectionAchievementId) ev
 
 putMembershipHistoryProjection :: (MonadIO m) => Integer -> Text -> MembershipHistory -> SqlPersistT m ()
 putMembershipHistoryProjection createdSlot createdHash mh = do
@@ -366,26 +486,23 @@ putAchievementProjection createdSlot createdHash a = do
 -- | Rollback all stored events and projections strictly beyond the given slot,
 --   and any rows at the slot with a mismatching block header hash.
 rollbackTo :: (MonadIO m) => Integer -> Text -> SqlPersistT m ()
-rollbackTo slotNo headerHash = do
-  -- Remove Onchain matches beyond tip or same slot but different header
-  deleteWhere [OnchainMatchEventCreatedSlot >. slotNo]
-  deleteWhere [OnchainMatchEventCreatedSlot ==. slotNo, OnchainMatchEventCreatedHeader !=. headerHash]
+rollbackTo slot hdrHash = do
+  -- Remove onchain matches beyond tip or same slot but different header
+  rollbackEntity OnchainMatchEventCreatedSlot OnchainMatchEventCreatedHeader
 
   -- Remove projections beyond tip or same slot but different header
-  deleteWhere [ProfileProjectionCreatedAtSlot >. slotNo]
-  deleteWhere [ProfileProjectionCreatedAtSlot ==. slotNo, ProfileProjectionCreatedAtHash !=. headerHash]
-
-  deleteWhere [RankProjectionCreatedAtSlot >. slotNo]
-  deleteWhere [RankProjectionCreatedAtSlot ==. slotNo, RankProjectionCreatedAtHash !=. headerHash]
-
-  deleteWhere [PromotionProjectionCreatedAtSlot >. slotNo]
-  deleteWhere [PromotionProjectionCreatedAtSlot ==. slotNo, PromotionProjectionCreatedAtHash !=. headerHash]
-
-  deleteWhere [MembershipHistoryProjectionCreatedAtSlot >. slotNo]
-  deleteWhere [MembershipHistoryProjectionCreatedAtSlot ==. slotNo, MembershipHistoryProjectionCreatedAtHash !=. headerHash]
-
-  deleteWhere [MembershipIntervalProjectionCreatedAtSlot >. slotNo]
-  deleteWhere [MembershipIntervalProjectionCreatedAtSlot ==. slotNo, MembershipIntervalProjectionCreatedAtHash !=. headerHash]
-
-  deleteWhere [AchievementProjectionCreatedAtSlot >. slotNo]
-  deleteWhere [AchievementProjectionCreatedAtSlot ==. slotNo, AchievementProjectionCreatedAtHash !=. headerHash]
+  rollbackEntity ProfileProjectionCreatedAtSlot ProfileProjectionCreatedAtHash
+  rollbackEntity RankProjectionCreatedAtSlot RankProjectionCreatedAtHash
+  rollbackEntity PromotionProjectionCreatedAtSlot PromotionProjectionCreatedAtHash
+  rollbackEntity MembershipHistoryProjectionCreatedAtSlot MembershipHistoryProjectionCreatedAtHash
+  rollbackEntity MembershipIntervalProjectionCreatedAtSlot MembershipIntervalProjectionCreatedAtHash
+  rollbackEntity AchievementProjectionCreatedAtSlot AchievementProjectionCreatedAtHash
+  where
+    rollbackEntity ::
+      (PersistEntity a, PersistEntityBackend a ~ SqlBackend, MonadIO m) =>
+      EntityField a Integer ->
+      EntityField a Text ->
+      SqlPersistT m ()
+    rollbackEntity slotField hashField = do
+      deleteWhere [slotField >. slot]
+      deleteWhere [slotField ==. slot, hashField !=. hdrHash]

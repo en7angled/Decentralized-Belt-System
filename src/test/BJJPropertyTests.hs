@@ -8,6 +8,7 @@ import Control.Monad (when)
 import Hedgehog
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
+import DomainTypes.Rules.Promotion (checkPromotion)
 import Onchain.BJJ
 import Onchain.CIP68 (CIP68Datum (..), MetadataFields (..))
 import Onchain.LinkedList (NodeDatum (..))
@@ -63,7 +64,8 @@ bjjPropertyTests =
         "Promotion Validation Properties"
         [ testProperty "time requirements enforced" prop_timeRequirementsEnforced,
           testProperty "same belt promotion fails" prop_sameBeltPromotionFails,
-          testProperty "downgrade promotion fails" prop_downgradePromotionFails
+          testProperty "downgrade promotion fails" prop_downgradePromotionFails,
+          testProperty "checkPromotion mirrors validatePromotion" prop_checkPromotionMirrorsValidate
         ],
       testGroup
         "Serialization Roundtrip Properties"
@@ -233,18 +235,33 @@ prop_timeRequirementsEnforced = property $ do
 
 prop_sameBeltPromotionFails :: Property
 prop_sameBeltPromotionFails = property $ do
-  b <- forAll genBelt
+  b <- forAll genBeltNotMax
   date <- forAll genPOSIXTime
   let snapshot = BeltSnapshot b date
   Hedgehog.assert $ not (validatePromotion snapshot snapshot snapshot)
 
 prop_downgradePromotionFails :: Property
 prop_downgradePromotionFails = property $ do
-  higherBelt <- forAll genBelt
+  higherBelt <- forAll genBeltNotMax
   lowerBelt <- forAll genBelt
   date <- forAll genPOSIXTime
   when (higherBelt > lowerBelt) $ do
     Hedgehog.assert $ not (validatePromotion (BeltSnapshot higherBelt date) (BeltSnapshot higherBelt date) (BeltSnapshot lowerBelt date))
+
+-- | Pin test for the mirror-and-pin contract between 'checkPromotion' (off-chain,
+-- returns a structured violation list) and 'validatePromotion' (on-chain, returns
+-- 'Bool'). @null (checkPromotion …) ≡ validatePromotion …@ must hold across all
+-- generated 'BeltSnapshot' triples; if either implementation drifts, this test
+-- fails and both must be brought back in sync. @genBeltNotMax@ for the current
+-- belt keeps 'validatePromotion' off the @succ Red10@ trace-error branch.
+prop_checkPromotionMirrorsValidate :: Property
+prop_checkPromotionMirrorsValidate = withTests 1000 . property $ do
+  master <- forAll genBeltSnapshot
+  currentBelt <- forAll genBeltNotMax
+  currentDate <- forAll genPOSIXTime
+  nextSnap <- forAll genBeltSnapshot
+  let currentSnap = BeltSnapshot currentBelt currentDate
+  null (checkPromotion master currentSnap nextSnap) === validatePromotion master currentSnap nextSnap
 
 -- =============================================================================
 -- Generators
@@ -252,6 +269,11 @@ prop_downgradePromotionFails = property $ do
 
 genBelt :: Gen BJJBelt
 genBelt = Gen.element [White, Blue, Purple, Brown, Black, Black1, Black2, Black3, Black4, Black5, Black6, RedAndBlack, RedAndWhite, Red, Red10]
+
+-- | Belt generator excluding Red10, for tests where succ is called on the current belt.
+-- succ Red10 correctly errors on-chain (traceError "B0"), so these tests exclude it.
+genBeltNotMax :: Gen BJJBelt
+genBeltNotMax = Gen.element [White, Blue, Purple, Brown, Black, Black1, Black2, Black3, Black4, Black5, Black6, RedAndBlack, RedAndWhite, Red]
 
 genPOSIXTime :: Gen POSIXTime
 genPOSIXTime = POSIXTime <$> Gen.integral (Range.linear 0 1000000000)

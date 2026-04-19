@@ -85,11 +85,7 @@ ENV PATH="/root/.cabal/bin:$PATH"
 ENV CC=musl-gcc
 ENV LD=musl-gcc
 
-# Prime cabal
+# Prime cabal – dependency cache layer (stable unless .cabal/freeze change)
 COPY *.cabal cabal.project cabal.project.freeze ./
 RUN cabal update
-RUN cabal build --only-dependencies --enable-tests 
-
-# Copy sources and build chainsync-service
-COPY src ./src
-COPY config ./config
+RUN cabal build --only-dependencies --enable-tests

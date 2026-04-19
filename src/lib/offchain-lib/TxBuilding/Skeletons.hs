@@ -130,7 +130,7 @@ txMustHaveUTxOsAsRefInputs gyACs = mconcat <$> mapM txMustHaveUTxOAsRefInput gyA
 
 txMustSpendFromAddress :: (GYTxUserQueryMonad m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendFromAddress tokenId addrs = do
-  tokenUtxo <- getUTxOWithTokenAtAddresses tokenId addrs
+  tokenUtxo <- getUTxOWithTokenAtAddresses tokenId addrs ProfileNotFound
   return $
     mustHaveInput
       GYTxIn
