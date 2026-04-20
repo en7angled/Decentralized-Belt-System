@@ -11,8 +11,6 @@ module Query.Projected where
 import Control.Exception (throwIO)
 import Control.Monad (join)
 import Control.Monad.IO.Class (MonadIO (..))
-import Data.Foldable (for_)
-import Data.List (groupBy, nub, sortOn)
 import Control.Monad.Reader.Class
 import Data.Aeson (ToJSON)
 import Data.Foldable (for_)
