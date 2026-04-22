@@ -303,10 +303,6 @@ Only the commands that touch the oracle UTxO are listed here. For the full admin
 | `set-min-utxo-value --lovelace N`                                              | Set `opMinUTxOValue` (min lovelace for state outputs) |
 | `query-oracle`                                                                 | Display current oracle parameters                     |
 
-### Oracle datum schema and migration
-
-`OracleParams` has four fields: `opAdminPkh`, `opPaused`, `opFeeConfig`, `opMinUTxOValue`. Existing oracle UTxOs created before this extension have a **3-field** datum (no `opMinUTxOValue`). New validators and off-chain code expect a **4-field** datum. For zero-downtime upgrades, use backward-compatible decoding when reading the oracle: if the datum has only 3 elements, treat `opMinUTxOValue` as a default (e.g. 10_000_000). Otherwise, the admin must update the oracle (e.g. run `set-min-utxo-value`) with new code that can write the 4-field datum; ensure the decoder can read both 3- and 4-field datums so the update transaction can succeed.
-
 ### Security Considerations
 
 - The oracle NFT is unique (one-shot policy ensures exactly one exists)
@@ -332,7 +328,7 @@ Governs the rules for issuing every protocol token: profiles, ranks, promotions,
 Note: Profile deletion is intentionally NOT supported to preserve lineage integrity.
 
 **Redeemers**:
-- `CreateProfile TxOutRef MetadataFields OnChainProfileType POSIXTime Integer Integer Integer` — Create a new profile (seedTxOutRef, metadata, profileType, creationDate, rankNumber, profileOutputIdx, rankOrMembershipRootOutputIdx). For Organization profiles, also creates the membership histories root.
+- `CreateProfile TxOutRef MetadataFields OnchainProfileType POSIXTime Integer Integer Integer` — Create a new profile (seedTxOutRef, metadata, profileType, creationDate, rankNumber, profileOutputIdx, rankOrMembershipRootOutputIdx). For Organization profiles, also creates the membership histories root.
 - `Promote TxOutRef ProfileId ProfileId POSIXTime Integer Integer` — Create a promotion (seedTxOutRef, studentProfileId, masterProfileId, achievementDate, rankNumber, pendingRankOutputIdx).
 - `NewMembershipHistory ProfileId ProfileId POSIXTime (Maybe POSIXTime) MembershipHistoriesListNodeId Integer` — Initialize a membership history for a new member (organizationProfileId, practitionerId, startDate, maybeEndDate, leftNodeId, firstIntervalOutputIdx).
 - `NewMembershipInterval ProfileId MembershipHistoriesListNodeId POSIXTime (Maybe POSIXTime) Integer` — Add a new interval to an existing membership history (organizationProfileId, membershipNodeId, startDate, maybeEndDate, intervalOutputIdx).
@@ -352,8 +348,8 @@ The `ProtocolParams` is **baked into the compiled script** at deployment time. T
 - **Single Minting Authority**: All tokens minted through one policy ensures consistency
 - **CIP-68 Standard Integration**: Leverages Cardano's CIP-68 standard for NFT metadata, ensuring interoperability with wallets and marketplaces while maintaining extensible metadata structure
 - **Deterministic Token Generation**: Hash-based token naming using `blake2b_224` for 28-byte token names:
-  - `generateRankId`: from profile ID + rank number
-  - `generatePromotionRankId`: from seed TxOutRef
+  - `deriveRankId`: from profile ID + rank number
+  - `derivePromotionRankId`: from seed TxOutRef
   - `deriveMembershipHistoriesListId`: from organization profile ID
   - `deriveMembershipHistoryId`: from organization ID + practitioner ID
   - `deriveMembershipIntervalId`: from membership history ID + interval number
@@ -953,8 +949,8 @@ Each achievement is a CIP-68 token locked at the Achievements Validator with an 
 | Field                   | Type         | Description                                                    |
 | ----------------------- | ------------ | -------------------------------------------------------------- |
 | `achievementId`         | `AssetClass` | Unique identifier (derived from seed TxOutRef via blake2b_224) |
-| `achievementAwardedTo`  | `ProfileId`  | Ref AC of the practitioner receiving the achievement           |
 | `achievementAwardedBy`  | `ProfileId`  | Ref AC of the profile granting the achievement                 |
+| `achievementAwardedTo`  | `ProfileId`  | Ref AC of the practitioner receiving the achievement           |
 | `achievementDate`       | `POSIXTime`  | Date of the achievement (must be before tx validity range)     |
 | `achievementIsAccepted` | `Bool`       | Whether the practitioner has acknowledged the achievement      |
 

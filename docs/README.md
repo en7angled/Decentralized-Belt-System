@@ -1,8 +1,7 @@
 # Documentation Index
 
 Hand-written documentation for the Decentralized Belt System. Top-level repo
-files (`README.md`, `CHANGELOG.md`, `ENGINEERING-LOG.md`, `CLAUDE.md`,
-`LICENSE`) live at the repo root, not here.
+files (`README.md`, `CLAUDE.md`, `LICENSE`) live at the repo root, not here.
 
 Each doc opens with an audience banner so you can decide quickly whether it's
 the one you want. The sections below are grouped by audience too.
@@ -20,7 +19,6 @@ the one you want. The sections below are grouped by audience too.
 ## For auditors & protocol reviewers
 
 - [`onchain-architecture.md`](onchain-architecture.md) — validators, oracle hub, minting policy, output-index conventions, security model.
-- [`onchain-security-audit.md`](onchain-security-audit.md) — threat analysis and resolution log per validator.
 - [`onchain-trace-codes.md`](onchain-trace-codes.md) — two-character failure-code lookup table.
 
 ## For operators & integrators
@@ -33,8 +31,3 @@ the one you want. The sections below are grouped by audience too.
 - [`generated/README.md`](generated/README.md) — what's in here and how to regenerate it.
 - [`generated/bjj-belt-system-blueprint.json`](generated/bjj-belt-system-blueprint.json) — CIP-57 blueprint from `admin write-blueprint`.
 - [`generated/swagger/`](generated/swagger/) — Interaction + Query API OpenAPI specs, written at API startup.
-
-## Process
-
-- [`../CHANGELOG.md`](../CHANGELOG.md) — terse, ship-impact summaries.
-- [`../ENGINEERING-LOG.md`](../ENGINEERING-LOG.md) — long-form engineering journal (historical, pre-split).
