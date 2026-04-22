@@ -1,6 +1,6 @@
 # ChainSync Documentation
 
-*Audience: operators, integrators, and anyone debugging stale projections. Covers what the ChainSync service does, its consistency model, and how it handles reorgs. See [`../onchain-architecture.md`](../onchain-architecture.md) for the on-chain events it consumes and [`../developer-guide.md`](../developer-guide.md) § 3 for the offchain projection pipeline.*
+*Audience: operators, integrators, and anyone debugging stale projections. Covers what the ChainSync service does, its consistency model, and how it handles reorgs. See [`../onchain-architecture.md`](../onchain-architecture.md) for the on-chain events it consumes and [`../../.cursor/rules/operations/storage-ingestion.mdc`](../../.cursor/rules/operations/storage-ingestion.mdc) for the offchain projection pipeline.*
 
 This document explains what the ChainSync process does and why it works the way it does.
 

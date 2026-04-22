@@ -1,6 +1,6 @@
 # Onchain Architecture Documentation
 
-*Audience: auditors, reviewers, and engineers who need validator internals — redeemers, output-index conventions, oracle hub, security model. For extension workflows see [`developer-guide.md`](developer-guide.md); for trace-code lookups see [`onchain-trace-codes.md`](onchain-trace-codes.md).*
+*Audience: auditors, reviewers, and engineers who need validator internals — redeemers, output-index conventions, oracle hub, security model. For extension workflows see [`../CLAUDE.md`](../CLAUDE.md) and the rules under [`../.cursor/rules/`](../.cursor/rules/); for trace-code lookups see [`onchain-trace-codes.md`](onchain-trace-codes.md).*
 
 - [Onchain Architecture Documentation](#onchain-architecture-documentation)
   - [Overview](#overview)

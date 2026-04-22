@@ -1,6 +1,6 @@
 # BJJ MCP Server — As-built ADR
 
-*Audience: operators, integrators, and engineers extending the MCP tool surface. Cross-references: `onchain-architecture.md` for validator-level security; `developer-guide.md` for the library layering this server reuses.*
+*Audience: operators, integrators, and engineers extending the MCP tool surface. Cross-references: `onchain-architecture.md` for validator-level security; `../../CLAUDE.md` for the library layering this server reuses.*
 
 ## Status
 

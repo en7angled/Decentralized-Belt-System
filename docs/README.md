@@ -13,8 +13,8 @@ the one you want. The sections below are grouped by audience too.
 
 ## For engineers extending the system
 
-- [`developer-guide.md`](developer-guide.md) — workflow + consistency checklist + common-pitfalls table for adding a new concept. Cross-links to the CLAUDE.md files for layer-specific detail.
-- [`haskell-style-guide.md`](haskell-style-guide.md) — naming, formatting, INLINEABLE, JSON conventions.
+- [`../CLAUDE.md`](../CLAUDE.md) — architecture, file-change reference, Haskell style, and workflow. The canonical development reference; per-library `CLAUDE.md` files add layer-specific detail.
+- [`../.cursor/rules/`](../.cursor/rules/) — glob-scoped rules covering the new-concept checklist, Plutus conventions, and style. Mirrors the CLAUDE.md content for Cursor users.
 
 ## For auditors & protocol reviewers
 

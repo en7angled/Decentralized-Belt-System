@@ -22,6 +22,7 @@
     - [6.3 API Services](#63-api-services)
       - [**Interaction API** (Port 8082)](#interaction-api-port-8082)
       - [**Query API** (Port 8083)](#query-api-port-8083)
+      - [**MCP Server** (Port 8085)](#mcp-server-port-8085)
     - [6.4 Executables \& Local Run](#64-executables--local-run)
       - [**Chain Sync Probe** (Port 8084)](#chain-sync-probe-port-8084)
   - [7. License](#7-license)
@@ -111,6 +112,7 @@ To regenerate diagram images after editing `puml/*.puml`, run `scripts/regenerat
 ├── scripts/                         # Test and utility scripts
 │   ├── test_black_promotes_white_to_blue.sh  # Core promotion test
 │   ├── populate_testnet.sh          # Testnet data population
+│   ├── populate_recent_activity.sh  # Testnet population with recent (last 12 months) activity
 │   ├── regenerate_diagrams.sh       # Regenerate PlantUML images (puml/ → out/puml/)
 │   ├── test_exunits.sh              # Execution units / cost testing
 │   └── build-images.sh              # Docker/image build
@@ -294,7 +296,7 @@ Both scripts:
 
 ### 6.3 API Services
 
-The system provides three independent HTTP services (plus a chain-sync probe):
+The system provides four HTTP servers — Interaction API, Query API, MCP Server, and a Chain Sync service with health/readiness probes:
 
 #### **Interaction API** (Port 8082)
 - **Build Transaction**: `POST /build-tx` - Builds transaction for interactions

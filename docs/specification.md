@@ -3,7 +3,7 @@ This project is part of
 
 # Decentralized Belt System for Brazilian Jiu Jitsu
 
-*Audience: product readers, reviewers, and protocol newcomers — the formal functional spec (scope, actors, use cases, user stories). For implementation mechanics see [`onchain-architecture.md`](onchain-architecture.md) and [`developer-guide.md`](developer-guide.md).*
+*Audience: product readers, reviewers, and protocol newcomers — the formal functional spec (scope, actors, use cases, user stories). For implementation mechanics see [`onchain-architecture.md`](onchain-architecture.md) and [`../CLAUDE.md`](../CLAUDE.md).*
 
 - [Decentralized Belt System for Brazilian Jiu Jitsu](#decentralized-belt-system-for-brazilian-jiu-jitsu)
   - [1. Introduction](#1-introduction)
