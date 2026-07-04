@@ -104,10 +104,13 @@ ChainSyncConfig
 
 -- Raw Atlas match storage (flattened Kupo match fields)
 OnchainMatchEvent
-    createdSlot      Integer
-    createdHeader    Text
-    kupoMatch        KupoMatch
-    UniqueKupoMatch createdSlot createdHeader
+    createdSlot        Integer
+    createdHeader      Text
+    createdTxId        Text
+    createdTxIndex     Int
+    createdOutputIndex Int
+    kupoMatch          KupoMatch
+    UniqueKupoMatch createdSlot createdHeader createdTxId createdOutputIndex
     deriving Show
 
 -- Projection-specific flattened tables (domain fields + created_at)
@@ -269,13 +272,22 @@ putMatchAndProjections networkId km = do
           AchievementEvent a -> putAchievementProjection slotNoInt header a
           NoEvent _ -> pure ()
 
--- | Store a raw Kupo match event, upserting by slot + header hash.
+-- | Store a raw Kupo match event, upserting by (slot, header, txId, outputIndex) — the on-chain
+-- identity of the output, so multiple matches in the same block no longer overwrite each other.
 putKupoMatch :: (MonadIO m) => KupoMatch -> SqlPersistT m ()
 putKupoMatch km = do
   let cSlot = slot_no (created_at km)
       cHash = header_hash (created_at km)
-      ev = OnchainMatchEvent cSlot cHash km
-  upsertByUnique (\e -> UniqueKupoMatch (onchainMatchEventCreatedSlot e) (onchainMatchEventCreatedHeader e)) ev
+      ev = OnchainMatchEvent cSlot cHash (transaction_id km) (transaction_index km) (output_index km) km
+  upsertByUnique
+    ( \e ->
+        UniqueKupoMatch
+          (onchainMatchEventCreatedSlot e)
+          (onchainMatchEventCreatedHeader e)
+          (onchainMatchEventCreatedTxId e)
+          (onchainMatchEventCreatedOutputIndex e)
+    )
+    ev
 
 -- | Store a rank projection, upserting by rank ID.
 putRankProjection :: (MonadIO m) => Integer -> Text -> Rank -> SqlPersistT m ()
