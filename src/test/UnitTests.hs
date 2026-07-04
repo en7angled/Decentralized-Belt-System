@@ -5,6 +5,7 @@ module UnitTests where
 import GHC.Stack
 import Test.Tasty
 import UnitTests.Achievement (achievementTests)
+import UnitTests.ApiHardening (apiHardeningTests)
 import UnitTests.ChainSyncReplay (chainSyncReplayTests)
 import UnitTests.Cleanup (cleanupTests)
 import UnitTests.MCPTools (mcpToolsTests)
@@ -22,5 +23,6 @@ unitTests =
       achievementTests,
       cleanupTests,
       mcpToolsTests,
-      chainSyncReplayTests
+      chainSyncReplayTests,
+      apiHardeningTests
     ]

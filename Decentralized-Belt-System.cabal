@@ -246,9 +246,11 @@ library webapi-lib
 
   build-depends:
     , aeson
+    , bytestring
     , deriving-aeson
     , http-types
     , lens
+    , memory
     , servant
     , servant-server
     , swagger2
@@ -443,6 +445,7 @@ test-suite test
     TestRuns
     UnitTests
     UnitTests.Achievement
+    UnitTests.ApiHardening
     UnitTests.ChainSyncReplay
     UnitTests.Cleanup
     UnitTests.MCPTools
@@ -458,6 +461,7 @@ test-suite test
     , offchain-lib
     , onchain-lib
     , text
+    , webapi-lib
 
   build-depends:
     , aeson
@@ -471,6 +475,7 @@ test-suite test
     , mtl
     , servant
     , servant-client
+    , servant-server
     , tasty
     , tasty-hedgehog
     , tasty-hunit

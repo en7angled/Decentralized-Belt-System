@@ -1,13 +1,19 @@
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 -- | Basic authentication middleware for Servant APIs.
--- Reads credentials from @BASIC_USER@ and @BASIC_PASS@ environment variables.
+-- Credentials come from @BASIC_USER@ and @BASIC_PASS@; the server refuses to
+-- start if either is unset (fail-closed). Credential comparison is
+-- constant-time and never decodes attacker-controlled bytes.
 module WebAPI.Auth where
 
-import Data.Maybe (fromMaybe)
+import Data.ByteArray (constEq)
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding
+import qualified Data.Text.Encoding as TE
 import Servant
 import System.Environment (lookupEnv)
+import System.Exit (die)
 
 -- | Authenticated user identity extracted from a successful basic-auth check.
 newtype AuthUser = AuthUser
@@ -25,11 +31,15 @@ data AuthContext = AuthContext
 proxyBasicAuthContext :: Proxy '[BasicAuthCheck AuthUser]
 proxyBasicAuthContext = Proxy
 
--- | 'BasicAuthCheck' holds the handler we'll use to verify a username and password.
+-- | Verify a username/password with constant-time byte comparison.
+-- The incoming bytes are never UTF-8 decoded, so invalid UTF-8 credentials
+-- fail the check rather than raising an exception.
 authCheck :: AuthContext -> BasicAuthCheck AuthUser
 authCheck AuthContext {authUser, authPassword} =
-  let check (BasicAuthData username password) =
-        if Data.Text.Encoding.decodeUtf8 username == authUser && Data.Text.Encoding.decodeUtf8 password == authPassword
+  let expectedUser = TE.encodeUtf8 authUser
+      expectedPass = TE.encodeUtf8 authPassword
+      check (BasicAuthData username password) =
+        if constEq username expectedUser && constEq password expectedPass
           then return (Authorized (AuthUser authUser))
           else return Unauthorized
    in BasicAuthCheck check
@@ -38,9 +48,15 @@ authCheck AuthContext {authUser, authPassword} =
 basicAuthServerContext :: AuthContext -> Context (BasicAuthCheck AuthUser ': '[])
 basicAuthServerContext authContext = authCheck authContext :. EmptyContext
 
--- | Read basic-auth credentials from @BASIC_USER@ and @BASIC_PASS@ env vars, defaulting to @cardano@/@lovelace@.
+-- | Read basic-auth credentials from @BASIC_USER@ and @BASIC_PASS@.
+-- Both must be set and non-empty, or the process exits (fail-closed) — there
+-- are no default credentials.
 getBasicAuthFromEnv :: IO AuthContext
 getBasicAuthFromEnv = do
-  user <- fromMaybe "cardano" <$> lookupEnv "BASIC_USER"
-  pass <- fromMaybe "lovelace" <$> lookupEnv "BASIC_PASS"
-  return AuthContext {authUser = T.pack user, authPassword = T.pack pass}
+  mUser <- lookupEnv "BASIC_USER"
+  mPass <- lookupEnv "BASIC_PASS"
+  case (mUser, mPass) of
+    (Just u, Just p)
+      | not (null u), not (null p) ->
+          return AuthContext {authUser = T.pack u, authPassword = T.pack p}
+    _ -> die "BASIC_USER and BASIC_PASS must both be set to non-empty values (no default credentials)."
