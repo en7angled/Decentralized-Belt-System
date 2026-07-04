@@ -219,17 +219,13 @@ getCursorValue = fmap entityVal <$> getBy (UniqueCursor True)
 putCursor :: (MonadIO m) => ChainCursor -> SqlPersistT m ()
 putCursor = upsertByUnique (const (UniqueCursor True))
 
--- | Read the stored policy hex from the singleton config row, or Nothing if no row exists.
-getStoredPolicyHexText :: (MonadIO m) => SqlPersistT m (Maybe Text)
-getStoredPolicyHexText = fmap (chainSyncConfigPolicyHexText . entityVal) <$> getBy (UniqueChainSyncConfig True)
-
 -- | Upsert the singleton config row with the given policy hex and the current schema version.
 putStoredPolicyHexText :: (MonadIO m) => Text -> SqlPersistT m ()
 putStoredPolicyHexText policyHexText =
   upsertByUnique (const (UniqueChainSyncConfig True)) (ChainSyncConfig True policyHexText currentSchemaVersion)
 
 -- | Table names for all entities in this persist block (persistLowerCase).
--- When adding a new entity to this block, add its table name here so wipeChainSyncTables drops it.
+-- When adding a new entity to this block, add its table name here so wipeChainSyncTablesRaw drops it.
 chainSyncTableNames :: [Text]
 chainSyncTableNames =
   [ "achievement_projection",
@@ -242,14 +238,6 @@ chainSyncTableNames =
     "promotion_projection",
     "rank_projection"
   ]
-
--- | Drop all chain-sync tables (this persist block), then run migrations to recreate them.
--- Does not drop tables used only by other services; this module has no such tables.
-wipeChainSyncTables :: (MonadIO m) => SqlPersistT m ()
-wipeChainSyncTables = do
-  forM_ chainSyncTableNames $ \tableName ->
-    rawExecute ("DROP TABLE IF EXISTS " <> tableName <> " CASCADE") []
-  runMigrations
 
 -- | Drop all chain-sync tables WITHOUT re-migrating (migration happens separately, after this).
 wipeChainSyncTablesRaw :: (MonadIO m) => SqlPersistT m ()
