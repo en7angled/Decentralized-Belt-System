@@ -17,7 +17,7 @@ import DomainTypes.Transfer.Types (FeeConfigDTO (..), ProtocolStatus (..), Scrip
 import GeniusYield.TxBuilder (addressFromPlutus')
 import GeniusYield.Types (addressToText)
 import Onchain.Protocol.Types qualified as OnchainTypes
-import QueryAppMonad (QueryAppMonad (..), QueryAppContext (..), verifyProjectionDbConnection)
+import QueryAppMonad (QueryAppMonad (..), QueryAppContext (..), runWithQueryErrorHandling, verifyProjectionDbConnection)
 import TxBuilding.Context (DeployedScriptsContext (..), runQuery)
 import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Lookups (queryOracleParams)
@@ -35,7 +35,7 @@ getProtocolStatusQuery :: QueryAppMonad ProtocolStatus
 getProtocolStatusQuery = do
   mCtx <- asks deployedScriptsCtx
   case mCtx of
-    Nothing -> liftIO $ throwIO OracleNotFound
+    Nothing -> runWithQueryErrorHandling $ throwIO OracleNotFound
     Just dCtx -> do
       provCtx <- asks providerContext
       liftIO $ runQuery provCtx $ do

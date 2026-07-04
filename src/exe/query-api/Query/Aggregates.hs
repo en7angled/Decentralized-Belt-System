@@ -40,7 +40,7 @@ import DomainTypes.Transfer.QueryResponses
   )
 import Query.Live qualified as L
 import Query.Projected qualified as P
-import QueryAppMonad (QueryAppContext (..), QueryAppMonad)
+import QueryAppMonad (QueryAppContext (..), QueryAppMonad, runWithQueryErrorHandling)
 import RestAPI.Common (withBackend)
 import Storage
 import TxBuilding.Context (runQuery)
@@ -95,12 +95,12 @@ resolveProfileForPromotionSide pid t = do
           eOrg <- liftIO $ try @SomeException $ runQuery ctx (getOrganizationInformation pid)
           case eOrg of
             Right org -> return $ organizationToShimPractitioner org t
-            Left _ -> liftIO $ throwIO ProfileNotFound
+            Left _ -> runWithQueryErrorHandling $ throwIO ProfileNotFound
     else do
       pool <- asks pgPool
       mTy <- liftIO $ runSqlPool (lookupProfileTypeProjected pid) pool
       case mTy of
-        Nothing -> liftIO $ throwIO ProfileNotFound
+        Nothing -> runWithQueryErrorHandling $ throwIO ProfileNotFound
         Just Practitioner -> P.getPractitionerProfile pid
         Just Organization -> do
           org <- P.getOrganizationProfile pid
@@ -128,7 +128,7 @@ achievementToInformation a = do
     (P.getProfiles Nothing byFilter Nothing)
   case (awardedToProfiles, awardedByProfiles) of
     (toProf : _, byProf : _) -> return $ achievementInformationToResponse toProf byProf a
-    _ -> liftIO $ throwIO ProfileNotFound
+    _ -> runWithQueryErrorHandling $ throwIO ProfileNotFound
 
 -- | Batch-resolve a set of profile IDs to @PractitionerProfileInformation@ for
 -- promotion/rank nesting. Organizations are shimmed via 'organizationToShimPractitioner'.
@@ -202,12 +202,12 @@ loadPractitionerOrOrg pid = do
           eOrg <- liftIO $ try @SomeException $ runQuery ctx (getOrganizationInformation pid)
           case eOrg of
             Right org -> return $ Right org
-            Left _ -> liftIO $ throwIO ProfileNotFound
+            Left _ -> runWithQueryErrorHandling $ throwIO ProfileNotFound
     else do
       pool <- asks pgPool
       mTy <- liftIO $ runSqlPool (lookupProfileTypeProjected pid) pool
       case mTy of
-        Nothing -> liftIO $ throwIO ProfileNotFound
+        Nothing -> runWithQueryErrorHandling $ throwIO ProfileNotFound
         Just Practitioner -> Left <$> P.getPractitionerProfile pid
         Just Organization -> Right <$> P.getOrganizationProfile pid
 

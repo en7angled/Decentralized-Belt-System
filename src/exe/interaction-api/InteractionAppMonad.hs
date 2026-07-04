@@ -17,7 +17,6 @@ import Constants qualified
 import Control.Exception (displayException, try)
 import Control.Monad.Except
 import Control.Monad.Reader
-import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Text hiding (elem, reverse, take)
 import Data.Time (defaultTimeLocale, getCurrentTime)
 import Data.Time.Format (formatTime)
@@ -32,6 +31,7 @@ import TxBuilding.Interactions (Interaction)
 import TxBuilding.Operations (ensureDeployedScriptsAreReady)
 import TxBuilding.Transactions (interactionToHexEncodedCBOR, submitTx)
 import WebAPI.Auth (AuthContext)
+import WebAPI.Errors (genericErrorMessage, mkServantErr)
 import WebAPI.ServiceProbe (ServiceProbeStatus (..))
 
 ------------------------------------------------------------------------------------------------
@@ -63,12 +63,6 @@ instance MonadReader InteractionAppContext InteractionAppMonad where
   local :: (InteractionAppContext -> InteractionAppContext) -> InteractionAppMonad a -> InteractionAppMonad a
   local f (InteractionAppMonad app) = InteractionAppMonad (local f app)
 
--- | Convert an HTTP status code to the corresponding Servant error.
-mkServantErr :: Int -> String -> ServerError
-mkServantErr 404 msg = err404 {errBody = BL8.pack msg}
-mkServantErr 503 msg = err503 {errBody = BL8.pack msg}
-mkServantErr _ msg = err400 {errBody = BL8.pack msg}
-
 -- | Run an IO action in the TxBuilding context with standardized error handling.
 -- Maps 'TxBuildingException' constructors to appropriate HTTP status codes
 -- using the centralized 'txBuildingExceptionToHttpStatus' mapping.
@@ -85,8 +79,8 @@ runWithTxErrorHandling action = InteractionAppMonad $ do
               liftIO $ putStrLn $ "TxBuildingException (" <> show status <> "): " <> msg
               throwError $ mkServantErr status msg
         _ -> do
-          liftIO $ putStrLn $ "GYTxMonadException: \n" <> show ex
-          throwError err400 {errBody = BL8.pack (show ex)}
+          liftIO $ putStrLn $ "Unexpected exception: " <> show ex
+          throwError $ mkServantErr 500 (genericErrorMessage 500)
     Right ok -> pure ok
 
 -- | Build a transaction from an 'Interaction' and return its hex-encoded CBOR.
@@ -133,7 +127,7 @@ checkDeployedScriptsAreReady = do
                 throwError $ mkServantErr status msg
           _ -> do
             liftIO $ putStrLn $ "checkDeployedScriptsAreReady GYTxMonadException: " <> show ex
-            throwError err400 {errBody = BL8.pack (show ex)}
+            throwError $ mkServantErr 503 (genericErrorMessage 503)
       Right () ->
         return $
           ServiceProbeStatus

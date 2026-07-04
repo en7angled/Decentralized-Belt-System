@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Application monad and context for the query API server.
 -- Wraps a 'ReaderT' over Servant's 'Handler' with access to auth, provider,
@@ -8,15 +9,16 @@ module QueryAppMonad where
 
 import Constants qualified
 import Control.Monad.Reader
-import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Text hiding (elem, reverse, take)
 import Data.Time
 import Database.Persist.Sql (ConnectionPool, SqlPersistT, Single (..), rawSql, runSqlPool)
-import Control.Exception (SomeException, try)
+import Control.Exception (SomeException, displayException, try)
 import Servant
 -- import System.Directory.Extra
 import TxBuilding.Context
+import TxBuilding.Exceptions (TxBuildingException, txBuildingExceptionToHttpStatus)
 import WebAPI.Auth (AuthContext)
+import WebAPI.Errors (genericErrorMessage, mkServantErr)
 import WebAPI.ServiceProbe (ServiceProbeStatus (..))
 
 ------------------------------------------------------------------------------------------------
@@ -50,6 +52,20 @@ instance MonadReader QueryAppContext QueryAppMonad where
   local :: (QueryAppContext -> QueryAppContext) -> QueryAppMonad a -> QueryAppMonad a
   local f (QueryAppMonad app) = QueryAppMonad (local f app)
 
+-- | Run an IO action, mapping a bare 'TxBuildingException' to its HTTP status.
+-- Query handlers throw @TxBuildingException@ directly (no @GYApplicationException@
+-- wrapper), so this catches the concrete type — it must NOT copy the
+-- interaction-api handler's @GYApplicationException@/@cast@ shape.
+runWithQueryErrorHandling :: IO a -> QueryAppMonad a
+runWithQueryErrorHandling action = QueryAppMonad $ do
+  res <- liftIO $ try action
+  case res of
+    Left (txEx :: TxBuildingException) -> do
+      let status = txBuildingExceptionToHttpStatus txEx
+      liftIO $ putStrLn $ "TxBuildingException (" <> show status <> "): " <> displayException txEx
+      throwError $ mkServantErr status (displayException txEx)
+    Right ok -> pure ok
+
 -- | Health-check probe: verify the projection database is reachable.
 verifyProjectionDbConnection :: QueryAppMonad (ServiceProbeStatus Text)
 verifyProjectionDbConnection = QueryAppMonad $ do
@@ -65,16 +81,6 @@ verifyProjectionDbConnection = QueryAppMonad $ do
             version = pack Constants.appVersion,
             timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
           }
-    Left err ->
-      throwError
-        err503
-          { errBody =
-              BL8.pack $
-                show $
-                  ServiceProbeStatus
-                    { status = "db not ready: " <> pack (show err),
-                      service = "query-api",
-                      version = pack Constants.appVersion,
-                      timestamp = pack $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" now
-                    }
-          }
+    Left err -> do
+      liftIO $ putStrLn $ "Projection DB not ready: " <> show err
+      throwError $ mkServantErr 503 (genericErrorMessage 503)

@@ -9,7 +9,6 @@ module RestAPI where
 
 import Constants (appVersion)
 import Control.Lens hiding (Context)
-import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (lift)
 import Data.Swagger
 import Data.Text hiding (length, map)
@@ -289,7 +288,7 @@ handleGetAchievementById achId = do
   results <- withBackend (L.getAchievements Nothing achFilter Nothing) (P.getAchievements Nothing achFilter Nothing)
   case results of
     (a : _) -> Agg.achievementToInformation a
-    [] -> liftIO $ throwIO AchievementNotFound
+    [] -> runWithQueryErrorHandling $ throwIO AchievementNotFound
 
 achievementsServer :: ServerT Achievements QueryAppMonad
 achievementsServer = handleGetAchievements :<|> handleGetAchievementById

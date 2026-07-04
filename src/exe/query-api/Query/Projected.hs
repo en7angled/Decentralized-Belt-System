@@ -312,10 +312,10 @@ applyProfileFilter (Just F.ProfileFilter {..}) pp = do
   -- Filter by registration date (insertedAt >= cutoff)
   for_ profileFilterRegisteredAfter (\cutoff -> where_ (pp ^. ProfileProjectionInsertedAt >=. val cutoff))
 
-getPractitionerProfile :: (MonadIO m, MonadReader QueryAppContext m) => ProfileRefAC -> m PractitionerProfileInformation
+getPractitionerProfile :: ProfileRefAC -> QueryAppMonad PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
   pool <- asks pgPool
-  liftIO $
+  runWithQueryErrorHandling $
     runSqlPool
       ( do
           mProf <- P.getBy (UniqueProfileProjection profileRefAC)
@@ -424,10 +424,10 @@ getOrganizationProfilesBatch oids = do
       )
       pool
 
-getOrganizationProfile :: (MonadIO m, MonadReader QueryAppContext m) => ProfileRefAC -> m OrganizationProfileInformation
+getOrganizationProfile :: ProfileRefAC -> QueryAppMonad OrganizationProfileInformation
 getOrganizationProfile profileRefAC = do
   pool <- asks pgPool
-  liftIO $
+  runWithQueryErrorHandling $
     runSqlPool
       ( do
           mProf <- P.getBy (UniqueProfileProjection profileRefAC)
@@ -1120,16 +1120,15 @@ searchProjected q = do
 -- | Direct lineage tree from rank projections. Ancestor chain follows awarded_by links upward;
 -- descendant subtree follows awarded_to links downward. Collateral branches are excluded.
 getLineageGraph ::
-  (MonadIO m, MonadReader QueryAppContext m) =>
   ProfileRefAC ->
   Int ->
   Int ->
   Maybe BJJBelt ->
-  m LineageGraphData
+  QueryAppMonad LineageGraphData
 getLineageGraph root ancestorDepth descendantDepth mMinBelt = do
   pool <- asks pgPool
   let cappedDesc = min descendantDepth maxDescendantDepth
-  liftIO $
+  runWithQueryErrorHandling $
     runSqlPool
       ( do
           mRootProf <- P.getBy (UniqueProfileProjection root)
