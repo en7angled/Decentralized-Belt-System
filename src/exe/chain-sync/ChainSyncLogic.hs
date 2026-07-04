@@ -71,46 +71,42 @@ getBlockchainTip kupoUrl = do
       liftIO $ threadDelay 10000000
       getBlockchainTip kupoUrl
 
--- | Recursively fetch and project Kupo matches in batches from @start@ to @end@.
+-- | Recursively fetch and project Kupo matches in batches from @start@ to @end@. The continuation
+-- recurses only on success; on error it tail-retries the SAME window. Windows overlap by one slot
+-- (Kupo bounds are inclusive) — duplicate-safe via idempotent upserts.
 fetchingMatches :: MVar SyncMetrics -> String -> T.Text -> T.Text -> GYNetworkId -> ConnectionPool -> Integer -> Integer -> Integer -> IO ()
-fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batchSize =
-  if end <= start
-    then do
-      liftIO $ putStrLn "No more matches to fetch"
-    else do
-      let startInterval = start
+fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batchSize
+  | end <= start = putStrLn "No more matches to fetch"
+  | otherwise = do
       let endInterval = if (start + batchSize) > end then end else start + batchSize
-      liftIO $ putStrLn ("Fetching matches from " <> show start <> " to " <> show endInterval)
+      putStrLn ("Fetching matches from " <> show start <> " to " <> show endInterval)
       eMatches <-
-        liftIO $
-          runKupoMatches
-            kupoUrl
-            matchPattern
-            (Just policyHexText)
-            Nothing
-            Nothing
-            Nothing
-            (Just startInterval)
-            (Just endInterval)
-            Nothing
-            Nothing
-            (Just "oldest_first")
-            False
-            False
-            True
-
+        runKupoMatches
+          kupoUrl
+          matchPattern
+          (Just policyHexText)
+          Nothing
+          Nothing
+          Nothing
+          (Just start)
+          (Just endInterval)
+          Nothing
+          Nothing
+          (Just "oldest_first")
+          False
+          False
+          True
       case eMatches of
         Left err -> do
-          liftIO $ putStrLn ("Kupo client error: " <> show err)
-          liftIO $ putStrLn "Retrying in 10 seconds"
-          liftIO $ threadDelay 10000000
+          putStrLn ("Kupo client error: " <> show err)
+          putStrLn "Retrying in 10 seconds"
+          threadDelay 10000000
           fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batchSize
         Right matches -> do
           applyMatches networkId pool matches
           now <- getCurrentTime
           modifyMVar_ metricsVar $ \m -> pure m {smLocalTip = endInterval, smLastSyncTime = now}
-
-      fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool endInterval end batchSize
+          fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool endInterval end batchSize
 
 applyMatches :: GYNetworkId -> ConnectionPool -> [KupoMatch] -> IO ()
 applyMatches _networkId _pool [] = return ()

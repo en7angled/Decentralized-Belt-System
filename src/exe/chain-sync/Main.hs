@@ -119,8 +119,7 @@ main = do
         liftIO $ putStrLn "Chain is behind"
         liftIO $ putStrLn "Fetching matches"
         fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool (ck_slot_no localTip) (ck_slot_no blockchainTip) fetchBatchSize
-        blockchainTip' <- getBlockchainTip kupoUrl
-        updateLocalTip pool blockchainTip'
+        updateLocalTip pool blockchainTip
       Ahead -> do
         liftIO $ putStrLn "Chain is ahead"
         liftIO $ putStrLn "Starting rollback"
