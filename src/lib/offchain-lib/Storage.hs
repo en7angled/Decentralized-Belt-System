@@ -99,6 +99,7 @@ ChainCursor
 ChainSyncConfig
     singleton        Bool
     policyHexText    Text
+    schemaVersion    Int default=1
     UniqueChainSyncConfig singleton
     deriving Show
 
@@ -194,6 +195,10 @@ AchievementProjection
 runMigrations :: (MonadIO m) => SqlPersistT m ()
 runMigrations = runMigration migrateAll
 
+-- | Bump when the chain-sync DB schema changes incompatibly; startup wipes + re-syncs on a mismatch.
+currentSchemaVersion :: Int
+currentSchemaVersion = 2
+
 -- | Upsert a record by its unique key: insert if absent, replace if present.
 upsertByUnique ::
   (PersistEntity a, PersistEntityBackend a ~ SqlBackend, SafeToInsert a, MonadIO m) =>
@@ -218,10 +223,10 @@ putCursor = upsertByUnique (const (UniqueCursor True))
 getStoredPolicyHexText :: (MonadIO m) => SqlPersistT m (Maybe Text)
 getStoredPolicyHexText = fmap (chainSyncConfigPolicyHexText . entityVal) <$> getBy (UniqueChainSyncConfig True)
 
--- | Upsert the singleton config row with the given policy hex (idempotent, single row only).
+-- | Upsert the singleton config row with the given policy hex and the current schema version.
 putStoredPolicyHexText :: (MonadIO m) => Text -> SqlPersistT m ()
 putStoredPolicyHexText policyHexText =
-  upsertByUnique (const (UniqueChainSyncConfig True)) (ChainSyncConfig True policyHexText)
+  upsertByUnique (const (UniqueChainSyncConfig True)) (ChainSyncConfig True policyHexText currentSchemaVersion)
 
 -- | Table names for all entities in this persist block (persistLowerCase).
 -- When adding a new entity to this block, add its table name here so wipeChainSyncTables drops it.
