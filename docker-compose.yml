@@ -72,8 +72,9 @@ services:
     container_name: bjj-interaction-api
     environment:
       - PORT=8082
-      # - BASIC_USER=cardano
-      # - BASIC_PASS=lovelace
+      - BASIC_USER=${BASIC_USER}
+      - BASIC_PASS=${BASIC_PASS}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - ATLAS_CORE_CONFIG=${ATLAS_CORE_CONFIG}
       - DEPLOYED_VALIDATORS_CONFIG=${DEPLOYED_VALIDATORS_CONFIG}
       - IPFS_API_URL=http://ipfs:5001
@@ -101,8 +102,9 @@ services:
     environment:
       - PORT=8083
       - PG_CONN_STR=host=postgres user=postgres password=postgres dbname=chainsync port=5432
-      # - BASIC_USER=cardano
-      # - BASIC_PASS=lovelace
+      - BASIC_USER=${BASIC_USER}
+      - BASIC_PASS=${BASIC_PASS}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - ATLAS_CORE_CONFIG=${ATLAS_CORE_CONFIG}
       - DEPLOYED_VALIDATORS_CONFIG=${DEPLOYED_VALIDATORS_CONFIG}
     ports:
@@ -128,8 +130,9 @@ services:
       - PORT=8085
       - QUERY_API_URL=http://query-api:8083
       - INTERACTION_API_URL=http://interaction-api:8082
-      # - BASIC_USER=cardano
-      # - BASIC_PASS=lovelace
+      - BASIC_USER=${BASIC_USER}
+      - BASIC_PASS=${BASIC_PASS}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - MCP_ENABLE_WRITE_TX=1
     ports:
       - "8085:8085"

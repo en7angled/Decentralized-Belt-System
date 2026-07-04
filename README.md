@@ -302,7 +302,7 @@ The system provides four HTTP servers — Interaction API, Query API, MCP Server
 - **Build Transaction**: `POST /build-tx` - Builds transaction for interactions
 - **Submit Transaction**: `POST /submit-tx` - Submits signed transactions
 - **Swagger UI**: `http://localhost:8082/swagger-ui/`
-- **Authentication**: All endpoints require HTTP Basic Auth. Defaults: `BASIC_USER=cardano`, `BASIC_PASS=lovelace` (override via env).
+- **Authentication**: All endpoints require HTTP Basic Auth. `BASIC_USER`/`BASIC_PASS` are **required** — the server exits at startup if either is unset. No default credentials.
 
 #### **Query API** (Port 8083)  
 - **Profiles**: `GET /practitioner/{id}`, `GET /organization/{id}`, `GET /profiles`, `GET /profiles/count`, `GET /profiles/frequency`
@@ -313,7 +313,7 @@ The system provides four HTTP servers — Interaction API, Query API, MCP Server
 - **Lineage**: `GET /lineage?root=...&ancestors=...&descendants=...` (direct lineage tree: ancestor chain + descendant subtree; projected DB only)
 - **Protocol**: `GET /protocol-status` (oracle pause, min UTxO, fee config)
 - **Swagger UI**: `http://localhost:8083/swagger-ui/`
-- **Authentication**: All endpoints require HTTP Basic Auth (same defaults). Swagger UI is public.
+- **Authentication**: All endpoints require HTTP Basic Auth (`BASIC_USER`/`BASIC_PASS` **required** — exits if unset). Swagger UI is public.
 - **Projection mode**: add `?liveprojection=true` to query live on-chain data; otherwise reads come from the **PostgreSQL** projection populated by **chainsync-service**. Standard `limit`, `offset`, filter params are available per Swagger.
 
 #### **MCP Server** (Port 8085)
@@ -352,10 +352,10 @@ cabal run mcp-server
 
 Environment variables:
 
-- Interaction API: `ATLAS_CORE_CONFIG` (JSON or default file `config/config_atlas.json`), `DEPLOYED_VALIDATORS_CONFIG` (JSON or default file `config/config_bjj_validators.json`), `BASIC_USER`, `BASIC_PASS`, `PORT` (default 8082)
-- Query API: `ATLAS_CORE_CONFIG`, `PG_CONN_STR` (default `host=postgres user=postgres password=postgres dbname=chainsync port=5432` — Docker-oriented; override in `.env` for a local Postgres), `DEPLOYED_VALIDATORS_CONFIG` (JSON or default file `config/config_bjj_validators.json`; used for deployed-script context e.g. protocol status), `BASIC_USER`, `BASIC_PASS`, `PORT` (default 8083)
+- Interaction API: `ATLAS_CORE_CONFIG` (JSON or default file `config/config_atlas.json`), `DEPLOYED_VALIDATORS_CONFIG` (JSON or default file `config/config_bjj_validators.json`), `BASIC_USER` (**required**), `BASIC_PASS` (**required**), `CORS_ALLOWED_ORIGINS` (comma-separated origin allowlist; empty = no cross-origin), `PORT` (default 8082)
+- Query API: `ATLAS_CORE_CONFIG`, `PG_CONN_STR` (default `host=postgres user=postgres password=postgres dbname=chainsync port=5432` — Docker-oriented; override in `.env` for a local Postgres), `DEPLOYED_VALIDATORS_CONFIG` (JSON or default file `config/config_bjj_validators.json`; used for deployed-script context e.g. protocol status), `BASIC_USER` (**required**), `BASIC_PASS` (**required**), `CORS_ALLOWED_ORIGINS` (comma-separated origin allowlist; empty = no cross-origin), `PORT` (default 8083)
 - Chain Sync: `ATLAS_CORE_CONFIG`, `DEPLOYED_VALIDATORS_CONFIG`, `KUPO_URL` (default in source is a Demeter preview Kupo URL; set to `http://localhost:1442` or your Kupo when running locally), `PG_CONN_STR` (default `host=localhost user=postgres password=postgres dbname=chainsync port=5432`), `FETCH_BATCH_SIZE`, `ROLLBACK_MARGIN` (fork-recovery rollback depth in slots, default 2160, minimum enforced value 1), `PORT` (default 8084)
-- MCP Server: `QUERY_API_URL` (default `http://query-api:8083`), `INTERACTION_API_URL` (default `http://interaction-api:8082`), `BASIC_USER`/`BASIC_PASS` (forwarded to upstream APIs), `MCP_ENABLE_WRITE_TX` (set to `1` to surface write tools; off by default), `MCP_READINESS_TIMEOUT_MS` (default 2000), `PORT` (default 8085)
+- MCP Server: `QUERY_API_URL` (default `http://query-api:8083`), `INTERACTION_API_URL` (default `http://interaction-api:8082`), `BASIC_USER`/`BASIC_PASS` (**required** — exits if unset), `CORS_ALLOWED_ORIGINS` (comma-separated origin allowlist), `MCP_ENABLE_WRITE_TX` (set to `1` to surface write tools; off by default), `MCP_READINESS_TIMEOUT_MS` (default 2000), `PORT` (default 8085)
 
 #### **Chain Sync Probe** (Port 8084)
 - **Health**: `GET /health` - Returns service health and current sync metrics
