@@ -252,14 +252,16 @@ readSchemaProbe :: (MonadIO m) => SqlPersistT m (Maybe (Int, Text))
 readSchemaProbe = do
   tbl <-
     rawSql
-      "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'chain_sync_config')"
+      "SELECT EXISTS (SELECT 1 FROM information_schema.tables \
+      \WHERE table_name = 'chain_sync_config' AND table_schema = current_schema())"
       []
   case tbl of
     [Single True] -> do
       col <-
         rawSql
           "SELECT EXISTS (SELECT 1 FROM information_schema.columns \
-          \WHERE table_name = 'chain_sync_config' AND column_name = 'schema_version')"
+          \WHERE table_name = 'chain_sync_config' AND column_name = 'schema_version' \
+          \AND table_schema = current_schema())"
           []
       case col of
         [Single True] -> do

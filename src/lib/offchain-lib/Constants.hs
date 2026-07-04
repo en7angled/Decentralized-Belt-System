@@ -1,4 +1,5 @@
--- | Default file paths for configuration, validators, and blueprint artifacts.
+-- | Default file paths for configuration, validators, and blueprint artifacts, plus other
+-- cross-cutting default constants (e.g. app version, chain-sync fork-recovery margin).
 module Constants where
 
 defaultAtlasCoreConfig :: FilePath
