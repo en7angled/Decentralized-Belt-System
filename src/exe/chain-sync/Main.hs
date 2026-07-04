@@ -37,6 +37,7 @@ import Storage
 import System.Environment (lookupEnv)
 import System.Exit (die)
 import Text.Printf
+import Text.Read (readMaybe)
 import TxBuilding.Context
 import Utils (decodeConfigEnvOrFile)
 import WebAPI.Utils
@@ -80,6 +81,10 @@ main = do
     mb <- lookupEnv "FETCH_BATCH_SIZE"
     pure $ maybe (10_000_000 :: Integer) read mb
 
+  rollbackMargin <- do
+    mb <- lookupEnv "ROLLBACK_MARGIN"
+    pure $ max 1 (maybe defaultRollbackMargin id (mb >>= readMaybe))
+
   initialTip <- getLocalTip pool
 
   now <- getCurrentTime
@@ -122,13 +127,12 @@ main = do
         updateLocalTip pool blockchainTip
       Ahead -> do
         liftIO $ putStrLn "Chain is ahead"
-        liftIO $ putStrLn "Starting rollback"
-        -- Rollback DB state to blockchain tip (retain rows up to tip with matching header)
-        runSqlPool (rollbackTo networkId (ck_slot_no blockchainTip)) pool
-        -- Update the local tip cursor to match the blockchain tip
-        updateLocalTip pool blockchainTip
-        liftIO $ putStrLn "Rollback complete and local tip updated"
+        let rollbackSlot = max 0 (ck_slot_no blockchainTip - rollbackMargin)
+        runSqlPool (rollbackTo networkId rollbackSlot) pool
+        updateLocalTip pool (KupoCheckpoint rollbackSlot "")
+        liftIO $ putStrLn ("Rolled back to slot " <> show rollbackSlot <> "; will re-sync forward")
       UpToDateButDifferentBlockHash -> do
-        liftIO $ putStrLn "Chain is on the same slot but different block hash"
-        updateLocalTip pool blockchainTip
-        liftIO $ putStrLn "Updated local tip with blockchain tip"
+        liftIO $ putStrLn "Same slot, different block hash; rolling back with margin"
+        let rollbackSlot = max 0 (ck_slot_no blockchainTip - rollbackMargin)
+        runSqlPool (rollbackTo networkId rollbackSlot) pool
+        updateLocalTip pool (KupoCheckpoint rollbackSlot "")

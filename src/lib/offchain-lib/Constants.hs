@@ -31,3 +31,7 @@ defaultBlueprintFile = "docs/generated/bjj-belt-system-blueprint.json"
 -- | Application version used in service probe responses.
 appVersion :: String
 appVersion = "1.0.0"
+
+-- | Default fork-recovery depth (slots) rolled back on chain divergence. Overridable via ROLLBACK_MARGIN.
+defaultRollbackMargin :: Integer
+defaultRollbackMargin = 2160
