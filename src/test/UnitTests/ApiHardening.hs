@@ -7,7 +7,6 @@
 module UnitTests.ApiHardening (apiHardeningTests) where
 
 import qualified Data.ByteString as BS
-import qualified Data.Text as T
 import Data.Maybe (isNothing)
 import Network.HTTP.Types.Header (hOrigin)
 import Network.Wai (Request, defaultRequest, requestHeaders)
