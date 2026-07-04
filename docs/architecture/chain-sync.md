@@ -25,18 +25,17 @@ The following diagram summarizes startup (including policy check and optional wi
 flowchart TB
   subgraph startup [Startup]
     A[Create PG pool]
-    B[Run migrations]
     C[Load config, compute policyHexText]
-    D[getStoredPolicyHexText]
-    E{Policy check}
-    F[First run: putStoredPolicyHexText only]
-    G[Policy changed: wipeChainSyncTables then putStoredPolicyHexText]
-    H[Same policy: skip]
-    I[getLocalTip, findCheckpoint, updateLocalTip]
-    A --> B --> C --> D --> E
-    E -->|No stored row| F --> I
-    E -->|Stored differs from current| G --> I
-    E -->|Stored equals current| H --> I
+    D[readSchemaProbe: raw-SQL schema-version + policy read, tolerant of pre-fix DBs]
+    E{Schema version stale or policy changed?}
+    G[wipeChainSyncTablesRaw: DROP TABLE ... CASCADE]
+    B[runMigrations]
+    S[putStoredPolicyHexText: store policy + currentSchemaVersion]
+    I[getLocalTip: cursor used as-is; empty cursor means start from origin]
+    A --> C --> D --> E
+    E -->|Yes: version behind or policy mismatch| G --> B
+    E -->|No: fresh install or unchanged| B
+    B --> S --> I
   end
 
   subgraph loop [Main loop]
@@ -44,9 +43,9 @@ flowchart TB
     K[evaluateChainSyncState]
     L{State?}
     M[UpToDate: sleep]
-    N[Behind: fetch matches, putMatchAndProjections, updateLocalTip]
-    O[Ahead: rollbackTo, updateLocalTip]
-    P[UpToDateButDifferentBlockHash: updateLocalTip]
+    N[Behind: fetch matches, putMatchAndProjections, updateLocalTip to fetched bound]
+    O[Ahead: rollbackTo tip minus ROLLBACK_MARGIN, then set cursor there]
+    P[UpToDateButDifferentBlockHash: same margin rollback as Ahead, then set cursor there]
     I --> J
     J --> K --> L
     L --> M
@@ -71,10 +70,10 @@ flowchart TB
 
 ## Why it works this way
 
-### Policy check at startup
+### Schema-version + policy check at startup
 
-- **What**: The minting policy hex (from deployed validators config) is stored in a singleton table (`chain_sync_config`). At startup the process reads the stored value and compares it to the current config. **First run** (no stored row): the process only writes the current policy; it does not wipe. **Policy changed** (stored value differs from current): the process wipes all chain-sync tables, re-runs migrations, writes the current policy, then aligns the cursor so sync starts from a clean state. **Same policy**: no wipe, no write; startup continues with existing cursor and data.
-- **Why**: If you redeploy the minting policy (e.g. after a protocol upgrade), the new policy hash would not match the old one. Data indexed under the old policy would be invalid for the new one. Wiping on change ensures the DB only reflects the current policy. On first run the tables are already empty, so wiping would be redundant.
+- **What**: Before migrations run, `readSchemaProbe` reads the schema version and minting policy hex from `chain_sync_config` via raw, schema-tolerant SQL (it works even against a pre-fix DB where the `schema_version` column, or the table itself, doesn't exist yet). If the table is absent, this is a fresh install. If the stored schema version is behind `currentSchemaVersion`, or the stored policy differs from the current one, the process runs `wipeChainSyncTablesRaw` (a raw `DROP TABLE ... CASCADE` over every chain-sync table, **no migration call**) before `runMigrations`. Only after that does `runMigrations` run, and `putStoredPolicyHexText` unconditionally (re)writes the current policy and schema version. The local cursor is then used as-is: an empty cursor (fresh install, or right after a wipe) is slot 0 with an empty header, which the sync loop treats as "start from origin."
+- **Why**: Two independent triggers need the same remedy — a **schema change** (e.g. this branch's `bigint` slot columns and 4-field raw-match key) and a **minting-policy change** (redeploying the policy invalidates previously-indexed data) both require a clean rebuild. Probing and wiping **before** migration matters mechanically: persistent's auto-migration treats a `varchar → bigint` type change or a `NOT NULL` column add as a "safe" in-place `ALTER`, and Postgres rejects those against a populated pre-fix table (no `USING` clause, no default) — wiping first means `runMigrations` only ever `CREATE`s fresh tables, never runs an incompatible `ALTER`.
 
 ### Single cursor (local tip)
 
@@ -86,10 +85,10 @@ flowchart TB
 - **What**: Chain tip and matches come from Kupo (HTTP API), not a full node.
 - **Why**: Kupo indexes the chain and exposes “matches” (e.g. outputs by policy). You get “what happened in this slot range for this policy” without running a node or implementing chain sync yourself. The process is “cursor vs Kupo tip” and “fetch matches from Kupo, apply to DB.”
 
-### Checkpoint alignment at startup
+### Starting from origin, not a forward-walked checkpoint
 
-- **What**: Before the main loop, you take the current DB cursor (or 0), find a **Kupo checkpoint** at or after that slot, and set the DB cursor to that checkpoint.
-- **Why**: Kupo only gives you matches between **checkpoints**. So your cursor must sit on a checkpoint. If the DB had “slot 1,000,000” but Kupo’s checkpoints are 1,000,000 and 1,001,000, you align to one of those so the next “fetch matches from cursor to tip” call is valid.
+- **What**: There is no startup checkpoint-alignment step. The process reads the local cursor as-is (`getLocalTip`): a non-empty cursor is used unchanged; an empty cursor (fresh install, or right after a schema/policy wipe) is slot 0 with an empty header. The main loop then treats slot 0 as `Behind`, and the first `Behind` fetch requests matches with `created_after = 0`, i.e. everything Kupo has indexed for the configured match pattern.
+- **Why**: The process used to forward-walk from the cursor in large (default 100,000,000-slot) steps looking for a Kupo checkpoint, using Kupo's non-strict `GET /checkpoints/{slot}` (which returns the *largest checkpoint ≤* the requested slot). On an empty cursor this pinned the cursor near the chain tip and silently skipped almost all history — a real bug (F-04), not a deliberate checkpoint-alignment feature. Kupo's match-fetching endpoints do not require the cursor to sit on a specific checkpoint boundary; starting from slot 0 (bounded by Kupo's own `--since` configuration) is sufficient and correct.
 
 ### Four sync states and what each does
 
@@ -104,21 +103,20 @@ The loop compares **local tip** (DB cursor) vs **blockchain tip** (Kupo) and bra
    - **Why**: New blocks have been produced; you must pull every relevant event in that range and apply it so projections (profiles, ranks, memberships, etc.) stay correct. Batching keeps memory and request size bounded.
 
 3. **Ahead** (local slot > chain slot)
-   - **What**: Rollback DB: delete events and projections strictly after the chain tip (and at the tip if header differs); set cursor to chain tip.
-   - **Why**: The chain has reorged or been rolled back; your DB must not keep state “beyond” the real chain. Rolling back to the chain tip restores the invariant “DB state = chain state up to tip.”
+   - **What**: Roll back to `max 0 (chainTipSlot - ROLLBACK_MARGIN)` (`rollbackTo networkId rollbackSlot`, §"Rollback" below), then set the cursor explicitly to `(rollbackSlot, "")`.
+   - **Why**: The chain has reorged or been rolled back; your DB must not keep state "beyond" the real chain. Rolling back only to the reported chain tip would leave stale rows from the abandoned fork below that point if the fork went deeper than one block, so the process rolls back an additional safety margin (`ROLLBACK_MARGIN`, default 2160 slots) and lets the next `Behind` cycle re-sync forward and heal.
 
 4. **UpToDateButDifferentBlockHash** (same slot, different header)
-   - **What**: Only update the cursor to the chain tip (same slot, new header).
-   - **Why**: Reorg at the tip: the chain replaced the block at that slot. You may have already applied the old block; you don’t re-fetch matches for that slot here, you just accept the new tip so the next iteration can be Behind/UpToDate. If you had applied the wrong block, a fuller rollback would require “Behind” or “Ahead” logic; this branch is the minimal fix when only the tip block changed.
+   - **What**: Same remedy as `Ahead`: roll back to `max 0 (chainTipSlot - ROLLBACK_MARGIN)`, set the cursor to `(rollbackSlot, "")`, and let the normal forward-sync loop re-fetch and heal.
+   - **Why**: Reorg at the tip: the chain replaced the block at that slot, so any rows derived from the orphaned block are phantom data. The previous behavior only updated the cursor to the new tip and left those phantom rows in place — that was the bug this branch fixes (a same-slot-different-hash divergence must trigger a real rollback, not just a cursor bump). Clamping `ROLLBACK_MARGIN` to a minimum of 1 guarantees `rollbackSlot < chainTipSlot`, so the next loop iteration is `Behind` (a plain slot comparison) rather than looping on the same equal-slot divergence forever.
 
-So functionally: **UpToDate** = idle; **Behind** = catch up by ingesting; **Ahead** = repair by rolling back; **UpToDateButDifferentBlockHash** = fix cursor after a tip reorg.
+So functionally: **UpToDate** = idle; **Behind** = catch up by ingesting; **Ahead** and **UpToDateButDifferentBlockHash** = repair by rolling back (with a safety margin) and letting the loop re-sync forward.
 
-### Rollback: what gets removed and why
+### Rollback: what gets removed, and why it replays instead of just deleting
 
-- **What**: `rollbackTo slotNo headerHash` deletes:
-  - All on-chain match events with slot > `slotNo`, or slot == `slotNo` but header ≠ `headerHash`.
-  - All projection rows (profiles, ranks, memberships, achievements, etc.) with the same conditions (slot > tip, or same slot / wrong hash).
-- **Why**: Those rows were derived from blocks that are no longer on the chain (or from the wrong block at that slot). Keeping them would make the DB state not match the chain. Removing them keeps the invariant “every row corresponds to a block that is (or was) on the chain at the cursor.”
+- **What**: `rollbackTo networkId slotNo` takes only a slot (no header). It (1) deletes raw on-chain match events with slot > `slotNo`; (2) wipes every derived projection table (profiles, ranks, promotions, memberships, achievements) completely; (3) replays the *surviving* raw-match log — everything at or below `slotNo` — back through the same projection logic used during normal sync (`projectAndStore`), in true chain order `(slot, transaction_index, output_index)`.
+- **Why**: Projection tables are destructive upserts keyed by entity id — the row only ever reflects the *latest* event applied to that entity, not its history. So a plain "delete rows above the rollback slot" (the old behavior) is wrong whenever an entity was created at some slot S0 and later mutated at a slot S2 that has since been rolled back past: the row's `createdAtSlot` is S2, so a rollback to S1 (S0 < S1 < S2) would delete the *entire* row, and nothing would recreate it — the raw match that created it at S0 is below the rollback point and Kupo will never re-send it. The same problem applies to `deletePromotionProjection`: if the rank-confirming match that deleted a promotion projection turns out to be on an orphaned fork, plain deletion can't restore the promotion. Replaying the whole surviving raw-match log from scratch avoids all of this: every entity's current projection state is rebuilt purely from matches that are still known to be on-chain, in the order they actually occurred, which is exactly what makes `deletePromotionProjection` fire (or not fire) correctly. This is why raw match order must be true chain order and not, e.g., `transaction_id` (a hash, not a sequence number) — see `replayOrder` in `Storage.hs`. The no-header, slot-only signature is safe because every caller (`Ahead`, `UpToDateButDifferentBlockHash`) passes a slot strictly below any possible orphaned block, guaranteed by the `ROLLBACK_MARGIN ≥ 1` clamp above.
+- **Cost**: This rebuilds all projections on every rollback, not just the affected rows. Rollbacks are rare and this protocol's match volume is small, so full rebuild is chosen for provable correctness over a targeted (and much more complex) partial rebuild. Documented as a future optimization if match volume grows.
 
 ### Probe server (health / readiness)
 
@@ -134,4 +132,4 @@ So functionally: **UpToDate** = idle; **Behind** = catch up by ingesting; **Ahea
 
 ## Summary
 
-**Functionally**, ChainSync keeps a single DB cursor aligned with the chain, **ingests** on-chain events (via Kupo) into the DB and updates projections when **behind**, **rolls back** when **ahead** or on a wrong block, and **exposes health/readiness** so the rest of the system can depend on “DB reflects chain up to tip” when the probe says ready. At startup, a **policy check** ensures the stored minting policy hex matches the current config: first run only stores the policy (no wipe); if the policy changed, chain-sync tables are wiped and recreated before syncing.
+**Functionally**, ChainSync keeps a single DB cursor aligned with the chain, **ingests** on-chain events (via Kupo) into the DB and updates projections when **behind**, **rolls back and replays** when **ahead** or on a wrong block, and **exposes health/readiness** so the rest of the system can depend on “DB reflects chain up to tip” when the probe says ready. At startup, a **schema-version + policy check** (`readSchemaProbe`) determines whether chain-sync tables need wiping *before* migrations run: fresh installs and unchanged schema/policy skip the wipe; a stale schema version or a changed policy triggers `wipeChainSyncTablesRaw` first, so migration only ever creates fresh tables. The cursor is then used as-is — an empty cursor simply means "start syncing from origin."
