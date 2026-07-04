@@ -251,6 +251,40 @@ wipeChainSyncTables = do
     rawExecute ("DROP TABLE IF EXISTS " <> tableName <> " CASCADE") []
   runMigrations
 
+-- | Drop all chain-sync tables WITHOUT re-migrating (migration happens separately, after this).
+wipeChainSyncTablesRaw :: (MonadIO m) => SqlPersistT m ()
+wipeChainSyncTablesRaw =
+  forM_ chainSyncTableNames $ \tableName ->
+    rawExecute ("DROP TABLE IF EXISTS " <> tableName <> " CASCADE") []
+
+-- | Read (schemaVersion, policyHex) from an existing @chain_sync_config@ via raw SQL, tolerant of the
+-- table or the @schema_version@ column being absent (pre-fix DBs). Returns 'Nothing' if the table does
+-- not exist (fresh install). A pre-fix table without the column reports version 1.
+readSchemaProbe :: (MonadIO m) => SqlPersistT m (Maybe (Int, Text))
+readSchemaProbe = do
+  tbl <-
+    rawSql
+      "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'chain_sync_config')"
+      []
+  case tbl of
+    [Single True] -> do
+      col <-
+        rawSql
+          "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chain_sync_config' AND column_name = 'schema_version')"
+          []
+      case col of
+        [Single True] -> do
+          rows <- rawSql "SELECT schema_version, policy_hex_text FROM chain_sync_config LIMIT 1" []
+          pure $ case rows of
+            [(Single v, Single p)] -> Just (v, p)
+            _ -> Just (1, "")
+        _ -> do
+          rows <- rawSql "SELECT policy_hex_text FROM chain_sync_config LIMIT 1" []
+          pure $ case rows of
+            [Single p] -> Just (1, p)
+            _ -> Just (1, "")
+    _ -> pure Nothing
+
 -- | Convert a raw Kupo match to domain projections and upsert them alongside the raw match.
 putMatchAndProjections :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
 putMatchAndProjections networkId km = do

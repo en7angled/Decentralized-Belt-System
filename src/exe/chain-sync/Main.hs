@@ -26,7 +26,7 @@ import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool)
 import Database.Persist.Sql (runSqlPool)
 import GeniusYield.GYConfig (GYCoreConfig (..))
 import KupoClient (KupoCheckpoint (..))
-import Storage (getStoredPolicyHexText, putStoredPolicyHexText, rollbackTo, runMigrations, wipeChainSyncTables)
+import Storage (currentSchemaVersion, putStoredPolicyHexText, readSchemaProbe, rollbackTo, runMigrations, wipeChainSyncTablesRaw)
 import System.Environment (lookupEnv)
 import System.Exit (die)
 import Text.Printf
@@ -49,7 +49,6 @@ main = do
 
   let connBS :: ConnectionString = TE.encodeUtf8 (T.pack connStr)
   pool <- runStdoutLoggingT $ createPostgresqlPool connBS 16
-  runSqlPool runMigrations pool
 
   atlasConfig <- maybe (die "Atlas configuration failed") return =<< decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig
   let networkId = cfgNetworkId atlasConfig
@@ -57,27 +56,25 @@ main = do
   deployedScriptsContext <- maybe (die "Deployed validators configuration failed") return =<< decodeConfigEnvOrFile @DeployedScriptsContext "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuildingContextFile
   let policyHexText = T.pack $ printf "%s" (getMintingPolicyHash deployedScriptsContext)
 
+  -- Probe the existing schema BEFORE migrating. Wipe (drop) the chain-sync tables if the schema
+  -- version or minting policy changed, so migrateAll only CREATEs fresh tables and never runs an
+  -- incompatible in-place ALTER (varchar->bigint / ADD COLUMN NOT NULL) that Postgres would reject.
+  mProbe <- runSqlPool readSchemaProbe pool
+  let needWipe = case mProbe of
+        Nothing -> False
+        Just (storedVersion, storedPolicy) -> storedVersion < currentSchemaVersion || storedPolicy /= policyHexText
+  when needWipe $ do
+    putStrLn "Schema version or policy changed; dropping chain-sync tables before migration."
+    runSqlPool wipeChainSyncTablesRaw pool
+  runSqlPool runMigrations pool
+  runSqlPool (putStoredPolicyHexText policyHexText) pool
+
   batchSize <- do
     mb <- lookupEnv "BATCH_SIZE"
     pure $ maybe (100_000_000 :: Integer) read mb
   fetchBatchSize <- do
     mb <- lookupEnv "FETCH_BATCH_SIZE"
     pure $ maybe (10_000_000 :: Integer) read mb
-
-  stored <- runSqlPool getStoredPolicyHexText pool
-  case stored of
-    Nothing -> do
-      liftIO $ putStrLn "First run: no stored policy; storing current policy."
-      runSqlPool (putStoredPolicyHexText policyHexText) pool
-    Just storedHex
-      | storedHex == policyHexText ->
-          liftIO $ putStrLn "Stored policy matches current policy; skipping wipe."
-      | otherwise -> do
-          liftIO $
-            putStrLn $
-              "Policy changed (stored: " <> T.unpack storedHex <> ", current: " <> T.unpack policyHexText <> "); wiping chain-sync tables and storing current policy."
-          runSqlPool wipeChainSyncTables pool
-          runSqlPool (putStoredPolicyHexText policyHexText) pool
 
   initialTip <- getLocalTip pool
   startingCheckPoint <- findCheckpoint kupoUrl batchSize (ck_slot_no initialTip)
