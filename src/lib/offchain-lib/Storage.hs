@@ -21,6 +21,7 @@ module Storage where
 import Control.Monad (forM_, void)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.Int (Int64)
 import Data.List qualified as L
 import Data.Maybe (isNothing)
 import Data.Text (Text)
@@ -40,7 +41,20 @@ import Onchain.Protocol.Id (deriveMembershipHistoryId, deriveMembershipIntervalI
 
 derivePersistFieldJSON "BJJBelt"
 derivePersistFieldJSON "GYAssetClass"
-derivePersistFieldJSON "Integer"
+
+-- | Persist 'Integer' columns (chain slots, interval numbers) as PostgreSQL @bigint@ so SQL
+-- comparisons and @ORDER BY@ are numeric, not lexicographic. Cardano slots are ~10^9, far under
+-- 'Int64' range; the overflow guard is defensive and unreachable for real slot/interval values.
+instance PersistField Integer where
+  toPersistValue i
+    | i >= toInteger (minBound :: Int64) && i <= toInteger (maxBound :: Int64) =
+        PersistInt64 (fromInteger i)
+    | otherwise = error "Storage: Integer out of Int64 range for bigint persistence"
+  fromPersistValue (PersistInt64 n) = Right (toInteger n)
+  fromPersistValue x = Left ("Expected PersistInt64 for Integer, got: " <> Text.pack (show x))
+
+instance PersistFieldSql Integer where
+  sqlType _ = SqlInt64
 
 -- | Custom PersistField for GYTime stored as @timestamptz@ in PostgreSQL.
 -- Converts via UTCTime so the column type matches the parameter type,
