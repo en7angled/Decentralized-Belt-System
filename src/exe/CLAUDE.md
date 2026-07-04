@@ -16,7 +16,7 @@ Five executables: `admin` (CLI), `interaction-api` (8082), `query-api` (8083), `
 - **Startup**: Write Swagger JSON → load config → `withCfgProviders` → build app context → `runSettings`.
 - **App monad**: `*AppContext` record + `newtype *AppMonad a = *AppMonad (ReaderT *AppContext Handler a)`. Hoist with `hoistServerWithContext`.
 - **RestAPI module**: API types with `Summary`/`Description`. Include `ProbeAPI` + Swagger UI. Full server = swagger :<|> probe :<|> private (auth-protected).
-- **WAI app**: `mkBJJApp ctx = setupCors . provideOptions proxyPublicAPI $ serveWithContext ... basicCtx ...` with `basicAuthServerContext`.
+- **WAI app**: `mkBJJApp corsCfg ctx = mkCorsMiddleware corsCfg . provideOptions proxyPublicAPI $ serveWithContext ... basicCtx ...` with `basicAuthServerContext`.
 - **Error handling**: Map `TxBuildingException` to HTTP status. Use `throwError (err404 { errBody = ... })`.
 - **New endpoint**: Route type in RestAPI → handler in app monad → wire in server → `ToSchema` for Swagger sync.
 
@@ -56,5 +56,5 @@ Five executables: `admin` (CLI), `interaction-api` (8082), `query-api` (8083), `
 
 - **Config**: `Constants` for defaults. `decodeConfigEnvOrFile`. `getPortFromEnvOrDefault`.
 - **Auth**: `getBasicAuthFromEnv` + `basicAuthServerContext`. `BasicAuth "user-realm" AuthUser :>` for private routes.
-- **CORS**: `setupCors` as outermost middleware.
+- **CORS**: `mkCorsMiddleware` (from env `CORS_ALLOWED_ORIGINS`) as outermost middleware.
 - **Swagger**: Written to `docs/generated/swagger/` on startup. Do not edit by hand.

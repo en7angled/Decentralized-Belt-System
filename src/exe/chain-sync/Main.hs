@@ -40,6 +40,7 @@ import Text.Printf
 import Text.Read (readMaybe)
 import TxBuilding.Context
 import Utils (decodeConfigEnvOrFile)
+import WebAPI.CORS (getCorsConfigFromEnv)
 import WebAPI.Utils
 
 defaultConnStr :: String
@@ -51,6 +52,7 @@ defaultKupoUrl = "https://kupo16cdjk05emessgrpy45t.cardano-preview-v2.kupo-m1.dm
 main :: IO ()
 main = do
   port <- getPortFromEnvOrDefault 8084
+  corsCfg <- getCorsConfigFromEnv
 
   kupoUrl <- liftIO $ fmap (fromMaybe defaultKupoUrl) (lookupEnv "KUPO_URL")
   connStr <- liftIO $ fmap (fromMaybe defaultConnStr) (lookupEnv "PG_CONN_STR")
@@ -100,7 +102,7 @@ main = do
         }
 
   -- Start probe server
-  void $ forkIO $ startProbeServer port metricsVar
+  void $ forkIO $ startProbeServer corsCfg port metricsVar
 
   let matchPattern = policyHexText <> ".*"
   putStrLn "Starting chain-sync ..."

@@ -293,9 +293,9 @@ fullServer =
 
 ------------------------------------------------------------------------------------------------
 
-mkBJJApp :: InteractionAppContext -> Application
-mkBJJApp ctx =
-  WebAPI.CORS.setupCors $
+mkBJJApp :: WebAPI.CORS.CorsConfig -> InteractionAppContext -> Application
+mkBJJApp corsCfg ctx =
+  WebAPI.CORS.mkCorsMiddleware corsCfg $
     provideOptions proxyPublicAPI $
       serveWithContext proxyFullAPI basicCtx hoistedServer
   where

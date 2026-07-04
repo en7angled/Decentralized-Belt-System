@@ -19,6 +19,7 @@ import System.Exit (die)
 import TxBuilding.Context
 import Utils (decodeConfigEnvOrFile)
 import WebAPI.Auth (getBasicAuthFromEnv)
+import WebAPI.CORS (getCorsConfigFromEnv)
 import WebAPI.Utils (getPortFromEnvOrDefault)
 
 defaultConnStr :: String
@@ -34,6 +35,7 @@ main = do
   withCfgProviders atlasConfig (read @GYLogNamespace "BJJDApp") $ \providers -> do
     let providerContext = ProviderCtx atlasConfig providers
     authContext <- getBasicAuthFromEnv
+    corsCfg <- getCorsConfigFromEnv
     connStr <- fromMaybe defaultConnStr <$> lookupEnv "PG_CONN_STR"
     pool <- runStdoutLoggingT $ createPostgresqlPool (T.encodeUtf8 (T.pack connStr)) 10
     mDeployedCtx <- decodeConfigEnvOrFile "DEPLOYED_VALIDATORS_CONFIG" defaultTxBuildingContextFile
@@ -43,7 +45,7 @@ main = do
     port <- getPortFromEnvOrDefault 8083
 
     let settings = setHost (fromString host :: HostPreference) $ setPort port defaultSettings
-    let bjjDApp = mkBJJApp appContext
+    let bjjDApp = mkBJJApp corsCfg appContext
 
     putStrLn $ "Started Query API server at " <> host <> " " <> show port
     putStrLn $ "Atlas config: " <> show atlasConfig

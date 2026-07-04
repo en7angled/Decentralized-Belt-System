@@ -705,9 +705,9 @@ fullServer = swaggerServer :<|> serviceProbeServer :<|> privateRestServer
 
 ------------------------------------------------------------------------------------------------
 
-mkBJJApp :: QueryAppContext -> Application
-mkBJJApp ctx =
-  WebAPI.CORS.setupCors $
+mkBJJApp :: WebAPI.CORS.CorsConfig -> QueryAppContext -> Application
+mkBJJApp corsCfg ctx =
+  WebAPI.CORS.mkCorsMiddleware corsCfg $
     provideOptions proxyPublicAPI $
       serveWithContext proxyFullAPI basicCtx hoistedServer
   where

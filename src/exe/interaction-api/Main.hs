@@ -17,6 +17,7 @@ import System.Exit (die)
 import TxBuilding.Context
 import Utils (decodeConfigEnvOrFile)
 import WebAPI.Auth (getBasicAuthFromEnv)
+import WebAPI.CORS (getCorsConfigFromEnv)
 import WebAPI.Utils (getPortFromEnvOrDefault)
 
 main :: IO ()
@@ -31,6 +32,7 @@ main = do
     let providersContext = ProviderCtx atlasConfig providers
     let txBuildingContext = TxBuildingContext deployedScriptsContext providersContext
     authContext <- getBasicAuthFromEnv
+    corsCfg <- getCorsConfigFromEnv
     ipfsCfg <- initIPFSConfig
     let appContext = InteractionAppContext authContext txBuildingContext ipfsCfg
 
@@ -38,7 +40,7 @@ main = do
     port <- getPortFromEnvOrDefault 8082
 
     let settings = setHost (fromString host :: HostPreference) $ setPort port defaultSettings
-    let bjjDApp = mkBJJApp appContext
+    let bjjDApp = mkBJJApp corsCfg appContext
 
     putStrLn $ "Started Interaction API server at " <> host <> " " <> show port
     putStrLn $ "Atlas config: " <> show atlasConfig

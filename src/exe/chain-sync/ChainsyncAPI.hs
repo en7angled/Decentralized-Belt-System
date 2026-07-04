@@ -63,7 +63,7 @@ serviceProbeServer metricsVar = handleHealth' :<|> handleReady'
         _ -> throwError err503 {errBody = BL8.pack (show probeStatus)}
 
 -- | Build a WAI 'Application' that serves the chain-sync probe endpoints with CORS.
-mkServiceProbeApp :: MVar SyncMetrics -> Application
-mkServiceProbeApp metricsVar =
-  WebAPI.CORS.setupCors $
+mkServiceProbeApp :: WebAPI.CORS.CorsConfig -> MVar SyncMetrics -> Application
+mkServiceProbeApp corsCfg metricsVar =
+  WebAPI.CORS.mkCorsMiddleware corsCfg $
     serve proxyServiceProbeAPI (serviceProbeServer metricsVar)
