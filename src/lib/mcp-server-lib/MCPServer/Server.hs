@@ -48,7 +48,7 @@ import Network.Wai.Handler.Warp
   , setPort
   )
 import Servant (Proxy (Proxy), Server, serve, (:<|>) ((:<|>)))
-import WebAPI.CORS (setupCors)
+import WebAPI.CORS (mkCorsMiddleware)
 import WebAPI.ServiceProbe
   ( ServiceProbe
   , alwaysHealthy
@@ -143,7 +143,7 @@ runMCPServer ctx = do
   mcpStateVar <- buildMcpState ctx
   let mcpApp = simpleHttpApp mcpStateVar
       probeApp = serve proxyProbeAPI (probeServer ctx)
-      app = setupCors (dispatchByPrefix mcpApp probeApp)
+      app = mkCorsMiddleware (corsConfig ctx) (dispatchByPrefix mcpApp probeApp)
       settings =
         setHost (fromString "0.0.0.0")
           . setPort (port ctx)

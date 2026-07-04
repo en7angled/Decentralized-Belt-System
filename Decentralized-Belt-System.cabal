@@ -480,6 +480,7 @@ test-suite test
     , tasty-hedgehog
     , tasty-hunit
     , wai
+    , wai-cors
     , warp
 
   --- Cardano specific dependencies

@@ -17,6 +17,7 @@ import Servant (BasicAuthData (..))
 import Servant.Client (BaseUrl, parseBaseUrl)
 import System.Environment (lookupEnv)
 import WebAPI.Auth (AuthContext (..), getBasicAuthFromEnv)
+import WebAPI.CORS (CorsConfig, getCorsConfigFromEnv)
 import WebAPI.Utils (getPortFromEnvOrDefault)
 
 data AppCtx = AppCtx
@@ -29,6 +30,7 @@ data AppCtx = AppCtx
   , readinessTimeoutMs :: Int
   -- ^ Per-upstream timeout for the @\/ready@ probe, in milliseconds. Override
   -- via @MCP_READINESS_TIMEOUT_MS@; default 2000.
+  , corsConfig :: CorsConfig
   }
 
 withAppCtx :: (AppCtx -> IO a) -> IO a
@@ -46,6 +48,7 @@ withAppCtx k = do
   p <- getPortFromEnvOrDefault 8085
   writeTx <- (Just "1" ==) <$> lookupEnv "MCP_ENABLE_WRITE_TX"
   readyTimeoutMs <- readIntEnv "MCP_READINESS_TIMEOUT_MS" 2000
+  corsCfg <- getCorsConfigFromEnv
   k
     AppCtx
       { queryBaseUrl = qUrl
@@ -55,6 +58,7 @@ withAppCtx k = do
       , port = p
       , enableWriteTx = writeTx
       , readinessTimeoutMs = readyTimeoutMs
+      , corsConfig = corsCfg
       }
 
 -- | Read an @Int@-valued env var with a default fallback. Non-numeric values

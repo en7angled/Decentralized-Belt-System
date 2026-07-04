@@ -51,6 +51,7 @@ import Servant.API.BasicAuth (BasicAuthData (..))
 import Servant.Client (parseBaseUrl)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertEqual, testCase, (@?=))
+import WebAPI.CORS (CorsConfig (..))
 
 mcpToolsTests :: TestTree
 mcpToolsTests =
@@ -217,6 +218,7 @@ mkTestCtx writeTx = do
       , port = 8085
       , enableWriteTx = writeTx
       , readinessTimeoutMs = 2000
+      , corsConfig = CorsConfig [] False
       }
 
 membershipsGatedOff :: IO ()
@@ -273,6 +275,7 @@ mkReadinessCtx qRaw iRaw timeoutMs = do
       , port = 8085
       , enableWriteTx = False
       , readinessTimeoutMs = timeoutMs
+      , corsConfig = CorsConfig [] False
       }
 
 -- | When neither upstream is reachable the probe must flag both as unready

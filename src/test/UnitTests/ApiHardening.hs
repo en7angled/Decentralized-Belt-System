@@ -6,11 +6,17 @@
 -- covered by build + manual reasoning, not here.
 module UnitTests.ApiHardening (apiHardeningTests) where
 
+import qualified Data.ByteString as BS
+import Data.Maybe (isNothing)
+import Network.HTTP.Types.Header (hOrigin)
+import Network.Wai (Request, defaultRequest, requestHeaders)
+import Network.Wai.Middleware.Cors (CorsResourcePolicy (..))
 import Servant (BasicAuthData (..))
 import Servant.Server (BasicAuthCheck (..), BasicAuthResult (..))
 import Test.Tasty
 import Test.Tasty.HUnit
 import WebAPI.Auth (AuthContext (..), AuthUser (..), authCheck)
+import WebAPI.CORS (CorsConfig (..), corsPolicy, parseCorsOrigins)
 
 -- Run a BasicAuthCheck's handler against supplied raw credential bytes.
 runCheck :: AuthContext -> BasicAuthData -> IO (BasicAuthResult AuthUser)
@@ -31,5 +37,27 @@ authTests =
         case r of Unauthorized -> pure (); _ -> assertFailure "expected Unauthorized"
     ]
 
+reqWithOrigin :: BS.ByteString -> Request
+reqWithOrigin o = defaultRequest {requestHeaders = [(hOrigin, o)]}
+
+corsTests :: TestTree
+corsTests =
+  testGroup
+    "CORS allowlist"
+    [ testCase "parseCorsOrigins splits, trims, drops empties" $
+        parseCorsOrigins " https://a.com , https://b.com ,, "
+          @?= ["https://a.com", "https://b.com"],
+      testCase "origin in allowlist is reflected" $
+        case corsPolicy (CorsConfig ["https://a.com"] False) (reqWithOrigin "https://a.com") of
+          Just p -> corsOrigins p @?= Just (["https://a.com"], False)
+          Nothing -> assertFailure "expected a policy",
+      testCase "origin not in allowlist yields no policy" $
+        assertBool "expected Nothing" $
+          isNothing (corsPolicy (CorsConfig ["https://a.com"] False) (reqWithOrigin "https://evil.com")),
+      testCase "empty allowlist denies all" $
+        assertBool "expected Nothing" $
+          isNothing (corsPolicy (CorsConfig [] False) (reqWithOrigin "https://a.com"))
+    ]
+
 apiHardeningTests :: TestTree
-apiHardeningTests = testGroup "API Hardening (webapi-lib)" [authTests]
+apiHardeningTests = testGroup "API Hardening (webapi-lib)" [authTests, corsTests]
