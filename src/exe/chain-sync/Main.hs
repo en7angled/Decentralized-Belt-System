@@ -79,7 +79,7 @@ main = do
 
   fetchBatchSize <- do
     mb <- lookupEnv "FETCH_BATCH_SIZE"
-    pure $ maybe (10_000_000 :: Integer) id (mb >>= readMaybe)
+    pure $ max 1 (maybe (10_000_000 :: Integer) id (mb >>= readMaybe))
 
   rollbackMargin <- do
     mb <- lookupEnv "ROLLBACK_MARGIN"
