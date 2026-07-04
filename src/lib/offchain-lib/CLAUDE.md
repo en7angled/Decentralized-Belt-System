@@ -37,7 +37,7 @@ Do NOT call onchain functions directly (they can `traceError`). Use safe wrapper
 ## Storage, Ingestion & Chain-Sync
 
 - **Flow**: Chain-sync matches → `projectChainEvent` (Ingestion, maps datum to `ChainEventProjection`) → `putMatchAndProjections` (Storage, dispatches to `put*Projection`)
-- **New projection**: Extend `ChainEventProjection`, add case in `projectChainEvent`, add Persistent entity + `put*` in Storage, **update `rollbackTo`**, **add table to `chainSyncTableNames`** (for `wipeChainSyncTables`)
+- **New projection**: Extend `ChainEventProjection`, add case in `projectChainEvent`, add Persistent entity + `put*` in Storage, **add a `deleteWhere` for it in `rollbackTo`'s wipe step** (rollback rebuilds all projections by replaying the surviving raw-match log, so every projection table must be wiped before replay), **add table to `chainSyncTableNames`** (for `wipeChainSyncTablesRaw`, the pre-migration schema-version-gated wipe)
 - **Idempotence**: Use `upsertByUnique` with `Unique*` constraint
 - **Backfill**: When projection B depends on A and A can arrive after B, implement backfill logic
 
