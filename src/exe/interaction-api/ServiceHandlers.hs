@@ -10,20 +10,21 @@ import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (asks)
 import Data.ByteString.Lazy qualified as LBS
-import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.List (find)
+import Data.Maybe (isNothing)
 import Data.Text (Text, unpack)
 import DomainTypes.Core.Actions
 import DomainTypes.Core.Types (MembershipHistory (..))
 import GeniusYield.Types (GYAddress)
 import IPFS (IPFSConfig, uploadToIPFS)
 import InteractionAppMonad
-import Servant (ServerError (..), err502)
 import Servant.Multipart (FileData (..))
 import ServiceRequests
 import TxBuilding.Context (TxBuildingContext (..), getNetworkId, runQuery)
 import TxBuilding.Interactions (ActionType (..), Interaction (..), UserAddresses)
 import TxBuilding.Lookups (getMembershipHistoriesForOrganization)
+import WebAPI.Errors (genericErrorMessage, mkServantErr)
+import WebAPI.ImageType (detectImageType)
 
 -------------------------------------------------------------------------------
 
@@ -31,13 +32,20 @@ import TxBuilding.Lookups (getMembershipHistoriesForOrganization)
 
 -------------------------------------------------------------------------------
 
--- | Upload image bytes to IPFS or throw a 502 (Bad Gateway) error.
+-- | Validate that the payload is a supported image (JPEG/PNG magic bytes),
+-- then upload to IPFS. Rejects non-images with a 400 before upload, and
+-- sanitizes IPFS failures to a generic 502 (full detail is logged server-side).
 uploadOrThrow :: IPFSConfig -> LBS.ByteString -> InteractionAppMonad Text
 uploadOrThrow cfg bytes = do
-  result <- liftIO $ uploadToIPFS cfg bytes
-  case result of
-    Left err -> InteractionAppMonad $ throwError err502 { errBody = BL8.pack (unpack err) }
-    Right uri -> return uri
+  if isNothing (detectImageType (LBS.toStrict (LBS.take 16 bytes)))
+    then InteractionAppMonad $ throwError $ mkServantErr 400 "Unsupported image type (expected JPEG or PNG)"
+    else do
+      result <- liftIO $ uploadToIPFS cfg bytes
+      case result of
+        Left err -> do
+          liftIO $ putStrLn $ "IPFS upload failed: " <> unpack err
+          InteractionAppMonad $ throwError $ mkServantErr 502 (genericErrorMessage 502)
+        Right uri -> return uri
 
 -- | Build an 'Interaction' from a profile action, user addresses, and optional recipient.
 mkInteraction :: ProfileActionType -> UserAddresses -> Maybe GYAddress -> Interaction

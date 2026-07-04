@@ -330,6 +330,7 @@ executable interaction-api
     , text
     , time
     , wai
+    , wai-extra
     , warp
 
   --- Cardano specific dependencies

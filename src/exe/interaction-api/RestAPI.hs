@@ -19,8 +19,9 @@ import GeniusYield.Types hiding (description, title)
 import InteractionAppMonad
 import Network.Wai
 import Network.Wai.Middleware.Servant.Options (provideOptions)
+import Network.Wai.Parse (setMaxRequestFileSize)
 import Servant
-import Servant.Multipart (Mem, MultipartForm)
+import Servant.Multipart (Mem, MultipartForm, MultipartOptions (..), defaultMultipartOptions)
 import Servant.Swagger
 import Servant.Swagger.UI
 import ServiceHandlers
@@ -293,11 +294,21 @@ fullServer =
 
 ------------------------------------------------------------------------------------------------
 
+-- | Cap in-RAM multipart uploads at 10 MB so a large body cannot exhaust memory.
+multipartOptions :: MultipartOptions Mem
+multipartOptions =
+  base {generalOptions = setMaxRequestFileSize (10 * 1024 * 1024) (generalOptions base)}
+  where
+    base = defaultMultipartOptions (Proxy :: Proxy Mem)
+
+proxyServerContext :: Proxy '[BasicAuthCheck AuthUser, MultipartOptions Mem]
+proxyServerContext = Proxy
+
 mkBJJApp :: WebAPI.CORS.CorsConfig -> InteractionAppContext -> Application
 mkBJJApp corsCfg ctx =
   WebAPI.CORS.mkCorsMiddleware corsCfg $
     provideOptions proxyPublicAPI $
-      serveWithContext proxyFullAPI basicCtx hoistedServer
+      serveWithContext proxyFullAPI ctxEntries hoistedServer
   where
-    basicCtx = basicAuthServerContext (authContext ctx)
-    hoistedServer = hoistServerWithContext proxyFullAPI proxyBasicAuthContext (runInteractionAppMonad ctx) fullServer
+    ctxEntries = authCheck (authContext ctx) :. multipartOptions :. EmptyContext
+    hoistedServer = hoistServerWithContext proxyFullAPI proxyServerContext (runInteractionAppMonad ctx) fullServer
