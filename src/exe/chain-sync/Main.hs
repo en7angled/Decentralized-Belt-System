@@ -47,7 +47,12 @@ defaultConnStr :: String
 defaultConnStr = "host=localhost user=postgres password=postgres dbname=chainsync port=5432"
 
 defaultKupoUrl :: String
-defaultKupoUrl = "https://kupo16cdjk05emessgrpy45t.cardano-preview-v2.kupo-m1.dmtr.host:443/"
+defaultKupoUrl = "http://localhost:1442"
+
+-- | Show only the host and dbname fields of a Postgres DSN, hiding the password.
+redactConnStr :: String -> String
+redactConnStr s =
+  unwords [kv | kv <- words s, let k = takeWhile (/= '=') kv, k `elem` ["host", "dbname", "port"]]
 
 main :: IO ()
 main = do
@@ -106,9 +111,9 @@ main = do
 
   let matchPattern = policyHexText <> ".*"
   putStrLn "Starting chain-sync ..."
-  putStrLn ("Base URL: " <> kupoUrl)
+  putStrLn "Kupo: configured"
   putStrLn ("Pattern: " <> T.unpack matchPattern)
-  putStrLn ("Postgres DSN: " <> connStr)
+  putStrLn ("Postgres: " <> redactConnStr connStr)
 
   forever $ do
     blockchainTip <- getBlockchainTip kupoUrl

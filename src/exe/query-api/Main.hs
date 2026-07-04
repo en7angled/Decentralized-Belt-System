@@ -25,6 +25,11 @@ import WebAPI.Utils (getPortFromEnvOrDefault)
 defaultConnStr :: String
 defaultConnStr = "host=postgres user=postgres password=postgres dbname=chainsync port=5432"
 
+-- | Show only the host and dbname fields of a Postgres DSN, hiding the password.
+redactConnStr :: String -> String
+redactConnStr s =
+  unwords [kv | kv <- words s, let k = takeWhile (/= '=') kv, k `elem` ["host", "dbname", "port"]]
+
 main :: IO ()
 main = do
   putStrLn "Writing Swagger file ..."
@@ -49,7 +54,7 @@ main = do
 
     putStrLn $ "Started Query API server at " <> host <> " " <> show port
     putStrLn $ "Atlas config: " <> show atlasConfig
-    putStrLn $ "Postgres DSN: " <> connStr
+    putStrLn $ "Postgres: " <> redactConnStr connStr
     putStrLn $ "Swagger-UI available at : http://" <> host <> ":" <> show port <> "/swagger-ui"
 
     runSettings settings bjjDApp
