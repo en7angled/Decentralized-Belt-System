@@ -37,8 +37,8 @@ Five executables: `admin` (CLI), `interaction-api` (8082), `query-api` (8083), `
 
 ## Chain-Sync Service
 
-- Startup: port/env → PG pool + migrations → initial tip → `SyncMetrics` MVar → fork probe server → load config → derive Kupo match pattern → align checkpoint → `forever` sync loop.
-- Sync loop: get tips → `evaluateChainSyncState` (UpToDate|Behind|Ahead|UpToDateButDifferentBlockHash) → fetch/rollback/update accordingly.
+- Startup: port/env → PG pool → load config → derive Kupo match pattern → schema-version/policy probe → wipe (if stale) → migrations → local tip used as-is (empty cursor syncs from origin) → `SyncMetrics` MVar → fork probe server → `forever` sync loop.
+- Sync loop: get tips → `evaluateChainSyncState` (UpToDate|Behind|Ahead|UpToDateButDifferentBlockHash) → Behind fetches then updates tip to the bound fetched; Ahead/UpToDateButDifferentBlockHash roll back by a bounded margin (`rollbackTo` wipes and replays projections) and let the loop heal forward.
 - Probe server: separate module, `mkServiceProbeApp`, returns 503 when not synced.
 
 ## MCP Server
