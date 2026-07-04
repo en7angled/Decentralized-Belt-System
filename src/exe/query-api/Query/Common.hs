@@ -2,6 +2,7 @@
 -- ('Query.Live') and projected ('Query.Projected') query modules.
 module Query.Common where
 
+import Data.Maybe (fromMaybe)
 import DomainTypes.Core.BJJ (BJJBelt (..))
 import DomainTypes.Transfer.OrderBy (SortOrder (Asc))
 
@@ -13,13 +14,13 @@ type Limit = Int
 
 type Offset = Int
 
--- | Normalize optional limit/offset from query params. Default offset when only limit given is 0; default limit when only offset given is 100.
+-- | Normalize optional limit/offset. Both absent → a bounded default page
+-- (100, 0) rather than unbounded. Limit is clamped to [1, 500]; offset to >= 0.
 normalizeLimitOffset :: Maybe Int -> Maybe Int -> Maybe (Int, Int)
-normalizeLimitOffset limit offset = case (limit, offset) of
-  (Just l, Just o) -> Just (l, o)
-  (Just l, Nothing) -> Just (l, 0)
-  (Nothing, Just o) -> Just (100, o)
-  (Nothing, Nothing) -> Nothing
+normalizeLimitOffset limit offset =
+  Just (clampLimit (fromMaybe 100 limit), max 0 (fromMaybe 0 offset))
+  where
+    clampLimit l = max 1 (min 500 l)
 
 -- | Normalize optional order_by and sort_order; default sort order when only order_by given is Asc.
 normalizeOrder :: Maybe a -> Maybe SortOrder -> Maybe (a, SortOrder)

@@ -53,6 +53,7 @@ import QueryAppMonad
 import Storage
 import TxBuilding.Exceptions (TxBuildingException (..))
 import Utils (stringFromJSON)
+import WebAPI.Utils (escapeLikePattern)
 
 -- | Convert a 'RankProjection' row to a domain 'Rank'.
 toRankDomain :: RankProjection -> Rank
@@ -80,9 +81,10 @@ toPromotionDomain beltMap p =
           (promotionProjectionPromotionBelt p)
     }
 
--- | Build a case-insensitive SQL LIKE pattern for text search: @%<lower q>%@.
+-- | Build a case-insensitive SQL LIKE pattern for text search: @%<escaped lower q>%@.
+-- Metacharacters in @q@ are escaped so a user-supplied @%@/@_@ matches literally.
 likePat :: Text -> SqlExpr (Value Text)
-likePat q = val (T.pack "%" <> T.toLower q <> T.pack "%")
+likePat q = val (T.pack "%" <> escapeLikePattern (T.toLower q) <> T.pack "%")
 
 -- | Latest rank by @rankAchievementDate@ per practitioner (same rule as practitioner profile).
 currentBeltMapForPractitioners ::
@@ -1080,42 +1082,53 @@ searchPromotionsWithNames q = do
       pool
 
 searchProjected :: (MonadIO m, MonadReader QueryAppContext m) => Text -> m SearchResults
-searchProjected q = do
-  practitionerProfiles <- getProfiles Nothing (Just (profileSearchFilter Practitioner q)) Nothing
-  organizationProfiles <- getProfiles Nothing (Just (profileSearchFilter Organization q)) Nothing
-  ranks <- searchRanksWithNames q
-  promotions <- searchPromotionsWithNames q
-  achievements <- getAchievements Nothing (Just (achievementSearchFilter q)) Nothing
-  -- Merge ranks (as accepted promotions) into promotions for unified search
-  let ranksAsPromotions = map rankToPromotion ranks
-      allPromotions = promotions ++ ranksAsPromotions
-  -- Batch-load profile names for promotion hit display enrichment
-  let rpIds =
-        concatMap (\p -> [promotionAchievedByProfileId p, promotionAwardedByProfileId p]) allPromotions
-  names <- batchProfileNames rpIds
-  let prItems = map profileToHitPractitioner practitionerProfiles
-      orgItems = map profileToHitOrganization organizationProfiles
-      promItems = map (promotionToHit names) allPromotions
-      achItems = map achievementToHit achievements
-      mkGroup items =
-        SearchGroup
-          { searchGroupTotal = length items,
-            searchGroupItems = take searchGroupLimit items
+searchProjected q
+  | T.null (T.strip q) =
+      pure
+        SearchResults
+          { searchResultsQuery = q,
+            searchResultsTotal = 0,
+            searchResultsPractitioners = SearchGroup 0 [],
+            searchResultsOrganizations = SearchGroup 0 [],
+            searchResultsPromotions = SearchGroup 0 [],
+            searchResultsAchievements = SearchGroup 0 []
           }
-      total =
-        length prItems
-          + length orgItems
-          + length promItems
-          + length achItems
-  return
-    SearchResults
-      { searchResultsQuery = q,
-        searchResultsTotal = total,
-        searchResultsPractitioners = mkGroup prItems,
-        searchResultsOrganizations = mkGroup orgItems,
-        searchResultsPromotions = mkGroup promItems,
-        searchResultsAchievements = mkGroup achItems
-      }
+  | otherwise = do
+      practitionerProfiles <- getProfiles Nothing (Just (profileSearchFilter Practitioner q)) Nothing
+      organizationProfiles <- getProfiles Nothing (Just (profileSearchFilter Organization q)) Nothing
+      ranks <- searchRanksWithNames q
+      promotions <- searchPromotionsWithNames q
+      achievements <- getAchievements Nothing (Just (achievementSearchFilter q)) Nothing
+      -- Merge ranks (as accepted promotions) into promotions for unified search
+      let ranksAsPromotions = map rankToPromotion ranks
+          allPromotions = promotions ++ ranksAsPromotions
+      -- Batch-load profile names for promotion hit display enrichment
+      let rpIds =
+            concatMap (\p -> [promotionAchievedByProfileId p, promotionAwardedByProfileId p]) allPromotions
+      names <- batchProfileNames rpIds
+      let prItems = map profileToHitPractitioner practitionerProfiles
+          orgItems = map profileToHitOrganization organizationProfiles
+          promItems = map (promotionToHit names) allPromotions
+          achItems = map achievementToHit achievements
+          mkGroup items =
+            SearchGroup
+              { searchGroupTotal = length items,
+                searchGroupItems = take searchGroupLimit items
+              }
+          total =
+            length prItems
+              + length orgItems
+              + length promItems
+              + length achItems
+      return
+        SearchResults
+          { searchResultsQuery = q,
+            searchResultsTotal = total,
+            searchResultsPractitioners = mkGroup prItems,
+            searchResultsOrganizations = mkGroup orgItems,
+            searchResultsPromotions = mkGroup promItems,
+            searchResultsAchievements = mkGroup achItems
+          }
 
 -- | Direct lineage tree from rank projections. Ancestor chain follows awarded_by links upward;
 -- descendant subtree follows awarded_to links downward. Collateral branches are excluded.
