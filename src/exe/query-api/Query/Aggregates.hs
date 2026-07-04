@@ -20,6 +20,7 @@ import Data.Text (Text)
 import Database.Persist (Entity (..))
 import Database.Persist qualified as P
 import Database.Persist.Sql (SqlPersistT, runSqlPool)
+import DomainTypes.Core.Actions (ProfileData (..))
 import DomainTypes.Core.BJJ (BJJBelt (..))
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
@@ -44,8 +45,9 @@ import QueryAppMonad (QueryAppContext (..), QueryAppMonad, runWithQueryErrorHand
 import RestAPI.Common (withBackend)
 import Storage
 import TxBuilding.Context (runQuery)
+import TxBuilding.Conversions (profileDatumToProfileData)
 import TxBuilding.Exceptions (TxBuildingException (ProfileNotFound))
-import TxBuilding.Lookups (getOrganizationInformation, getPractitionerInformation)
+import TxBuilding.Lookups (getOrganizationInformation, getPractitionerInformation, getProfileStateDatumAndValue)
 
 -- | When a promotion edge refers to an organization profile, we still emit
 -- @PractitionerProfileInformation@-shaped JSON (§12): use a placeholder rank
@@ -63,6 +65,28 @@ organizationToShimPractitioner org t =
             rankBelt = White,
             rankAchievedByProfileId = organizationId org,
             rankAwardedByProfileId = organizationId org,
+            rankAchievementDate = t
+          },
+      practitionerPreviousRanks = []
+    }
+
+-- | Placeholder @PractitionerProfileInformation@ for a practitioner whose profile
+-- exists but has no rank projection yet (e.g. a pending first promotion). Uses the
+-- profile's real name/description/image plus a placeholder 'White' rank at @t@,
+-- mirroring 'organizationToShimPractitioner' so promotion edges stay renderable.
+placeholderPractitioner :: ProfileRefAC -> Text -> Text -> Text -> GYTime -> PractitionerProfileInformation
+placeholderPractitioner pid name desc img t =
+  PractitionerProfileInformation
+    { practitionerId = pid,
+      practitionerName = name,
+      practitionerDescription = desc,
+      practitionerImageURI = img,
+      practitionerCurrentRank =
+        Rank
+          { rankId = pid,
+            rankBelt = White,
+            rankAchievedByProfileId = pid,
+            rankAwardedByProfileId = pid,
             rankAchievementDate = t
           },
       practitionerPreviousRanks = []
@@ -95,7 +119,21 @@ resolveProfileForPromotionSide pid t = do
           eOrg <- liftIO $ try @SomeException $ runQuery ctx (getOrganizationInformation pid)
           case eOrg of
             Right org -> return $ organizationToShimPractitioner org t
-            Left _ -> runWithQueryErrorHandling $ throwIO ProfileNotFound
+            Left _ -> do
+              -- Rankless practitioner (e.g. pending first promotion): build a placeholder
+              -- from the profile datum rather than 404ing the whole promotion.
+              eData <- liftIO $ try @SomeException $ runQuery ctx (getProfileStateDatumAndValue pid)
+              case eData of
+                Right (datum, _val) ->
+                  let pd = profileDatumToProfileData datum
+                   in return $
+                        placeholderPractitioner
+                          pid
+                          (profileDataName pd)
+                          (profileDataDescription pd)
+                          (profileDataImageURI pd)
+                          t
+                Left _ -> runWithQueryErrorHandling $ throwIO ProfileNotFound
     else do
       pool <- asks pgPool
       mTy <- liftIO $ runSqlPool (lookupProfileTypeProjected pid) pool
@@ -154,15 +192,21 @@ resolveProfilesBatch pairs = do
     ( do
         practMap <- P.getPractitionerProfilesBatch distinctIds
         orgMap <- P.getOrganizationProfilesBatch distinctIds
-        return $
-          M.union
-            practMap
-            ( M.mapWithKey
-                ( \pid org ->
-                    organizationToShimPractitioner org (idTimeMap M.! pid)
+        let resolved =
+              M.union
+                practMap
+                ( M.mapWithKey
+                    (\pid org -> organizationToShimPractitioner org (idTimeMap M.! pid))
+                    orgMap
                 )
-                orgMap
-            )
+            missing = [pid | pid <- distinctIds, not (M.member pid resolved)]
+        rawProfiles <- P.getProfileProjectionsBatch missing
+        let placeholders =
+              M.fromList
+                [ (pid, placeholderPractitioner pid nm ds im (idTimeMap M.! pid))
+                | (pid, (nm, ds, im)) <- M.toList rawProfiles
+                ]
+        return (M.union resolved placeholders)
     )
 
 -- | Batch-enrich a list of promotions with resolved profile information.
@@ -179,11 +223,12 @@ promotionsToInformationBatch ps = do
             )
             ps
   profileMap <- resolveProfilesBatch idTimePairs
+  let resolve pid t = M.findWithDefault (placeholderPractitioner pid mempty mempty mempty t) pid profileMap
   return
     [ promotionInformationToResponse achieved awarded p
       | p <- ps,
-        let achieved = profileMap M.! promotionAchievedByProfileId p,
-        let awarded = profileMap M.! promotionAwardedByProfileId p
+        let achieved = resolve (promotionAchievedByProfileId p) (promotionAchievementDate p),
+        let awarded = resolve (promotionAwardedByProfileId p) (promotionAchievementDate p)
     ]
 
 -- | Classify profile id as practitioner or organization (for awarder maps).

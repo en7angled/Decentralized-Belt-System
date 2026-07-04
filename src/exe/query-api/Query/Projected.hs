@@ -394,6 +394,37 @@ getPractitionerProfilesBatch pids = do
       )
       pool
 
+-- | Batch-load raw profile fields (name, description, imageURI) by id, for any
+-- profile regardless of rank. Used to build placeholder practitioner info for
+-- promotion edges whose profile has no rank projection yet. Skips missing ids.
+getProfileProjectionsBatch ::
+  (MonadIO m, MonadReader QueryAppContext m) =>
+  [ProfileRefAC] ->
+  m (M.Map ProfileRefAC (Text, Text, Text))
+getProfileProjectionsBatch [] = return M.empty
+getProfileProjectionsBatch pids = do
+  pool <- asks pgPool
+  let uniqPids = nub pids
+  liftIO $
+    runSqlPool
+      ( do
+          rows <- select $ do
+            pp <- from $ table @ProfileProjection
+            where_ (pp ^. ProfileProjectionProfileId `in_` valList uniqPids)
+            pure pp
+          return $
+            M.fromList
+              [ ( profileProjectionProfileId r,
+                  ( profileProjectionProfileName r,
+                    profileProjectionProfileDescription r,
+                    profileProjectionProfileImageURI r
+                  )
+                )
+              | Entity _ r <- rows
+              ]
+      )
+      pool
+
 -- | Batch-load organization profiles for a list of IDs (single SQL query).
 -- Skips IDs that are not found. Used by aggregate map builders to avoid N+1.
 getOrganizationProfilesBatch ::
