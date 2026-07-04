@@ -76,16 +76,11 @@ main = do
   runSqlPool runMigrations pool
   runSqlPool (putStoredPolicyHexText policyHexText) pool
 
-  batchSize <- do
-    mb <- lookupEnv "BATCH_SIZE"
-    pure $ maybe (100_000_000 :: Integer) read mb
   fetchBatchSize <- do
     mb <- lookupEnv "FETCH_BATCH_SIZE"
     pure $ maybe (10_000_000 :: Integer) read mb
 
   initialTip <- getLocalTip pool
-  startingCheckPoint <- findCheckpoint kupoUrl batchSize (ck_slot_no initialTip)
-  updateLocalTip pool startingCheckPoint
 
   now <- getCurrentTime
   metricsVar <-

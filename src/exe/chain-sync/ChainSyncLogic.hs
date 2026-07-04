@@ -1,12 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Core chain-sync logic: tip comparison, checkpoint discovery, and
--- batch match fetching against the Kupo indexer.
+-- | Core chain-sync logic: tip comparison and batch match fetching against
+-- the Kupo indexer.
 module ChainSyncLogic
   ( evaluateChainSyncState,
     updateLocalTip,
     getLocalTip,
-    findCheckpoint,
     getBlockchainTip,
     fetchingMatches,
   )
@@ -21,7 +20,7 @@ import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Database.Persist.Sql (ConnectionPool, runSqlPool)
 import GeniusYield.Types (GYNetworkId)
-import KupoClient (KupoCheckpoint (..), KupoMatch (..), runKupoCheckpointBySlot, runKupoCheckpointsList, runKupoMatches)
+import KupoClient (KupoCheckpoint (..), KupoMatch (..), runKupoCheckpointsList, runKupoMatches)
 import Storage (ChainCursor (..), getCursorValue, putCursor, putMatchAndProjections)
 
 -- | Compare local and blockchain tips to derive the current sync state.
@@ -55,24 +54,6 @@ getLocalTip pool = do
           Nothing -> return (KupoCheckpoint 0 "")
     )
     pool
-
--- | Walk forward from a slot in increments of @stepSize@ until Kupo returns a checkpoint.
-findCheckpoint :: String -> Integer -> Integer -> IO KupoCheckpoint
-findCheckpoint kupoUrl stepSize curSlot = do
-  eCk <- liftIO $ runKupoCheckpointBySlot kupoUrl curSlot
-  case eCk of
-    Left err -> do
-      liftIO $ putStrLn ("Warning: checkpoint fetch failed: " <> show err)
-      liftIO $ putStrLn "Retrying in 10 seconds"
-      liftIO $ threadDelay 10000000
-      findCheckpoint kupoUrl stepSize curSlot
-    Right Nothing -> do
-      liftIO $ putStrLn "No checkpoint found"
-      liftIO $ putStrLn ("Checking next batch " <> show (curSlot + stepSize))
-      findCheckpoint kupoUrl stepSize (curSlot + stepSize)
-    Right (Just tip) -> do
-      liftIO $ putStrLn ("Checkpoint found: " <> show (ck_slot_no tip))
-      return tip
 
 -- | Fetch the current blockchain tip from Kupo, retrying on failure.
 getBlockchainTip :: String -> IO KupoCheckpoint
