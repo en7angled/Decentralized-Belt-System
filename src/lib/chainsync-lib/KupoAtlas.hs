@@ -4,7 +4,6 @@
 module KupoAtlas where
 
 import qualified Cardano.Api as C
-import qualified Data.Bifunctor
 import qualified Data.ByteString.Base16 as B16
 import Data.Either.Extra (maybeToEither)
 import qualified Data.Map as Map
