@@ -89,13 +89,14 @@ kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index
   amSpentAtTransactionId <- mapM decodeTxId (spent_transaction_id =<< spent_at)
   amSpentAtInputIndex <- mapM (maybeToEither "Invalid spent input index") (spent_input_index <$> spent_at)
   amSpentWithRedeemer <- mapM kupoRedeemerToGYRedeemer (spent_redeemer =<< spent_at)
+  gyValue <- kupoValueToGYValue value
   return $
     AtlasMatch
       { amTransactionIndex = transaction_index,
         amTransactionId = txId,
         amOutputIndex = output_index,
         amAddress = address',
-        amValue = kupoValueToGYValue value,
+        amValue = gyValue,
         amDatum = datum',
         amScriptHash = decodeGYScriptHash <$> script_hash,
         amCreatedAt = createdSlot,
@@ -107,15 +108,16 @@ kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index
         amSpentAtRedeemer = amSpentWithRedeemer
       }
 
--- | Convert a Kupo value (lovelace + native assets) into an Atlas 'GYValue'.
-kupoValueToGYValue :: KupoValue -> GYValue
-kupoValueToGYValue KupoValue {coins, assets} =
-  let listOfAssets = Map.toList assets
-      listOfAssetsGY = (GYLovelace, coins) : map (Data.Bifunctor.first toGYAssetClass) listOfAssets
-   in valueFromList listOfAssetsGY
+-- | Convert a Kupo value (lovelace + native assets) into an Atlas 'GYValue', failing on any
+-- unparseable asset key rather than crashing the sync loop.
+kupoValueToGYValue :: KupoValue -> Either String GYValue
+kupoValueToGYValue KupoValue {coins, assets} = do
+  gyAssets <- traverse (\(k, v) -> (,) <$> toGYAssetClass k <*> pure v) (Map.toList assets)
+  pure $ valueFromList ((GYLovelace, coins) : gyAssets)
 
--- | Parse a dot-separated @policyId.assetName@ text into an Atlas 'GYAssetClass'.
-toGYAssetClass :: Text -> GYAssetClass
-toGYAssetClass assetName = case parseAssetClassWithSep '.' assetName of
-  Left err -> error $ "Invalid asset name: " <> show err
-  Right assetClass -> assetClass
+-- | Parse a Kupo asset key into an Atlas 'GYAssetClass'. Kupo renders an empty-token-name asset as a
+-- bare 56-char policy id (no separator), so fall back to the separatorless parser on failure.
+toGYAssetClass :: Text -> Either String GYAssetClass
+toGYAssetClass t = case parseAssetClassWithSep '.' t of
+  Right assetClass -> Right assetClass
+  Left _ -> parseAssetClassWithoutSep t

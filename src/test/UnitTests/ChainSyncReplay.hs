@@ -3,7 +3,9 @@
 -- | Pure tests for the chain-sync replay/rollback ordering (F-02/F-05/F-07).
 module UnitTests.ChainSyncReplay (chainSyncReplayTests) where
 
+import Data.Either (isLeft, isRight)
 import Data.Map qualified as Map
+import KupoAtlas (toGYAssetClass)
 import KupoClient (CreatedAt (..), KupoMatch (..), KupoValue (..))
 import Storage
   ( OnchainMatchEvent (..),
@@ -35,6 +37,18 @@ dummyMatch =
 ev :: Integer -> Int -> Int -> OnchainMatchEvent
 ev slot txIx outIx = OnchainMatchEvent slot "hdr" "tx" txIx outIx dummyMatch
 
+valueConversionTests :: TestTree
+valueConversionTests =
+  testGroup
+    "Kupo asset conversion (F-06)"
+    [ testCase "dotted policyId.assetName parses" $
+        isRight (toGYAssetClass "00000000000000000000000000000000000000000000000000000000.6162") @?= True,
+      testCase "dotless empty-name policyId parses instead of crashing" $
+        isRight (toGYAssetClass "00000000000000000000000000000000000000000000000000000000") @?= True,
+      testCase "garbage returns Left, not a crash" $
+        isLeft (toGYAssetClass "xyz") @?= True
+    ]
+
 chainSyncReplayTests :: TestTree
 chainSyncReplayTests =
   testGroup
@@ -45,5 +59,6 @@ chainSyncReplayTests =
       testCase "same-block matches ordered by (txIndex, outputIndex); all retained (F-05/F-07)" $
         map (\e -> (onchainMatchEventCreatedTxIndex e, onchainMatchEventCreatedOutputIndex e))
           (replayOrder [ev 5 2 0, ev 5 1 3, ev 5 1 0])
-          @?= [(1, 0), (1, 3), (2, 0)]
+          @?= [(1, 0), (1, 3), (2, 0)],
+      valueConversionTests
     ]
