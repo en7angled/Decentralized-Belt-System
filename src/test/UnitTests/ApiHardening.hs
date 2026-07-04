@@ -7,6 +7,7 @@
 module UnitTests.ApiHardening (apiHardeningTests) where
 
 import qualified Data.ByteString as BS
+import qualified Data.Text as T
 import Data.Maybe (isNothing)
 import Network.HTTP.Types.Header (hOrigin)
 import Network.Wai (Request, defaultRequest, requestHeaders)
@@ -17,6 +18,8 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import WebAPI.Auth (AuthContext (..), AuthUser (..), authCheck)
 import WebAPI.CORS (CorsConfig (..), corsPolicy, parseCorsOrigins)
+import WebAPI.ImageType (ImageType (..), detectImageType)
+import WebAPI.Utils (escapeLikePattern)
 
 -- Run a BasicAuthCheck's handler against supplied raw credential bytes.
 runCheck :: AuthContext -> BasicAuthData -> IO (BasicAuthResult AuthUser)
@@ -59,5 +62,26 @@ corsTests =
           isNothing (corsPolicy (CorsConfig [] False) (reqWithOrigin "https://a.com"))
     ]
 
+escapeTests :: TestTree
+escapeTests =
+  testGroup
+    "escapeLikePattern"
+    [ testCase "plain text is unchanged" $ escapeLikePattern "hello" @?= "hello",
+      testCase "percent is escaped" $ escapeLikePattern "50%" @?= "50\\%",
+      testCase "underscore is escaped" $ escapeLikePattern "a_b" @?= "a\\_b",
+      testCase "backslash is escaped first" $ escapeLikePattern "a\\b" @?= "a\\\\b",
+      testCase "combined" $ escapeLikePattern "\\%_" @?= "\\\\\\%\\_"
+    ]
+
+imageTests :: TestTree
+imageTests =
+  testGroup
+    "detectImageType"
+    [ testCase "JPEG magic bytes" $ detectImageType (BS.pack [0xFF, 0xD8, 0xFF, 0xE0, 0x00]) @?= Just JPEG,
+      testCase "PNG magic bytes" $ detectImageType (BS.pack [0x89, 0x50, 0x4E, 0x47, 0x0D]) @?= Just PNG,
+      testCase "other bytes rejected" $ detectImageType (BS.pack [0x00, 0x01, 0x02, 0x03]) @?= Nothing,
+      testCase "too-short input rejected" $ detectImageType (BS.pack [0xFF, 0xD8]) @?= Nothing
+    ]
+
 apiHardeningTests :: TestTree
-apiHardeningTests = testGroup "API Hardening (webapi-lib)" [authTests, corsTests]
+apiHardeningTests = testGroup "API Hardening (webapi-lib)" [authTests, corsTests, escapeTests, imageTests]

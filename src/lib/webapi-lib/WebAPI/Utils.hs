@@ -4,10 +4,13 @@
 module WebAPI.Utils
   ( getPortFromEnvOrDefault
   , addSharedSwaggerDescriptions
+  , escapeLikePattern
   ) where
 
 import Control.Lens ((&), (?~), at, mapped)
 import Data.Swagger (Swagger, description, definitions)
+import Data.Text (Text)
+import qualified Data.Text as T
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
 
@@ -22,6 +25,16 @@ getPortFromEnvOrDefault defaultPort = do
       Nothing -> do
         putStrLn $ "Warning: invalid PORT value; defaulting to " <> show defaultPort
         return defaultPort
+
+-- | Escape SQL @LIKE@ metacharacters in user-supplied search text so that
+-- @%@ and @_@ match literally. Backslash is escaped first (it is the escape
+-- character). Relies on PostgreSQL's default @LIKE@ escape character (@\\@);
+-- esqueleto's @like@ emits no explicit @ESCAPE@ clause.
+escapeLikePattern :: Text -> Text
+escapeLikePattern =
+  T.replace "_" "\\_"
+    . T.replace "%" "\\%"
+    . T.replace "\\" "\\\\"
 
 -- | Add descriptions to shared Cardano/domain type definitions in a Swagger spec.
 -- Call this in both interaction-api and query-api to keep descriptions consistent.

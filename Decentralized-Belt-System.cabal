@@ -241,6 +241,8 @@ library webapi-lib
   exposed-modules:
     WebAPI.Auth
     WebAPI.CORS
+    WebAPI.Errors
+    WebAPI.ImageType
     WebAPI.ServiceProbe
     WebAPI.Utils
 
