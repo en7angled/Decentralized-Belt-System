@@ -333,7 +333,7 @@ git commit -m "feat(webapi): env-driven CORS allowlist, credentials off (F-12)"
 - Modify: `src/exe/interaction-api/RestAPI.hs`, `src/exe/interaction-api/Main.hs`
 - Modify: `src/exe/query-api/RestAPI.hs`, `src/exe/query-api/Main.hs`
 - Modify: `src/exe/chain-sync/ChainsyncAPI.hs`, `src/exe/chain-sync/Main.hs`
-- Modify: `src/lib/mcp-server-lib/MCPServer/App.hs`, `src/lib/mcp-server-lib/MCPServer/Server.hs`
+- (mcp-server-lib was handled in Task 2 — not touched here.)
 
 **Interfaces:**
 - Consumes: `mkCorsMiddleware`, `getCorsConfigFromEnv`, `CorsConfig` (Task 2).
@@ -380,17 +380,17 @@ mkServiceProbeApp corsCfg metricsVar =
 
   Find the caller of `mkServiceProbeApp`/`startProbeServer` (in `ChainsyncAPI.hs` — `startProbeServer`) and thread `CorsConfig`. If `startProbeServer :: Int -> MVar SyncMetrics -> IO ()`, change it to `startProbeServer :: WebAPI.CORS.CorsConfig -> Int -> MVar SyncMetrics -> IO ()` and pass `corsCfg` to `mkServiceProbeApp`. In `src/exe/chain-sync/Main.hs`, add `import WebAPI.CORS (getCorsConfigFromEnv)` (or `WebAPI.CORS` is already imported qualified — add the symbol), read `corsCfg <- getCorsConfigFromEnv` near the other env reads, and change `void $ forkIO $ startProbeServer port metricsVar` to `void $ forkIO $ startProbeServer corsCfg port metricsVar`.
 
-- [ ] **Step 4: mcp-server.** In `src/lib/mcp-server-lib/MCPServer/App.hs`, add `corsConfig :: CorsConfig` to `AppCtx` (import `WebAPI.CORS (CorsConfig, getCorsConfigFromEnv)`), and in `withAppCtx` add `corsCfg <- getCorsConfigFromEnv` and set `corsConfig = corsCfg` in the record. In `src/lib/mcp-server-lib/MCPServer/Server.hs`, change `app = setupCors (dispatchByPrefix mcpApp probeApp)` to `app = mkCorsMiddleware (corsConfig ctx) (dispatchByPrefix mcpApp probeApp)` and update the import from `WebAPI.CORS (setupCors)` to `WebAPI.CORS (mkCorsMiddleware)`.
+- [ ] **Step 4: mcp-server — ALREADY DONE IN TASK 2.** The MCP call site (`MCPServer/App.hs` gaining a `corsConfig :: CorsConfig` field read via `getCorsConfigFromEnv`, and `MCPServer/Server.hs` using `mkCorsMiddleware (corsConfig ctx)`) was folded into Task 2, because `mcp-server-lib` is compiled by the test-suite and had to be updated in the same task that removed `setupCors` to keep `cabal test` green. **Skip it here** — do not touch `mcp-server-lib`. This task covers only the three executables (interaction-api, query-api, chain-sync).
 
-- [ ] **Step 5: Build.** Run: `cabal build all 2>&1 | tail -15`. Expected: clean build; no remaining reference to `setupCors`. Verify with `grep -rn "setupCors" src` → no hits.
+- [ ] **Step 5: Build.** Run: `cabal build all 2>&1 | tail -15`. Expected: clean build (MCP already fixed in Task 2; this task fixes the last three executables). Verify with `grep -rn "setupCors" src` → no hits.
 
 - [ ] **Step 6: Run tests.** Run: `cabal test 2>&1 | tail -10`. Expected: full suite green.
 
 - [ ] **Step 7: Commit.**
 
 ```bash
-git add src/exe/interaction-api/RestAPI.hs src/exe/interaction-api/Main.hs src/exe/query-api/RestAPI.hs src/exe/query-api/Main.hs src/exe/chain-sync/ChainsyncAPI.hs src/exe/chain-sync/Main.hs src/lib/mcp-server-lib/MCPServer/App.hs src/lib/mcp-server-lib/MCPServer/Server.hs
-git commit -m "feat(servers): thread CORS allowlist config through all four servers (F-12)"
+git add src/exe/interaction-api/RestAPI.hs src/exe/interaction-api/Main.hs src/exe/query-api/RestAPI.hs src/exe/query-api/Main.hs src/exe/chain-sync/ChainsyncAPI.hs src/exe/chain-sync/Main.hs
+git commit -m "feat(servers): thread CORS allowlist config through the three executables (F-12)"
 ```
 
 ---
