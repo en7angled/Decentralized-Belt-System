@@ -12,12 +12,13 @@ import Data.Maybe (isNothing)
 import Network.HTTP.Types.Header (hOrigin)
 import Network.Wai (Request, defaultRequest, requestHeaders)
 import Network.Wai.Middleware.Cors (CorsResourcePolicy (..))
-import Servant (BasicAuthData (..))
+import Servant (BasicAuthData (..), errHTTPCode)
 import Servant.Server (BasicAuthCheck (..), BasicAuthResult (..))
 import Test.Tasty
 import Test.Tasty.HUnit
 import WebAPI.Auth (AuthContext (..), AuthUser (..), authCheck)
 import WebAPI.CORS (CorsConfig (..), corsPolicy, parseCorsOrigins)
+import WebAPI.Errors (genericErrorMessage, mkServantErr)
 import WebAPI.ImageType (ImageType (..), detectImageType)
 import WebAPI.Utils (escapeLikePattern)
 
@@ -83,5 +84,18 @@ imageTests =
       testCase "too-short input rejected" $ detectImageType (BS.pack [0xFF, 0xD8]) @?= Nothing
     ]
 
+errorTests :: TestTree
+errorTests =
+  testGroup
+    "mkServantErr / genericErrorMessage"
+    [ testCase "503 stays 503" $ errHTTPCode (mkServantErr 503 "x") @?= 503,
+      testCase "502 stays 502" $ errHTTPCode (mkServantErr 502 "x") @?= 502,
+      testCase "500 stays 500" $ errHTTPCode (mkServantErr 500 "x") @?= 500,
+      testCase "404 stays 404" $ errHTTPCode (mkServantErr 404 "x") @?= 404,
+      -- Unknown status must NOT collapse to 400 — pins the F-30 invariant.
+      testCase "unknown status maps to 500, not 400" $ errHTTPCode (mkServantErr 418 "x") @?= 500,
+      testCase "generic message for 503" $ genericErrorMessage 503 @?= "Service temporarily unavailable"
+    ]
+
 apiHardeningTests :: TestTree
-apiHardeningTests = testGroup "API Hardening (webapi-lib)" [authTests, corsTests, escapeTests, imageTests]
+apiHardeningTests = testGroup "API Hardening (webapi-lib)" [authTests, corsTests, escapeTests, imageTests, errorTests]

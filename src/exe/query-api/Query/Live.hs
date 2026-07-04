@@ -42,7 +42,7 @@ import Query.Projected
     promotionToHit,
     searchGroupLimit,
   )
-import QueryAppMonad (QueryAppContext (..))
+import QueryAppMonad (QueryAppContext (..), QueryAppMonad, runWithQueryErrorHandlingWrapped)
 import Storage (ProfileProjection (..))
 import TxBuilding.Context
 import TxBuilding.Lookups
@@ -76,15 +76,20 @@ membershipIntervalMatchesSearch q info =
    in Text.isInfixOf q' (t (membershipIntervalInformationId info))
         || Text.isInfixOf q' (t (membershipIntervalInformationPractitionerId info))
 
-getPractitionerProfile :: (MonadReader QueryAppContext m, MonadIO m) => ProfileRefAC -> m PractitionerProfileInformation
+-- | Specialized to 'QueryAppMonad' (all callers route through @withBackend@) so the live
+-- read can go through 'runWithQueryErrorHandlingWrapped', mapping a missing-profile
+-- 'TxBuildingException' (wrapped in @GYApplicationException@ by the live query monad) to 404
+-- instead of a bare Warp 500 — matching the projected twin.
+getPractitionerProfile :: ProfileRefAC -> QueryAppMonad PractitionerProfileInformation
 getPractitionerProfile profileRefAC = do
   providerCtx <- asks providerContext
-  liftIO $ runQuery providerCtx $ getPractitionerInformation profileRefAC
+  runWithQueryErrorHandlingWrapped $ runQuery providerCtx $ getPractitionerInformation profileRefAC
 
-getOrganizationProfile :: (MonadReader QueryAppContext m, MonadIO m) => ProfileRefAC -> m OrganizationProfileInformation
+-- | Specialized to 'QueryAppMonad' for wrapped error mapping; see 'getPractitionerProfile'.
+getOrganizationProfile :: ProfileRefAC -> QueryAppMonad OrganizationProfileInformation
 getOrganizationProfile profileRefAC = do
   providerCtx <- asks providerContext
-  liftIO $ runQuery providerCtx $ getOrganizationInformation profileRefAC
+  runWithQueryErrorHandlingWrapped $ runQuery providerCtx $ getOrganizationInformation profileRefAC
 
 getProfilesCount :: (MonadReader QueryAppContext m, MonadIO m) => Maybe ProfileFilter -> m Int
 getProfilesCount maybeProfileFilter = Prelude.length <$> getProfiles Nothing maybeProfileFilter Nothing

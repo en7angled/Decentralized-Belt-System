@@ -60,8 +60,8 @@ getBlockchainTip :: String -> IO KupoCheckpoint
 getBlockchainTip kupoUrl = do
   eCk <- liftIO $ runKupoCheckpointsList kupoUrl
   case eCk of
-    Left err -> do
-      liftIO $ putStrLn ("Kupo client error: " <> show err)
+    Left _err -> do
+      liftIO $ putStrLn "Kupo client error while fetching tip (retrying)"
       liftIO $ putStrLn "Retrying in 10 seconds"
       liftIO $ threadDelay 10000000
       getBlockchainTip kupoUrl
@@ -97,8 +97,8 @@ fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool sta
           False
           True
       case eMatches of
-        Left err -> do
-          putStrLn ("Kupo client error: " <> show err)
+        Left _err -> do
+          putStrLn "Kupo client error while fetching matches (retrying)"
           putStrLn "Retrying in 10 seconds"
           threadDelay 10000000
           fetchingMatches metricsVar kupoUrl matchPattern policyHexText networkId pool start end batchSize

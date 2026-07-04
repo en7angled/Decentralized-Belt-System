@@ -17,7 +17,7 @@ import DomainTypes.Transfer.Types (FeeConfigDTO (..), ProtocolStatus (..), Scrip
 import GeniusYield.TxBuilder (addressFromPlutus')
 import GeniusYield.Types (addressToText)
 import Onchain.Protocol.Types qualified as OnchainTypes
-import QueryAppMonad (QueryAppMonad (..), QueryAppContext (..), runWithQueryErrorHandling, verifyProjectionDbConnection)
+import QueryAppMonad (QueryAppMonad (..), QueryAppContext (..), runWithQueryErrorHandling, runWithQueryErrorHandlingWrapped, verifyProjectionDbConnection)
 import TxBuilding.Context (DeployedScriptsContext (..), runQuery)
 import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Lookups (queryOracleParams)
@@ -38,7 +38,7 @@ getProtocolStatusQuery = do
     Nothing -> runWithQueryErrorHandling $ throwIO OracleNotFound
     Just dCtx -> do
       provCtx <- asks providerContext
-      liftIO $ runQuery provCtx $ do
+      runWithQueryErrorHandlingWrapped $ runQuery provCtx $ do
         (oracleParams, _, _) <- runReaderT queryOracleParams dCtx
         -- Convert fee address inside GYTxQueryMonad where addressFromPlutus' is available
         mFeeAddr <- case OnchainTypes.opFeeConfig oracleParams of

@@ -961,6 +961,12 @@ profileToHitOrganization p =
 searchGroupLimit :: Int
 searchGroupLimit = 10
 
+-- | Cap on rows fetched per entity in unified search, to bound memory. The @/search@
+-- route has no limit/offset param, so the Step-1 pagination default never reaches this
+-- path; each sub-query is capped here instead. Group totals become "up to the cap".
+searchQueryLimit :: Int
+searchQueryLimit = 500
+
 -- | Maximum allowed depth for lineage descendant subtree traversal.
 maxDescendantDepth :: Int
 maxDescendantDepth = 10
@@ -1043,6 +1049,7 @@ searchRanksWithNames q = do
                 ||. (lower_ (unsafeSqlCastAs "text" (rp ^. RankProjectionRankBelt)) `like` pat)
                 ||. (lower_ (coalesceDefault [mppAchieved ?. ProfileProjectionProfileName] (val "")) `like` pat)
                 ||. (lower_ (coalesceDefault [mppAwarded ?. ProfileProjectionProfileName] (val "")) `like` pat)
+            limit (fromIntegral searchQueryLimit)
             pure rp
           pure (Prelude.map (toRankDomain . entityVal) rows)
       )
@@ -1072,6 +1079,7 @@ searchPromotionsWithNames q = do
                 ||. (lower_ (unsafeSqlCastAs "text" (pr ^. PromotionProjectionPromotionBelt)) `like` pat)
                 ||. (lower_ (coalesceDefault [mppAchieved ?. ProfileProjectionProfileName] (val "")) `like` pat)
                 ||. (lower_ (coalesceDefault [mppAwarded ?. ProfileProjectionProfileName] (val "")) `like` pat)
+            limit (fromIntegral searchQueryLimit)
             pure pr
           -- Self-promotions (awardedBy == achievedBy) are not legitimate; filter them out.
           let pvals = Prelude.filter (\p -> promotionProjectionPromotionAchievedByProfileId p /= promotionProjectionPromotionAwardedByProfileId p) $ map entityVal rows
@@ -1094,11 +1102,11 @@ searchProjected q
             searchResultsAchievements = SearchGroup 0 []
           }
   | otherwise = do
-      practitionerProfiles <- getProfiles Nothing (Just (profileSearchFilter Practitioner q)) Nothing
-      organizationProfiles <- getProfiles Nothing (Just (profileSearchFilter Organization q)) Nothing
+      practitionerProfiles <- getProfiles (Just (searchQueryLimit, 0)) (Just (profileSearchFilter Practitioner q)) Nothing
+      organizationProfiles <- getProfiles (Just (searchQueryLimit, 0)) (Just (profileSearchFilter Organization q)) Nothing
       ranks <- searchRanksWithNames q
       promotions <- searchPromotionsWithNames q
-      achievements <- getAchievements Nothing (Just (achievementSearchFilter q)) Nothing
+      achievements <- getAchievements (Just (searchQueryLimit, 0)) (Just (achievementSearchFilter q)) Nothing
       -- Merge ranks (as accepted promotions) into promotions for unified search
       let ranksAsPromotions = map rankToPromotion ranks
           allPromotions = promotions ++ ranksAsPromotions

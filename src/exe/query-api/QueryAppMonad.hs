@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- | Application monad and context for the query API server.
 -- Wraps a 'ReaderT' over Servant's 'Handler' with access to auth, provider,
@@ -13,6 +14,8 @@ import Data.Text hiding (elem, reverse, take)
 import Data.Time
 import Database.Persist.Sql (ConnectionPool, SqlPersistT, Single (..), rawSql, runSqlPool)
 import Control.Exception (SomeException, displayException, try)
+import Data.Typeable (cast)
+import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import Servant
 -- import System.Directory.Extra
 import TxBuilding.Context
@@ -64,6 +67,29 @@ runWithQueryErrorHandling action = QueryAppMonad $ do
       let status = txBuildingExceptionToHttpStatus txEx
       liftIO $ putStrLn $ "TxBuildingException (" <> show status <> "): " <> displayException txEx
       throwError $ mkServantErr status (displayException txEx)
+    Right ok -> pure ok
+
+-- | Run an IO action, mapping a 'TxBuildingException' that is wrapped in a
+-- 'GYApplicationException' to its HTTP status. The live query backend runs inside
+-- @GYTxQueryMonadIO@, whose @throwError = ioToQueryMonad . throwIO@ wraps thrown
+-- @TxBuildingException@s in @GYApplicationException@ — so the bare-type
+-- 'runWithQueryErrorHandling' cannot catch them. This mirrors interaction-api's
+-- @runWithTxErrorHandling@ catch shape. Any other exception maps to a sanitized 500.
+runWithQueryErrorHandlingWrapped :: IO a -> QueryAppMonad a
+runWithQueryErrorHandlingWrapped action = QueryAppMonad $ do
+  res <- liftIO $ try @GYTxMonadException action
+  case res of
+    Left ex ->
+      case ex of
+        GYApplicationException appE
+          | Just txEx <- cast appE -> do
+              let status = txBuildingExceptionToHttpStatus txEx
+              let msg = displayException txEx
+              liftIO $ putStrLn $ "TxBuildingException (" <> show status <> "): " <> msg
+              throwError $ mkServantErr status msg
+        _ -> do
+          liftIO $ putStrLn $ "Unexpected exception: " <> show ex
+          throwError $ mkServantErr 500 (genericErrorMessage 500)
     Right ok -> pure ok
 
 -- | Health-check probe: verify the projection database is reachable.
