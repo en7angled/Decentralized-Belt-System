@@ -469,6 +469,18 @@ putAchievementProjection createdSlot createdHash a = do
           now
   upsertByUnique (UniqueAchievementProjection . achievementProjectionAchievementId) ev
 
+-- | The single source of chain-replay order: sort raw matches by true chain order
+-- @(slot, transaction_index, output_index)@. Used by 'rollbackTo' and by tests.
+replayOrder :: [OnchainMatchEvent] -> [OnchainMatchEvent]
+replayOrder =
+  L.sortOn
+    ( \e ->
+        ( onchainMatchEventCreatedSlot e,
+          onchainMatchEventCreatedTxIndex e,
+          onchainMatchEventCreatedOutputIndex e
+        )
+    )
+
 -- | Rollback all stored events and projections strictly beyond the given slot,
 --   and any rows at the slot with a mismatching block header hash.
 rollbackTo :: (MonadIO m) => Integer -> Text -> SqlPersistT m ()

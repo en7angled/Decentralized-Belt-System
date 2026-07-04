@@ -443,6 +443,7 @@ test-suite test
     TestRuns
     UnitTests
     UnitTests.Achievement
+    UnitTests.ChainSyncReplay
     UnitTests.Cleanup
     UnitTests.MCPTools
     UnitTests.Membership
@@ -451,6 +452,7 @@ test-suite test
 
   build-depends:
     , base
+    , chainsync-lib
     , mcp
     , mcp-server-lib
     , offchain-lib
