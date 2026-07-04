@@ -26,7 +26,14 @@ import Database.Persist.Postgresql (ConnectionString, createPostgresqlPool)
 import Database.Persist.Sql (runSqlPool)
 import GeniusYield.GYConfig (GYCoreConfig (..))
 import KupoClient (KupoCheckpoint (..))
-import Storage (currentSchemaVersion, putStoredPolicyHexText, readSchemaProbe, rollbackTo, runMigrations, wipeChainSyncTablesRaw)
+import Storage
+  ( currentSchemaVersion,
+    putStoredPolicyHexText,
+    readSchemaProbe,
+    rollbackTo,
+    runMigrations,
+    wipeChainSyncTablesRaw,
+  )
 import System.Environment (lookupEnv)
 import System.Exit (die)
 import Text.Printf

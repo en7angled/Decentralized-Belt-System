@@ -270,7 +270,8 @@ readSchemaProbe = do
     [Single True] -> do
       col <-
         rawSql
-          "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chain_sync_config' AND column_name = 'schema_version')"
+          "SELECT EXISTS (SELECT 1 FROM information_schema.columns \
+          \WHERE table_name = 'chain_sync_config' AND column_name = 'schema_version')"
           []
       case col of
         [Single True] -> do
