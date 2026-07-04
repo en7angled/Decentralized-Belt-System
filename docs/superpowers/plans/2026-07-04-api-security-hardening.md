@@ -15,7 +15,7 @@
 - **Fail-closed.** Missing `BASIC_USER`/`BASIC_PASS` → `die` at startup, no defaults. Empty `CORS_ALLOWED_ORIGINS` → no cross-origin allowed. `allowCredentials` hard-coded `False`.
 - **`webapi-lib` stays project-lib-free** (no offchain/onchain/chainsync imports). External deps (`bytestring`, `memory`, `wai`, `wai-cors`, `servant`) are fine.
 - **Style:** max 120 chars/line, 2-space indent, one blank line between top-level decls, `-- |` Haddock on new exports. PascalCase types, camelCase functions.
-- **Query error mapping:** query-api throws **bare** `TxBuildingException` via `throwIO` (no `GYApplicationException` wrapper). The handler MUST `try @TxBuildingException` directly — do **not** copy `runWithTxErrorHandling`'s `GYApplicationException`/`cast` shape.
+- **Query error mapping:** the **projected** backend throws **bare** `TxBuildingException` via `throwIO` (no wrapper) — its handler (`runWithQueryErrorHandling`) MUST `try @TxBuildingException` directly, NOT copy the `GYApplicationException`/`cast` shape. The **live** backend (via `GYTxQueryMonad`) throws `TxBuildingException` **wrapped** in `GYApplicationException`, so its handler (`runWithQueryErrorHandlingWrapped`, added in the final fix wave) DOES use the `try @GYTxMonadException` + `cast` shape, mirroring interaction-api. Two handlers for two genuinely-different exception shapes.
 - **LIKE escaping** goes in the shared `likePat` chokepoint, not per-endpoint.
 - **No secret committed.** `.env.example` files use placeholders only.
 - **After each task:** `cabal build all` then the relevant `cabal test` must pass.
