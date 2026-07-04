@@ -79,7 +79,7 @@ main = do
 
   fetchBatchSize <- do
     mb <- lookupEnv "FETCH_BATCH_SIZE"
-    pure $ maybe (10_000_000 :: Integer) read mb
+    pure $ maybe (10_000_000 :: Integer) id (mb >>= readMaybe)
 
   rollbackMargin <- do
     mb <- lookupEnv "ROLLBACK_MARGIN"
@@ -94,8 +94,8 @@ main = do
         { smLocalTip = ck_slot_no initialTip,
           smBlockchainTip = ck_slot_no initialTip,
           smLastSyncTime = now,
-          smDbReady = False,
-          smMigrationsComplete = False,
+          smDbReady = True,
+          smMigrationsComplete = True,
           smChainSyncState = Behind True -- by default we are way behind
         }
 
