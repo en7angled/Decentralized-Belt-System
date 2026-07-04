@@ -130,7 +130,7 @@ main = do
         liftIO $ putStrLn "Chain is ahead"
         liftIO $ putStrLn "Starting rollback"
         -- Rollback DB state to blockchain tip (retain rows up to tip with matching header)
-        runSqlPool (rollbackTo (ck_slot_no blockchainTip) (ck_header_hash blockchainTip)) pool
+        runSqlPool (rollbackTo networkId (ck_slot_no blockchainTip)) pool
         -- Update the local tip cursor to match the blockchain tip
         updateLocalTip pool blockchainTip
         liftIO $ putStrLn "Rollback complete and local tip updated"

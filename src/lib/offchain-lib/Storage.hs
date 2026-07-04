@@ -286,11 +286,16 @@ readSchemaProbe = do
             _ -> Just (1, "")
     _ -> pure Nothing
 
--- | Convert a raw Kupo match to domain projections and upsert them alongside the raw match.
+-- | Store a raw Kupo match and its derived projections.
 putMatchAndProjections :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
 putMatchAndProjections networkId km = do
-  liftIO $ putStrLn ("Putting match and projections for " <> show (slot_no (created_at km)))
   putKupoMatch km
+  projectAndStore networkId km
+
+-- | Derive and store the projections for a raw match (does NOT re-store the raw match). Reused by
+-- 'rollbackTo' to replay the surviving log. Conversion/projection failures are logged and skipped.
+projectAndStore :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
+projectAndStore networkId km =
   case kupoMatchToAtlasMatch km of
     Left convErr -> liftIO $ putStrLn ("Conversion error: " <> convErr)
     Right am -> do
@@ -481,26 +486,20 @@ replayOrder =
         )
     )
 
--- | Rollback all stored events and projections strictly beyond the given slot,
---   and any rows at the slot with a mismatching block header hash.
-rollbackTo :: (MonadIO m) => Integer -> Text -> SqlPersistT m ()
-rollbackTo slot hdrHash = do
-  -- Remove onchain matches beyond tip or same slot but different header
-  rollbackEntity OnchainMatchEventCreatedSlot OnchainMatchEventCreatedHeader
-
-  -- Remove projections beyond tip or same slot but different header
-  rollbackEntity ProfileProjectionCreatedAtSlot ProfileProjectionCreatedAtHash
-  rollbackEntity RankProjectionCreatedAtSlot RankProjectionCreatedAtHash
-  rollbackEntity PromotionProjectionCreatedAtSlot PromotionProjectionCreatedAtHash
-  rollbackEntity MembershipHistoryProjectionCreatedAtSlot MembershipHistoryProjectionCreatedAtHash
-  rollbackEntity MembershipIntervalProjectionCreatedAtSlot MembershipIntervalProjectionCreatedAtHash
-  rollbackEntity AchievementProjectionCreatedAtSlot AchievementProjectionCreatedAtHash
-  where
-    rollbackEntity ::
-      (PersistEntity a, PersistEntityBackend a ~ SqlBackend, MonadIO m) =>
-      EntityField a Integer ->
-      EntityField a Text ->
-      SqlPersistT m ()
-    rollbackEntity slotField hashField = do
-      deleteWhere [slotField >. slot]
-      deleteWhere [slotField ==. slot, hashField !=. hdrHash]
+-- | Roll back to @slot@: discard raw matches beyond it, wipe the derived projection tables, and
+-- rebuild them by replaying the surviving raw-match log in chain order. Correct because callers pass
+-- a slot strictly below any orphan (guaranteed by the F-08 rollback margin >= 1).
+rollbackTo :: (MonadIO m) => GYNetworkId -> Integer -> SqlPersistT m ()
+rollbackTo networkId slot = do
+  -- 1. Discard raw matches strictly beyond the rollback slot (numeric compare; F-02 fixed).
+  deleteWhere [OnchainMatchEventCreatedSlot >. slot]
+  -- 2. Wipe all derived projection tables.
+  deleteWhere ([] :: [Filter ProfileProjection])
+  deleteWhere ([] :: [Filter RankProjection])
+  deleteWhere ([] :: [Filter PromotionProjection])
+  deleteWhere ([] :: [Filter MembershipHistoryProjection])
+  deleteWhere ([] :: [Filter MembershipIntervalProjection])
+  deleteWhere ([] :: [Filter AchievementProjection])
+  -- 3. Replay surviving raw matches in true chain order.
+  surviving <- selectList [] []
+  mapM_ (projectAndStore networkId . onchainMatchEventKupoMatch) (replayOrder (map entityVal surviving))
