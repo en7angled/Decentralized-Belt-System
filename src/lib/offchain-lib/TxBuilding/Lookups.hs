@@ -47,6 +47,13 @@ singleUTxOOrThrow utxos errEmpty errMultiple = case utxos of
   [] -> throwError (GYApplicationException errEmpty)
   _ -> throwError (GYApplicationException errMultiple)
 
+-- | Get UTxO by NFT asset class; throw 'NFTNotFound' if absent, 'MultipleUtxosFound' if ambiguous.
+getUTxOWithNFT :: (GYTxQueryMonad m) => GYAssetClass -> m GYUTxO
+getUTxOWithNFT gyAC = do
+  nonAdaToken <- maybe (throwError (GYApplicationException InvalidAssetClass)) return (nonAdaTokenFromAssetClass gyAC)
+  utxos <- utxosWithAsset nonAdaToken
+  singleUTxOOrThrow (utxosToList utxos) NFTNotFound MultipleUtxosFound
+
 -- | Get UTxO by NFT asset class; rethrow 'NFTNotFound' as the given domain exception.
 getUTxOWithNFTOrThrow :: (GYTxQueryMonad m) => GYAssetClass -> TxBuildingException -> m GYUTxO
 getUTxOWithNFTOrThrow gyAC onNotFound =
@@ -63,12 +70,6 @@ getUTxOWithTokenAtAddresses nftAC addrs onNotFound = do
   utxos <- utxosAtAddresses addrs
   let utxosWithNFT = filterUTxOs (\utxo -> valueAssetPresent (utxoValue utxo) nftAC) utxos
   singleUTxOOrThrow (utxosToList utxosWithNFT) onNotFound MultipleUtxosFound
-
-getUTxOWithNFT :: (GYTxQueryMonad m) => GYAssetClass -> m GYUTxO
-getUTxOWithNFT gyAC = do
-  nonAdaToken <- maybe (throwError (GYApplicationException InvalidAssetClass)) return (nonAdaTokenFromAssetClass gyAC)
-  utxos <- utxosWithAsset nonAdaToken
-  singleUTxOOrThrow (utxosToList utxos) NFTNotFound MultipleUtxosFound
 
 -- | Get profile state datum and value from asset class
 getProfileStateDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (CIP68Datum Onchain.OnchainProfile, Value)
