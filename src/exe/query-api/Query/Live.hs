@@ -110,7 +110,7 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
         Just pf@ProfileFilter {profileFilterType = Just Practitioner, profileFilterTextSearch = Just _} ->
           Just pf {profileFilterTextSearch = Nothing}
         _ -> maybeProfileFilter
-      base = applyFilterOrderLimit maybeLimitOffset filterPass1 maybeOrder applyProfileFilter (applyOrdering regTsMap) allProfiles
+      base = applyFilterOrderLimit Nothing filterPass1 maybeOrder applyProfileFilter (applyOrdering regTsMap) allProfiles
 
   -- Post-filter: practitioner text search including affiliated org names
   afterQ <- case practitionerQ of
@@ -164,8 +164,8 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
                   any isActiveInterval (membershipHistoryInformationIntervals mh)
               ]
       return $ Prelude.filter (\p -> profileId p `S.member` activePractitionerIds) afterMembershipOrg
-  -- Post-filter: belt (current rank matches given belts)
-  case maybeProfileFilter >>= profileFilterBelt of
+  -- Post-filter: belt (current rank matches given belts), then apply the page limit LAST
+  afterBelt <- case maybeProfileFilter >>= profileFilterBelt of
     Nothing -> return afterActiveOrg
     Just belts -> do
       allRanks <- liftIO $ runQuery providerCtx (getAllRanks nid)
@@ -181,6 +181,7 @@ getProfiles maybeLimitOffset maybeProfileFilter maybeOrder = do
             Just (b, _) -> b `S.member` beltSet
             Nothing -> False
       return $ Prelude.filter hasBelt afterActiveOrg
+  return $ applyLimits maybeLimitOffset afterBelt
   where
     fetchRegistrationTimestamps :: (MonadReader QueryAppContext m, MonadIO m) => m (M.Map ProfileRefAC UTCTime)
     fetchRegistrationTimestamps = do
