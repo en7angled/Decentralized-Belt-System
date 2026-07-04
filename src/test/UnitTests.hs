@@ -8,6 +8,7 @@ import UnitTests.Achievement (achievementTests)
 import UnitTests.ApiHardening (apiHardeningTests)
 import UnitTests.ChainSyncReplay (chainSyncReplayTests)
 import UnitTests.Cleanup (cleanupTests)
+import UnitTests.Conversions (conversionsTests)
 import UnitTests.MCPTools (mcpToolsTests)
 import UnitTests.Membership (membershipTests)
 import UnitTests.Oracle (oracleTests)
@@ -24,5 +25,6 @@ unitTests =
       cleanupTests,
       mcpToolsTests,
       chainSyncReplayTests,
-      apiHardeningTests
+      apiHardeningTests,
+      conversionsTests
     ]

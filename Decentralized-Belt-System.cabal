@@ -451,6 +451,7 @@ test-suite test
     UnitTests.ApiHardening
     UnitTests.ChainSyncReplay
     UnitTests.Cleanup
+    UnitTests.Conversions
     UnitTests.MCPTools
     UnitTests.Membership
     UnitTests.Oracle

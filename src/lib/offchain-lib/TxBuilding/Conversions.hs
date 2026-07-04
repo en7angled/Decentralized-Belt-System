@@ -4,6 +4,8 @@ module TxBuilding.Conversions where
 import Data.Bifunctor qualified
 import Data.List (sortOn)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
+import Data.Text.Encoding.Error qualified as TEE
 import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
 import GeniusYield.TxBuilder
@@ -14,7 +16,7 @@ import Onchain.Protocol.Id qualified as OnchainId
 import Onchain.Protocol.Types qualified as OnchainTypes
 import PlutusLedgerApi.V3
 import PlutusTx.AssocMap qualified as AssocMap
-import PlutusTx.Builtins (decodeUtf8)
+import PlutusTx.Builtins (fromBuiltin)
 import PlutusTx.Builtins.HasOpaque (stringToBuiltinByteStringUtf8)
 import TxBuilding.SafeOnchainLogic (safeIntToBelt)
 
@@ -39,12 +41,11 @@ metadataFieldsToProfileData Metadata222 {metadataName, metadataDescription, meta
 textToBuiltinByteString :: T.Text -> BuiltinByteString
 textToBuiltinByteString = stringToBuiltinByteStringUtf8 . T.unpack
 
+-- | Decode an on-chain UTF-8 'BuiltinByteString' to 'Text', replacing any
+-- invalid byte sequence with U+FFFD (never throws — keeps chain-sync alive on
+-- malformed metadata).
 fromBuiltinByteStringUtf8 :: BuiltinByteString -> T.Text
-fromBuiltinByteStringUtf8 bs =
-  let shown = show (decodeUtf8 bs)
-   in T.pack $ case shown of
-        ('"' : rest) | not (null rest) -> Prelude.init rest
-        other -> other
+fromBuiltinByteStringUtf8 = TE.decodeUtf8With TEE.lenientDecode . fromBuiltin
 
 -- | Map domain 'ProfileType' to its on-chain representation.
 profileTypeToOnchainProfileType :: ProfileType -> Onchain.OnchainProfileType

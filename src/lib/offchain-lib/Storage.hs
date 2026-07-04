@@ -197,7 +197,7 @@ runMigrations = runMigration migrateAll
 
 -- | Bump when the chain-sync DB schema changes incompatibly; startup wipes + re-syncs on a mismatch.
 currentSchemaVersion :: Int
-currentSchemaVersion = 2
+currentSchemaVersion = 3
 
 -- | Upsert a record by its unique key: insert if absent, replace if present.
 upsertByUnique ::
