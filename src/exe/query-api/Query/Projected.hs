@@ -753,6 +753,23 @@ getPromotionBeltTotals = do
       )
       pool
 
+-- | Convert a 'MembershipIntervalProjection' row to a 'MembershipIntervalInformation', or
+-- 'Nothing' if the row has no organization (projection invariant not yet backfilled).
+toIntervalInfo :: MembershipIntervalProjection -> Maybe MembershipIntervalInformation
+toIntervalInfo mip =
+  ( \org ->
+      MembershipIntervalInformation
+        { membershipIntervalInformationId = membershipIntervalProjectionMembershipIntervalId mip,
+          membershipIntervalInformationStartDate = membershipIntervalProjectionStartDate mip,
+          membershipIntervalInformationEndDate = membershipIntervalProjectionEndDate mip,
+          membershipIntervalInformationAccepted = membershipIntervalProjectionIsAccepted mip,
+          membershipIntervalInformationPractitionerId = membershipIntervalProjectionPractitionerProfileId mip,
+          membershipIntervalInformationIntervalNumber = membershipIntervalProjectionIntervalNumber mip,
+          membershipIntervalInformationOrganizationId = org
+        }
+  )
+    <$> membershipIntervalProjectionOrganizationProfileId mip
+
 getMembershipHistories :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe F.MembershipHistoryFilter -> Maybe (MembershipHistoriesOrderBy, SortOrder) -> m [MembershipHistoryInformation]
 getMembershipHistories maybeLimitOffset maybeFilter maybeOrder = do
   pool <- asks pgPool
@@ -787,19 +804,6 @@ getMembershipHistories maybeLimitOffset maybeFilter maybeOrder = do
                     groups = L.groupBy (\a b -> key a == key b) sorted
                 -- groupBy never produces empty sublists, but pattern match is total
                 pure [(key x, x : xs) | (x : xs) <- groups]
-          let toIntervalInfo mip =
-                ( \org ->
-                    MembershipIntervalInformation
-                      { membershipIntervalInformationId = membershipIntervalProjectionMembershipIntervalId mip,
-                        membershipIntervalInformationStartDate = membershipIntervalProjectionStartDate mip,
-                        membershipIntervalInformationEndDate = membershipIntervalProjectionEndDate mip,
-                        membershipIntervalInformationAccepted = membershipIntervalProjectionIsAccepted mip,
-                        membershipIntervalInformationPractitionerId = membershipIntervalProjectionPractitionerProfileId mip,
-                        membershipIntervalInformationIntervalNumber = membershipIntervalProjectionIntervalNumber mip,
-                        membershipIntervalInformationOrganizationId = org
-                      }
-                )
-                  <$> membershipIntervalProjectionOrganizationProfileId mip
           let buildInfo mhp =
                 let k = (Just (membershipHistoryProjectionOrganizationProfileId mhp), membershipHistoryProjectionPractitionerProfileId mhp)
                     intervalRowsForHistory = Data.Maybe.fromMaybe [] $ lookup k intervalByKey
@@ -847,19 +851,6 @@ getMembershipIntervals maybeLimitOffset maybeFilter maybeOrder = do
                   MembershipIntervalsOrderByPractitioner -> orderBy [orderByDir so (mip ^. MembershipIntervalProjectionPractitionerProfileId)]
             applyLimitOffset maybeLimitOffset
             pure mip
-          let toIntervalInfo mip =
-                ( \org ->
-                    MembershipIntervalInformation
-                      { membershipIntervalInformationId = membershipIntervalProjectionMembershipIntervalId mip,
-                        membershipIntervalInformationStartDate = membershipIntervalProjectionStartDate mip,
-                        membershipIntervalInformationEndDate = membershipIntervalProjectionEndDate mip,
-                        membershipIntervalInformationAccepted = membershipIntervalProjectionIsAccepted mip,
-                        membershipIntervalInformationPractitionerId = membershipIntervalProjectionPractitionerProfileId mip,
-                        membershipIntervalInformationIntervalNumber = membershipIntervalProjectionIntervalNumber mip,
-                        membershipIntervalInformationOrganizationId = org
-                      }
-                )
-                  <$> membershipIntervalProjectionOrganizationProfileId mip
           pure (mapMaybe (toIntervalInfo . entityVal) rows)
       )
       pool

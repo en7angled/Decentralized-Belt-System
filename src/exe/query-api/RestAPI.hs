@@ -160,7 +160,7 @@ handleGetProfiles ::
   QueryAppMonad [ProfileResponse]
 handleGetProfiles limit offset profileRefs profileType activeMembershipOrg membershipOrg beltRefs q orderBy sortOrder = do
   let limitOffset = C.normalizeLimitOffset limit offset
-  let profileFilter = profileFilterFromParams profileRefs profileType activeMembershipOrg membershipOrg beltRefs q
+  let profileFilter = Just $ profileFilterFromParams profileRefs profileType activeMembershipOrg membershipOrg beltRefs q
   let order = C.normalizeOrder orderBy sortOrder
   map profileToResponse
     <$> withBackend (L.getProfiles limitOffset profileFilter order) (P.getProfiles limitOffset profileFilter order)
@@ -277,14 +277,14 @@ handleGetAchievements ::
   QueryAppMonad [AchievementResponse]
 handleGetAchievements limit offset achievementIds awardedToRefs awardedByRefs accepted fromTime toTime q orderBy sortOrder = do
   let limitOffset = C.normalizeLimitOffset limit offset
-  let achievementFilter = achievementFilterFromParams achievementIds awardedToRefs awardedByRefs accepted fromTime toTime q
+  let achievementFilter = Just $ achievementFilterFromParams achievementIds awardedToRefs awardedByRefs accepted fromTime toTime q
   let order = C.normalizeOrder orderBy sortOrder
   map achievementToResponse
     <$> withBackend (L.getAchievements limitOffset achievementFilter order) (P.getAchievements limitOffset achievementFilter order)
 
 handleGetAchievementById :: AchievementAC -> QueryAppMonad AchievementInformationResponse
 handleGetAchievementById achId = do
-  let achFilter = achievementFilterFromParams [achId] [] [] Nothing Nothing Nothing Nothing
+  let achFilter = Just $ achievementFilterFromParams [achId] [] [] Nothing Nothing Nothing Nothing
   results <- withBackend (L.getAchievements Nothing achFilter Nothing) (P.getAchievements Nothing achFilter Nothing)
   case results of
     (a : _) -> Agg.achievementToInformation a

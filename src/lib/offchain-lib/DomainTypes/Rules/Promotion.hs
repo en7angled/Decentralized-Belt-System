@@ -94,6 +94,31 @@ data PromotionViolation
 instance ToSchema PromotionViolation where
   declareNamedSchema _ = pure $ NamedSchema (Just "PromotionViolation") mempty
 
+-- | Target must be exactly the successor of the current belt. 'Red10' has
+-- no successor on-chain (@succ Red10@ trips @traceError@), so any target
+-- off a Red10 current is a rung-skip. Shared by 'checkPromotion' and
+-- 'checkPromotionWithOptionalMaster'.
+rungViolation :: BeltSnapshot -> BeltSnapshot -> [PromotionViolation]
+rungViolation current next
+  | c == Red10 = [RungSkipped c n]
+  | n == succ c = []
+  | otherwise = [RungSkipped c n]
+  where
+    c = belt current
+    n = belt next
+
+-- | Time-in-grade is indexed by the /current/ belt: to leave belt X you
+-- must have spent at least 'minMonthsForBelt X' at X. Shared by
+-- 'checkPromotion' and 'checkPromotionWithOptionalMaster'.
+timeInGradeViolation :: BeltSnapshot -> BeltSnapshot -> [PromotionViolation]
+timeInGradeViolation current next =
+  let requiredMonths = minMonthsForBelt (belt current)
+      requiredMs = getPOSIXTime (monthsToPosixTime requiredMonths)
+      actualMs = getPOSIXTime (beltDate next - beltDate current)
+   in if actualMs > requiredMs
+        then []
+        else [InsufficientTimeInGrade requiredMonths actualMs]
+
 -- | Apply the five promotion predicates and return every rule that failed.
 -- Empty list iff 'Onchain.BJJ.validatePromotion' would return 'True'.
 --
@@ -111,7 +136,6 @@ checkPromotion master current next =
   masterAuthorityViolations ++ generalRuleViolations
   where
     m = belt master
-    c = belt current
     n = belt next
 
     masterAuthorityViolations
@@ -124,29 +148,11 @@ checkPromotion master current next =
       | otherwise = []
 
     generalRuleViolations =
-      dateOrderingViolations ++ rungViolation ++ timeInGradeViolation
+      dateOrderingViolations ++ rungViolation current next ++ timeInGradeViolation current next
 
     dateOrderingViolations =
       [MasterDateAfterPromotion | not (beltDate master < beltDate next)]
         ++ [StudentDateNotMonotonic | not (beltDate next > beltDate current)]
-
-    -- Target must be exactly the successor of the current belt. 'Red10' has
-    -- no successor on-chain (@succ Red10@ trips @traceError@), so any target
-    -- off a Red10 current is a rung-skip.
-    rungViolation
-      | c == Red10 = [RungSkipped c n]
-      | n == succ c = []
-      | otherwise = [RungSkipped c n]
-
-    -- Time-in-grade is indexed by the /current/ belt: to leave belt X you
-    -- must have spent at least 'minMonthsForBelt X' at X.
-    timeInGradeViolation =
-      let requiredMonths = minMonthsForBelt c
-          requiredMs = getPOSIXTime (monthsToPosixTime requiredMonths)
-          actualMs = getPOSIXTime (beltDate next - beltDate current)
-       in if actualMs > requiredMs
-            then []
-            else [InsufficientTimeInGrade requiredMonths actualMs]
 
 -- | 'checkPromotion' variant that omits the master-authority check when the
 -- granter is not known (e.g. the HTTP endpoint was called without a
@@ -162,27 +168,11 @@ checkPromotionWithOptionalMaster mMaster current next = case mMaster of
   Just master -> checkPromotion master current next
   Nothing -> studentOnlyViolations
   where
-    c = belt current
-    n = belt next
-
     studentOnlyViolations =
-      studentDateViolation ++ rungViolation ++ timeInGradeViolation
+      studentDateViolation ++ rungViolation current next ++ timeInGradeViolation current next
 
     studentDateViolation =
       [StudentDateNotMonotonic | not (beltDate next > beltDate current)]
-
-    rungViolation
-      | c == Red10 = [RungSkipped c n]
-      | n == succ c = []
-      | otherwise = [RungSkipped c n]
-
-    timeInGradeViolation =
-      let requiredMonths = minMonthsForBelt c
-          requiredMs = getPOSIXTime (monthsToPosixTime requiredMonths)
-          actualMs = getPOSIXTime (beltDate next - beltDate current)
-       in if actualMs > requiredMs
-            then []
-            else [InsufficientTimeInGrade requiredMonths actualMs]
 
 -- | Earliest moment at which the time-in-grade requirement to leave the
 -- given belt is satisfied. The actual promotion date must be __strictly__

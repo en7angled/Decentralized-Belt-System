@@ -24,7 +24,7 @@ import DomainTypes.Core.Actions (ProfileData (..))
 import DomainTypes.Core.BJJ (BJJBelt (..))
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
-import GeniusYield.Types (GYTime)
+import GeniusYield.Types (GYTime, timeFromPOSIX)
 import DomainTypes.Transfer.Filters qualified as F
 import DomainTypes.Transfer.QueryResponses
   ( OrganizationDetailResponse (..),
@@ -247,7 +247,22 @@ loadPractitionerOrOrg pid = do
           eOrg <- liftIO $ try @SomeException $ runQuery ctx (getOrganizationInformation pid)
           case eOrg of
             Right org -> return $ Right org
-            Left _ -> runWithQueryErrorHandling $ throwIO ProfileNotFound
+            Left _ -> do
+              -- Rankless practitioner (e.g. pending first promotion): build a placeholder
+              -- from the profile datum rather than 404ing the whole awarder map (F-24).
+              eData <- liftIO $ try @SomeException $ runQuery ctx (getProfileStateDatumAndValue pid)
+              case eData of
+                Right (datum, _val) ->
+                  let pd = profileDatumToProfileData datum
+                   in return $
+                        Left $
+                          placeholderPractitioner
+                            pid
+                            (profileDataName pd)
+                            (profileDataDescription pd)
+                            (profileDataImageURI pd)
+                            (timeFromPOSIX 0)
+                Left _ -> runWithQueryErrorHandling $ throwIO ProfileNotFound
     else do
       pool <- asks pgPool
       mTy <- liftIO $ runSqlPool (lookupProfileTypeProjected pid) pool

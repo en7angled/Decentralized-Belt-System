@@ -180,7 +180,7 @@ getPromotionsPage ::
   QueryAppMonad PromotionsPageResponse
 getPromotionsPage limit offset promotionIds beltRefs achievedByRefs awardedByRefs profileRefs q fromTime toTime states orderBy sortOrder = do
   let limitOffset = C.normalizeLimitOffset limit offset
-      promotionsFilter = promotionsFilterFromParams promotionIds beltRefs achievedByRefs awardedByRefs profileRefs q fromTime toTime states
+      promotionsFilter = Just $ promotionsFilterFromParams promotionIds beltRefs achievedByRefs awardedByRefs profileRefs q fromTime toTime states
       order = C.normalizeOrder orderBy sortOrder
   items <- withBackend (L.getPromotions limitOffset promotionsFilter order) (P.getPromotions limitOffset promotionsFilter order)
   total <- withBackend (L.getPromotionsCount promotionsFilter) (P.getPromotionsCount promotionsFilter)
@@ -211,7 +211,7 @@ getAchievementsPage ::
   QueryAppMonad AchievementsPageResponse
 getAchievementsPage limit offset achievementIds awardedToRefs awardedByRefs accepted fromTime toTime q orderBy sortOrder = do
   let limitOffset = C.normalizeLimitOffset limit offset
-      achFilter = achievementFilterFromParams achievementIds awardedToRefs awardedByRefs accepted fromTime toTime q
+      achFilter = Just $ achievementFilterFromParams achievementIds awardedToRefs awardedByRefs accepted fromTime toTime q
       order = C.normalizeOrder orderBy sortOrder
   items <- withBackend (L.getAchievements limitOffset achFilter order) (P.getAchievements limitOffset achFilter order)
   total <- withBackend (L.getAchievementsCount achFilter) (P.getAchievementsCount achFilter)
@@ -238,7 +238,7 @@ getProfilesPage ::
   QueryAppMonad ProfilesPageResponse
 getProfilesPage limit offset profileRefs profileType activeMembershipOrg membershipOrg beltRefs q orderBy sortOrder = do
   let limitOffset = C.normalizeLimitOffset limit offset
-      profileFilter = profileFilterFromParams profileRefs profileType activeMembershipOrg membershipOrg beltRefs q
+      profileFilter = Just $ profileFilterFromParams profileRefs profileType activeMembershipOrg membershipOrg beltRefs q
       order = C.normalizeOrder orderBy sortOrder
   profiles <- withBackend (L.getProfiles limitOffset profileFilter order) (P.getProfiles limitOffset profileFilter order)
   total <- withBackend (L.getProfilesCount profileFilter) (P.getProfilesCount profileFilter)
@@ -264,7 +264,7 @@ getPractitionerExplorerPage ::
   QueryAppMonad PractitionerExplorerPageResponse
 getPractitionerExplorerPage limit offset profileRefs activeMembershipOrg membershipOrg beltRefs q orderBy sortOrder = do
   let limitOffset = C.normalizeLimitOffset limit offset
-      profileFilter = profileFilterFromParams profileRefs (Just Practitioner) activeMembershipOrg membershipOrg beltRefs q
+      profileFilter = Just $ profileFilterFromParams profileRefs (Just Practitioner) activeMembershipOrg membershipOrg beltRefs q
       order = C.normalizeOrder orderBy sortOrder
   profiles <- withBackend (L.getProfiles limitOffset profileFilter order) (P.getProfiles limitOffset profileFilter order)
   total <- withBackend (L.getProfilesCount profileFilter) (P.getProfilesCount profileFilter)
@@ -321,7 +321,7 @@ getHomeExplorerHubPage recentN latestN = do
   promotions <- withBackend (L.getPromotions Nothing Nothing (Just (PromotionsOrderByDate, Desc))) (P.getPromotions Nothing Nothing (Just (PromotionsOrderByDate, Desc)))
   let recentPromos = take recentN promotions
   recentInfos <- Agg.promotionsToInformationBatch recentPromos
-  let explorerProfileFilter = profileFilterFromParams [] (Just Practitioner) Nothing Nothing [] Nothing
+  let explorerProfileFilter = Just $ profileFilterFromParams [] (Just Practitioner) Nothing Nothing [] Nothing
   profiles <- withBackend (L.getProfiles (Just (latestN, 0)) explorerProfileFilter (Just (ProfilesOrderByName, Asc))) (P.getProfiles (Just (latestN, 0)) explorerProfileFilter (Just (ProfilesOrderByName, Asc)))
   latestPractitionerResponses <-
     withBackend

@@ -71,20 +71,30 @@ getUTxOWithTokenAtAddresses nftAC addrs onNotFound = do
   let utxosWithNFT = filterUTxOs (\utxo -> valueAssetPresent (utxoValue utxo) nftAC) utxos
   singleUTxOOrThrow (utxosToList utxosWithNFT) onNotFound MultipleUtxosFound
 
+-- | Look up the single UTxO holding an NFT and parse its state datum+value.
+-- Throws @onNotFound@ if the UTxO is absent, @onParseFail@ if its datum does not
+-- parse — so a genuine parse failure is distinguishable from a missing UTxO (F-26).
+getStateOrThrow ::
+  (GYTxQueryMonad m) =>
+  GYAssetClass ->
+  (GYUTxO -> Maybe (a, Value)) ->
+  TxBuildingException ->
+  TxBuildingException ->
+  m (a, Value)
+getStateOrThrow gyAC parse onNotFound onParseFail = do
+  utxo <- getUTxOWithNFTOrThrow gyAC onNotFound
+  case parse utxo of
+    Just r -> return r
+    Nothing -> throwError (GYApplicationException onParseFail)
+
 -- | Get profile state datum and value from asset class
 getProfileStateDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (CIP68Datum Onchain.OnchainProfile, Value)
-getProfileStateDatumAndValue profileRefAC = do
-  profileStateUTxO <- getUTxOWithNFTOrThrow profileRefAC ProfileNotFound
-  case profileAndValueFromUTxO profileStateUTxO of
-    Just (profile, value) -> return (profile, value)
-    Nothing -> throwError (GYApplicationException DatumParseError)
+getProfileStateDatumAndValue profileRefAC =
+  getStateOrThrow profileRefAC profileAndValueFromUTxO ProfileNotFound DatumParseError
 
 getRankStateDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (Onchain.OnchainRank, Value)
-getRankStateDatumAndValue rankRefAC = do
-  rankStateUTxO <- getUTxOWithNFTOrThrow rankRefAC RankNotFound
-  case rankAndValueFromUTxO rankStateUTxO of
-    Just (rank, value) -> return (rank, value)
-    Nothing -> throwError (GYApplicationException RankNotFound)
+getRankStateDatumAndValue rankRefAC =
+  getStateOrThrow rankRefAC rankAndValueFromUTxO RankNotFound DatumParseError
 
 getProfileRanks :: (GYTxQueryMonad m) => GYAssetClass -> m [Onchain.OnchainRank]
 getProfileRanks profileRef = do
@@ -443,11 +453,8 @@ getAllMembershipIntervalInformation nid = do
 
 -- | Get an achievement CIP68 datum and value by its NFT asset class.
 getAchievementDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (CIP68Datum OnchainTypes.OnchainAchievement, Value)
-getAchievementDatumAndValue achievementAC = do
-  utxo <- getUTxOWithNFTOrThrow achievementAC AchievementNotFound
-  case achievementAndValueFromUTxO utxo of
-    Just (datum, value) -> return (datum, value)
-    Nothing -> throwError (GYApplicationException AchievementNotFound)
+getAchievementDatumAndValue achievementAC =
+  getStateOrThrow achievementAC achievementAndValueFromUTxO AchievementNotFound DatumParseError
 
 -- | Get all achievements at the achievements validator address.
 getAllAchievements :: (GYTxQueryMonad m) => GYNetworkId -> m [Achievement]
