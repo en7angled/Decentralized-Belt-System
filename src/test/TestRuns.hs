@@ -14,6 +14,7 @@ module TestRuns
     maliciousBjjAcceptPromotion,
     maliciousMintOracleNFTWithExtraToken,
     maliciousMintOracleNFTWrongName,
+    maliciousCreateProfileWithBurn,
   )
 where
 
@@ -40,7 +41,7 @@ import TxBuilding.Context
 import TxBuilding.Interactions
 import TxBuilding.Lookups
 import TxBuilding.Skeletons
-import TxBuilding.Utils (txOutRefToV3Plutus)
+import TxBuilding.Utils (tnFromGYAssetClass, txOutRefToV3Plutus)
 import TxBuilding.Validators
 import Utils
 
@@ -211,6 +212,46 @@ maliciousMintOracleNFTWrongName w = asUser w $ do
       (valueSingleton wrongAC 1 <> valueFromLovelace 3500000)
   void $ sendSkeleton' $ mconcat [spendSeed, mintNFT, lockOutput]
   return wrongAC
+
+-- | MALICIOUS: build a normal CreateProfile (InitProfileAction) skeleton for a NEW profile, then
+-- append an extra burn (-1) of a protocol token the acting wallet already holds (a previously
+-- minted User NFT) under the SAME minting-policy witness. Since 'GYTxSkeleton's Semigroup merges
+-- mints for the same policy witness via 'Map.unionWith (+)' (keeping the LEFT skeleton's redeemer),
+-- putting the real skeleton on the left means the merged tx runs under the genuine CreateProfile
+-- redeemer while 'txInfoMint' also carries the burn. This tests the F-21 hardening:
+-- 'mintValueBurned txInfoMint == mempty' in 'handleCreateProfile' (MintingPolicy.hs M5/M6) must
+-- reject it.
+maliciousCreateProfileWithBurn ::
+  (GYTxGameMonad m, HasCallStack) =>
+  DeployedScriptsContext ->
+  -- | The attacker/actor (must hold the victim User NFT being burned).
+  User ->
+  -- | Victim User NFT asset class held by the actor (burned alongside the new mint).
+  GYAssetClass ->
+  -- | The CreateProfile-style action for the NEW profile being (fraudulently) created.
+  ProfileActionType ->
+  m GYTxId
+maliciousCreateProfileWithBurn txBuildingContext actor victimUserAC actionType = asUser actor $ do
+  let interaction =
+        Interaction
+          { action = ProfileAction actionType,
+            userAddresses = UserAddresses (toList $ User.userAddresses actor) (User.userChangeAddress actor) Nothing,
+            recipient = Nothing
+          }
+  (realSkeleton, _mGyAC) <- runReaderT (interactionToTxSkeleton interaction) txBuildingContext
+
+  let mpGY = getMintingPolicyFromCtx txBuildingContext
+  let mpRef = getMintingPolicyRef txBuildingContext
+  let mp = GYMintReference @'PlutusV3 mpRef mpGY
+  victimUserTN <- tnFromGYAssetClass victimUserAC
+  -- Placeholder redeemer: discarded by the Semigroup merge (left/real skeleton's redeemer wins).
+  let placeholderRedeemer = redeemerFromPlutusData ()
+  let burnSkeleton = mustMint mp placeholderRedeemer victimUserTN (-1)
+
+  gyLogInfo' ("MALICIOUS" :: GYLogNamespace) "Attempting CreateProfile with a burn riding along (F-21)..."
+  (gyTxBody, gyTxId) <- sendSkeleton' $ realSkeleton <> burnSkeleton
+  logTxBudget gyTxBody
+  return gyTxId
 
 bjjInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> ProfileActionType -> Maybe GYAddress -> m (GYTxId, GYAssetClass)
 bjjInteraction txBuildingContext user actionType mrecipient = asUser user $ do

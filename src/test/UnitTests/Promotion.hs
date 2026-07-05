@@ -18,7 +18,8 @@ import Onchain.BJJ
 import Test.Fixtures (masterBProfileData, masterProfileData, maxLengthImageURI, profileDataMaxLengthMetadata, profileDataOverLongName, studentProfileData)
 import Test.Tasty
 import Test.Tasty.HUnit (testCase, (@?=))
-import TestRuns (bjjInteraction, deployBJJValidators, logPractitionerProfileInformation, maliciousBjjAcceptPromotion)
+import TestRuns (bjjInteraction, deployBJJValidators, logPractitionerProfileInformation, maliciousBjjAcceptPromotion, maliciousCreateProfileWithBurn)
+import TxBuilding.Skeletons (gyDeriveUserFromRefAC)
 
 promotionTests :: (HasCallStack) => TestTree
 promotionTests =
@@ -252,7 +253,8 @@ promotionSecurityTests =
       mkTestFor "Test Case 2.2: Sequential promotions from same master work correctly" sequentialPromotionsWork,
       mkTestFor "Test Case 2.3: Accepting a promotion without the student's User NFT fails (RanksValidator)" maliciousAcceptWithoutUserNftFails,
       mkTestFor "Test Case 2.4: Accepting the same promotion twice fails" doubleAcceptPromotionFails,
-      mkTestFor "Test Case 2.5: UpdateProfile by a non-owner fails" nonOwnerUpdateProfileFails
+      mkTestFor "Test Case 2.5: UpdateProfile by a non-owner fails" nonOwnerUpdateProfileFails,
+      mkTestFor "Test Case 2.6: Minting while burning a protocol token fails (F-21)" burnAlongMintFails
     ]
   where
     multipleMastersCanPromote :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -537,4 +539,34 @@ promotionSecurityTests =
             (UpdateProfileAction profileRefAC Nothing "ipfs://QmAttackerImage")
             Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Non-owner UpdateProfile correctly rejected!"
+      return ()
+
+    burnAlongMintFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    burnAlongMintFails TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      -- w1 creates profile #1 normally; w1 now holds its User NFT (the victim token).
+      (_txId, victimProfileRefAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      victimUserAC <- gyDeriveUserFromRefAC victimProfileRefAC
+      waitNSlots_ 1
+      -- w1 attempts to create profile #2 while ALSO burning profile #1's User NFT under the
+      -- same CreateProfile redeemer invocation (merged via the tx-skeleton Semigroup). Pre-E this
+      -- would have passed (mintValueMinted still matches); post-E mintValueBurned /= mempty (M5).
+      mustFail $
+        void $
+          maliciousCreateProfileWithBurn
+            ctx
+            (w1 testWallets)
+            victimUserAC
+            (InitProfileAction masterBProfileData Practitioner creationDate)
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "CreateProfile with a burn riding along correctly rejected (F-21)!"
       return ()
