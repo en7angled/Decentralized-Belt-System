@@ -103,6 +103,8 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
                         -- NFT, so >= 1 implies == 1. PV also independently checks this.
                         and
                           [ traceIfFalse "R2" $ V1.assetClassValueOf (valueSpent txInfo) profileUserAssetClass == 1, -- Must spend User NFT (R2)
+                            -- Own Promotion NFT (R2b)
+                            traceIfFalse "R2b" (V1.assetClassValueOf ownValue (promotionId promotionRankDatum) == 1),
                             traceIfFalse "R3" $ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress profileOutputIdx updatedProfileCIP68Datum studentProfileValue profilesValidatorAddress txInfoOutputs, -- Lock profile at PV (R3); >= (balancer may add min-ADA)
                             traceIfFalse "R4" $ Utils.checkTxOutAtIndexWithDatumMinValueAndAddress rankOutputIdx newRank ownValue ownAddress txInfoOutputs -- Lock rank at RV (R4); >= ownValue (balancer may add min-ADA)
                           ]

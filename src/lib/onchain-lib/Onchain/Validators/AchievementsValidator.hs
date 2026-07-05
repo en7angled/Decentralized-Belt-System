@@ -91,7 +91,8 @@ achievementsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) script
                           V1.assetClassValueOf
                             (valueSpent txInfo)
                             practitionerUserAC
-                            == 1 -- Must spend practitioner user NFT
+                            == 1, -- Must spend practitioner user NFT
+                          V1.assetClassValueOf ownValue (achievementId achievement) == 1 -- Own achievement NFT
                         ]
         _ -> traceError "A2" -- Invalid script info (A2)
 

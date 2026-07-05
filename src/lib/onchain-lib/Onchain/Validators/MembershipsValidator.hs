@@ -225,6 +225,7 @@ handleUpdateNode txInfo@TxInfo {..} ownValue ownAddress spendingNode lastInterva
         $ and
           [ validRedeemerId,
             V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1,
+            V1.assetClassValueOf ownValue historyId == 1, -- Own history node NFT
             Utils.checkTxOutAtIndexWithDatumMinValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- >= ownValue; balancer may add min-ADA
             mintValueMinted txInfoMint == newIntervalNFT && mintValueBurned txInfoMint == mempty
           ]
