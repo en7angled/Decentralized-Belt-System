@@ -22,6 +22,7 @@ import PlutusLedgerApi.V1.Value (flattenValue)
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V3.Tx qualified as V3
 import System.Directory.Extra
+import System.Exit (die)
 import TxBuilding.Exceptions (TxBuildingException (..))
 import Utils
 
@@ -79,14 +80,14 @@ readMnemonicFile path = do
       content <- Data.Text.IO.readFile path
       readMnemonic content
     else do
-      error $ "File not found: " <> show path
+      die $ "File not found: " <> show path
 
 readMnemonic :: Text -> IO GYExtendedPaymentSigningKey
 readMnemonic content = do
   case walletKeysToExtendedPaymentSigningKey <$> walletKeysFromMnemonic (Data.Text.words content) of
     Left err -> do
       putStrLn $ yellowColorString $ "Error reading mnemonic: " <> err
-      error err
+      die err
     Right key -> return key
 
 -- | Get inline datum and value from UTxO

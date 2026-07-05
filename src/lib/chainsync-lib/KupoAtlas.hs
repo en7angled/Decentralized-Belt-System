@@ -7,7 +7,6 @@ import qualified Cardano.Api as C
 import qualified Data.ByteString.Base16 as B16
 import Data.Either.Extra (maybeToEither)
 import qualified Data.Map as Map
-import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
@@ -38,8 +37,11 @@ decodeGYDatumHash :: Text -> Either String GYDatumHash
 decodeGYDatumHash t = maybeToEither "Invalid datum hash" (datumHashFromHex (T.unpack t))
 
 -- | Decode a hex-encoded script hash into an Atlas 'GYScriptHash'.
-decodeGYScriptHash :: Text -> GYScriptHash
-decodeGYScriptHash t = fromString (T.unpack t)
+decodeGYScriptHash :: Text -> Either String GYScriptHash
+decodeGYScriptHash t =
+  case C.deserialiseFromRawBytesHex C.AsScriptHash (TE.encodeUtf8 t) of
+    Left err -> Left ("Invalid script hash: " <> show err)
+    Right scriptHash -> Right (scriptHashFromApi scriptHash)
 
 -- | Decode a hex-encoded CBOR datum into an Atlas 'GYDatum'.
 decodeGYDatum :: Text -> Either String GYDatum
@@ -89,6 +91,7 @@ kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index
   amSpentAtInputIndex <- mapM (maybeToEither "Invalid spent input index") (spent_input_index <$> spent_at)
   amSpentWithRedeemer <- mapM kupoRedeemerToGYRedeemer (spent_redeemer =<< spent_at)
   gyValue <- kupoValueToGYValue value
+  gyScriptHash <- mapM decodeGYScriptHash script_hash
   return $
     AtlasMatch
       { amTransactionIndex = transaction_index,
@@ -97,7 +100,7 @@ kupoMatchToAtlasMatch KupoMatch {transaction_index, transaction_id, output_index
         amAddress = address',
         amValue = gyValue,
         amDatum = datum',
-        amScriptHash = decodeGYScriptHash <$> script_hash,
+        amScriptHash = gyScriptHash,
         amCreatedAt = createdSlot,
         amCreatedAtHeaderHash = header_hash created_at,
         amSpentAt = spentSlot,

@@ -10,6 +10,7 @@ import Data.List.Extra (dropPrefix)
 import Data.Swagger.SchemaOptions (SchemaOptions, fromAesonOptions)
 import System.Directory.Extra
 import System.Environment
+import System.Exit (die)
 import Prelude
 
 -- | Wrap a string with an ANSI color code and surrounding newlines.
@@ -54,7 +55,7 @@ decodeConfigEnvOrFile envName filePath = do
       putStrLn $ yellowColorString $ "Parsing config from env var " <> show envName
       case eitherDecodeStrict (BS8.pack raw) of
         Right a -> return (Just a)
-        Left err -> error $ "Decoding env var " <> envName <> " failed: " <> err
+        Left err -> die $ "Decoding env var " <> envName <> " failed: " <> err
     Nothing -> do
       putStrLn $ yellowColorString $ "Parsing config from file " <> filePath
       decodeConfigFile filePath

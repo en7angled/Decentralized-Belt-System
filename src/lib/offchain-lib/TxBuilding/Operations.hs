@@ -435,8 +435,6 @@ acceptPromotionTX gyPromotionId ownAddrs = do
 
   gyRankAC <- assetClassFromPlutus' $ Onchain.rankId plutusStudentUpdatedRankDatum
 
-  gyLogInfo' "plutusPromotionRankDatum" $ "plutusPromotionRankDatum" <> show plutusPromotionRankDatum
-  gyLogInfo' "plutusStudentUpdatedRankDatum" $ "plutusStudentUpdatedRankDatum" <> show plutusStudentUpdatedRankDatum
   return
     ( mconcat
         [ spendsStudentProfileUserNFT, -- Input (no output index)

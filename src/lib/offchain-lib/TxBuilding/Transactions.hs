@@ -83,7 +83,6 @@ runBJJActionWithPK txBuildingCtx@TxBuildingContext {..} skey action optionalReci
   let my_addr = addressFromSkey providerCtx skey
   let userAddrs = UserAddresses [my_addr] my_addr Nothing
   let interaction = Interaction action userAddrs optionalRecipient
-  print interaction
   putStrLn (yellowColorString "Building transaction...")
   (txBody, mAssetClass) <- runReaderT (interactionToTxBody interaction) txBuildingCtx
   let txSigned = signGYTxBody txBody [skey]
