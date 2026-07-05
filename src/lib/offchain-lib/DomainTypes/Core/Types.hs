@@ -156,7 +156,7 @@ instance FromHttpApiData PromotionState where
 promotionStateFromBelts :: Maybe BJJBelt -> BJJBelt -> PromotionState
 promotionStateFromBelts Nothing _ = PromotionPending
 promotionStateFromBelts (Just current) proposed
-  | current > proposed = PromotionSuperseded
+  | current >= proposed = PromotionSuperseded
   | otherwise = PromotionPending
 
 data Promotion

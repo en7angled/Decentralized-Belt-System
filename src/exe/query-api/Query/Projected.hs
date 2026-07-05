@@ -618,6 +618,12 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
       afterOrder = applyPromotionOrdering maybeOrder afterState
   pure $ C.applyLimits maybeLimitOffset afterOrder
 
+-- | Unlike 'getProfilesCount'/'getAchievementsCount', this cannot be a single SQL @COUNT(*)@ (F-40):
+-- 'getPromotions' merges two source tables (pending\/superseded from 'PromotionProjection',
+-- accepted from 'RankProjection'), and a @promotionFilterState@ predicate matches against
+-- 'promotionState', which is derived per-row by 'promotionStateFromBelts' from a practitioner's
+-- current belt (itself computed in Haskell via 'currentBeltMapForPractitioners', not a SQL column).
+-- Counting requires the same loaded-and-merged rows as 'getPromotions'.
 getPromotionsCount :: (MonadIO m, MonadReader QueryAppContext m) => Maybe F.PromotionFilter -> m Int
 getPromotionsCount maybePromotionFilter = Prelude.length <$> getPromotions Nothing maybePromotionFilter Nothing
 

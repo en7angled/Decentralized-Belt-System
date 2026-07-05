@@ -3,10 +3,9 @@
 
 module Query.Live where
 
-import Control.Exception (SomeException, try)
+import Control.Exception (throwIO, try)
 import Control.Monad.Reader
 import Data.Aeson (ToJSON)
-import Data.Either.Extra (fromRight)
 import Data.List qualified as L
 import Data.Map.Strict qualified as M
 import Data.MultiSet qualified as MultiSet
@@ -16,10 +15,12 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Typeable (cast)
 import Database.Persist.Sql (Entity (..), runSqlPool, selectList)
 import DomainTypes.Core.BJJ (BJJBelt)
 import DomainTypes.Core.Types
 import DomainTypes.Transfer.Types
+import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
 import GeniusYield.Types (GYAddress, timeFromPOSIX)
 import DomainTypes.Transfer.Filters
   ( AchievementFilter (..)
@@ -45,6 +46,7 @@ import Query.Projected
 import QueryAppMonad (QueryAppContext (..), QueryAppMonad, runWithQueryErrorHandlingWrapped)
 import Storage (ProfileProjection (..))
 import TxBuilding.Context
+import TxBuilding.Exceptions (TxBuildingException (ProfileNotFound))
 import TxBuilding.Lookups
 import DomainTypes.Transfer.OrderBy
 import DomainTypes.Transfer.OrderBy qualified as Types
@@ -269,11 +271,22 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
       afterOrder = applyOrdering maybeOrder afterFilter
   return $ applyLimits maybeLimitOffset afterOrder
   where
+    -- Only the expected 'ProfileNotFound' (practitioner profile UTxO missing) is treated as
+    -- "no current belt"; any other exception (e.g. a backend/query failure) is logged and
+    -- rethrown rather than silently reported as 'PromotionPending' (F-35).
     assignPromotionState ctx promotion = do
       let pid = promotionAchievedByProfileId promotion
           belt = promotionBelt promotion
-      r <- try @SomeException (runQuery ctx (getCurrentBeltForPractitioner pid))
-      let currentBelt = fromRight Nothing r
+      r <- try @GYTxMonadException (runQuery ctx (getCurrentBeltForPractitioner pid))
+      currentBelt <- case r of
+        Right belt' -> return belt'
+        Left ex
+          | GYApplicationException appE <- ex,
+            Just ProfileNotFound <- cast appE ->
+              return Nothing
+          | otherwise -> do
+              putStrLn $ "assignPromotionState: unexpected exception for practitioner " <> show pid <> ": " <> show ex
+              throwIO ex
       return promotion {promotionState = promotionStateFromBelts currentBelt belt}
 
     applyOrdering Nothing promotions = promotions

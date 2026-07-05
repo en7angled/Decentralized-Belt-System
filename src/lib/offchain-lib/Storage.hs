@@ -284,16 +284,17 @@ putMatchAndProjections networkId km = do
 
 -- | Derive and store the projections for a raw match (does NOT re-store the raw match). Reused by
 -- 'rollbackTo' to replay the surviving log. Conversion/projection failures are logged and skipped.
+-- TODO(stream ?): dead-letter table for replayable failed projections.
 projectAndStore :: (MonadIO m) => GYNetworkId -> KupoMatch -> SqlPersistT m ()
 projectAndStore networkId km =
   case kupoMatchToAtlasMatch km of
-    Left convErr -> liftIO $ putStrLn ("Conversion error: " <> convErr)
+    Left convErr -> liftIO $ putStrLn ("PROJECTION ERROR (dropped, raw match retained): conversion error: " <> convErr)
     Right am -> do
       let slotNoInt = slot_no (created_at km)
           header = header_hash (created_at km)
       ev <- runExceptT (projectChainEvent networkId am)
       case ev of
-        Left e -> liftIO $ putStrLn ("Projection error: " <> show e)
+        Left e -> liftIO $ putStrLn ("PROJECTION ERROR (dropped, raw match retained): " <> show e)
         Right proj -> case proj of
           RankEvent r -> do
             putRankProjection slotNoInt header r

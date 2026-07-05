@@ -145,4 +145,7 @@ txBuildingExceptionToHttpStatus DeployedScriptsNotReady = 503
 txBuildingExceptionToHttpStatus ProtocolPaused = 503
 txBuildingExceptionToHttpStatus NoDustFound = 404
 txBuildingExceptionToHttpStatus NFTNotFound = 404
+txBuildingExceptionToHttpStatus ScriptNotFound = 503
+txBuildingExceptionToHttpStatus OracleDatumInvalid = 500
+txBuildingExceptionToHttpStatus DatumParseError = 500
 txBuildingExceptionToHttpStatus _ = 400

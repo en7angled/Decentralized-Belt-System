@@ -4,6 +4,7 @@ module TxBuilding.Operations where
 import Control.Monad (unless, when)
 import Control.Monad.Reader.Class (MonadReader, ask, asks)
 import Data.Maybe
+import Data.Typeable (cast)
 import DomainTypes.Core.Actions (AdminActionType (..))
 import GHC.Stack (HasCallStack)
 import GeniusYield.TxBuilder
@@ -763,6 +764,18 @@ acceptMembershipIntervalTX gyIntervalAC ownAddrs = do
         isLockingUpdatedInterval -- Output 0: Updated interval
       ]
 
+-- | Whether the given addresses hold a UTxO with the given (User NFT) asset class.
+-- Treats only 'ProfileNotFound' as absence ('False'); any other exception (e.g. a
+-- backend/query failure, or 'MultipleUtxosFound') is rethrown rather than swallowed (F-35).
+hasUserNFTAt :: (GYTxQueryMonad m) => GYAssetClass -> [GYAddress] -> m Bool
+hasUserNFTAt nftAC addrs =
+  catchError
+    (True <$ getUTxOWithTokenAtAddresses nftAC addrs ProfileNotFound)
+    ( \e -> case e of
+        GYApplicationException ex | Just ProfileNotFound <- cast ex -> return False
+        _ -> throwError e
+    )
+
 -- | Update the end date of a membership interval (org or practitioner).
 -- Corresponds to 'UpdateEndDate' spending (no minting, no fee).
 -- Caller must have either the organization User NFT or the practitioner User NFT.
@@ -799,9 +812,11 @@ updateEndDateTX gyIntervalAC gyHistoryNodeAC newEndDateGY ownAddrs validityOverr
   gyPractitionerRef <- assetClassFromPlutus' (OnchainTypes.membershipIntervalPractitionerId interval)
   practitionerUserAC <- gyDeriveUserFromRefAC gyPractitionerRef
 
-  -- User must have either org or practitioner User NFT (validator enforces exactly one)
-  hasOrg <- catchError (True <$ getUTxOWithTokenAtAddresses orgUserAC ownAddrs ProfileNotFound) (const $ return False)
-  hasPractitioner <- catchError (True <$ getUTxOWithTokenAtAddresses practitionerUserAC ownAddrs ProfileNotFound) (const $ return False)
+  -- User must have either org or practitioner User NFT (validator enforces exactly one).
+  -- Only the expected 'ProfileNotFound' is treated as absence; any other error (e.g. a
+  -- backend/query failure) is rethrown rather than silently treated as "does not have it" (F-35).
+  hasOrg <- hasUserNFTAt orgUserAC ownAddrs
+  hasPractitioner <- hasUserNFTAt practitionerUserAC ownAddrs
   spendUserNFT <- do
     case (hasOrg, hasPractitioner) of
       (True, _) -> txMustSpendFromAddress orgUserAC ownAddrs

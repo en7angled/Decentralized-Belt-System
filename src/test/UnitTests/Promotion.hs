@@ -40,8 +40,9 @@ promotionStateFromBeltsTests =
         promotionStateFromBelts (Just Blue) White @?= PromotionSuperseded,
       testCase "current rank below promotion belt -> pending" $
         promotionStateFromBelts (Just White) Blue @?= PromotionPending,
-      testCase "equal belts -> pending" $
-        promotionStateFromBelts (Just Blue) Blue @?= PromotionPending
+      testCase "same current and proposed belt is Superseded (F-37)" $
+        [promotionStateFromBelts (Just b) b | b <- [White .. Red10]]
+          @?= replicate (length [White .. Red10]) PromotionSuperseded
     ]
 
 promotionTestsGroup :: (HasCallStack) => TestTree
