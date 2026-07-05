@@ -149,3 +149,10 @@ txBuildingExceptionToHttpStatus ScriptNotFound = 503
 txBuildingExceptionToHttpStatus OracleDatumInvalid = 500
 txBuildingExceptionToHttpStatus DatumParseError = 500
 txBuildingExceptionToHttpStatus _ = 400
+
+-- | Stable, machine-readable error code for a 'TxBuildingException' — the
+-- constructor name (e.g. @"ProfileNotFound"@, @"CannotAddMembershipInterval"@).
+-- Clients should match on this instead of the human-readable message text,
+-- which is subject to rewording. Derived from the (stable) derived 'Show'.
+txBuildingExceptionCode :: TxBuildingException -> String
+txBuildingExceptionCode = takeWhile (/= ' ') . show

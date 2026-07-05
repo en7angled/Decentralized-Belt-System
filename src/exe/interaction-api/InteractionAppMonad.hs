@@ -17,6 +17,8 @@ import Constants qualified
 import Control.Exception (displayException, try)
 import Control.Monad.Except
 import Control.Monad.Reader
+import Data.Aeson (encode, object, (.=))
+import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Text hiding (elem, reverse, take)
 import Data.Time (defaultTimeLocale, getCurrentTime)
 import Data.Time.Format (formatTime)
@@ -25,7 +27,7 @@ import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException)
 import GeniusYield.Types
 import Servant
 import TxBuilding.Context
-import TxBuilding.Exceptions (txBuildingExceptionToHttpStatus)
+import TxBuilding.Exceptions (TxBuildingException, txBuildingExceptionCode, txBuildingExceptionToHttpStatus)
 import IPFS (IPFSConfig)
 import TxBuilding.Interactions (Interaction)
 import TxBuilding.Operations (ensureDeployedScriptsAreReady)
@@ -63,6 +65,13 @@ instance MonadReader InteractionAppContext InteractionAppMonad where
   local :: (InteractionAppContext -> InteractionAppContext) -> InteractionAppMonad a -> InteractionAppMonad a
   local f (InteractionAppMonad app) = InteractionAppMonad (local f app)
 
+-- | Build a 'ServerError' for a 'TxBuildingException' with a structured JSON
+-- body @{"code": <constructor>, "message": <human text>}@. Clients match on the
+-- stable @code@; @message@ stays available for display/fallback text matching.
+txBuildingServantErr :: Int -> TxBuildingException -> ServerError
+txBuildingServantErr status txEx =
+  mkServantErr status $ BL8.unpack $ encode $ object ["code" .= txBuildingExceptionCode txEx, "message" .= displayException txEx]
+
 -- | Run an IO action in the TxBuilding context with standardized error handling.
 -- Maps 'TxBuildingException' constructors to appropriate HTTP status codes
 -- using the centralized 'txBuildingExceptionToHttpStatus' mapping.
@@ -75,9 +84,8 @@ runWithTxErrorHandling action = InteractionAppMonad $ do
         GYApplicationException appE
           | Just txEx <- cast appE -> do
               let status = txBuildingExceptionToHttpStatus txEx
-              let msg = displayException txEx
-              liftIO $ putStrLn $ "TxBuildingException (" <> show status <> "): " <> msg
-              throwError $ mkServantErr status msg
+              liftIO $ putStrLn $ "TxBuildingException (" <> show status <> ") [" <> txBuildingExceptionCode txEx <> "]: " <> displayException txEx
+              throwError $ txBuildingServantErr status txEx
         _ -> do
           liftIO $ putStrLn $ "Unexpected exception: " <> show ex
           throwError $ mkServantErr 500 (genericErrorMessage 500)
@@ -122,9 +130,8 @@ checkDeployedScriptsAreReady = do
           GYApplicationException appE
             | Just txEx <- cast appE -> do
                 let status = txBuildingExceptionToHttpStatus txEx
-                let msg = displayException txEx
-                liftIO $ putStrLn $ "checkDeployedScriptsAreReady TxBuildingException (" <> show status <> "): " <> msg
-                throwError $ mkServantErr status msg
+                liftIO $ putStrLn $ "checkDeployedScriptsAreReady TxBuildingException (" <> show status <> ") [" <> txBuildingExceptionCode txEx <> "]: " <> displayException txEx
+                throwError $ txBuildingServantErr status txEx
           _ -> do
             liftIO $ putStrLn $ "checkDeployedScriptsAreReady GYTxMonadException: " <> show ex
             throwError $ mkServantErr 503 (genericErrorMessage 503)
