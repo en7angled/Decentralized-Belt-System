@@ -115,6 +115,7 @@ ranksLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) scriptInfo) =
 -------------------------------------------------------------------------------
 
 -- | Lose the types
+{-# INLINEABLE ranksUntyped #-}
 ranksUntyped :: BuiltinData -> BuiltinUnit
 ranksUntyped = mkUntypedLambda ranksLambda
 

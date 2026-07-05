@@ -194,6 +194,7 @@ handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass minti
 -------------------------------------------------------------------------------
 
 -- | Lose the types
+{-# INLINEABLE profilesUntyped #-}
 profilesUntyped :: BuiltinData -> BuiltinUnit
 profilesUntyped = Utils.mkUntypedLambda profilesLambda
 

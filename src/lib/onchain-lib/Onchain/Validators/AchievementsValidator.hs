@@ -102,6 +102,7 @@ achievementsLambda (ScriptContext txInfo@TxInfo {..} (Redeemer bredeemer) script
 -------------------------------------------------------------------------------
 
 -- | Lose the types
+{-# INLINEABLE achievementsUntyped #-}
 achievementsUntyped :: BuiltinData -> BuiltinUnit
 achievementsUntyped = Utils.mkUntypedLambda achievementsLambda
 

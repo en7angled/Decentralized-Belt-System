@@ -291,6 +291,7 @@ handleUpdateEndDate txInfo@TxInfo {..} ownValue ownAddress interval membershipHi
 -------------------------------------------------------------------------------
 
 -- | Lose the types
+{-# INLINEABLE membershipsUntyped #-}
 membershipsUntyped :: BuiltinData -> BuiltinUnit
 membershipsUntyped = mkUntypedLambda membershipsLambda
 

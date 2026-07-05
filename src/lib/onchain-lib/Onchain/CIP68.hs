@@ -47,6 +47,7 @@ type ImageURI = BuiltinByteString
 
 type Metadata = PlutusTx.AssocMap.Map BuiltinByteString BuiltinByteString
 
+{-# INLINEABLE metadataVersion #-}
 metadataVersion :: Integer
 metadataVersion = 1
 
