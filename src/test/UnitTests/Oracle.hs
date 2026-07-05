@@ -18,7 +18,7 @@ import GeniusYield.TxBuilder.User qualified as User
 import GeniusYield.Types
 import Onchain.Protocol.Types (FeeConfig (..), OracleParams (..))
 import PlutusTx.Prelude (isNothing)
-import Test.Fixtures (adminTestProfileData)
+import Test.Fixtures (adminTestProfileData, studentProfileData)
 import Test.Helpers (assert, queryOracle)
 import Test.Tasty
 import TestRuns (adminInteraction, bjjInteraction, deployBJJValidators)
@@ -66,7 +66,8 @@ oracleAdminTests =
       mkTestFor "Test Case 0.3: Set fees and clear fees" setAndClearFees,
       mkTestFor "Test Case 0.4: Set min UTxO value" setMinUTxOValue,
       mkTestFor "Test Case 0.5: Sequential admin actions with profile interactions" sequentialAdminWithProfiles,
-      mkTestFor "Test Case 0.6: Non-admin oracle update fails" nonAdminOracleUpdateFails
+      mkTestFor "Test Case 0.6: Non-admin oracle update fails" nonAdminOracleUpdateFails,
+      mkTestFor "Test Case 0.7: Profile-creation fee is delivered to the fee address" feeReachesFeeAddress
     ]
   where
     pauseAndUnpause :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -184,8 +185,11 @@ oracleAdminTests =
       assert (opPaused params1)
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Protocol paused."
 
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 3: Skipping paused profile creation test (CLB limitation for expected-failure tests)."
-      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Note: MintingPolicy enforces 'Protocol is paused' check on-chain."
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 3: Attempting profile creation while paused (must fail)."
+      mustFail $
+        void $
+          bjjInteraction ctx (w1 testWallets) (InitProfileAction studentProfileData Practitioner creationDate) Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Paused profile creation correctly rejected (ProtocolPaused)."
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Step 4: Setting fees while paused..."
       let feeAddr = addressToPlutus (User.userChangeAddress (w3 testWallets))
@@ -236,4 +240,31 @@ oracleAdminTests =
         void $
           adminInteraction ctx (w2 testWallets) PauseProtocolAction
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Non-admin oracle update correctly rejected!"
+      return ()
+
+    feeReachesFeeAddress :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    feeReachesFeeAddress TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      let feeAddr = addressToPlutus (User.userChangeAddress (w2 testWallets))
+      let feeConfig =
+            FeeConfig
+              { fcFeeAddress = feeAddr,
+                fcProfileCreationFee = 2000000,
+                fcPromotionFee = 3000000,
+                fcMembershipHistoryFee = 1500000,
+                fcMembershipIntervalFee = 1500000,
+                fcAchievementFee = 1500000
+              }
+      _ <- adminInteraction ctx (w1 testWallets) (SetFeesAction (Just feeConfig))
+      waitNSlots_ 1
+      -- w2 is the fee recipient (not the actor), so its delta is exactly the fee.
+      withWalletBalancesCheck [w2 testWallets := valueFromLovelace 2000000] $
+        void $
+          bjjInteraction ctx (w1 testWallets) (InitProfileAction studentProfileData Practitioner creationDate) Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Profile-creation fee delivered to fee address!"
       return ()
