@@ -466,6 +466,18 @@ type PagesAPI =
              :> QueryParam' '[Optional] "sort_order" SortOrder
              :> Get '[JSON] PractitionerExplorerPageResponse
          )
+    :<|> ( Summary "Organization explorer page"
+             :> Description "Organization profiles in one page + total. Filters match GET /profiles except profile_type is always Organization. Collapses the org explorer's per-row GET /organization/{id} (N+1) into a single response."
+             :> "pages"
+             :> "organization-explorer"
+             :> QueryParam' '[Optional] "limit" Int
+             :> QueryParam' '[Optional] "offset" Int
+             :> QueryParams "profile" ProfileRefAC
+             :> QueryParam' '[Optional] "q" Text
+             :> QueryParam' '[Optional] "order_by" ProfilesOrderBy
+             :> QueryParam' '[Optional] "sort_order" SortOrder
+             :> Get '[JSON] OrganizationExplorerPageResponse
+         )
     :<|> ( Summary "Home explorer hub"
              :> Description "Recent promotions and latest practitioners."
              :> "pages"
@@ -551,6 +563,16 @@ handleGetPractitionerExplorerPage ::
   QueryAppMonad PractitionerExplorerPageResponse
 handleGetPractitionerExplorerPage = Pg.getPractitionerExplorerPage
 
+handleGetOrganizationExplorerPage ::
+  Maybe Int ->
+  Maybe Int ->
+  [ProfileRefAC] ->
+  Maybe Text ->
+  Maybe ProfilesOrderBy ->
+  Maybe SortOrder ->
+  QueryAppMonad OrganizationExplorerPageResponse
+handleGetOrganizationExplorerPage = Pg.getOrganizationExplorerPage
+
 handleGetHomeExplorerHubPage ::
   Maybe Int ->
   Maybe Int ->
@@ -580,6 +602,7 @@ pagesServer =
     :<|> handleGetAchievementsPage
     :<|> handleGetProfilesPage
     :<|> handleGetPractitionerExplorerPage
+    :<|> handleGetOrganizationExplorerPage
     :<|> handleGetHomeExplorerHubPage
     :<|> handleGetDashboardPage
     :<|> handleGetPendingActions
@@ -660,6 +683,7 @@ apiSwagger =
     & definitions . at "AchievementsPageResponse" . mapped . description ?~ "Achievements explorer page: paginated items + total count + monthly accepted/pending stats"
     & definitions . at "ProfilesPageResponse" . mapped . description ?~ "Profiles explorer page: paginated items + total count + practitioner/organization frequency"
     & definitions . at "PractitionerExplorerPageResponse" . mapped . description ?~ "Practitioner explorer page: practitioners with their memberships + org name lookup map"
+    & definitions . at "OrganizationExplorerPageResponse" . mapped . description ?~ "Organization explorer page: one page of organization profiles + total (collapses the per-row org fetch)"
     & definitions . at "HomeExplorerHubPageResponse" . mapped . description ?~ "Home page: recent promotions and latest practitioner profiles"
     & definitions . at "DashboardPageResponse" . mapped . description ?~ "Dashboard aggregate: totals, belt frequency, recent promotions, monthly trends, top organizations"
     & definitions . at "PendingActionsResponse" . mapped . description ?~ "Pending actions inbox for a profile: unaccepted promotions, achievements, and membership intervals"

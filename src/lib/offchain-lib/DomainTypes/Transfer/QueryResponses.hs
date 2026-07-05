@@ -38,6 +38,7 @@ module DomainTypes.Transfer.QueryResponses
     ProfilesPageResponse (..),
     PractitionerExplorerRowResponse (..),
     PractitionerExplorerPageResponse (..),
+    OrganizationExplorerPageResponse (..),
     HomeExplorerHubPageResponse (..),
     DashboardPageResponse (..),
     TopOrganizationResponse (..),
@@ -450,6 +451,19 @@ data PractitionerExplorerPageResponse = PractitionerExplorerPageResponse
 
 instance ToSchema PractitionerExplorerPageResponse where
   declareNamedSchema = genericDeclareNamedSchema (mkStripPrefixSchemaOptions "practitionerExplorerPage")
+
+-- | Organization explorer page: one page of organization profiles + total.
+-- Collapses the frontend's per-row @GET \/organization\/{id}@ (N+1) into a
+-- single response, mirroring 'PractitionerExplorerPageResponse'.
+data OrganizationExplorerPageResponse = OrganizationExplorerPageResponse
+  { organizationExplorerPageItems :: [OrganizationProfileResponse],
+    organizationExplorerPageTotal :: Int
+  }
+  deriving stock (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "organizationExplorerPage", CamelToSnake]] OrganizationExplorerPageResponse
+
+instance ToSchema OrganizationExplorerPageResponse where
+  declareNamedSchema = genericDeclareNamedSchema (mkStripPrefixSchemaOptions "organizationExplorerPage")
 
 data HomeExplorerHubPageResponse = HomeExplorerHubPageResponse
   { homeExplorerHubPageRecentPromotions :: [PromotionInformationResponse],

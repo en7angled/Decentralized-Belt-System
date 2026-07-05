@@ -8,6 +8,7 @@ module Query.Pages
     getAchievementsPage,
     getProfilesPage,
     getPractitionerExplorerPage,
+    getOrganizationExplorerPage,
     getHomeExplorerHubPage,
     getDashboardPage,
     getPendingActionsPage,
@@ -36,6 +37,7 @@ import DomainTypes.Transfer.QueryResponses
     topOrganizationResponse,
     PractitionerExplorerPageResponse (..),
     PractitionerExplorerRowResponse (..),
+    OrganizationExplorerPageResponse (..),
     ProfilesPageResponse (..),
     PromotionsPageResponse (..),
     achievementToResponse,
@@ -310,6 +312,41 @@ getPractitionerExplorerPage limit offset profileRefs activeMembershipOrg members
       { practitionerExplorerPageItems = rows,
         practitionerExplorerPageTotal = total,
         practitionerExplorerPageOrgIdToName = allOrgNames
+      }
+
+-- | Organization explorer page: one page of organization profiles + total,
+-- in a single response. Mirrors 'getPractitionerExplorerPage' but for
+-- organizations (no memberships/org-name map needed), collapsing the
+-- frontend's per-row @GET /organization/{id}@ (N+1) into one call.
+getOrganizationExplorerPage ::
+  Maybe Int ->
+  Maybe Int ->
+  [ProfileRefAC] ->
+  Maybe Text ->
+  Maybe ProfilesOrderBy ->
+  Maybe SortOrder ->
+  QueryAppMonad OrganizationExplorerPageResponse
+getOrganizationExplorerPage limit offset profileRefs q orderBy sortOrder = do
+  let limitOffset = C.normalizeLimitOffset limit offset
+      profileFilter = Just $ profileFilterFromParams profileRefs (Just Organization) Nothing Nothing [] q
+      order = C.normalizeOrder orderBy sortOrder
+  profiles <- withBackend (L.getProfiles limitOffset profileFilter order) (P.getProfiles limitOffset profileFilter order)
+  total <- withBackend (L.getProfilesCount profileFilter) (P.getProfilesCount profileFilter)
+  let pids = map profileId profiles
+  -- Batch-load organization profiles (2 SQL queries instead of N)
+  orgInfoMap <-
+    withBackend
+      (M.fromList <$> mapM (\p -> (profileId p,) <$> L.getOrganizationProfile (profileId p)) profiles)
+      (P.getOrganizationProfilesBatch pids)
+  let items =
+        [ organizationProfileToResponse info
+          | p <- profiles,
+            Just info <- [M.lookup (profileId p) orgInfoMap]
+        ]
+  return
+    OrganizationExplorerPageResponse
+      { organizationExplorerPageItems = items,
+        organizationExplorerPageTotal = total
       }
 
 -- | Home hub: recent promotions and latest practitioners (§12.5).
