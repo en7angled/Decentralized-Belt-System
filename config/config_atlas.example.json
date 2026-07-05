@@ -1,6 +1,6 @@
 {
     "coreProvider": {
-        "maestroToken": "DB7AVocLdKo22TtFxvuMlHKD7aofoJYQ",
+        "maestroToken": "YOUR_TOKEN_HERE",
         "turboSubmit": true
     },
     "networkId": "preprod",
