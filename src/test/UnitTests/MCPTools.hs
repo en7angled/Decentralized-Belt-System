@@ -73,8 +73,8 @@ mcpToolsTests =
     , testCase "decodeRecipient returns Nothing when absent" decodeRecipientAbsent
     , testCase "Memberships.tools is empty when enableWriteTx is False" membershipsGatedOff
     , testCase "Memberships.tools has 4 write tools when enableWriteTx is True" membershipsGatedOn
-    , testCase "Promotions.tools has 3 read tools when enableWriteTx is False" promotionsGatedOff
-    , testCase "Promotions.tools has 3 read + 2 write tools when enableWriteTx is True" promotionsGatedOn
+    , testCase "Promotions.tools has 4 read tools when enableWriteTx is False" promotionsGatedOff
+    , testCase "Promotions.tools has 4 read + 2 write tools when enableWriteTx is True" promotionsGatedOn
     , testCase "Achievements.tools has 2 read tools when enableWriteTx is False" achievementsGatedOff
     , testCase "Achievements.tools has 2 read + 1 write tool when enableWriteTx is True" achievementsGatedOn
     ]
@@ -234,14 +234,14 @@ membershipsGatedOn = do
 promotionsGatedOff :: IO ()
 promotionsGatedOff = do
   ctx <- mkTestCtx False
-  -- get_promotions_page, get_belt_frequency, check_promotion_eligibility
-  length (ToolsPromotions.tools ctx) @?= 3
+  -- get_promotions_page, get_belt_frequency, check_promotion_eligibility, get_lineage
+  length (ToolsPromotions.tools ctx) @?= 4
 
 promotionsGatedOn :: IO ()
 promotionsGatedOn = do
   ctx <- mkTestCtx True
-  -- 3 read tools + build_promote_rank_tx + build_accept_promotion_tx
-  length (ToolsPromotions.tools ctx) @?= 5
+  -- 4 read tools + build_promote_rank_tx + build_accept_promotion_tx
+  length (ToolsPromotions.tools ctx) @?= 6
 
 achievementsGatedOff :: IO ()
 achievementsGatedOff = do
