@@ -88,7 +88,11 @@ data Rank
     rankBelt :: BJJBelt,
     rankAchievedByProfileId :: ProfileRefAC,
     rankAwardedByProfileId :: ProfileRefAC,
-    rankAchievementDate :: GYTime
+    rankAchievementDate :: GYTime,
+    -- | On-chain pointer to the mint transaction (projected backend only; 'Nothing' on the live backend).
+    rankTxHash :: Maybe Text,
+    rankSlot :: Maybe Integer,
+    rankOutputIndex :: Maybe Int
   }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "rank", CamelToSnake]] Rank
@@ -166,7 +170,11 @@ data Promotion
     promotionAchievedByProfileId :: ProfileRefAC,
     promotionAwardedByProfileId :: ProfileRefAC,
     promotionAchievementDate :: GYTime,
-    promotionState :: PromotionState
+    promotionState :: PromotionState,
+    -- | On-chain pointer to the mint transaction (projected backend only; 'Nothing' on the live backend).
+    promotionTxHash :: Maybe Text,
+    promotionSlot :: Maybe Integer,
+    promotionOutputIndex :: Maybe Int
   }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "promotion", CamelToSnake]] Promotion
@@ -207,7 +215,10 @@ rankToPromotion r =
       promotionAchievedByProfileId = rankAchievedByProfileId r,
       promotionAwardedByProfileId = rankAwardedByProfileId r,
       promotionAchievementDate = rankAchievementDate r,
-      promotionState = PromotionAccepted
+      promotionState = PromotionAccepted,
+      promotionTxHash = rankTxHash r,
+      promotionSlot = rankSlot r,
+      promotionOutputIndex = rankOutputIndex r
     }
 
 -- | A practitioner's membership history with an organization.
@@ -299,7 +310,11 @@ data Achievement = Achievement
     achievementName :: Text,
     achievementDescription :: Text,
     achievementImageURI :: Text,
-    achievementOtherMetadata :: [(Text, Text)]
+    achievementOtherMetadata :: [(Text, Text)],
+    -- | On-chain pointer to the mint transaction (projected backend only; 'Nothing' on the live backend).
+    achievementTxHash :: Maybe Text,
+    achievementSlot :: Maybe Integer,
+    achievementOutputIndex :: Maybe Int
   }
   deriving (Generic)
   deriving (ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "achievement", CamelToSnake]] Achievement
@@ -316,6 +331,9 @@ instance FromJSON Achievement where
       <*> o .: "description"
       <*> o .: "image_uri"
       <*> o .:? "other_metadata" .!= []
+      <*> o .:? "tx_hash"
+      <*> o .:? "slot"
+      <*> o .:? "output_index"
 
 derivePersistFieldJSON "Achievement"
 derivePersistFieldJSON "AchievementOtherMetadataJson"

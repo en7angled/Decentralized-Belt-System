@@ -104,7 +104,10 @@ data AchievementResponse = AchievementResponse
     achievementDescription :: Text,
     achievementImageURI :: Text,
     achievementThumbnailURI :: Text,
-    achievementOtherMetadata :: [(Text, Text)]
+    achievementOtherMetadata :: [(Text, Text)],
+    achievementTxHash :: Maybe Text,
+    achievementSlot :: Maybe Integer,
+    achievementOutputIndex :: Maybe Int
   }
   deriving stock (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "achievement", CamelToSnake]] AchievementResponse
@@ -124,7 +127,10 @@ achievementToResponse a =
       achievementDescription = Core.achievementDescription a,
       achievementImageURI = Core.achievementImageURI a,
       achievementThumbnailURI = deriveThumbnailUri (Core.achievementImageURI a),
-      achievementOtherMetadata = Core.achievementOtherMetadata a
+      achievementOtherMetadata = Core.achievementOtherMetadata a,
+      achievementTxHash = Core.achievementTxHash a,
+      achievementSlot = Core.achievementSlot a,
+      achievementOutputIndex = Core.achievementOutputIndex a
     }
 
 -- | Enriched achievement with resolved profile information for awarded-to and awarded-by.
@@ -139,6 +145,9 @@ data AchievementInformationResponse = AchievementInformationResponse
     achievementInfoImageURI :: Text,
     achievementInfoThumbnailURI :: Text,
     achievementInfoOtherMetadata :: [(Text, Text)],
+    achievementInfoTxHash :: Maybe Text,
+    achievementInfoSlot :: Maybe Integer,
+    achievementInfoOutputIndex :: Maybe Int,
     achievementInfoAwardedTo :: ProfileResponse,
     achievementInfoAwardedBy :: ProfileResponse
   }
@@ -163,6 +172,9 @@ achievementInformationToResponse awardedTo awardedBy a =
       achievementInfoImageURI = Core.achievementImageURI a,
       achievementInfoThumbnailURI = deriveThumbnailUri (Core.achievementImageURI a),
       achievementInfoOtherMetadata = Core.achievementOtherMetadata a,
+      achievementInfoTxHash = Core.achievementTxHash a,
+      achievementInfoSlot = Core.achievementSlot a,
+      achievementInfoOutputIndex = Core.achievementOutputIndex a,
       achievementInfoAwardedTo = profileToResponse awardedTo,
       achievementInfoAwardedBy = profileToResponse awardedBy
     }
@@ -317,7 +329,10 @@ data PromotionInformationResponse = PromotionInformationResponse
     promotionInfoAchievementDate :: GYTime,
     promotionInfoAchievedBy :: PractitionerProfileResponse,
     promotionInfoAwardedBy :: PractitionerProfileResponse,
-    promotionInfoState :: Core.PromotionState
+    promotionInfoState :: Core.PromotionState,
+    promotionInfoTxHash :: Maybe Text,
+    promotionInfoSlot :: Maybe Integer,
+    promotionInfoOutputIndex :: Maybe Int
   }
   deriving stock (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON '[FieldLabelModifier '[StripPrefix "promotionInfo", CamelToSnake]] PromotionInformationResponse
@@ -337,7 +352,10 @@ promotionInformationToResponse achievedBy awardedBy p =
       promotionInfoAchievementDate = Core.promotionAchievementDate p,
       promotionInfoAchievedBy = practitionerProfileToResponse achievedBy,
       promotionInfoAwardedBy = practitionerProfileToResponse awardedBy,
-      promotionInfoState = Core.promotionState p
+      promotionInfoState = Core.promotionState p,
+      promotionInfoTxHash = Core.promotionTxHash p,
+      promotionInfoSlot = Core.promotionSlot p,
+      promotionInfoOutputIndex = Core.promotionOutputIndex p
     }
 
 -- | Single-call practitioner profile page (§12.2).

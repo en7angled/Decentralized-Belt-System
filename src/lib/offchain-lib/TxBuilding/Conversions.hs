@@ -72,7 +72,11 @@ onchainRankToRankInformation (Onchain.Rank {..}) = do
           rankBelt,
           rankAchievedByProfileId = gyRankAchievedByProfileId,
           rankAwardedByProfileId = gyRankAwardedByProfileId,
-          rankAchievementDate = timeFromPlutus rankAchievementDate
+          rankAchievementDate = timeFromPlutus rankAchievementDate,
+          -- ponytail: live backend doesn't thread the UTxO ref; tx pointer is projected-only.
+          rankTxHash = Nothing,
+          rankSlot = Nothing,
+          rankOutputIndex = Nothing
         }
 onchainRankToRankInformation (Onchain.Promotion {}) = return Nothing
 
@@ -92,7 +96,11 @@ onchainPromotionToPromotionInformation (Onchain.Promotion {..}) = do
           promotionAchievedByProfileId = gyRankAchievedByProfileId,
           promotionAwardedByProfileId = gyRankAwardedByProfileId,
           promotionAchievementDate = timeFromPlutus promotionAchievementDate,
-          promotionState = PromotionPending
+          promotionState = PromotionPending,
+          -- ponytail: live backend doesn't thread the UTxO ref; tx pointer is projected-only.
+          promotionTxHash = Nothing,
+          promotionSlot = Nothing,
+          promotionOutputIndex = Nothing
         }
 onchainPromotionToPromotionInformation (Onchain.Rank {}) = return Nothing
 
@@ -204,5 +212,9 @@ onchainAchievementToAchievement datum = do
         achievementName = profileDataName,
         achievementDescription = profileDataDescription,
         achievementImageURI = profileDataImageURI,
-        achievementOtherMetadata = otherMeta
+        achievementOtherMetadata = otherMeta,
+        -- ponytail: live backend doesn't thread the UTxO ref; tx pointer is projected-only.
+        achievementTxHash = Nothing,
+        achievementSlot = Nothing,
+        achievementOutputIndex = Nothing
       }

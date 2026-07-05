@@ -63,7 +63,10 @@ toRankDomain rp =
       rankBelt = rankProjectionRankBelt rp,
       rankAchievedByProfileId = rankProjectionRankAchievedByProfileId rp,
       rankAwardedByProfileId = rankProjectionRankAwardedByProfileId rp,
-      rankAchievementDate = rankProjectionRankAchievementDate rp
+      rankAchievementDate = rankProjectionRankAchievementDate rp,
+      rankTxHash = Just (rankProjectionCreatedTxId rp),
+      rankSlot = Just (rankProjectionCreatedAtSlot rp),
+      rankOutputIndex = Just (rankProjectionCreatedOutputIndex rp)
     }
 
 -- | Convert a 'PromotionProjection' row to a domain 'Promotion' given a belt map for state derivation.
@@ -78,7 +81,10 @@ toPromotionDomain beltMap p =
       promotionState =
         promotionStateFromBelts
           (M.findWithDefault Nothing (promotionProjectionPromotionAchievedByProfileId p) beltMap)
-          (promotionProjectionPromotionBelt p)
+          (promotionProjectionPromotionBelt p),
+      promotionTxHash = Just (promotionProjectionCreatedTxId p),
+      promotionSlot = Just (promotionProjectionCreatedAtSlot p),
+      promotionOutputIndex = Just (promotionProjectionCreatedOutputIndex p)
     }
 
 -- | Build a case-insensitive SQL LIKE pattern for text search: @%<escaped lower q>%@.
@@ -661,7 +667,10 @@ getAchievements maybeLimitOffset maybeAchievementFilter maybeOrder = do
                       maybe
                         []
                         fromAchievementOtherMetadataJson
-                        (achievementProjectionOtherMetadata ap)
+                        (achievementProjectionOtherMetadata ap),
+                    achievementTxHash = Just (achievementProjectionCreatedTxId ap),
+                    achievementSlot = Just (achievementProjectionCreatedAtSlot ap),
+                    achievementOutputIndex = Just (achievementProjectionCreatedOutputIndex ap)
                   }
           pure (Prelude.map (toAchievement . entityVal) rows)
       )

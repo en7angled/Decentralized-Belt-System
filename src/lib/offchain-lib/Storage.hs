@@ -118,6 +118,8 @@ OnchainMatchEvent
 RankProjection
     createdAtSlot    Integer
     createdAtHash    Text
+    createdTxId      Text
+    createdOutputIndex Int
     rankId           GYAssetClass
     rankBelt         BJJBelt
     rankAchievedByProfileId GYAssetClass
@@ -142,6 +144,8 @@ ProfileProjection
 PromotionProjection
     createdAtSlot    Integer
     createdAtHash    Text
+    createdTxId      Text
+    createdOutputIndex Int
     promotionId      GYAssetClass
     promotionBelt    BJJBelt
     promotionAchievedByProfileId GYAssetClass
@@ -178,6 +182,8 @@ MembershipIntervalProjection
 AchievementProjection
     createdAtSlot             Integer
     createdAtHash             Text
+    createdTxId               Text
+    createdOutputIndex        Int
     achievementId             GYAssetClass
     awardedToProfileId        GYAssetClass
     awardedByProfileId        GYAssetClass
@@ -196,8 +202,9 @@ runMigrations :: (MonadIO m) => SqlPersistT m ()
 runMigrations = runMigration migrateAll
 
 -- | Bump when the chain-sync DB schema changes incompatibly; startup wipes + re-syncs on a mismatch.
+-- v4: added createdTxId + createdOutputIndex to rank/promotion/achievement projections (R1 tx-hash).
 currentSchemaVersion :: Int
-currentSchemaVersion = 3
+currentSchemaVersion = 4
 
 -- | Upsert a record by its unique key: insert if absent, replace if present.
 upsertByUnique ::
@@ -292,20 +299,22 @@ projectAndStore networkId km =
     Right am -> do
       let slotNoInt = slot_no (created_at km)
           header = header_hash (created_at km)
+          txId = transaction_id km
+          outIdx = output_index km
       ev <- runExceptT (projectChainEvent networkId am)
       case ev of
         Left e -> liftIO $ putStrLn ("PROJECTION ERROR (dropped, raw match retained): " <> show e)
         Right proj -> case proj of
           RankEvent r -> do
-            putRankProjection slotNoInt header r
+            putRankProjection slotNoInt header txId outIdx r
             deletePromotionProjection (rankId r)
           ProfileEvent p -> putProfileProjection slotNoInt header p
-          PromotionEvent pr -> putPromotionProjection slotNoInt header pr
+          PromotionEvent pr -> putPromotionProjection slotNoInt header txId outIdx pr
           MembershipHistoryEvent mh -> putMembershipHistoryProjection slotNoInt header mh
           MembershipIntervalEvent mi -> do
             mOrg <- resolveOrganizationForInterval mi
             putMembershipIntervalProjection slotNoInt header mi mOrg
-          AchievementEvent a -> putAchievementProjection slotNoInt header a
+          AchievementEvent a -> putAchievementProjection slotNoInt header txId outIdx a
           NoEvent _ -> pure ()
 
 -- | Store a raw Kupo match event, upserting by (slot, header, txId, outputIndex) — the on-chain
@@ -326,13 +335,15 @@ putKupoMatch km = do
     ev
 
 -- | Store a rank projection, upserting by rank ID.
-putRankProjection :: (MonadIO m) => Integer -> Text -> Rank -> SqlPersistT m ()
-putRankProjection createdSlot createdHash r = do
+putRankProjection :: (MonadIO m) => Integer -> Text -> Text -> Int -> Rank -> SqlPersistT m ()
+putRankProjection createdSlot createdHash createdTxId createdOutIdx r = do
   now <- liftIO getCurrentTime
   let ev =
         RankProjection
           createdSlot
           createdHash
+          createdTxId
+          createdOutIdx
           (rankId r)
           (rankBelt r)
           (rankAchievedByProfileId r)
@@ -358,13 +369,15 @@ putProfileProjection createdSlot createdHash p = do
   upsertByUnique (UniqueProfileProjection . profileProjectionProfileId) ev
 
 -- | Store a promotion projection, upserting by promotion ID.
-putPromotionProjection :: (MonadIO m) => Integer -> Text -> Promotion -> SqlPersistT m ()
-putPromotionProjection createdSlot createdHash pr = do
+putPromotionProjection :: (MonadIO m) => Integer -> Text -> Text -> Int -> Promotion -> SqlPersistT m ()
+putPromotionProjection createdSlot createdHash createdTxId createdOutIdx pr = do
   now <- liftIO getCurrentTime
   let ev =
         PromotionProjection
           createdSlot
           createdHash
+          createdTxId
+          createdOutIdx
           (promotionId pr)
           (promotionBelt pr)
           (promotionAchievedByProfileId pr)
@@ -446,13 +459,15 @@ putMembershipIntervalProjection createdSlot createdHash mi mOrganizationProfileI
   upsertByUnique (UniqueMembershipIntervalProjection . membershipIntervalProjectionMembershipIntervalId) ev
 
 -- | Store an achievement projection, upserting by achievement ID.
-putAchievementProjection :: (MonadIO m) => Integer -> Text -> Achievement -> SqlPersistT m ()
-putAchievementProjection createdSlot createdHash a = do
+putAchievementProjection :: (MonadIO m) => Integer -> Text -> Text -> Int -> Achievement -> SqlPersistT m ()
+putAchievementProjection createdSlot createdHash createdTxId createdOutIdx a = do
   now <- liftIO getCurrentTime
   let ev =
         AchievementProjection
           createdSlot
           createdHash
+          createdTxId
+          createdOutIdx
           (achievementId a)
           (achievementAwardedToProfileId a)
           (achievementAwardedByProfileId a)

@@ -65,7 +65,10 @@ organizationToShimPractitioner org t =
             rankBelt = White,
             rankAchievedByProfileId = organizationId org,
             rankAwardedByProfileId = organizationId org,
-            rankAchievementDate = t
+            rankAchievementDate = t,
+            rankTxHash = Nothing,
+            rankSlot = Nothing,
+            rankOutputIndex = Nothing
           },
       practitionerPreviousRanks = []
     }
@@ -87,7 +90,10 @@ placeholderPractitioner pid name desc img t =
             rankBelt = White,
             rankAchievedByProfileId = pid,
             rankAwardedByProfileId = pid,
-            rankAchievementDate = t
+            rankAchievementDate = t,
+            rankTxHash = Nothing,
+            rankSlot = Nothing,
+            rankOutputIndex = Nothing
           },
       practitionerPreviousRanks = []
     }
