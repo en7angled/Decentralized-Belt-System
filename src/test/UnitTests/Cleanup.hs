@@ -16,7 +16,7 @@ import GeniusYield.Types
 import Test.Fixtures (cleanupTestProfileData)
 import Test.Tasty
 import TestRuns (bjjInteraction, deployBJJValidators, logPractitionerProfileInformation, protocolInteraction, sendDustToValidator)
-import TxBuilding.Validators (profilesValidatorGY, ranksValidatorGY)
+import TxBuilding.Validators (membershipsValidatorGY, profilesValidatorGY, ranksValidatorGY)
 
 cleanupTests :: (HasCallStack) => TestTree
 cleanupTests =
@@ -25,7 +25,8 @@ cleanupTests =
     [ mkTestFor "Test Case 3.1: Cleanup dust at ProfilesValidator" cleanupDustAtProfiles,
       mkTestFor "Test Case 3.2: Cleanup dust at RanksValidator" cleanupDustAtRanks,
       mkTestFor "Test Case 3.3: Cleanup dust at both validators in a single transaction" cleanupDustAtBothValidators,
-      mkTestFor "Test Case 3.4: Cleanup does not affect legitimate protocol UTxOs" cleanupSafeWithProtocolState
+      mkTestFor "Test Case 3.4: Cleanup does not affect legitimate protocol UTxOs" cleanupSafeWithProtocolState,
+      mkTestFor "Test Case 3.5: Cleanup dust at MembershipsValidator" cleanupDustAtMemberships
     ]
   where
     -- Test Case 3.1: Send dust to ProfilesValidator and clean it up
@@ -66,6 +67,25 @@ cleanupTests =
       waitNSlots_ 1
 
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Dust cleanup at RanksValidator succeeded!"
+      return ()
+
+    -- Test Case 3.5: Send dust to MembershipsValidator and clean it up (F-33.6 coverage gap).
+    -- cleanupDustTX already sweeps the memberships address; this pins that it actually works.
+    cleanupDustAtMemberships :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    cleanupDustAtMemberships TestInfo {..} = do
+      waitNSlots_ 1000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sending dust UTxO to MembershipsValidator..."
+      sendDustToValidator (w2 testWallets) membershipsValidatorGY
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Cleaning up dust via ProtocolAction CleanupDustAction..."
+      _txId <- protocolInteraction ctx (w3 testWallets) CleanupDustAction
+      waitNSlots_ 1
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Dust cleanup at MembershipsValidator succeeded!"
       return ()
 
     -- Test Case 3.3: Send dust to both validators and clean up in a single transaction
