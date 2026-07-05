@@ -54,7 +54,8 @@ membershipTests =
       mkTestFor "Add-membership-interval fails when node is root (MembershipRootNodeHasNoHistory)" addMembershipIntervalFailsWhenRootNodeTest,
       mkTestFor "Add-membership-interval fails when last interval not accepted (LastIntervalNotAccepted)" addMembershipIntervalFailsLastNotAcceptedTest,
       mkTestFor "Add-membership-interval fails when last interval not closed (LastIntervalNotClosed)" addMembershipIntervalFailsLastNotClosedTest,
-      mkTestFor "Add-membership-interval fails when end date not after start (InvalidNewIntervalEndDate)" addMembershipIntervalFailsInvalidEndDateTest
+      mkTestFor "Add-membership-interval fails when end date not after start (InvalidNewIntervalEndDate)" addMembershipIntervalFailsInvalidEndDateTest,
+      mkTestFor "Test Case 4.13: AcceptMembershipInterval by the wrong user fails" wrongUserAcceptIntervalFails
     ]
   where
     -- Test Case 4.1: Organization creates a membership history for a practitioner.
@@ -1192,6 +1193,74 @@ membershipTests =
             (AddMembershipIntervalAction orgAC historyNodeAC secondStart (Just badEnd))
             Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "add-membership-interval fails when end date not after start test passed!"
+
+    -- Test Case 4.13: AcceptMembershipInterval by the wrong user fails
+    wrongUserAcceptIntervalFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    wrongUserAcceptIntervalFails TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      -- Create Organization and Practitioner
+      (_txId, orgAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (CreateProfileWithRankAction orgProfileData Organization creationDate White)
+          Nothing
+      waitNSlots_ 1
+
+      (_txId, practitionerAC) <-
+        bjjInteraction
+          ctx
+          (w2 testWallets)
+          (InitProfileAction practitionerProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+
+      -- Organization creates membership history (start date before tx validity for on-chain trace "G")
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+
+      (_txId, _membershipHistoryAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          ( CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+          )
+          Nothing
+      waitNSlots_ 1
+
+      -- The first interval AC is created alongside the history.
+      -- We need to derive it to accept it. The interval ID is derived from the history ID.
+      let plutusOrgAC = assetClassToPlutus orgAC
+      let plutusPractAC = assetClassToPlutus practitionerAC
+      let historyId = Onchain.Protocol.Id.deriveMembershipHistoryId plutusOrgAC plutusPractAC
+      let firstIntervalId = Onchain.Protocol.Id.deriveMembershipIntervalId historyId 0
+      gyFirstIntervalAC <- assetClassFromPlutus' firstIntervalId
+
+      -- w3 does not hold the practitioner's User NFT and must not be able to accept the interval.
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Wrong user attempting to accept membership interval..."
+      mustFail $
+        void $
+          bjjInteraction
+            ctx
+            (w3 testWallets)
+            (AcceptMembershipIntervalAction gyFirstIntervalAC)
+            Nothing
+
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "AcceptMembershipInterval by the wrong user correctly rejected!"
+      return ()
 
 -- ------------------------------------------------------------------------------------------------
 

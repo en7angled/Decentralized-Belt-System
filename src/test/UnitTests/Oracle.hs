@@ -6,6 +6,7 @@ module UnitTests.Oracle
   )
 where
 
+import Control.Monad (void)
 import Control.Monad.Reader (runReaderT)
 import DomainTypes.Core.Actions
 import DomainTypes.Core.Types
@@ -64,7 +65,8 @@ oracleAdminTests =
     [ mkTestFor "Test Case 0.2: Pause and unpause protocol" pauseAndUnpause,
       mkTestFor "Test Case 0.3: Set fees and clear fees" setAndClearFees,
       mkTestFor "Test Case 0.4: Set min UTxO value" setMinUTxOValue,
-      mkTestFor "Test Case 0.5: Sequential admin actions with profile interactions" sequentialAdminWithProfiles
+      mkTestFor "Test Case 0.5: Sequential admin actions with profile interactions" sequentialAdminWithProfiles,
+      mkTestFor "Test Case 0.6: Non-admin oracle update fails" nonAdminOracleUpdateFails
     ]
   where
     pauseAndUnpause :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -223,4 +225,15 @@ oracleAdminTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "  FeeConfig: " <> show (opFeeConfig paramsFinal)
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sequential admin actions with profile interactions completed successfully!"
 
+      return ()
+
+    nonAdminOracleUpdateFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    nonAdminOracleUpdateFails TestInfo {..} = do
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1
+      -- w2 is not opAdminPkh; OracleValidator must reject its admin action.
+      mustFail $
+        void $
+          adminInteraction ctx (w2 testWallets) PauseProtocolAction
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Non-admin oracle update correctly rejected!"
       return ()

@@ -251,7 +251,8 @@ promotionSecurityTests =
     [ mkTestFor "Test Case 2.1: Multiple masters can create promotions for same student" multipleMastersCanPromote,
       mkTestFor "Test Case 2.2: Sequential promotions from same master work correctly" sequentialPromotionsWork,
       mkTestFor "Test Case 2.3: Accepting a promotion without the student's User NFT fails (RanksValidator)" maliciousAcceptWithoutUserNftFails,
-      mkTestFor "Test Case 2.4: Accepting the same promotion twice fails" doubleAcceptPromotionFails
+      mkTestFor "Test Case 2.4: Accepting the same promotion twice fails" doubleAcceptPromotionFails,
+      mkTestFor "Test Case 2.5: UpdateProfile by a non-owner fails" nonOwnerUpdateProfileFails
     ]
   where
     multipleMastersCanPromote :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -510,4 +511,30 @@ promotionSecurityTests =
             (AcceptPromotionAction blueBeltPromotionAC)
             Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Double-accept promotion correctly rejected!"
+      return ()
+
+    nonOwnerUpdateProfileFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    nonOwnerUpdateProfileFails TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      (_txId, profileRefAC) <-
+        bjjInteraction
+          ctx
+          (w1 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 1
+      -- w2 does not hold the profile's User NFT and must not be able to update it.
+      mustFail $
+        void $
+          bjjInteraction
+            ctx
+            (w2 testWallets)
+            (UpdateProfileAction profileRefAC Nothing "ipfs://QmAttackerImage")
+            Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Non-owner UpdateProfile correctly rejected!"
       return ()
