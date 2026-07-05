@@ -207,6 +207,8 @@ handleCreateProfile protocolParams TxInfo {..} mintingPolicyCurrencySymbol ctx s
                       == profileRefNFT
                       + profileUserNFT
                       + rankNFT
+                      && mintValueBurned txInfoMint
+                      == mempty
                       && Utils.checkTxOutAtIndexWithDatumMinValueAndAddress rankOrMembershipRootOutputIdx rankDatum rankValue (ctxRanksAddress ctx) txInfoOutputs
                   )
           Organization ->
@@ -224,6 +226,8 @@ handleCreateProfile protocolParams TxInfo {..} mintingPolicyCurrencySymbol ctx s
                       == profileRefNFT
                       + profileUserNFT
                       + membershipHistoriesRootNFT
+                      && mintValueBurned txInfoMint
+                      == mempty
                   )
 
 {-# INLINEABLE handlePromote #-}
@@ -276,7 +280,7 @@ handlePromote protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx 
    in traceIfFalse "M7" (isStudentValid && isMasterValid) -- Profiles must have correct currency symbol (M7)
         && traceIfFalse "M8" (Utils.inputsSpendTxOutRef seedTxOutRef txInfoInputs) -- Must spend seed for uniqueness (M8)
         && traceIfFalse "M9" (V1.assetClassValueOf (valueSpent txInfo) masterUserAC == 1) -- Must spend master user NFT (M9)
-        && traceIfFalse "Ma" (mintValueMinted txInfoMint == pendingRankNFT) -- Tx must mint JUST pending rank NFT (Ma)
+        && traceIfFalse "Ma" (mintValueMinted txInfoMint == pendingRankNFT && mintValueBurned txInfoMint == mempty) -- Tx must mint JUST pending rank NFT (Ma)
         && traceIfFalse "Mb" (Utils.checkTxOutAtIndexWithDatumMinValueAndAddress pendingRankOutputIdx pendingRankDatum pendingRankValue ranksValidatorAddress txInfoOutputs) -- Lock pending rank at RV (Mb)
         && traceIfFalse "Mc" isPromotionValid -- Must pass promotion validation (Mc)
 
@@ -322,6 +326,8 @@ handleNewMembershipHistory txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx or
             && Utils.hasTxInAtAddressWithNFT leftNodeId membershipsValidatorAddress txInfoInputs
             && mintValueMinted txInfoMint
             == (membershipHistoryNFT + fstIntervalNFT)
+            && mintValueBurned txInfoMint
+            == mempty
             && Utils.checkTxOutAtIndexWithDatumMinValueAndAddress firstIntervalOutputIdx (IntervalDatum fstInterval) fstIntervalValue membershipsValidatorAddress txInfoOutputs
         )
 
@@ -370,6 +376,8 @@ handleNewMembershipInterval txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx o
             && Utils.hasTxInAtAddressWithNFT membershipNodeId membershipsValidatorAddress txInfoInputs
             && mintValueMinted txInfoMint
             == newIntervalNFT
+            && mintValueBurned txInfoMint
+            == mempty
             && Utils.checkTxOutAtIndexWithDatumMinValueAndAddress intervalOutputIdx (IntervalDatum newInterval) newIntervalValue membershipsValidatorAddress txInfoOutputs
         )
 
@@ -411,7 +419,7 @@ handleNewAchievement txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOu
         && traceIfFalse "Mf" (V1.assetClassValueOf (valueSpent txInfo) (deriveUserFromRefAC awardedBy) == 1) -- Must spend awarded by user NFT (Mf)
         && traceIfFalse "Mg" (isAwardedToValid && isAwardedByValid) -- Profiles must have correct currency symbol (Mg)
         && traceIfFalse "Mh" (Utils.inputsSpendTxOutRef seedTxOutRef txInfoInputs) -- Must spend seed for uniqueness (Mh)
-        && traceIfFalse "Mj" (mintValueMinted txInfoMint == achievementNFT) -- Tx must mint JUST achievement NFT (Mj)
+        && traceIfFalse "Mj" (mintValueMinted txInfoMint == achievementNFT && mintValueBurned txInfoMint == mempty) -- Tx must mint JUST achievement NFT (Mj)
         && traceIfFalse "Mk" (Utils.checkTxOutAtIndexWithDatumMinValueAndAddress achievementOutputIdx achievementDatum achievementValue achievementsValidatorAddress txInfoOutputs) -- Lock achievement at AchievementsValidator address (Mk)
 
 -------------------------------------------------------------------------------

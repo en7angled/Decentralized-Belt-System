@@ -193,7 +193,7 @@ handleInsertNode txInfo@TxInfo {..} ownValue ownAddress oldLeftNode maybeRightNo
         $ and
           [ V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1, -- Must spend org User NFT
             Utils.checkTxOutAtIndexWithDatumMinValueAndAddress updatedLeftNodeTxOutIdx (ListNodeDatum updatedLeftNode) ownValue ownAddress txInfoOutputs, -- Lock updated left node (>= ownValue; balancer may add min-ADA)
-            mintValueMinted txInfoMint == (insertedNodeNFT + newIntervalNFT), -- Exact mint check
+            mintValueMinted txInfoMint == (insertedNodeNFT + newIntervalNFT) && mintValueBurned txInfoMint == mempty, -- Exact mint check
             Utils.checkTxOutAtIndexWithDatumMinValueAndAddress insertedNodeTxOutIdx (ListNodeDatum insertedNodeDatum) (insertedNodeNFT + minLv) ownAddress txInfoOutputs -- Lock inserted node (>= minLv + NFT)
           ]
 
@@ -226,7 +226,7 @@ handleUpdateNode txInfo@TxInfo {..} ownValue ownAddress spendingNode lastInterva
           [ validRedeemerId,
             V1.assetClassValueOf (valueSpent txInfo) orgUserAC == 1,
             Utils.checkTxOutAtIndexWithDatumMinValueAndAddress updatedNodeTxOutIdx (ListNodeDatum updatedNode) ownValue ownAddress txInfoOutputs, -- >= ownValue; balancer may add min-ADA
-            mintValueMinted txInfoMint == newIntervalNFT
+            mintValueMinted txInfoMint == newIntervalNFT && mintValueBurned txInfoMint == mempty
           ]
 
 {-# INLINEABLE handleAcceptInterval #-}
