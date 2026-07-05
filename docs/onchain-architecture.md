@@ -327,6 +327,14 @@ Governs the rules for issuing every protocol token: profiles, ranks, promotions,
 
 Note: Profile deletion is intentionally NOT supported to preserve lineage integrity.
 
+**Trust model for initial rank (F-18)**: When a Practitioner profile is created, `mkPractitionerProfile` sets
+`rankAwardedByProfileId = profileId` — the initial rank (0-14) is **self-attested** by the newly created
+profile, not awarded by a master. This is intentional and consistent with the onchain-minimal /
+mirror-and-pin philosophy: the validator enforces only that the rank number is a valid belt (0-14, via
+`intToBelt`); it does not and cannot verify that a practitioner's claimed starting belt is accurate. Trust in
+the initial rank is established off-chain (e.g. by organizations/masters subsequently observing, promoting,
+or vouching for the practitioner), not by on-chain logic.
+
 **Redeemers**:
 - `CreateProfile TxOutRef MetadataFields OnchainProfileType POSIXTime Integer Integer Integer` — Create a new profile (seedTxOutRef, metadata, profileType, creationDate, rankNumber, profileOutputIdx, rankOrMembershipRootOutputIdx). For Organization profiles, also creates the membership histories root.
 - `Promote TxOutRef ProfileId ProfileId POSIXTime Integer Integer` — Create a promotion (seedTxOutRef, studentProfileId, masterProfileId, achievementDate, rankNumber, pendingRankOutputIdx).

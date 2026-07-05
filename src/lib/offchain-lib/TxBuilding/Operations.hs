@@ -26,11 +26,12 @@ import Onchain.Validators.RanksValidator qualified (RanksRedeemer (Cleanup))
 import PlutusLedgerApi.V3
 import TxBuilding.Context (DeployedScriptsContext (..), getAchievementsValidatorRef, getMembershipsValidatorRef, getMintingPolicyFromCtx, getMintingPolicyRef, getOracleValidatorRef, getProfilesValidatorRef, getProtocolParamsFromCtx, getRanksValidatorRef)
 import TxBuilding.Conversions (cip68StandardMetadataKeys)
-import TxBuilding.Exceptions (AddMembershipIntervalReason (..), TxBuildingException (..))
+import TxBuilding.Exceptions (TxBuildingException (..))
 import TxBuilding.Lookups (findInsertPointForNewMembership, getAchievementDatumAndValue, getDustUTxOs, getMembershipIntervalDatumAndValue, getMembershipListNodeDatumAndValue, getProfileStateDatumAndValue, getRankStateDatumAndValue, getUTxOWithTokenAtAddresses, queryOracleParams)
 import TxBuilding.SafeOnchainLogic
   ( safeAcceptAchievement,
     safeAcceptMembershipInterval,
+    safeAddMembershipIntervalToHistory,
     safeAppendMembershipHistory,
     safeGetCurrentRankId,
     safeInitMembershipHistory,
@@ -622,20 +623,9 @@ addMembershipIntervalTX gyOrgProfileRefAC gyMembershipNodeAC startDate mEndDate 
   gyLastIntervalAC <- assetClassFromPlutus' lastIntervalAC
   (lastInterval, _lastIntervalValue) <- getMembershipIntervalDatumAndValue gyLastIntervalAC
 
-  -- Pre-validate add-interval conditions (mirror on-chain validation) so we throw domain exceptions instead of Plutus traceError
-  unless (OnchainTypes.membershipHistoryIntervalsHeadNumber currentHistory == OnchainTypes.membershipIntervalNumber lastInterval) $
-    throwError (GYApplicationException (CannotAddMembershipInterval HeadNumberMismatch))
-  case OnchainTypes.membershipIntervalEndDate lastInterval of
-    Just lastEnd -> unless (startDate >= lastEnd) $ throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotClosed))
-    Nothing -> throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotClosed))
-  unless (OnchainTypes.membershipIntervalIsAck lastInterval) $
-    throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotAccepted))
-  case mEndDate of
-    Just ed -> unless (ed > startDate) $ throwError (GYApplicationException (CannotAddMembershipInterval InvalidNewIntervalEndDate))
-    Nothing -> return ()
-
-  -- Compute updated history and new interval using Protocol functions
-  let (updatedHistory, newInterval) = Onchain.addMembershipIntervalToHistory currentHistory lastInterval startDate mEndDate
+  -- Pre-validate add-interval conditions (mirror on-chain validation) and compute updated history and new
+  -- interval; throws domain exceptions instead of Plutus traceError.
+  (updatedHistory, newInterval) <- safeAddMembershipIntervalToHistory currentHistory lastInterval startDate mEndDate
   let updatedHistoryNode = Onchain.updateNodeMembershipHistory historyNode updatedHistory
 
   -- Derive GY asset class for the new interval

@@ -12,13 +12,15 @@ import Onchain.Protocol qualified as Onchain
 import Onchain.Protocol.Types
   ( MembershipHistoriesListNode (organizationId),
     OnchainAchievement (achievementIsAccepted),
+    OnchainMembershipHistory,
     OnchainMembershipInterval (membershipIntervalIsAck),
     OnchainProfile,
     OnchainProfileType (Practitioner),
     OnchainRank (Promotion, Rank),
   )
+import Onchain.Protocol.Types qualified as OnchainTypes
 import PlutusLedgerApi.V3 (POSIXTime)
-import TxBuilding.Exceptions (TxBuildingException (..))
+import TxBuilding.Exceptions (AddMembershipIntervalReason (..), TxBuildingException (..))
 
 ------------------------------------------------------------------------------------------------
 
@@ -83,3 +85,26 @@ safeIntToBelt :: (MonadError GYTxMonadException m) => Integer -> m BJJBelt
 safeIntToBelt n
   | n >= 0 && n <= 14 = return (intToBelt n)
   | otherwise = throwError (GYApplicationException InvalidBeltNumber)
+
+-- | Offchain analogue of 'Onchain.addMembershipIntervalToHistory'. Throws 'CannotAddMembershipInterval' with
+-- the specific 'AddMembershipIntervalReason' ('HeadNumberMismatch', 'LastIntervalNotClosed',
+-- 'LastIntervalNotAccepted', or 'InvalidNewIntervalEndDate') on invalid input.
+safeAddMembershipIntervalToHistory ::
+  (MonadError GYTxMonadException m) =>
+  OnchainMembershipHistory ->
+  OnchainMembershipInterval ->
+  POSIXTime ->
+  Maybe POSIXTime ->
+  m (OnchainMembershipHistory, OnchainMembershipInterval)
+safeAddMembershipIntervalToHistory currentHistory lastInterval startDate mEndDate = do
+  unless (OnchainTypes.membershipHistoryIntervalsHeadNumber currentHistory == OnchainTypes.membershipIntervalNumber lastInterval) $
+    throwError (GYApplicationException (CannotAddMembershipInterval HeadNumberMismatch))
+  case OnchainTypes.membershipIntervalEndDate lastInterval of
+    Just lastEnd -> unless (startDate >= lastEnd) $ throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotClosed))
+    Nothing -> throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotClosed))
+  unless (OnchainTypes.membershipIntervalIsAck lastInterval) $
+    throwError (GYApplicationException (CannotAddMembershipInterval LastIntervalNotAccepted))
+  case mEndDate of
+    Just ed -> unless (ed > startDate) $ throwError (GYApplicationException (CannotAddMembershipInterval InvalidNewIntervalEndDate))
+    Nothing -> return ()
+  return (Onchain.addMembershipIntervalToHistory currentHistory lastInterval startDate mEndDate)

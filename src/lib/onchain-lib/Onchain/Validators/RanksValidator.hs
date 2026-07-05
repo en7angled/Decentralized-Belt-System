@@ -10,6 +10,13 @@
 {-# HLINT ignore "Use &&" #-}
 
 -- | Ranks validator enforcing promotion acceptance and rank state transitions.
+--
+-- Note (permanent-lineage / min-ADA tradeoff, security rule #14): every historical rank UTxO stays locked
+-- at this validator permanently — ranks are never unlocked or burned as a practitioner is promoted, so the
+-- full belt history remains on-chain and queryable. Each rank-up therefore requires one additional min-ADA
+-- deposit (one per rank ever held), borne by whoever pays the promotion/rank-up transaction fee. This is an
+-- intentional design choice: belt history is meant to be permanent, and the accumulating min-ADA cost is
+-- the accepted economic tradeoff for that permanence.
 module Onchain.Validators.RanksValidator
   ( -- * Ranks Redeemer
     RanksRedeemer (..),

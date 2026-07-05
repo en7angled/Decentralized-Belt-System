@@ -211,7 +211,9 @@ addMembershipIntervalToHistory currentHistory lastInterval startDate maybeEndDat
       Nothing -> False
 
 -- | Update the end date of a membership interval with role-based rules.
--- Organization (isOrganization = True): can set endDate to any value.
+-- Organization (isOrganization = True): can set endDate to any date within the tx validity range (not
+-- truly "any" date — still gated by the isInValidRange check below, i.e. after the validity lower bound and
+-- before the validity upper bound).
 -- Practitioner (isOrganization = False): can only shorten (newEndDate <= currentEndDate) or close an open interval, and only on accepted intervals.
 -- Enforces: new end date within tx validity range, after lower bound and before upper bound (TD), practitioner only on accepted intervals (TE), practitioner cannot extend (TB).
 {-# INLINEABLE updateMembershipIntervalEndDate #-}

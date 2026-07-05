@@ -140,7 +140,13 @@ mintingPolicyLambda protocolParams (ScriptContext txInfo@TxInfo {..} (Redeemer b
                     ctxMembershipsAddress = membershipsValidatorAddress,
                     ctxAchievementsAddress = achievementsValidatorAddress
                   }
-           in -- Global gate: protocol must not be paused
+           in -- Global gate: protocol must not be paused (M0).
+              -- Scope note: this gate intentionally covers only NEW MINTS (every redeemer below, i.e.
+              -- profile/rank/promotion/membership/achievement creation). It does NOT gate acceptances of
+              -- already-minted state (e.g. promotion acceptance, membership interval acceptance, achievement
+              -- acceptance), which are spending-side actions enforced by other validators (RanksValidator,
+              -- MembershipsValidator, AchievementsValidator) and are not routed through this policy. Extending
+              -- the pause to also block acceptances would be a design change and is out of scope here.
               traceIfFalse "M0" (not (opPaused oracle)) -- Protocol is paused (M0)
                 && case redeemer of
                   CreateProfile seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOrMembershipRootOutputIdx ->
@@ -182,6 +188,11 @@ handleCreateProfile ::
   Bool
 handleCreateProfile protocolParams TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOutRef metadata profileType creationDate rankNumber profileOutputIdx rankOrMembershipRootOutputIdx =
   -- NOTE: rankNumber validation handled by intToBelt (fails for values outside 0-14)
+  -- NOTE (trust model): for a Practitioner, mkPractitionerProfile sets rankAwardedByProfileId = profileId,
+  -- i.e. the initial rank (0-14) is self-attested by the newly created profile itself, not awarded by a
+  -- master. This is intentional per the onchain-minimal / mirror-and-pin philosophy: the chain enforces only
+  -- that the number is a valid belt (0-14); trust in a practitioner's claimed starting rank is established
+  -- off-chain (e.g. by organizations/masters observed enrolling or promoting them), not by this validator.
   let (profileRefTN, profileUserTN) = generateRefAndUserTN $ Utils.nameFromTxOutRef seedTxOutRef
       profileRefAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileRefTN)
       profileUserAssetClass = V1.AssetClass (mintingPolicyCurrencySymbol, profileUserTN)
