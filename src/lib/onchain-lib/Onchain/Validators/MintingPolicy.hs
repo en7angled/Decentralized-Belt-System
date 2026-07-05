@@ -280,7 +280,9 @@ handlePromote protocolParams txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx 
    in traceIfFalse "M7" (isStudentValid && isMasterValid) -- Profiles must have correct currency symbol (M7)
         && traceIfFalse "M8" (Utils.inputsSpendTxOutRef seedTxOutRef txInfoInputs) -- Must spend seed for uniqueness (M8)
         && traceIfFalse "M9" (V1.assetClassValueOf (valueSpent txInfo) masterUserAC == 1) -- Must spend master user NFT (M9)
-        && traceIfFalse "Ma" (mintValueMinted txInfoMint == pendingRankNFT && mintValueBurned txInfoMint == mempty) -- Tx must mint JUST pending rank NFT (Ma)
+        && traceIfFalse
+          "Ma" -- Tx must mint JUST pending rank NFT (Ma)
+          (mintValueMinted txInfoMint == pendingRankNFT && mintValueBurned txInfoMint == mempty)
         && traceIfFalse "Mb" (Utils.checkTxOutAtIndexWithDatumMinValueAndAddress pendingRankOutputIdx pendingRankDatum pendingRankValue ranksValidatorAddress txInfoOutputs) -- Lock pending rank at RV (Mb)
         && traceIfFalse "Mc" isPromotionValid -- Must pass promotion validation (Mc)
 
@@ -419,7 +421,9 @@ handleNewAchievement txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOu
         && traceIfFalse "Mf" (V1.assetClassValueOf (valueSpent txInfo) (deriveUserFromRefAC awardedBy) == 1) -- Must spend awarded by user NFT (Mf)
         && traceIfFalse "Mg" (isAwardedToValid && isAwardedByValid) -- Profiles must have correct currency symbol (Mg)
         && traceIfFalse "Mh" (Utils.inputsSpendTxOutRef seedTxOutRef txInfoInputs) -- Must spend seed for uniqueness (Mh)
-        && traceIfFalse "Mj" (mintValueMinted txInfoMint == achievementNFT && mintValueBurned txInfoMint == mempty) -- Tx must mint JUST achievement NFT (Mj)
+        && traceIfFalse
+          "Mj" -- Tx must mint JUST achievement NFT (Mj)
+          (mintValueMinted txInfoMint == achievementNFT && mintValueBurned txInfoMint == mempty)
         && traceIfFalse "Mk" (Utils.checkTxOutAtIndexWithDatumMinValueAndAddress achievementOutputIdx achievementDatum achievementValue achievementsValidatorAddress txInfoOutputs) -- Lock achievement at AchievementsValidator address (Mk)
 
 -------------------------------------------------------------------------------
