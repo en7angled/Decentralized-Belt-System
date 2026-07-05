@@ -56,30 +56,54 @@ Before starting the ops steps below, confirm:
 
 ## 3. Step 1 — Rotate Maestro token `[ops]`
 
-The Maestro API token is committed in cleartext at `config/config_atlas.json`
-(`coreProvider.maestroToken`, currently `DB7AVocLdKo22TtFxvuMlHKD7aofoJYQ`,
-introduced in commit `e9514de`). It must be rotated and moved out of version
-control before anything else in this sequence.
+The Maestro token committed in `config/config_atlas.json` (exposed in git
+history — `coreProvider.maestroToken`, introduced in commit `e9514de`) must
+be rotated before anything else in this sequence.
 
 ```bash
 grep -n 'maestroToken\|MaestroToken\|apiKey' config/config_atlas.json
 ```
 
-1. Issue a new Maestro API key from the Maestro dashboard (kills the old key
-   as soon as it's issued/the old one is revoked).
-2. Move the new token to `.env` (uncommitted, sourced by direnv per
-   `CLAUDE.md` §Environment) instead of `config/config_atlas.json`. Use
-   `decodeConfigEnvOrFile` conventions already in use elsewhere in this repo
-   so the token is read from an env var, not the checked-in file.
-3. Scrub `maestroToken` out of `config/config_atlas.json` (or replace with an
-   empty/placeholder value that is overridden by the env var at load time).
-4. Commit the scrubbed `config_atlas.json`.
+**How the token actually reaches a running server** (verified:
+`decodeConfigEnvOrFile` in `src/lib/offchain-lib/Utils.hs`, called as
+`decodeConfigEnvOrFile "ATLAS_CORE_CONFIG" defaultAtlasCoreConfig` from
+`interaction-api`/`query-api`/`chainsync-service` `Main.hs`): at startup each
+server checks the `ATLAS_CORE_CONFIG` env var first. If it's set, its value
+is parsed **directly as inline JSON** and `config/config_atlas.json` is never
+read at all; only when the env var is *unset* does the server fall back to
+the baked-in file. Every `Dockerfile.{chainsync,interaction-api,query-api}`
+does `COPY ./config /app/config`, so the committed (leaked) token is baked
+into every image as that fallback — but it's only *used* if
+`ATLAS_CORE_CONFIG` is unset in the deploying `.env`.
+
+Both this repo's dev/audit `docker-compose.yml` and the `bjj-frontend`
+unified `docker-compose.yml` pass `ATLAS_CORE_CONFIG=${ATLAS_CORE_CONFIG}`
+straight through from their own `.env`. Confirmed: the `.env` that actually
+drives the deployed preprod stack (`bjj-frontend/.env`) already sets
+`ATLAS_CORE_CONFIG` to an inline JSON blob — so the running containers are
+**not** using the baked, leaked token; they're using whatever token is in
+that blob. Rotation therefore has two independent parts:
+
+1. Issue a new Maestro API key from the Maestro dashboard.
+2. Rotate the **live** credential: update the `maestroToken` field inside the
+   `ATLAS_CORE_CONFIG` JSON blob in `bjj-frontend/.env` to the new key. This
+   takes effect on the next container recreate — step 3 below already runs
+   `docker compose up -d`, so no separate restart is needed if this edit
+   lands first. No image rebuild is required for the token itself.
+3. Revoke the old key at the Maestro dashboard once the new one is verified
+   working (see rollback table, row 1) — this is what actually neutralizes
+   the git-history exposure, since the committed value can't be scrubbed out
+   of prior commits.
+4. Scrub `maestroToken` out of **this repo's** `config/config_atlas.json`
+   (replace with an empty/placeholder value) and commit. This doesn't rotate
+   anything live (step 2 already did) — it only stops future images from
+   baking in a live-looking fallback secret.
 
 The **old committed token is exposed in this repo's git history** regardless
-of step 3 — scrubbing the working tree does not remove it from prior commits.
-Rotation (step 1) neutralizes the exposure by making the leaked value useless.
-Purging it from git history (`git filter-repo` / BFG) is **optional** and not
-required for this cutover.
+of step 4 — scrubbing the working tree does not remove it from prior
+commits. Revoking it (step 3) is what neutralizes the exposure. Purging it
+from git history (`git filter-repo` / BFG) is **optional** and not required
+for this cutover.
 
 ## 4. Step 2 — Redeploy on-chain `[ops]`
 
@@ -100,43 +124,101 @@ for the full breakdown of what the command does.
 
 After it completes, commit the regenerated `config/config_bjj_validators.json`.
 
-## 5. Step 3 — Deploy BE servers (fail-closed) `[ops]` — CUTOVER POINT
+## 5. Step 3 — Cutover: publish images, bump tag, redeploy the stack `[ops]` — CUTOVER POINT
 
 **This is the cutover point.** The old deployment stays fully live through
-steps 1–2 above (non-destructive rehearsal); this step is where traffic moves
-to the new on-chain state and new servers.
+steps 1–2 above (non-destructive rehearsal); this step is where traffic
+moves to the new on-chain state and the new servers.
 
-Deploy `interaction-api`, `query-api`, `chainsync-service`, and `mcp-server`
-against the new `config/config_bjj_validators.json`, with the fail-closed env
-vars set (Stream C — see `stream_c_api_hardening` memory note):
+The BE servers are **not** run via `cabal run` in any deployed environment —
+`interaction-api`, `query-api`, `chainsync-service`, and `mcp-server` ship as
+published Docker Hub images (`mariusgeorgescu/bjj-{chainsync,interaction-api,
+query-api,mcp-server}`), pinned by a tag, pulled by the `bjj-frontend` repo's
+unified `docker-compose.yml`. That stack co-locates the frontend, BFF, and
+`agent-service` alongside these protocol images, all reading **one shared
+`.env`** — so there's no separate "BE deploy" and "FE deploy" step; bumping
+the tag and running `docker compose pull && docker compose up -d` deploys
+both sides together, in one operation.
+
+### 3a. Commit → CI publishes the new images
+
+The regenerated `config/config_bjj_validators.json` from step 2 hasn't been
+committed yet — do that now:
 
 ```bash
-BASIC_USER=<value> BASIC_PASS=<value> CORS_ALLOWED_ORIGINS=<value> \
-  direnv exec . cabal run exe:interaction-api
-# repeat with the equivalent config for exe:query-api, exe:chainsync-service, exe:mcp-server
+git add config/config_bjj_validators.json
+git commit -m "chore: redeploy reference scripts + minting policy (preprod cutover)"
+git push
 ```
+
+`.github/workflows/{chainsync,interaction-api,query-api,mcp-server}.yml` all
+trigger on push (to `develop`/`main`) with `paths: - 'config/**'` (each also
+matches its own `Dockerfile.*`, which does `COPY config ./config`) — so this
+commit is what triggers CI to rebuild and publish new images, with the new
+validator config baked in on top of the Stream E/F/G code already on `main`.
+
+**Wait for CI to publish** before continuing — each workflow runs `cabal
+build all && cabal test` (self-hosted) ahead of `docker build`/`docker push`,
+so there is real latency between the push landing and a pullable image
+existing. Confirm all four `build-and-push` jobs have finished (Actions tab,
+or `gh run list --workflow=<name>.yml`) for this commit's SHA before moving
+to 3b.
+
+The published tag is the pushed commit's **short SHA** (`${GITHUB_SHA::7}`,
+7 characters) — the same scheme this repo's own dev-stack `docker-compose.yml`
+already pins against (e.g. `mariusgeorgescu/bjj-chainsync:e36ddc2`). Note
+that short SHA; it's what gets set in 3b.
+
+### 3b. Bump the tag and redeploy the unified stack (in `bjj-frontend`)
+
+In the `bjj-frontend` repo, branch `val1-prerelease-blockers`:
+
+1. In `bjj-frontend/.env` (the single `.env` shared by the whole stack —
+   protocol + FE + BFF + agent-service), set `UPSTREAM_TAG` to the short SHA
+   from 3a. (`bjj-frontend/docs/DEPLOYMENT.md`'s prose calls this
+   `PROTOCOL_TAG`; the variable actually consumed by its `docker-compose.yml`
+   and `.env.example` is `UPSTREAM_TAG` — use that name.)
+2. Confirm the FE image (`DOWNSTREAM_TAG`, `mariusgeorgescu/bjj-frontend:dev`
+   or `:prod`) was built from branch `val1-prerelease-blockers` (carries
+   Stream C's fail-closed change). If the currently-pushed image predates
+   that branch, rebuild and push it first, from that branch:
+
+   ```bash
+   npm run deploy-dev    # or deploy-prod — matches the tier this stack targets
+   ```
+
+   (`package.json`: both scripts run `docker buildx build ... --push` to
+   `mariusgeorgescu/bjj-frontend:dev`/`:prod`.) Then set `DOWNSTREAM_TAG` in
+   `.env` to match.
+3. Confirm `bjj-frontend/.env` has `BASIC_USER`, `BASIC_PASS`, and
+   `CORS_ALLOWED_ORIGINS` set to real values — Stream C's fail-closed change
+   means the Haskell servers die at startup if `BASIC_USER`/`BASIC_PASS` are
+   unset (no `cardano`/`lovelace` fallback), and the FE/BFF reads the same
+   variables from the same file, so there's no separate "match FE to BE"
+   step the way a two-repo deploy would need.
+4. Pull and restart:
+
+   ```bash
+   docker compose pull
+   docker compose up -d
+   ```
+
+   Healthchecks gate ordering: `postgres` → `chainsync` →
+   (`interaction-api` | `query-api` | `ipfs`) → `mcp-server` →
+   `agent-service` → `bjj-frontend` → `nginx`. Watch with `docker compose ps`.
 
 `chainsync-service` is on schema **v4** (R1: `tx_hash`/`slot`/`output_index`
-backfill). On this deploy it detects the new validator hashes and **wipes +
-re-syncs from origin** against the new deployment — this is expected, not a
-failure mode.
+backfill), and this deploy also lands Stream E's new `MintingPolicy` hash. At
+startup, chain-sync's `readSchemaProbe` reads the stored schema version and
+minting-policy hex from `chain_sync_config`; if the stored schema version is
+behind current, **or** the stored policy hex differs from the current one,
+it wipes chain-sync's tables (`wipeChainSyncTablesRaw`) and re-syncs from
+origin before running migrations (see `docs/architecture/chain-sync.md`).
+Both conditions are independently true on this deploy — the v4 schema bump
+and the new minting-policy hash — so the wipe fires either way. This is
+expected, not a failure mode.
 
-## 6. Step 4 — Deploy FE in lockstep `[ops]`
-
-The frontend's fail-closed change must deploy in lockstep with the fail-closed
-BE servers above — mismatched `BASIC_*` values between FE and BE is the
-primary failure mode here.
-
-```bash
-# in the bjj-frontend repo, branch val1-prerelease-blockers
-BASIC_USER=<same value as BE> BASIC_PASS=<same value as BE> \
-  <frontend deploy command>
-```
-
-Verify the FE's `BASIC_USER`/`BASIC_PASS` match the values set on the BE
-servers in step 3 exactly.
-
-## 7. Step 5 — Repopulate + validate `[ops]`
+## 6. Step 4 — Repopulate + validate `[ops]`
 
 Re-seed sample data against the new deployment:
 
@@ -160,7 +242,7 @@ Then run the validation checklist:
 - fail-closed check: an unauthenticated request to a protected BE route
   returns 401, not data
 
-## 8. Rollback table
+## 7. Rollback table
 
 Because old data is abandoned, rollback is cheap — no state to recover.
 
@@ -168,9 +250,8 @@ Because old data is abandoned, rollback is cheap — no state to recover.
 | --- | --- | --- |
 | 1 Token | none on-chain | old key valid until revoked; revoke only after new key verified |
 | 2 Redeploy | new refs half-published | re-run (`deploy-reference-scripts` always deploys fresh); old deployment untouched |
-| 3 BE servers | re-sync fail / crashloop | roll back image + previous `config_bjj_validators.json` (git history); re-sync from origin either way |
-| 4 FE lockstep | FE can't reach authed BE | roll back FE image; usual cause is `BASIC_*` env mismatch — verify parity |
-| 5 Repopulate | partial sample data | wipe DB + re-run populate |
+| 3 Cutover | CI publish fails, or re-sync fail/crashloop, or FE can't reach authed BE | CI failure: fix and re-push — no images changed yet, old deployment untouched. Post-pull failure: roll back `UPSTREAM_TAG`/`DOWNSTREAM_TAG` to their previous values in `bjj-frontend/.env` and `docker compose up -d`; previous `config_bjj_validators.json` is still in git history if the on-chain side also needs reverting. `BASIC_*` mismatch between FE and BE is structurally less likely now (one shared `.env`), but still verify parity if it happens |
+| 4 Repopulate | partial sample data | wipe DB + re-run populate |
 
 **Safety property:** the old deployment stays live until step 3 (§5 above), so
 steps 1–2 are a non-destructive rehearsal. Step 3 is the single commit point,
