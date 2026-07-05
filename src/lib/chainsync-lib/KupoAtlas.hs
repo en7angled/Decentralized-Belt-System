@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Converts raw Kupo match data ('KupoMatch') into Atlas (GeniusYield) types ('AtlasMatch').
 module KupoAtlas where
 

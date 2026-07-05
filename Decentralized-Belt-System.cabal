@@ -25,8 +25,8 @@ extra-source-files:
 
 
 common common-options
-  ghc-options:      -Wall
-  default-language: GHC2021 
+  ghc-options:      -Wall -Wunused-packages
+  default-language: GHC2021
   build-depends:    base
 
 common plinth-ghc-options
@@ -249,11 +249,9 @@ library webapi-lib
   build-depends:
     , aeson
     , bytestring
-    , deriving-aeson
     , http-types
     , lens
     , memory
-    , servant
     , servant-server
     , swagger2
     , text
@@ -282,7 +280,6 @@ executable admin
   build-depends:
     , atlas-cardano
     , plutus-ledger-api
-    , plutus-tx
 
 executable interaction-api
   import:           common-options
@@ -290,7 +287,6 @@ executable interaction-api
   hs-source-dirs:   src/exe/interaction-api
   default-language: GHC2021
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -with-rtsopts=-N -O2
-  extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
     IPFS
     InteractionAppMonad
@@ -301,7 +297,6 @@ executable interaction-api
   build-depends:
     , base
     , offchain-lib
-    , onchain-lib
     , webapi-lib
 
   build-depends:
@@ -309,17 +304,12 @@ executable interaction-api
     , aeson-pretty
     , bytestring             ^>=0.11.5
     , deriving-aeson
-    , esqueleto
     , extra
     , http-client
     , http-client-tls
     , http-types             ^>=0.12.4
     , lens                   ^>=5.2.3
-    , monad-logger
     , mtl
-    , multiset
-    , persistent
-    , persistent-postgresql
     , servant-multipart
     , servant-options
     , servant-server
@@ -341,7 +331,6 @@ executable query-api
   hs-source-dirs:   src/exe/query-api
   default-language: GHC2021
   ghc-options:      -threaded -rtsopts -with-rtsopts=-T -with-rtsopts=-N -O2
-  extra-lib-dirs:   /usr/lib /usr/local/lib
   other-modules:
     Query.Aggregates
     Query.Common
@@ -366,10 +355,8 @@ executable query-api
     , aeson-pretty
     , bytestring             ^>=0.11.5
     , containers
-    , deriving-aeson
     , esqueleto
     , extra
-    , http-types             ^>=0.12.4
     , lens                   ^>=5.2.3
     , monad-logger
     , mtl
@@ -401,23 +388,19 @@ executable chainsync-service
     , base
     , chainsync-lib
     , offchain-lib
-    , onchain-lib
     , webapi-lib
 
   build-depends:
-    , aeson
     , bytestring
     , deriving-aeson
     , extra
     , monad-logger
-    , mtl
     , persistent
     , persistent-postgresql
     , servant-server
     , swagger2
     , text
     , time
-    , wai
     , warp
 
   other-modules:
@@ -428,8 +411,6 @@ executable chainsync-service
   --- Cardano specific dependencies
   build-depends:
     , atlas-cardano
-    , plutus-ledger-api
-    , plutus-tx
 
 test-suite test
   import:           common-options   
@@ -518,7 +499,6 @@ library mcp-server-lib
   build-depends:
     , base
     , offchain-lib
-    , onchain-lib
     , webapi-lib
 
   build-depends:
@@ -532,13 +512,10 @@ library mcp-server-lib
     , http-client-tls
     , http-types
     , mcp
-    , mtl
-    , servant
     , servant-client
     , servant-client-core
     , servant-server
     , text
-    , time
     , wai
     , warp
 
@@ -566,7 +543,6 @@ test-suite mcp-integration
     IntegrationTests.MCPTools
   build-depends:
     , base
-    , aeson
     , bytestring
     , http-client
     , http-client-tls

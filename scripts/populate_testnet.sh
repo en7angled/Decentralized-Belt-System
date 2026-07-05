@@ -35,6 +35,7 @@
 
 set -e # Exit on any error
 set -o pipefail
+set -u
 
 # Parse arguments
 FORCE_REDEPLOY=false
@@ -271,7 +272,7 @@ print_subsection "Test Oracle Admin Actions"
 
 print_info "Setting fee configuration..."
 run_admin_cmd_no_output set-fees \
-    --fee-address "addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp" \
+    --fee-address "${FEE_ADDRESS:-addr_test1qz2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3jcu5d8ps7zex2k2xt3uqxgjqnnj83ws8lhrn648jjxtwq2ytjqp}" \
     --profile-fee 2000000 \
     --promotion-fee 3000000 \
     --membership-history-fee 1500000 \
