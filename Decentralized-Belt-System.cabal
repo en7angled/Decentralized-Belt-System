@@ -437,6 +437,7 @@ test-suite test
     UnitTests.Membership
     UnitTests.Oracle
     UnitTests.Promotion
+    UnitTests.StorageRoundtrip
 
   build-depends:
     , base
@@ -458,6 +459,8 @@ test-suite test
     , http-client-tls
     , http-types
     , mtl
+    , persistent
+    , persistent-sqlite
     , servant
     , servant-client
     , servant-server

@@ -13,6 +13,7 @@ import UnitTests.MCPTools (mcpToolsTests)
 import UnitTests.Membership (membershipTests)
 import UnitTests.Oracle (oracleTests)
 import UnitTests.Promotion (promotionTests)
+import UnitTests.StorageRoundtrip (storageRoundtripTests)
 
 unitTests :: (HasCallStack) => TestTree
 unitTests =
@@ -26,5 +27,6 @@ unitTests =
       mcpToolsTests,
       chainSyncReplayTests,
       apiHardeningTests,
-      conversionsTests
+      conversionsTests,
+      storageRoundtripTests
     ]
