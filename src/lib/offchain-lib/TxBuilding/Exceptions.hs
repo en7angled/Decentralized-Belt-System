@@ -36,11 +36,8 @@ data TxBuildingException
   | RankListEmpty
   | WrongRankDataType
   | PromotionNotPending
-  | -- \* Promotion Errors
-    PromotionNotFound
   | -- \* Membership Errors
-    MembershipHistoryNotFound
-  | MembershipIntervalNotFound
+    MembershipIntervalNotFound
   | MembershipListNodeNotFound
   | MembershipRootNodeHasNoHistory
   | CannotAddMembershipInterval AddMembershipIntervalReason
@@ -80,8 +77,6 @@ instance Exception TxBuildingException where
   displayException RankListEmpty = "Rank list is empty for this practitioner"
   displayException WrongRankDataType = "Wrong rank data type"
   displayException PromotionNotPending = "Cannot accept: rank is not a pending promotion"
-  displayException PromotionNotFound = "Promotion not found"
-  displayException MembershipHistoryNotFound = "Membership history not found"
   displayException MembershipIntervalNotFound = "Membership interval not found"
   displayException MembershipListNodeNotFound = "Membership list node not found"
   displayException MembershipRootNodeHasNoHistory = "Membership list node is the root; it has no history or first interval"
@@ -133,8 +128,6 @@ txBuildingExceptionToHttpStatus RankNotFound = 404
 txBuildingExceptionToHttpStatus RankListEmpty = 404
 txBuildingExceptionToHttpStatus WrongRankDataType = 400
 txBuildingExceptionToHttpStatus PromotionNotPending = 400
-txBuildingExceptionToHttpStatus PromotionNotFound = 404
-txBuildingExceptionToHttpStatus MembershipHistoryNotFound = 404
 txBuildingExceptionToHttpStatus MembershipIntervalNotFound = 404
 txBuildingExceptionToHttpStatus MembershipListNodeNotFound = 404
 txBuildingExceptionToHttpStatus MembershipRootNodeHasNoHistory = 404

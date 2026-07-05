@@ -14,20 +14,6 @@ import TxBuilding.Utils (getInlineDatumAndValue, getInlineDatumAndValueOrThrow, 
 
 ------------------------------------------------------------------------------------------------
 
--- * Query Skeletons
-
-------------------------------------------------------------------------------------------------
-
-getRefScriptAtTxOutRef :: (GYTxQueryMonad m) => GYTxOutRef -> m GYAnyScript
-getRefScriptAtTxOutRef refScript = do
-  utxo <- utxoAtTxOutRef refScript
-  let ms = utxoRefScript =<< utxo
-  case ms of
-    Just s -> return s
-    Nothing -> throwError (GYApplicationException ScriptNotFound)
-
-------------------------------------------------------------------------------------------------
-
 -- * CIP-68 Utils
 
 ------------------------------------------------------------------------------------------------

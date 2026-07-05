@@ -143,9 +143,6 @@ getAllRanks nid = do
 getAllOnchainProfiles :: (GYTxQueryMonad m) => GYNetworkId -> m [CIP68Datum Onchain.OnchainProfile]
 getAllOnchainProfiles nid = getAllParsedDatumsAtValidator nid profilesValidatorHashGY profileDatumFromDatum
 
-getAllProfilesCount :: (GYTxQueryMonad m) => GYNetworkId -> m Int
-getAllProfilesCount nid = length <$> getAllOnchainProfiles nid
-
 getAllProfiles :: (GYTxQueryMonad m) => GYNetworkId -> m [Profile]
 getAllProfiles nid = do
   allProfiles <- getAllOnchainProfiles nid

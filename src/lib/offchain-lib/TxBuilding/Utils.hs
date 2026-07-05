@@ -12,7 +12,6 @@ import GeniusYield.Types (GYAddress, GYAssetClass (..), GYDatum, GYExtendedPayme
 import GeniusYield.Types.Address (addressFromPaymentKeyHash)
 import GeniusYield.Types.Datum (datumToPlutus')
 import GeniusYield.Types.Key (extendedPaymentSigningKeyToApi, paymentVerificationKeyFromApi)
-import GeniusYield.Types.Slot (unsafeSlotFromInteger)
 import GeniusYield.Types.Time (timeFromPlutus, timeToPlutus)
 import GeniusYield.Types.Wallet
 import Onchain.CIP68 (CIP68Datum)
@@ -51,9 +50,6 @@ extractNFTAssetClass v =
         (Right mpid, Just tn') -> Just (GYToken mpid tn')
         _ -> Nothing
     _ -> Nothing
-
-pPOSIXTimeFromSlotInteger :: (GYTxQueryMonad m) => Integer -> m POSIXTime
-pPOSIXTimeFromSlotInteger = (timeToPlutus <$>) . slotToBeginTime . unsafeSlotFromInteger
 
 pPOSIXTimeFromGYSlot :: (GYTxQueryMonad m) => GYSlot -> m POSIXTime
 pPOSIXTimeFromGYSlot = (timeToPlutus <$>) . slotToBeginTime
@@ -158,10 +154,6 @@ membershipDatumFromGYOutDatum _ = Nothing
 oracleParamsFromDatum :: GYDatum -> Maybe OracleParams
 oracleParamsFromDatum gyDatum =
   fromBuiltinData (datumToPlutus' gyDatum)
-
-oracleParamsFromGYOutDatum :: GYOutDatum -> Maybe OracleParams
-oracleParamsFromGYOutDatum (GYOutDatumInline gyDatum) = oracleParamsFromDatum gyDatum
-oracleParamsFromGYOutDatum _ = Nothing
 
 achievementDatumFromDatum :: GYDatum -> Maybe (CIP68Datum OnchainAchievement)
 achievementDatumFromDatum gyDatum =

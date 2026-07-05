@@ -753,18 +753,6 @@ getPromotionBeltTotals = do
       )
       pool
 
-getMembershipHistoriesAsHistory :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe F.MembershipHistoryFilter -> Maybe (MembershipHistoriesOrderBy, SortOrder) -> m [MembershipHistory]
-getMembershipHistoriesAsHistory maybeLimitOffset maybeFilter maybeOrder = do
-  infos <- getMembershipHistories maybeLimitOffset maybeFilter maybeOrder
-  pure $ membershipHistoryInformationToHistory <$> infos
-  where
-    membershipHistoryInformationToHistory info =
-      MembershipHistory
-        { membershipHistoryId = membershipHistoryInformationId info,
-          membershipHistoryPractitionerId = membershipHistoryInformationPractitionerId info,
-          membershipHistoryOrganizationId = membershipHistoryInformationOrganizationId info
-        }
-
 getMembershipHistories :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe F.MembershipHistoryFilter -> Maybe (MembershipHistoriesOrderBy, SortOrder) -> m [MembershipHistoryInformation]
 getMembershipHistories maybeLimitOffset maybeFilter maybeOrder = do
   pool <- asks pgPool
@@ -839,21 +827,6 @@ getMembershipHistoriesCount maybeFilter = do
           pure (maybe 0 unValue cnt)
       )
       pool
-
-getMembershipIntervalsAsInterval :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe F.MembershipIntervalFilter -> Maybe (MembershipIntervalsOrderBy, SortOrder) -> m [MembershipInterval]
-getMembershipIntervalsAsInterval maybeLimitOffset maybeFilter maybeOrder = do
-  infos <- getMembershipIntervals maybeLimitOffset maybeFilter maybeOrder
-  pure $ membershipIntervalInformationToInterval <$> infos
-  where
-    membershipIntervalInformationToInterval info =
-      MembershipInterval
-        { membershipIntervalId = membershipIntervalInformationId info,
-          membershipIntervalStartDate = membershipIntervalInformationStartDate info,
-          membershipIntervalEndDate = membershipIntervalInformationEndDate info,
-          membershipIntervalAccepted = membershipIntervalInformationAccepted info,
-          membershipIntervalPractitionerId = membershipIntervalInformationPractitionerId info,
-          membershipIntervalIntervalNumber = membershipIntervalInformationIntervalNumber info
-        }
 
 getMembershipIntervals :: (MonadIO m, MonadReader QueryAppContext m) => Maybe (C.Limit, C.Offset) -> Maybe F.MembershipIntervalFilter -> Maybe (MembershipIntervalsOrderBy, SortOrder) -> m [MembershipIntervalInformation]
 getMembershipIntervals maybeLimitOffset maybeFilter maybeOrder = do

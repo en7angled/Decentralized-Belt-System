@@ -297,7 +297,6 @@ executable interaction-api
     RestAPI
     ServiceHandlers
     ServiceRequests
-    Types
 
   build-depends:
     , base

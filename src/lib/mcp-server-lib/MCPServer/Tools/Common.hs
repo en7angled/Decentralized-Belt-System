@@ -26,7 +26,6 @@ module MCPServer.Tools.Common
 import Data.Aeson (FromJSON, ToJSON, Value, encode, fromJSON)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
@@ -166,7 +165,3 @@ sampleBody :: BL.ByteString -> Text
 sampleBody bs =
   let sampled = BL.take 1024 bs
    in TE.decodeUtf8With (\_ _ -> Just '?') (BL.toStrict sampled)
-
--- Silence -Wunused-imports — BL8.pack stays available for debugging shims.
-_unusedBL8 :: BL.ByteString
-_unusedBL8 = BL8.pack ""
