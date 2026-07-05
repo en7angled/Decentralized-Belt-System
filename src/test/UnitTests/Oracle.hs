@@ -21,7 +21,13 @@ import PlutusTx.Prelude (isNothing)
 import Test.Fixtures (adminTestProfileData, studentProfileData)
 import Test.Helpers (assert, queryOracle)
 import Test.Tasty
-import TestRuns (adminInteraction, bjjInteraction, deployBJJValidators)
+import TestRuns
+  ( adminInteraction,
+    bjjInteraction,
+    deployBJJValidators,
+    maliciousMintOracleNFTWithExtraToken,
+    maliciousMintOracleNFTWrongName,
+  )
 import TxBuilding.Lookups (queryOracleParams)
 
 oracleTests :: (HasCallStack) => TestTree
@@ -67,7 +73,9 @@ oracleAdminTests =
       mkTestFor "Test Case 0.4: Set min UTxO value" setMinUTxOValue,
       mkTestFor "Test Case 0.5: Sequential admin actions with profile interactions" sequentialAdminWithProfiles,
       mkTestFor "Test Case 0.6: Non-admin oracle update fails" nonAdminOracleUpdateFails,
-      mkTestFor "Test Case 0.7: Profile-creation fee is delivered to the fee address" feeReachesFeeAddress
+      mkTestFor "Test Case 0.7: Profile-creation fee is delivered to the fee address" feeReachesFeeAddress,
+      mkTestFor "Test Case 0.8: Minting the oracle NFT with an extra token fails (F-22a)" oracleExtraTokenMintFails,
+      mkTestFor "Test Case 0.9: Minting the oracle NFT with a non-empty token name fails" oracleWrongNameMintFails
     ]
   where
     pauseAndUnpause :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -268,3 +276,11 @@ oracleAdminTests =
           bjjInteraction ctx (w1 testWallets) (InitProfileAction studentProfileData Practitioner creationDate) Nothing
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Profile-creation fee delivered to fee address!"
       return ()
+
+    oracleExtraTokenMintFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    oracleExtraTokenMintFails TestInfo {..} =
+      mustFail $ void $ maliciousMintOracleNFTWithExtraToken (w1 testWallets)
+
+    oracleWrongNameMintFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    oracleWrongNameMintFails TestInfo {..} =
+      mustFail $ void $ maliciousMintOracleNFTWrongName (w1 testWallets)

@@ -12,6 +12,8 @@ module TestRuns
     getProfileAndRank,
     maliciousAcceptPromotionTX,
     maliciousBjjAcceptPromotion,
+    maliciousMintOracleNFTWithExtraToken,
+    maliciousMintOracleNFTWrongName,
   )
 where
 
@@ -159,6 +161,56 @@ mintTestOracleNFT w = asUser w $ do
       "Oracle NFT minted and locked: " <> show theOracleNFTAC
 
   return theOracleNFTAC
+
+-- | MALICIOUS: attempt to mint the oracle NFT PLUS an extra token under the one-shot policy.
+-- Must fail OracleNFTPolicy N2 (exact-mint: mintValueMinted == theOracleNFT).
+maliciousMintOracleNFTWithExtraToken :: (GYTxGameMonad m, HasCallStack) => User -> m GYAssetClass
+maliciousMintOracleNFTWithExtraToken w = asUser w $ do
+  seedGYRef <- someUTxOWithoutRefScript
+  let seedPlutus = txOutRefToV3Plutus seedGYRef
+  let oracleNFTPolicyGY = compileOracleNFTPolicy seedPlutus
+  let oracleNFTMPId = mintingPolicyId oracleNFTPolicyGY
+  let theOracleNFTAC = GYToken oracleNFTMPId ""
+  let adminPkh = userPlutusPkh w
+  let initialOracleParams =
+        OracleParams {opAdminPkh = adminPkh, opPaused = False, opFeeConfig = Nothing, opMinUTxOValue = 1000000}
+  let spendSeed = mustHaveInput (GYTxIn seedGYRef GYTxInWitnessKey)
+  let mp = GYMintScript @'PlutusV3 oracleNFTPolicyGY
+  let gyRedeemer = redeemerFromPlutusData ()
+  -- MALICIOUS: mint the NFT AND an extra token name under the same policy.
+  let mintNFT = mustMint mp gyRedeemer "" 1 <> mustMint mp gyRedeemer "EXTRA" 1
+  lockOutput <-
+    txMustLockStateWithInlineDatumAndValue
+      oracleValidatorGY
+      initialOracleParams
+      (valueSingleton theOracleNFTAC 1 <> valueSingleton (GYToken oracleNFTMPId "EXTRA") 1 <> valueFromLovelace 3500000)
+  void $ sendSkeleton' $ mconcat [spendSeed, mintNFT, lockOutput]
+  return theOracleNFTAC
+
+-- | MALICIOUS: attempt to mint the oracle NFT with a NON-EMPTY token name.
+-- Must fail OracleNFTPolicy N2 (theOracleNFT uses the empty token name).
+maliciousMintOracleNFTWrongName :: (GYTxGameMonad m, HasCallStack) => User -> m GYAssetClass
+maliciousMintOracleNFTWrongName w = asUser w $ do
+  seedGYRef <- someUTxOWithoutRefScript
+  let seedPlutus = txOutRefToV3Plutus seedGYRef
+  let oracleNFTPolicyGY = compileOracleNFTPolicy seedPlutus
+  let oracleNFTMPId = mintingPolicyId oracleNFTPolicyGY
+  let wrongAC = GYToken oracleNFTMPId "ORACLE"
+  let adminPkh = userPlutusPkh w
+  let initialOracleParams =
+        OracleParams {opAdminPkh = adminPkh, opPaused = False, opFeeConfig = Nothing, opMinUTxOValue = 1000000}
+  let spendSeed = mustHaveInput (GYTxIn seedGYRef GYTxInWitnessKey)
+  let mp = GYMintScript @'PlutusV3 oracleNFTPolicyGY
+  let gyRedeemer = redeemerFromPlutusData ()
+  -- MALICIOUS: non-empty token name.
+  let mintNFT = mustMint mp gyRedeemer "ORACLE" 1
+  lockOutput <-
+    txMustLockStateWithInlineDatumAndValue
+      oracleValidatorGY
+      initialOracleParams
+      (valueSingleton wrongAC 1 <> valueFromLovelace 3500000)
+  void $ sendSkeleton' $ mconcat [spendSeed, mintNFT, lockOutput]
+  return wrongAC
 
 bjjInteraction :: (GYTxGameMonad m, HasCallStack) => DeployedScriptsContext -> User -> ProfileActionType -> Maybe GYAddress -> m (GYTxId, GYAssetClass)
 bjjInteraction txBuildingContext user actionType mrecipient = asUser user $ do
