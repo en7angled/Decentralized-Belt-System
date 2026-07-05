@@ -54,9 +54,9 @@ data ProfilesRedeemer
   = -- | UpdateProfile newMetadataFields profileOutputIdx
     UpdateProfile MetadataFields Integer
   | -- | AcceptPromotion rankId profileOutputIdx
-    -- NOTE: rankOutputIdx was removed (R2 redundancy — see onchain-security-audit.md).
-    -- RanksValidator has only one redeemer (PromotionAcceptance) and always validates
-    -- the rank output, so PV's rank output check was genuinely redundant.
+    -- NOTE: rankOutputIdx was removed (R2 redundancy). RanksValidator has only
+    -- one redeemer (PromotionAcceptance) and always validates the rank output,
+    -- so PV's rank output check was genuinely redundant.
     AcceptPromotion RankId Integer
   | -- | Permissionless dust/griefing cleanup. Anyone can spend a UTxO at the
     -- validator address if its datum is absent or does not parse as a valid
@@ -175,7 +175,7 @@ handleAcceptPromotion TxInfo {..} ownValue ownAddress profileRefAssetClass minti
       -- 4. RanksValidator checks User NFT consent (deriveUserFromRefAC)
       -- Therefore, RanksValidator guarantees user consent for this transaction.
       --
-      -- NOTE (R2 redundancy removed — see onchain-security-audit.md):
+      -- NOTE (R2 redundancy removed):
       -- The rank output check was removed from PV because RV has only one
       -- redeemer (PromotionAcceptance) and always validates the rank output.
       -- When PV forces the promotion to be in txInfoInputs, RV must run,

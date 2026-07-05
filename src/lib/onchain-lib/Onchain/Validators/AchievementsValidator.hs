@@ -9,8 +9,18 @@
 
 {-# HLINT ignore "Use &&" #-}
 
--- | Ranks validator enforcing promotion acceptance and rank state transitions.
-module Onchain.Validators.AchievementsValidator where
+-- | Achievements validator enforcing achievement acceptance and permissionless cleanup.
+module Onchain.Validators.AchievementsValidator
+  ( -- * Achievements Redeemer
+    AchievementsRedeemer (..),
+
+    -- * Achievements Validator
+    achievementsLambda,
+
+    -- * Compilation
+    achievementsCompile,
+  )
+where
 
 import GHC.Generics (Generic)
 import Onchain.CIP68
@@ -26,7 +36,7 @@ import Prelude qualified
 
 -------------------------------------------------------------------------------
 
--- * Ranks Redeemer
+-- * Achievements Redeemer
 
 -------------------------------------------------------------------------------
 

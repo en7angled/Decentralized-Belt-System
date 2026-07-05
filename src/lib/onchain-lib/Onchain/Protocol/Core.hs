@@ -287,7 +287,8 @@ acceptRank Promotion {..} previousRankId =
 -- Unlike 'promoteProfile', this does NOT construct the full Rank record —
 -- it only updates the profile's @currentRank@ pointer to the promotion's ID.
 -- This is the lightweight alternative for validators that only need the
--- updated profile datum (e.g., ProfilesValidator — see R4 optimization in onchain-security-audit.md).
+-- updated profile datum (e.g., ProfilesValidator, which never needs the full
+-- Rank record — this is the R4 optimization).
 promoteProfileDatum :: CIP68Datum OnchainProfile -> OnchainRank -> CIP68Datum OnchainProfile
 promoteProfileDatum (CIP68Datum metadata version profile@OnchainProfile {..}) Promotion {..} = case currentRank of
   Just _currentRankId ->

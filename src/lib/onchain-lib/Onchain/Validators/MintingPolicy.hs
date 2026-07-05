@@ -386,7 +386,7 @@ handleNewAchievement ::
   POSIXTime ->
   Integer ->
   Bool
-handleNewAchievement txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOutRef metadata otherMetdataEncoded awardedTo awardedBy achievementDate achievementOutputIdx =
+handleNewAchievement txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOutRef metadata otherMetadataEncoded awardedTo awardedBy achievementDate achievementOutputIdx =
   let isAwardedToValid = hasCurrencySymbol awardedTo mintingPolicyCurrencySymbol
       isAwardedByValid = hasCurrencySymbol awardedBy mintingPolicyCurrencySymbol
       minLv = ctxMinLv ctx
@@ -405,7 +405,7 @@ handleNewAchievement txInfo@TxInfo {..} mintingPolicyCurrencySymbol ctx seedTxOu
             achievementIsAccepted = False
           }
 
-      achievementDatum = mkCIP68Datum achievementInfo metadata otherMetdataEncoded
+      achievementDatum = mkCIP68Datum achievementInfo metadata otherMetadataEncoded
    in traceIfFalse "Ml" (achievementDate `before` txInfoValidRange) -- Achievement date before validity (Ml)
         && traceIfFalse "Mm" (validateMetadataFields metadata) -- Metadata fields validation failed (Mm)
         && traceIfFalse "Mf" (V1.assetClassValueOf (valueSpent txInfo) (deriveUserFromRefAC awardedBy) == 1) -- Must spend awarded by user NFT (Mf)

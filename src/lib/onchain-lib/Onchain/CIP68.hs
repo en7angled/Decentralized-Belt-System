@@ -105,7 +105,7 @@ validateImageURI uri = lengthOfByteString uri <= maxImageURILength -- Image URI 
 -- All UTF-8 encoded keys and values need to be converted into their respective byte's representation when creating the datum on-chain.
 {-# INLINEABLE mkCIP68Datum #-}
 mkCIP68Datum :: a -> MetadataFields -> [(BuiltinByteString, BuiltinByteString)] -> CIP68Datum a
-mkCIP68Datum extraData Metadata222 {..} otherMetdataEncoded =
+mkCIP68Datum extraData Metadata222 {..} otherMetadataEncoded =
   CIP68Datum
     { metadata =
         PlutusTx.AssocMap.unsafeFromList -- Safe because keys are unique
@@ -113,7 +113,7 @@ mkCIP68Datum extraData Metadata222 {..} otherMetdataEncoded =
               (encodeUtf8 "description", metadataDescription),
               (encodeUtf8 "image", metadataImageURI)
             ]
-              <> otherMetdataEncoded
+              <> otherMetadataEncoded
           ),
       version = metadataVersion,
       extra = extraData
