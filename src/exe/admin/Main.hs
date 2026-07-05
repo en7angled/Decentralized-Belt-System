@@ -239,9 +239,7 @@ optionalPosixTimeParser =
 
 -- Asset class parser helper function
 parseAssetClass :: String -> Maybe GYAssetClass
-parseAssetClass s = do
-  -- Try to decode as JSON directly
-  Just =<< Aeson.decode (B.fromStrict (LSB8.pack s))
+parseAssetClass s = Aeson.decode (B.fromStrict (LSB8.pack s))
 
 -- Asset class parser
 assetClassParser :: Parser GYAssetClass

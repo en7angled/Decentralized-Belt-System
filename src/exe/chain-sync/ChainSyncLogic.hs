@@ -23,12 +23,17 @@ import GeniusYield.Types (GYNetworkId)
 import KupoClient (KupoCheckpoint (..), KupoMatch (..), runKupoCheckpointsList, runKupoMatches)
 import Storage (ChainCursor (..), getCursorValue, putCursor, putMatchAndProjections)
 
+-- | Slot gap beyond which the local tip is considered "way behind" the chain
+-- (drives the 'Behind' flag that selects bulk vs incremental fetching).
+wayBehindThresholdSlots :: Integer
+wayBehindThresholdSlots = 1200
+
 -- | Compare local and blockchain tips to derive the current sync state.
 evaluateChainSyncState :: KupoCheckpoint -> KupoCheckpoint -> ChainSyncState
 evaluateChainSyncState localTip@(KupoCheckpoint localSlot localHeader) blockchainTip@(KupoCheckpoint blockchainSlot blockchainHeader)
   | localTip == blockchainTip = UpToDate
   | localSlot == blockchainSlot && localHeader /= blockchainHeader = UpToDateButDifferentBlockHash
-  | localSlot < blockchainSlot = Behind (blockchainSlot - localSlot > 1200) -- if the difference is more than 1200 slots, we consider it way behind
+  | localSlot < blockchainSlot = Behind (blockchainSlot - localSlot > wayBehindThresholdSlots)
   | localSlot > blockchainSlot = Ahead
   -- All cases are covered by the guards above; GHC needs a fallback for exhaustiveness.
   | otherwise = UpToDate
