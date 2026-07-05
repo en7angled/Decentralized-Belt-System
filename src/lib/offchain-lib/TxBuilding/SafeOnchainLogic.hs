@@ -17,6 +17,7 @@ import Onchain.Protocol.Types
     OnchainProfile,
     OnchainProfileType (Practitioner),
     OnchainRank (Promotion, Rank),
+    promotionAwardedTo,
   )
 import Onchain.Protocol.Types qualified as OnchainTypes
 import PlutusLedgerApi.V3 (POSIXTime)
@@ -43,6 +44,14 @@ safePromoteProfile profileDatum rank =
     Promotion {} -> case Onchain.currentRank (extra profileDatum) of
       Nothing -> throwError (GYApplicationException ProfileHasNoRank)
       Just _ -> return (Onchain.promoteProfile profileDatum rank)
+
+-- | Offchain analogue for reading a pending promotion's awarded-to profile id.
+-- Throws 'PromotionNotPending' if the rank has already been accepted (is a 'Rank').
+safeGetPromotionAwardedTo :: (MonadError GYTxMonadException m) => OnchainRank -> m Onchain.ProfileId
+safeGetPromotionAwardedTo rank =
+  case rank of
+    Promotion {promotionAwardedTo = pid} -> return pid
+    Rank {} -> throwError (GYApplicationException PromotionNotPending)
 
 -- | Offchain analogue of 'Onchain.initMembershipHistory'. Throws 'InitMembershipHistoryInvalidDates' if end date is not after start date.
 safeInitMembershipHistory :: (MonadError GYTxMonadException m) => Onchain.ProfileId -> Onchain.ProfileId -> POSIXTime -> Maybe POSIXTime -> m (Onchain.OnchainMembershipHistory, Onchain.OnchainMembershipInterval)

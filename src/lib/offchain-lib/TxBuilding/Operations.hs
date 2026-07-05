@@ -34,6 +34,7 @@ import TxBuilding.SafeOnchainLogic
     safeAddMembershipIntervalToHistory,
     safeAppendMembershipHistory,
     safeGetCurrentRankId,
+    safeGetPromotionAwardedTo,
     safeInitMembershipHistory,
     safeInsertMembershipHistoryInBetween,
     safePromoteProfile,
@@ -398,7 +399,7 @@ acceptPromotionTX gyPromotionId ownAddrs = do
 
   (plutusPromotionRankDatum, plutusPromotionRankValue) <- getRankStateDatumAndValue gyPromotionId
 
-  let studentProfileRefAC = Onchain.promotionAwardedTo plutusPromotionRankDatum
+  studentProfileRefAC <- safeGetPromotionAwardedTo plutusPromotionRankDatum
   gyStudentProfileRefAC <- assetClassFromPlutus' studentProfileRefAC
 
   gyStudentProfileUserAC <- gyDeriveUserFromRefAC gyStudentProfileRefAC
