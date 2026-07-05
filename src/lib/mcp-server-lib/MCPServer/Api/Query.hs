@@ -28,6 +28,7 @@ import DomainTypes.Core.Types
   )
 import DomainTypes.Transfer.OrderBy
   ( AchievementsOrderBy
+  , ActivityEventType
   , ProfilesOrderBy
   , PromotionsOrderBy
   , SortOrder
@@ -35,6 +36,8 @@ import DomainTypes.Transfer.OrderBy
 import DomainTypes.Transfer.QueryResponses
   ( AchievementInformationResponse
   , AchievementResponse
+  , ActivityEventResponse
+  , LineageGraphData
   , OrganizationDetailResponse
   , OrganizationProfileResponse
   , PendingActionsResponse
@@ -173,6 +176,25 @@ type QueryRoutes =
         :> QueryParam' '[Required] "target" BJJBelt
         :> QueryParam' '[Optional] "granter" ProfileRefAC
         :> Get '[JSON] PromotionEligibilityResponse
+    )
+    :<|>
+    -- GET /lineage?root=...&ancestors=...&descendants=...&min_belt=...
+    ( "lineage"
+        :> QueryParam' '[Required] "root" ProfileRefAC
+        :> QueryParam' '[Required] "ancestors" Int
+        :> QueryParam' '[Required] "descendants" Int
+        :> QueryParam' '[Optional] "min_belt" BJJBelt
+        :> Get '[JSON] LineageGraphData
+    )
+    :<|>
+    -- GET /activity?limit=...&offset=...&event_type=...&actor=...&since=...
+    ( "activity"
+        :> QueryParam' '[Optional] "limit" Int
+        :> QueryParam' '[Optional] "offset" Int
+        :> QueryParam' '[Optional] "event_type" ActivityEventType
+        :> QueryParam' '[Optional] "actor" ProfileRefAC
+        :> QueryParam' '[Optional] "since" GYTime
+        :> Get '[JSON] [ActivityEventResponse]
     )
 
 -- | Full Servant client type: every @QueryRoutes@ path wrapped in HTTP Basic

@@ -34,6 +34,7 @@ import MCPServer.App (AppCtx (..))
 import MCPServer.Readiness (handleReady)
 import MCPServer.Resources (registerResources)
 import qualified MCPServer.Tools.Achievements as ToolsAchievements
+import qualified MCPServer.Tools.Activity as ToolsActivity
 import qualified MCPServer.Tools.Docs as ToolsDocs
 import qualified MCPServer.Tools.Memberships as ToolsMemberships
 import qualified MCPServer.Tools.Profiles as ToolsProfiles
@@ -112,6 +113,7 @@ allTools ctx =
     , ToolsAchievements.tools ctx
     , ToolsMemberships.tools ctx
     , ToolsSearch.tools ctx
+    , ToolsActivity.tools ctx
     , ToolsDocs.tools ctx
     ]
 

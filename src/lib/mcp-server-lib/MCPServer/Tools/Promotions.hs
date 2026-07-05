@@ -12,6 +12,8 @@
 --   @GET \/practitioner\/{id}\/eligibility@ (off-chain mirror of the on-chain
 --   validator, with structured violations + earliest-eligible date + required
 --   granter rank).
+-- * @get_lineage@                    — wraps @GET \/lineage@ (ancestor chain +
+--   descendant subtree of promotions from a root profile).
 -- * @build_promote_rank_tx@         — wraps @POST \/build-tx@ with
 --   'PromoteProfileAction'.
 -- * @build_accept_promotion_tx@     — wraps @POST \/build-tx@ with
@@ -50,6 +52,7 @@ import MCPServer.Schema
   , dateField
   , emptyInputSchema
   , enumField
+  , intField
   , objectSchema
   , orderByField
   , paginationFields
@@ -80,6 +83,7 @@ tools ctx =
   [ getPromotionsPage ctx
   , getBeltFrequency ctx
   , checkPromotionEligibility ctx
+  , getLineage ctx
   ]
     <> [buildPromoteRankTx ctx | enableWriteTx ctx]
     <> [buildAcceptPromotionTx ctx | enableWriteTx ctx]
@@ -226,6 +230,54 @@ eligibilitySchema =
     , ("granter_profile_id", profileRefField)
     ]
     ["profile_id", "target_belt"]
+
+-- | Direct lineage tree for a profile: the ancestor chain (instructors who
+-- promoted them, upward) and descendant subtree (students they promoted,
+-- downward). @ancestors@ / @descendants@ bound the depth each way (default 3
+-- when omitted); @min_belt@ optionally drops edges below a belt.
+getLineage :: AppCtx -> ToolHandler
+getLineage ctx =
+  toolHandler
+    "get_lineage"
+    ( Just
+        "Lineage graph rooted at a profile: ancestor chain (who promoted them, \
+        \upward via awarded_by) and descendant subtree (who they promoted, \
+        \downward via awarded_to). `ancestors` and `descendants` bound the \
+        \depth walked each way (default 3); optional `min_belt` filters out \
+        \edges below that belt."
+    )
+    lineageSchema
+    $ \args ->
+      case ( requireArg "root" args
+           , optionalArg "ancestors" args
+           , optionalArg "descendants" args
+           , optionalArg "min_belt" args
+           ) of
+        (Right root, Right anc, Right desc, Right minBelt) -> do
+          let call =
+                C.getLineage
+                  (upstreamAuth ctx)
+                  root
+                  (Data.Maybe.fromMaybe 3 anc)
+                  (Data.Maybe.fromMaybe 3 desc)
+                  minBelt
+          r <- liftIO (runUpstreamQuery ctx call)
+          pure . ProcessSuccess $ either (errorResult . sanitizeClientError) jsonResult r
+        (eR, eA, eD, eB) ->
+          let msgs = errsOf eR <> errsOf eA <> errsOf eD <> errsOf eB
+           in pure (ProcessSuccess (errorResult (T.intercalate "; " msgs)))
+  where
+    errsOf = either pure (const [])
+
+lineageSchema :: InputSchema
+lineageSchema =
+  objectSchema
+    [ ("root", profileRefField)
+    , ("ancestors", intField (Just "Promotion levels to walk upward (default 3)."))
+    , ("descendants", intField (Just "Promotion levels to walk downward (default 3)."))
+    , ("min_belt", beltField)
+    ]
+    ["root"]
 
 -- ---------------------------------------------------------------------------
 -- Write tools (gated on enableWriteTx)

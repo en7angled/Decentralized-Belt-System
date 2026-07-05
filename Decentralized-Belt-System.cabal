@@ -489,6 +489,7 @@ library mcp-server-lib
     MCPServer.Schema
     MCPServer.Server
     MCPServer.Tools.Achievements
+    MCPServer.Tools.Activity
     MCPServer.Tools.Common
     MCPServer.Tools.Docs
     MCPServer.Tools.Memberships

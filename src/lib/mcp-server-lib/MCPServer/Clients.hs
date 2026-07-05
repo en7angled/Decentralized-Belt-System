@@ -20,6 +20,8 @@ module MCPServer.Clients
   , search
   , getPendingActions
   , checkPromotionEligibility
+  , getLineage
+  , getActivityFeed
     -- * Interaction API clients
   , buildTx
     -- * Runners
@@ -38,6 +40,7 @@ import DomainTypes.Core.Types
   )
 import DomainTypes.Transfer.OrderBy
   ( AchievementsOrderBy
+  , ActivityEventType
   , ProfilesOrderBy
   , PromotionsOrderBy
   , SortOrder
@@ -45,6 +48,8 @@ import DomainTypes.Transfer.OrderBy
 import DomainTypes.Transfer.QueryResponses
   ( AchievementInformationResponse
   , AchievementResponse
+  , ActivityEventResponse
+  , LineageGraphData
   , OrganizationDetailResponse
   , OrganizationProfileResponse
   , PendingActionsResponse
@@ -173,7 +178,28 @@ checkPromotionEligibility
   -> Maybe ProfileRefAC
   -> ClientM PromotionEligibilityResponse
 checkPromotionEligibility auth = case client proxyQueryAPI auth of
-  _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> f -> f
+  _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> f :<|> _ -> f
+
+getLineage
+  :: BasicAuthData
+  -> ProfileRefAC
+  -> Int
+  -> Int
+  -> Maybe BJJBelt
+  -> ClientM LineageGraphData
+getLineage auth = case client proxyQueryAPI auth of
+  _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> f :<|> _ -> f
+
+getActivityFeed
+  :: BasicAuthData
+  -> Maybe Int
+  -> Maybe Int
+  -> Maybe ActivityEventType
+  -> Maybe ProfileRefAC
+  -> Maybe GYTime
+  -> ClientM [ActivityEventResponse]
+getActivityFeed auth = case client proxyQueryAPI auth of
+  _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> _ :<|> f -> f
 
 -- ---------------------------------------------------------------------------
 -- Interaction API clients

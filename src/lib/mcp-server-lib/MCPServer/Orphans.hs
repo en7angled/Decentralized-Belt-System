@@ -36,6 +36,16 @@ import DomainTypes.Transfer.OrderBy
       , AchievementsOrderById
       , AchievementsOrderByName
       )
+  , ActivityEventType
+      ( EvtAchievementAccepted
+      , EvtAchievementAwarded
+      , EvtMembershipAccepted
+      , EvtMembershipGranted
+      , EvtProfileCreated
+      , EvtPromotionAccepted
+      , EvtPromotionIssued
+      , EvtPromotionSuperseded
+      )
   , ProfilesOrderBy
       ( ProfilesOrderByDescription
       , ProfilesOrderById
@@ -65,6 +75,17 @@ instance ToHttpApiData ProfileType where
 
 -- The remaining enums have bespoke wire values that do not match @show@.
 -- Each branch mirrors the case in the corresponding 'parseQueryParam'.
+
+instance ToHttpApiData ActivityEventType where
+  toUrlPiece = \case
+    EvtProfileCreated -> "ProfileCreated"
+    EvtPromotionIssued -> "PromotionIssued"
+    EvtPromotionAccepted -> "PromotionAccepted"
+    EvtPromotionSuperseded -> "PromotionSuperseded"
+    EvtAchievementAwarded -> "AchievementAwarded"
+    EvtAchievementAccepted -> "AchievementAccepted"
+    EvtMembershipGranted -> "MembershipGranted"
+    EvtMembershipAccepted -> "MembershipAccepted"
 
 instance ToHttpApiData PromotionState where
   toUrlPiece = \case
