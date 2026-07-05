@@ -250,7 +250,8 @@ promotionSecurityTests =
     "Promotion Security Tests"
     [ mkTestFor "Test Case 2.1: Multiple masters can create promotions for same student" multipleMastersCanPromote,
       mkTestFor "Test Case 2.2: Sequential promotions from same master work correctly" sequentialPromotionsWork,
-      mkTestFor "Test Case 2.3: Accepting a promotion without the student's User NFT fails (RanksValidator)" maliciousAcceptWithoutUserNftFails
+      mkTestFor "Test Case 2.3: Accepting a promotion without the student's User NFT fails (RanksValidator)" maliciousAcceptWithoutUserNftFails,
+      mkTestFor "Test Case 2.4: Accepting the same promotion twice fails" doubleAcceptPromotionFails
     ]
   where
     multipleMastersCanPromote :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -456,4 +457,57 @@ promotionSecurityTests =
         void $
           maliciousBjjAcceptPromotion txBuildingContext (w3 testWallets) blueBeltPromotionAC
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Malicious AcceptPromotion without User NFT correctly rejected!"
+      return ()
+
+    doubleAcceptPromotionFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    doubleAcceptPromotionFails TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      txBuildingContext <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      (_gyTxId, masterAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          (CreateProfileWithRankAction masterProfileData Practitioner creationDate Black)
+          Nothing
+      (_gyTxId, studentAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w2 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 2
+      s' <- slotOfCurrentBlock
+      blueBeltDate <- slotToBeginTime s'
+      (_gyTxId, blueBeltPromotionAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          ( PromoteProfileAction
+              { promoted_profile_id = studentAC,
+                promoted_by_profile_id = masterAC,
+                achievement_date = blueBeltDate,
+                promoted_belt = Blue
+              }
+          )
+          Nothing
+      void $
+        bjjInteraction
+          txBuildingContext
+          (w2 testWallets)
+          (AcceptPromotionAction blueBeltPromotionAC)
+          Nothing
+      waitNSlots_ 1
+      -- Second acceptance of the same promotion must fail.
+      mustFail $
+        void $
+          bjjInteraction
+            txBuildingContext
+            (w2 testWallets)
+            (AcceptPromotionAction blueBeltPromotionAC)
+            Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Double-accept promotion correctly rejected!"
       return ()
