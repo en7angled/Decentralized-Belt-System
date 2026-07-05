@@ -36,7 +36,9 @@ oracleNFTPolicyLambda seedRef (ScriptContext TxInfo {..} _ scriptInfo) =
     MintingScript mintingPolicyCurrencySymbol ->
       let theOracleNFT = V1.assetClassValue (V1.AssetClass (mintingPolicyCurrencySymbol, V1.TokenName emptyByteString)) 1
        in traceIfFalse "N0" (any ((== seedRef) . txInInfoOutRef) txInfoInputs) -- Must spend seed UTxO (N0)
-            && traceIfFalse "N2" (mintValueMinted txInfoMint == theOracleNFT) -- Tx must mint JUST the oracle NFT (N2)
+            && traceIfFalse -- Tx must mint JUST the oracle NFT, no burns (N2)
+              "N2"
+              (mintValueMinted txInfoMint == theOracleNFT && mintValueBurned txInfoMint == mempty)
     _ -> traceError "N1" -- Invalid script purpose (N1)
 
 -------------------------------------------------------------------------------
