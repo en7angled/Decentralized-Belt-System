@@ -46,7 +46,7 @@ import Query.Projected
 import QueryAppMonad (QueryAppContext (..), QueryAppMonad, runWithQueryErrorHandlingWrapped)
 import Storage (ProfileProjection (..))
 import TxBuilding.Context
-import TxBuilding.Exceptions (TxBuildingException (ProfileNotFound))
+import TxBuilding.Exceptions (TxBuildingException (ProfileHasNoRank, ProfileNotFound, RankListEmpty, RankNotFound))
 import TxBuilding.Lookups
 import DomainTypes.Transfer.OrderBy
 import DomainTypes.Transfer.OrderBy qualified as Types
@@ -271,9 +271,11 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
       afterOrder = applyOrdering maybeOrder afterFilter
   return $ applyLimits maybeLimitOffset afterOrder
   where
-    -- Only the expected 'ProfileNotFound' (practitioner profile UTxO missing) is treated as
-    -- "no current belt"; any other exception (e.g. a backend/query failure) is logged and
-    -- rethrown rather than silently reported as 'PromotionPending' (F-35).
+    -- Expected "no current belt" outcomes are treated as 'Nothing' (-> PromotionPending):
+    -- a missing profile UTxO ('ProfileNotFound') OR a practitioner with no accepted rank yet
+    -- ('ProfileHasNoRank'/'RankNotFound'/'RankListEmpty' — the common pending-first-promotion
+    -- case). Any other exception (e.g. a backend/query failure) is logged and rethrown rather
+    -- than silently reported as 'PromotionPending' (F-35).
     assignPromotionState ctx promotion = do
       let pid = promotionAchievedByProfileId promotion
           belt = promotionBelt promotion
@@ -282,7 +284,8 @@ getPromotions maybeLimitOffset maybePromotionFilter maybeOrder = do
         Right belt' -> return belt'
         Left ex
           | GYApplicationException appE <- ex,
-            Just ProfileNotFound <- cast appE ->
+            Just txEx <- cast appE,
+            txEx `elem` [ProfileNotFound, ProfileHasNoRank, RankNotFound, RankListEmpty] ->
               return Nothing
           | otherwise -> do
               putStrLn $ "assignPromotionState: unexpected exception for practitioner " <> show pid <> ": " <> show ex
