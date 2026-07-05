@@ -18,7 +18,7 @@ import Onchain.BJJ
 import Test.Fixtures (masterBProfileData, masterProfileData, maxLengthImageURI, profileDataMaxLengthMetadata, profileDataOverLongName, studentProfileData)
 import Test.Tasty
 import Test.Tasty.HUnit (testCase, (@?=))
-import TestRuns (bjjInteraction, deployBJJValidators, logPractitionerProfileInformation)
+import TestRuns (bjjInteraction, deployBJJValidators, logPractitionerProfileInformation, maliciousBjjAcceptPromotion)
 
 promotionTests :: (HasCallStack) => TestTree
 promotionTests =
@@ -249,7 +249,8 @@ promotionSecurityTests =
   testGroup
     "Promotion Security Tests"
     [ mkTestFor "Test Case 2.1: Multiple masters can create promotions for same student" multipleMastersCanPromote,
-      mkTestFor "Test Case 2.2: Sequential promotions from same master work correctly" sequentialPromotionsWork
+      mkTestFor "Test Case 2.2: Sequential promotions from same master work correctly" sequentialPromotionsWork,
+      mkTestFor "Test Case 2.3: Accepting a promotion without the student's User NFT fails (RanksValidator)" maliciousAcceptWithoutUserNftFails
     ]
   where
     multipleMastersCanPromote :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
@@ -412,4 +413,47 @@ promotionSecurityTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Student promoted to Purple belt."
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Sequential promotions work correctly with proper date ordering."
 
+      return ()
+
+    maliciousAcceptWithoutUserNftFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    maliciousAcceptWithoutUserNftFails TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+      txBuildingContext <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+      (_gyTxId, masterAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          (CreateProfileWithRankAction masterProfileData Practitioner creationDate Black)
+          Nothing
+      (_gyTxId, studentAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w2 testWallets)
+          (InitProfileAction studentProfileData Practitioner creationDate)
+          Nothing
+      waitNSlots_ 2
+      s' <- slotOfCurrentBlock
+      blueBeltDate <- slotToBeginTime s'
+      (_gyTxId, blueBeltPromotionAC) <-
+        bjjInteraction
+          txBuildingContext
+          (w1 testWallets)
+          ( PromoteProfileAction
+              { promoted_profile_id = studentAC,
+                promoted_by_profile_id = masterAC,
+                achievement_date = blueBeltDate,
+                promoted_belt = Blue
+              }
+          )
+          Nothing
+      -- Attacker w3 tries to accept the promotion WITHOUT spending the student's User NFT.
+      -- RanksValidator (via deriveUserFromRefAC) must reject this.
+      mustFail $
+        void $
+          maliciousBjjAcceptPromotion txBuildingContext (w3 testWallets) blueBeltPromotionAC
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Malicious AcceptPromotion without User NFT correctly rejected!"
       return ()
