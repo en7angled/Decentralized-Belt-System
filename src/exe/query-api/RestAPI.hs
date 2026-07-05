@@ -655,7 +655,7 @@ apiSwagger :: Swagger
 apiSwagger =
   toSwagger proxyPublicAPI
     & info . title .~ "Decentralized Belt System Query API"
-    & info . Data.Swagger.version .~ "3.2.0"
+    & info . Data.Swagger.version .~ "3.3.0"
     & info . Data.Swagger.description ?~ "This is the Query API for the Decentralized Belt System - handles data queries for profiles, promotions, membership histories and intervals, and achievements"
     & info . license ?~ "GPL-3.0 license"
     & host .~ Nothing

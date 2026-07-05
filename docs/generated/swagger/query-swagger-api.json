@@ -46,7 +46,18 @@
                     },
                     "type": "array"
                 },
+                "output_index": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "slot": {
+                    "type": "integer"
+                },
                 "thumbnail_uri": {
+                    "type": "string"
+                },
+                "tx_hash": {
                     "type": "string"
                 }
             },
@@ -110,7 +121,18 @@
                     },
                     "type": "array"
                 },
+                "output_index": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "slot": {
+                    "type": "integer"
+                },
                 "thumbnail_uri": {
+                    "type": "string"
+                },
+                "tx_hash": {
                     "type": "string"
                 }
             },
@@ -633,6 +655,27 @@
             ],
             "type": "object"
         },
+        "OrganizationExplorerPageResponse": {
+            "description": "Organization explorer page: one page of organization profiles + total (collapses the per-row org fetch)",
+            "properties": {
+                "items": {
+                    "items": {
+                        "$ref": "#/definitions/OrganizationProfileResponse"
+                    },
+                    "type": "array"
+                },
+                "total": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "items",
+                "total"
+            ],
+            "type": "object"
+        },
         "OrganizationProfileResponse": {
             "description": "Organization (academy/gym) profile",
             "properties": {
@@ -971,6 +1014,54 @@
             ],
             "type": "object"
         },
+        "PromotionEligibilityResponse": {
+            "description": "Promotion eligibility verdict: off-chain mirror of the on-chain validator with structured violations, earliest-eligible date, and required granter rank",
+            "properties": {
+                "current_belt": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "days_in_current_grade": {
+                    "type": "integer"
+                },
+                "earliest_eligible_date": {
+                    "description": "This is the posix time in ISO8601 format.",
+                    "example": "1970-01-01T00:00:00Z",
+                    "format": "ISO8601",
+                    "type": "string"
+                },
+                "eligible": {
+                    "type": "boolean"
+                },
+                "granter_rank": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "required_granter_rank": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "required_months_in_grade": {
+                    "type": "integer"
+                },
+                "target_belt": {
+                    "$ref": "#/definitions/BJJBelt"
+                },
+                "violations": {
+                    "items": {
+                        "$ref": "#/definitions/PromotionViolation"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "eligible",
+                "current_belt",
+                "target_belt",
+                "days_in_current_grade",
+                "required_months_in_grade",
+                "earliest_eligible_date",
+                "violations"
+            ],
+            "type": "object"
+        },
         "PromotionInformationResponse": {
             "description": "Enriched promotion with full achieved-by and awarded-by practitioner profiles resolved inline",
             "properties": {
@@ -992,8 +1083,19 @@
                 "id": {
                     "$ref": "#/definitions/GYAssetClass"
                 },
+                "output_index": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "slot": {
+                    "type": "integer"
+                },
                 "state": {
                     "$ref": "#/definitions/PromotionState"
+                },
+                "tx_hash": {
+                    "type": "string"
                 }
             },
             "required": [
@@ -1008,6 +1110,9 @@
         },
         "PromotionState": {
             "description": "Promotion lifecycle state: Pending (awaiting acceptance), Accepted (confirmed), or Superseded (replaced by a newer promotion)"
+        },
+        "PromotionViolation": {
+            "description": "One rule the on-chain promotion validator would reject: master-belt-too-low, rung-skipped, insufficient-time-in-grade, master-date-after-promotion, or student-date-not-monotonic"
         },
         "PromotionsPageResponse": {
             "description": "Promotions explorer page: paginated items + total count + belt frequency breakdown + monthly trend data",
@@ -1096,6 +1201,17 @@
                 },
                 "id": {
                     "$ref": "#/definitions/GYAssetClass"
+                },
+                "output_index": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "slot": {
+                    "type": "integer"
+                },
+                "tx_hash": {
+                    "type": "string"
                 }
             },
             "required": [
@@ -1287,7 +1403,7 @@
             "name": "GPL-3.0 license"
         },
         "title": "Decentralized Belt System Query API",
-        "version": "3.1.0"
+        "version": "3.3.0"
     },
     "paths": {
         "/achievement/{achievement-id}": {
@@ -1914,6 +2030,88 @@
                 "summary": "Home explorer hub"
             }
         },
+        "/pages/organization-explorer": {
+            "get": {
+                "description": "Organization profiles in one page + total. Filters match GET /profiles except profile_type is always Organization. Collapses the org explorer's per-row GET /organization/{id} (N+1) into a single response.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "limit",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "offset",
+                        "required": false,
+                        "type": "integer"
+                    },
+                    {
+                        "collectionFormat": "multi",
+                        "in": "query",
+                        "items": {
+                            "type": "string"
+                        },
+                        "name": "profile",
+                        "type": "array"
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "name",
+                            "description",
+                            "type",
+                            "registered_at"
+                        ],
+                        "in": "query",
+                        "name": "order_by",
+                        "required": false,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "in": "query",
+                        "name": "sort_order",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/OrganizationExplorerPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Organization explorer page"
+            }
+        },
         "/pages/pending-actions/{profile-id}": {
             "get": {
                 "description": "Pending promotions, unaccepted achievements, and unaccepted membership intervals for a profile.",
@@ -2420,6 +2618,69 @@
                     }
                 },
                 "summary": "Get Practitioner Profile Detail"
+            }
+        },
+        "/practitioner/{profile-id}/eligibility": {
+            "get": {
+                "description": "Off-chain mirror of the on-chain promotion validator. Returns an eligibility verdict plus structured violations (master-belt-too-low, rung-skipped, insufficient-time-in-grade, master-date-after-promotion, student-date-not-monotonic), the earliest date the time-in-grade requirement will be satisfied, and the minimum belt required of any would-be granter. If `granter` is omitted, the authority check is skipped and the response reports `required_granter_rank` only — use this to answer 'am I eligible in principle?' before the practitioner picks a coach.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "profile-id",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "enum": [
+                            "White",
+                            "Blue",
+                            "Purple",
+                            "Brown",
+                            "Black",
+                            "Black1",
+                            "Black2",
+                            "Black3",
+                            "Black4",
+                            "Black5",
+                            "Black6",
+                            "RedAndBlack",
+                            "RedAndWhite",
+                            "Red",
+                            "Red10"
+                        ],
+                        "in": "query",
+                        "name": "target",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "in": "query",
+                        "name": "granter",
+                        "required": false,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/PromotionEligibilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters or malformed request"
+                    },
+                    "404": {
+                        "description": "Requested entity not found (profile, achievement, membership, etc.)"
+                    },
+                    "503": {
+                        "description": "Service not ready (chain-sync still syncing or protocol paused)"
+                    }
+                },
+                "summary": "Check Promotion Eligibility"
             }
         },
         "/profiles": {
