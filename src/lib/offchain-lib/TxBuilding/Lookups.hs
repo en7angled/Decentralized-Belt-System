@@ -311,11 +311,14 @@ findInsertPointForNewMembership gyOrgProfileRefAC gyNewPractitionerRefAC = do
       gyFirstAC <- assetClassFromPlutus' (OnchainId.deriveMembershipHistoryId plutusOrgRef firstKey)
       (firstNode, _) <- getMembershipListNodeDatumAndValue gyFirstAC
       let firstKeyMaybe = Just firstKey
-      if newKey < firstKeyMaybe
-        then -- New key is smallest → insert between root and first node.
-          return (gyRootAC, Just gyFirstAC)
-        else -- New key >= first → walk list to find predecessor or end.
-          go newKey gyFirstAC firstNode
+      if newKey == firstKeyMaybe
+        then -- Key already present → history already exists; reject before the on-chain list append traceErrors.
+          throwError (GYApplicationException MembershipHistoryAlreadyExists)
+        else if newKey < firstKeyMaybe
+          then -- New key is smallest → insert between root and first node.
+            return (gyRootAC, Just gyFirstAC)
+          else -- New key >= first → walk list to find predecessor or end.
+            go newKey gyFirstAC firstNode
   where
     -- Walk from leftNode: either we are at the end (append) or we find a next node and decide insert vs continue.
     go key leftAC leftNode =
@@ -328,11 +331,14 @@ findInsertPointForNewMembership gyOrgProfileRefAC gyNewPractitionerRefAC = do
           gyRightAC <- assetClassFromPlutus' rightHistoryId
           (rightNode, _) <- getMembershipListNodeDatumAndValue gyRightAC
           let nextKeyMaybe = Just nextKey
-          if key < nextKeyMaybe
-            then -- New key sits between leftNode and rightNode → insert between them.
-              return (leftAC, Just gyRightAC)
-            else -- New key >= nextKey → keep walking (rightNode becomes new left).
-              go key gyRightAC rightNode
+          if key == nextKeyMaybe
+            then -- Key already present in the list → history already exists; reject cleanly.
+              throwError (GYApplicationException MembershipHistoryAlreadyExists)
+            else if key < nextKeyMaybe
+              then -- New key sits between leftNode and rightNode → insert between them.
+                return (leftAC, Just gyRightAC)
+              else -- New key >= nextKey → keep walking (rightNode becomes new left).
+                go key gyRightAC rightNode
 
 -- | Get a membership interval datum and value by its NFT asset class.
 getMembershipIntervalDatumAndValue :: (GYTxQueryMonad m) => GYAssetClass -> m (OnchainTypes.OnchainMembershipInterval, Value)

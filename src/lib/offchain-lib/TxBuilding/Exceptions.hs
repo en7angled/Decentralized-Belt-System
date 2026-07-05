@@ -45,6 +45,8 @@ data TxBuildingException
   | MembershipListInsertInvalid
   | MembershipListAppendInvalid
   | MembershipIntervalAlreadyAccepted
+  | -- | The practitioner already has a membership history with this organization (duplicate list key).
+    MembershipHistoryAlreadyExists
   | -- \* Achievement Errors
     AchievementNotFound
   | AchievementAlreadyAccepted
@@ -85,6 +87,7 @@ instance Exception TxBuildingException where
   displayException MembershipListInsertInvalid = "Membership list insert invalid (different orgs or list invariant violated)"
   displayException MembershipListAppendInvalid = "Membership list append invalid (different orgs or list invariant violated)"
   displayException MembershipIntervalAlreadyAccepted = "Membership interval is already accepted"
+  displayException MembershipHistoryAlreadyExists = "Membership history already exists between this practitioner and organization"
   displayException AchievementNotFound = "Achievement not found"
   displayException AchievementAlreadyAccepted = "Achievement is already accepted"
   displayException AchievementOtherMetadataReservedKeys =
@@ -136,6 +139,7 @@ txBuildingExceptionToHttpStatus InitMembershipHistoryInvalidDates = 400
 txBuildingExceptionToHttpStatus MembershipListInsertInvalid = 400
 txBuildingExceptionToHttpStatus MembershipListAppendInvalid = 400
 txBuildingExceptionToHttpStatus MembershipIntervalAlreadyAccepted = 400
+txBuildingExceptionToHttpStatus MembershipHistoryAlreadyExists = 400
 txBuildingExceptionToHttpStatus AchievementNotFound = 404
 txBuildingExceptionToHttpStatus AchievementAlreadyAccepted = 400
 txBuildingExceptionToHttpStatus AchievementOtherMetadataReservedKeys = 400

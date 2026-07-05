@@ -55,7 +55,8 @@ membershipTests =
       mkTestFor "Add-membership-interval fails when last interval not accepted (LastIntervalNotAccepted)" addMembershipIntervalFailsLastNotAcceptedTest,
       mkTestFor "Add-membership-interval fails when last interval not closed (LastIntervalNotClosed)" addMembershipIntervalFailsLastNotClosedTest,
       mkTestFor "Add-membership-interval fails when end date not after start (InvalidNewIntervalEndDate)" addMembershipIntervalFailsInvalidEndDateTest,
-      mkTestFor "Test Case 4.13: AcceptMembershipInterval by the wrong user fails" wrongUserAcceptIntervalFails
+      mkTestFor "Test Case 4.13: AcceptMembershipInterval by the wrong user fails" wrongUserAcceptIntervalFails,
+      mkTestFor "Test Case 4.14: Duplicate membership history (same org+practitioner) fails (MembershipHistoryAlreadyExists)" duplicateMembershipHistoryFails
     ]
   where
     -- Test Case 4.1: Organization creates a membership history for a practitioner.
@@ -118,6 +119,45 @@ membershipTests =
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) $ "Membership history created: " <> show membershipHistoryAC
       gyLogInfo' ("TESTLOG" :: GYLogNamespace) "Membership history creation test passed!"
       return ()
+
+    -- Test Case 4.14: Creating a second membership history for the same (org, practitioner)
+    -- must fail cleanly with 'MembershipHistoryAlreadyExists' — the offchain guard rejects the
+    -- duplicate list key before the on-chain list append hits its raw traceError (F-23).
+    duplicateMembershipHistoryFails :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
+    duplicateMembershipHistoryFails TestInfo {..} = do
+      waitNSlots_ 1000
+      s <- slotOfCurrentBlock
+      t <- slotToBeginTime s
+      let creationDate = timeFromPOSIX $ timeToPOSIX t - 100000
+
+      ctx <- deployBJJValidators (w1 testWallets)
+      waitNSlots_ 1000
+
+      (_txId, orgAC) <-
+        bjjInteraction ctx (w1 testWallets) (CreateProfileWithRankAction orgProfileData Organization creationDate White) Nothing
+      waitNSlots_ 1
+      (_txId, practitionerAC) <-
+        bjjInteraction ctx (w2 testWallets) (InitProfileAction practitionerProfileData Practitioner creationDate) Nothing
+      waitNSlots_ 1
+
+      s' <- slotOfCurrentBlock
+      t' <- slotToBeginTime s'
+      let membershipStartDate = timeFromPOSIX $ timeToPOSIX t' - 1000
+          createHistory =
+            CreateMembershipHistoryAction
+              { cmh_organization_profile_id = orgAC,
+                cmh_practitioner_profile_id = practitionerAC,
+                cmh_start_date = membershipStartDate,
+                cmh_end_date = Nothing
+              }
+
+      -- First creation succeeds.
+      _ <- bjjInteraction ctx (w1 testWallets) createHistory Nothing
+      waitNSlots_ 1
+
+      -- Second creation for the SAME (org, practitioner) must fail (F-23).
+      mustFail $ void $ bjjInteraction ctx (w1 testWallets) createHistory Nothing
+      gyLogInfo' ("TESTLOG" :: GYLogNamespace) "duplicate membership history fails test passed!"
 
     -- Test Case 4.2: Practitioner accepts a membership interval
     acceptMembershipIntervalTest :: (HasCallStack) => TestInfo -> GYTxMonadClb ()
