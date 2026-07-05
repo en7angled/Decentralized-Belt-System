@@ -18,7 +18,7 @@ import TxBuilding.Utils (getInlineDatumAndValue, getInlineDatumAndValueOrThrow, 
 
 ------------------------------------------------------------------------------------------------
 
-gyGenerateRefAndUserAC :: (GYTxUserQueryMonad m) => GYScript 'PlutusV3 -> GYTxOutRef -> m (GYAssetClass, GYAssetClass)
+gyGenerateRefAndUserAC :: (GYTxQueryMonad m) => GYScript 'PlutusV3 -> GYTxOutRef -> m (GYAssetClass, GYAssetClass)
 gyGenerateRefAndUserAC mpScript seedTxOutRef = do
   let seedTxOutRefPlutus = txOutRefToV3Plutus seedTxOutRef
   let (pRefTN, pUserTN) = generateRefAndUserTN $ nameFromTxOutRef seedTxOutRefPlutus
@@ -28,13 +28,13 @@ gyGenerateRefAndUserAC mpScript seedTxOutRef = do
   gyUserAC <- assetClassFromPlutus' userAC
   return (gyRefAC, gyUserAC)
 
-gyDeriveUserFromRefAC :: (GYTxUserQueryMonad m) => GYAssetClass -> m GYAssetClass
+gyDeriveUserFromRefAC :: (GYTxQueryMonad m) => GYAssetClass -> m GYAssetClass
 gyDeriveUserFromRefAC (GYToken mp gyProfileRefTN) = do
   gyProfileUserTN <- gyDeriveUserFromRefTN gyProfileRefTN
   return $ GYToken mp gyProfileUserTN
 gyDeriveUserFromRefAC _ = throwError (GYApplicationException InvalidAssetClass)
 
-gyDeriveUserFromRefTN :: (GYTxUserQueryMonad m) => GYTokenName -> m GYTokenName
+gyDeriveUserFromRefTN :: (GYTxQueryMonad m) => GYTokenName -> m GYTokenName
 gyDeriveUserFromRefTN gyProfileRefTN = tokenNameFromPlutus' $ deriveUserFromRefTN (tokenNameToPlutus gyProfileRefTN)
 
 ------------------------------------------------------------------------------------------------
@@ -72,7 +72,7 @@ txMustPayValueToAddress recipient gyValue = do
           gyTxOutRefS = Nothing
         }
 
-txMustSpendStateFromRefScriptWithRedeemer :: (GYTxUserQueryMonad m) => GYTxOutRef -> GYAssetClass -> GYRedeemer -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
+txMustSpendStateFromRefScriptWithRedeemer :: (GYTxQueryMonad m) => GYTxOutRef -> GYAssetClass -> GYRedeemer -> GYScript 'PlutusV3 -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendStateFromRefScriptWithRedeemer refScript stateTokenId gyRedeemer gyValidator =
   do
     stateUTxO <- getUTxOWithNFT stateTokenId
@@ -106,15 +106,15 @@ txMustSpendUTxOFromRefScript refScript utxo gyRedeemer gyValidator =
             gyTxInWitness = GYTxInWitnessScript (GYInReference refScript $ validatorToScript gyValidator) maybeDatum gyRedeemer
           }
 
-txMustHaveUTxOAsRefInput :: (GYTxUserQueryMonad m) => GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
+txMustHaveUTxOAsRefInput :: (GYTxQueryMonad m) => GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustHaveUTxOAsRefInput gyAC = do
   utxo <- getUTxOWithNFT gyAC
   return $ mustHaveRefInput (utxoRef utxo)
 
-txMustHaveUTxOsAsRefInputs :: (GYTxUserQueryMonad m) => [GYAssetClass] -> m (GYTxSkeleton 'PlutusV3)
+txMustHaveUTxOsAsRefInputs :: (GYTxQueryMonad m) => [GYAssetClass] -> m (GYTxSkeleton 'PlutusV3)
 txMustHaveUTxOsAsRefInputs gyACs = mconcat <$> mapM txMustHaveUTxOAsRefInput gyACs
 
-txMustSpendFromAddress :: (GYTxUserQueryMonad m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)
+txMustSpendFromAddress :: (GYTxQueryMonad m) => GYAssetClass -> [GYAddress] -> m (GYTxSkeleton 'PlutusV3)
 txMustSpendFromAddress tokenId addrs = do
   tokenUtxo <- getUTxOWithTokenAtAddresses tokenId addrs ProfileNotFound
   return $
@@ -138,7 +138,7 @@ txMustLockStateWithInlineDatumAndValue validator todata value = do
           gyTxOutRefS = Nothing
         }
 
-txMustMintWithMintRef :: (GYTxUserQueryMonad m) => Bool -> GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
+txMustMintWithMintRef :: (GYTxQueryMonad m) => Bool -> GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txMustMintWithMintRef mintOrBurn mpRefScript mpScript gyRedeemer gyAC = do
   let mp = GYMintReference @'PlutusV3 mpRefScript mpScript
   gyTN <- tnFromGYAssetClass gyAC
@@ -147,7 +147,7 @@ txMustMintWithMintRef mintOrBurn mpRefScript mpScript gyRedeemer gyAC = do
       [ mustMint mp gyRedeemer gyTN (if mintOrBurn then 1 else negate 1)
       ]
 
-txCIP68UserAndRef :: (GYTxUserQueryMonad m) => Bool -> GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
+txCIP68UserAndRef :: (GYTxQueryMonad m) => Bool -> GYTxOutRef -> GYScript 'PlutusV3 -> GYRedeemer -> GYAssetClass -> m (GYTxSkeleton 'PlutusV3)
 txCIP68UserAndRef mintOrBurn mpRefScript mpScript gyRedeemer gyProfileRefAC = do
   let mp = GYMintReference @'PlutusV3 mpRefScript mpScript
   gyProfileRefTN <- tnFromGYAssetClass gyProfileRefAC
