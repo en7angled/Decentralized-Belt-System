@@ -14,6 +14,7 @@ where
 
 import Onchain.Utils qualified as Utils
 import PlutusCore.Builtin.Debug (plcVersion110)
+import PlutusLedgerApi.V1 qualified as V1
 import PlutusLedgerApi.V3
 import PlutusTx
 import PlutusTx.Prelude
@@ -27,13 +28,15 @@ import PlutusTx.Prelude
 -- | One-shot minting policy.
 -- Validates that:
 --   1. The seed 'TxOutRef' is consumed as an input (guarantees uniqueness)
+--   2. The transaction mints exactly the oracle NFT and nothing else
 {-# INLINEABLE oracleNFTPolicyLambda #-}
 oracleNFTPolicyLambda :: TxOutRef -> ScriptContext -> Bool
 oracleNFTPolicyLambda seedRef (ScriptContext TxInfo {..} _ scriptInfo) =
   case scriptInfo of
-    MintingScript _ ->
-      traceIfFalse "N0" -- Must spend seed UTxO (N0)
-        $ any ((== seedRef) . txInInfoOutRef) txInfoInputs
+    MintingScript mintingPolicyCurrencySymbol ->
+      let theOracleNFT = V1.assetClassValue (V1.AssetClass (mintingPolicyCurrencySymbol, V1.TokenName emptyByteString)) 1
+       in traceIfFalse "N0" (any ((== seedRef) . txInInfoOutRef) txInfoInputs) -- Must spend seed UTxO (N0)
+            && traceIfFalse "N2" (mintValueMinted txInfoMint == theOracleNFT) -- Tx must mint JUST the oracle NFT (N2)
     _ -> traceError "N1" -- Invalid script purpose (N1)
 
 -------------------------------------------------------------------------------
