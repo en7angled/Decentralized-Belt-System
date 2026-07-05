@@ -271,6 +271,7 @@ executable admin
 
   build-depends:
     , aeson
+    , aeson-pretty
     , bytestring
     , mtl
     , optparse-applicative

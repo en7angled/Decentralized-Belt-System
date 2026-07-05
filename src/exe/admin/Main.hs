@@ -6,6 +6,7 @@ import Constants qualified
 import Control.Monad.Reader (runReaderT)
 import Data.Aeson (encode)
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Char8 qualified as LSB8
 import Data.ByteString.Lazy qualified as B
 import Data.Char (toLower, toUpper)
@@ -745,7 +746,7 @@ main = do
   case cmd of
     WriteBlueprint outputPath -> do
       printYellow $ "Writing CIP-57 contract blueprint to " <> outputPath <> " ..."
-      B.writeFile outputPath (encode $ contractBlueprint blueprintProtocolParams)
+      B.writeFile outputPath (encodePretty $ contractBlueprint blueprintProtocolParams)
       printGreen $ "Blueprint written successfully to " <> outputPath
     _ -> executeOnchainCommand cmd
 
