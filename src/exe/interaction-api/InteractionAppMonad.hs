@@ -23,7 +23,7 @@ import Data.Text hiding (elem, reverse, take)
 import Data.Time (defaultTimeLocale, getCurrentTime)
 import Data.Time.Format (formatTime)
 import Data.Typeable (cast)
-import GeniusYield.TxBuilder.Errors (GYTxMonadException (GYApplicationException))
+import GeniusYield.TxBuilder.Errors (GYTxMonadException (..))
 import GeniusYield.Types
 import Servant
 import TxBuilding.Context
@@ -86,10 +86,29 @@ runWithTxErrorHandling action = InteractionAppMonad $ do
               let status = txBuildingExceptionToHttpStatus txEx
               liftIO $ putStrLn $ "TxBuildingException (" <> show status <> ") [" <> txBuildingExceptionCode txEx <> "]: " <> displayException txEx
               throwError $ txBuildingServantErr status txEx
+        -- Atlas builder ran out of funds: empty wallet (no seed UTxO), can't
+        -- balance the fee/deposit, or no collateral. These are normal client
+        -- conditions, not server faults — map to 400 with a clear message
+        -- instead of a misleading 500.
+        GYQueryUTxOException {} -> insufficientFunds ex
+        GYBuildTxException {} -> insufficientFunds ex
+        GYNoSuitableCollateralException {} -> insufficientFunds ex
         _ -> do
           liftIO $ putStrLn $ "Unexpected exception: " <> show ex
           throwError $ mkServantErr 500 (genericErrorMessage 500)
     Right ok -> pure ok
+  where
+    insufficientFunds ex = do
+      liftIO $ putStrLn $ "Insufficient funds (400) [InsufficientFunds]: " <> show ex
+      throwError $
+        mkServantErr 400 $
+          BL8.unpack $
+            encode $
+              object
+                [ "code" .= ("InsufficientFunds" :: Text),
+                  "message"
+                    .= ("Not enough preview ADA in your wallet to cover the profile fee, deposit and transaction cost." :: Text)
+                ]
 
 -- | Build a transaction from an 'Interaction' and return its hex-encoded CBOR.
 buildInteractionApp :: Interaction -> InteractionAppMonad String
