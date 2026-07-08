@@ -19,11 +19,6 @@
 # Recent promotions (pending):
 #   - Professor Ana promotes Bruno: White -> Blue (March 2026, pending)
 #
-# Recent promotions (superseded):
-#   - Professor Carlos promotes Matheus: White -> Blue (July 2025, superseded — he is Purple)
-#   - Professor Carlos promotes Gabriela: White -> Blue (August 2025, superseded — she is Purple)
-#   - Professor Carlos promotes Carolina: White -> Blue (April 2025, superseded — she is Purple)
-#
 # Recent memberships:
 #   - Matheus at Alliance: history (2022 to 2025), renewed (2025 to 2026), accepted
 #   - Gabriela at Alliance: history (2023 to 2025), renewed (2025 to 2026), accepted
@@ -214,8 +209,8 @@ RAFAEL_CREATION_TIME=1704067200000      # 2024-01-01
 # Matheus promotion timestamps (meets time-in-belt requirements)
 # White -> Blue after 18+ months (June 2025)
 MATHEUS_BLUE_TIME=1748736000000         # 2025-06-01
-# Blue -> Purple after 7+ months in Blue (January 2026)
-MATHEUS_PURPLE_TIME=1735689600000       # 2026-01-01
+# Blue -> Purple after 13 months in Blue (on-chain minimum for Blue is 12 months)
+MATHEUS_PURPLE_TIME=1782864000000       # 2026-07-01
 
 # Gabriela promotion timestamps
 # (Gabriela starts as Blue belt via create-profile-with-rank, so she has Blue from 2022-06-01)
@@ -224,21 +219,19 @@ GABRIELA_PURPLE_TIME=1756684800000      # 2025-09-01
 
 # Fernanda promotion timestamps
 # White -> Blue after 24+ months (February 2026)
-FERNANDA_BLUE_TIME=1738368000000        # 2026-02-01
+FERNANDA_BLUE_TIME=1769904000000        # 2026-02-01
 
 # Bruno promotion timestamps
 # White -> Blue after 23+ months (March 2026, pending)
-BRUNO_BLUE_TIME=1740787200000           # 2026-03-01
+BRUNO_BLUE_TIME=1772323200000           # 2026-03-01
 
 # Professor Carlos (second instructor at Gracie Barra)
 CARLOS_CREATION_TIME=1483228800000      # 2017-01-01
 
-# Superseded promotion timestamps
-# Carlos also promoted these practitioners to Blue, but they accepted Ana's promotions
-# instead and advanced to Purple — making Carlos's Blue proposals superseded.
-CARLOS_MATHEUS_BLUE_TIME=1751328000000  # 2025-07-01 (Matheus accepted Ana's Blue, now Purple)
-CARLOS_GABRIELA_BLUE_TIME=1753920000000 # 2025-08-01 (Gabriela accepted Ana's Purple, now Purple)
-CARLOS_CAROLINA_BLUE_TIME=1743465600000 # 2025-04-01 (Carolina already Purple via rank)
+# NOTE: "superseded" promotions were removed. On-chain validatePromotion requires
+# the target belt to be exactly succ(current). Gabriela is born Blue and Carolina
+# born Purple (create-profile-with-rank), so a "Blue" promotion for them can never
+# mint. A valid superseded case would need the student to be White at creation.
 
 # Membership timestamps
 MEMBERSHIP_OLD_START=1643673600000      # 2022-02-01
@@ -471,49 +464,6 @@ PROMO_BRUNO_BLUE_ID=$(run_admin_cmd promote-profile \
     --output-id)
 print_success "Pending Blue belt promotion created: $PROMO_BRUNO_BLUE_ID"
 print_warning "Bruno has NOT accepted this promotion (pending on-chain)"
-
-# --- Promotion 6: Carlos promotes Matheus to Blue (July 2025, SUPERSEDED) ---
-# Matheus accepted Ana's Blue promotion and later advanced to Purple.
-# Carlos's unaccepted Blue proposal is now superseded (current Purple > proposed Blue).
-print_subsection "Promotion 6 (SUPERSEDED): Carlos promotes Matheus to Blue (July 2025)"
-print_info "Professor Carlos also promoting Matheus to Blue belt..."
-
-PROMO_CARLOS_MATHEUS_BLUE_ID=$(run_admin_cmd promote-profile \
-    --promoted-profile-id "$MATHEUS_ID" \
-    --promoted-by-profile-id "$CARLOS_ID" \
-    --posix "$CARLOS_MATHEUS_BLUE_TIME" \
-    --belt Blue \
-    --output-id)
-print_success "Superseded Blue belt promotion created: $PROMO_CARLOS_MATHEUS_BLUE_ID"
-print_warning "Matheus never accepted Carlos's promotion (superseded — he is already Purple)"
-
-# --- Promotion 7: Carlos promotes Gabriela to Blue (August 2025, SUPERSEDED) ---
-# Gabriela accepted Ana's Purple promotion, so Carlos's Blue proposal is superseded.
-print_subsection "Promotion 7 (SUPERSEDED): Carlos promotes Gabriela to Blue (August 2025)"
-print_info "Professor Carlos promoting Gabriela to Blue belt..."
-
-PROMO_CARLOS_GABRIELA_BLUE_ID=$(run_admin_cmd promote-profile \
-    --promoted-profile-id "$GABRIELA_ID" \
-    --promoted-by-profile-id "$CARLOS_ID" \
-    --posix "$CARLOS_GABRIELA_BLUE_TIME" \
-    --belt Blue \
-    --output-id)
-print_success "Superseded Blue belt promotion created: $PROMO_CARLOS_GABRIELA_BLUE_ID"
-print_warning "Gabriela never accepted Carlos's promotion (superseded — she is already Purple)"
-
-# --- Promotion 8: Carlos promotes Carolina to Blue (April 2025, SUPERSEDED) ---
-# Carolina holds Purple via create-profile-with-rank, so a Blue proposal is superseded.
-print_subsection "Promotion 8 (SUPERSEDED): Carlos promotes Carolina to Blue (April 2025)"
-print_info "Professor Carlos promoting Carolina to Blue belt..."
-
-PROMO_CARLOS_CAROLINA_BLUE_ID=$(run_admin_cmd promote-profile \
-    --promoted-profile-id "$CAROLINA_ID" \
-    --promoted-by-profile-id "$CARLOS_ID" \
-    --posix "$CARLOS_CAROLINA_BLUE_TIME" \
-    --belt Blue \
-    --output-id)
-print_success "Superseded Blue belt promotion created: $PROMO_CARLOS_CAROLINA_BLUE_ID"
-print_warning "Carolina never accepted Carlos's promotion (superseded — she is already Purple)"
 
 # ============================================================================
 # STEP 5: Memberships (Recent Activity)
@@ -817,11 +767,6 @@ echo -e "  4. Fernanda: White -> Blue (February 2026)"
 echo ""
 echo -e "${YELLOW}Pending Promotions:${NC}"
 echo -e "  5. Bruno: White -> Blue (March 2026, pending): ${CYAN}$PROMO_BRUNO_BLUE_ID${NC}"
-echo ""
-echo -e "${RED}Superseded Promotions:${NC}"
-echo -e "  6. Carlos promotes Matheus to Blue (July 2025):    ${CYAN}$PROMO_CARLOS_MATHEUS_BLUE_ID${NC}"
-echo -e "  7. Carlos promotes Gabriela to Blue (August 2025): ${CYAN}$PROMO_CARLOS_GABRIELA_BLUE_ID${NC}"
-echo -e "  8. Carlos promotes Carolina to Blue (April 2025):  ${CYAN}$PROMO_CARLOS_CAROLINA_BLUE_ID${NC}"
 echo ""
 echo -e "${GREEN}Memberships:${NC}"
 echo -e "  • Professor Ana at Alliance:  history ${CYAN}$MEMBERSHIP_ANA_ID${NC}"
