@@ -1912,3 +1912,37 @@ curl -fsS "$P/gov-actions?type=treasury_withdrawals&order_by=treasury_amount&sor
 curl -fsS "$P/gov-actions?order_by=proposed_at&sort_order=asc&limit=2" \
   | jq -r '.items[].bech32' >> /tmp/lifecycle.txt
 ```
+
+### Jumătatea de bibliotecă a T-PARITY-5
+
+`loadKoiosSnapshot` / `loadPalmaresSnapshot` citesc un director de corpuri de răspuns **brute**, un
+fișier pe endpoint, numit după el. Rostul: CI poate **relua** o reconciliere reală **fără rețea**,
+deci o pană nocturnă a oricărui serviciu nu poate pica un PR — și e unealta care **capturează
+dovada** când nocturna chiar divergează: perechea care a produs o constatare e un fișier pe care
+cineva îl poate citi șase săptămâni mai târziu.
+
+Partea noastră **decodează prin DTO-urile reale de răspuns mai întâi** și proiectează după. Ordinea
+e ce face o pereche înregistrată dovadă **despre API**, nu despre reconciliator, și de-asta o
+redenumire de câmp în `DRepSummary` rupe asta la compilare. `mkPalmaresSnapshot` e **singurul** loc
+unde se citesc DTO-urile.
+
+Două decizii de proiecție care ar fi fost bug-uri invers:
+
+- un rând de tally se desface în **trei** chei, iar un contor **zero** e **aruncat**. Koios n-are
+  rând pentru un verdict pe care nimeni nu l-a dat, deci un 0 pe o parte contra unei chei absente pe
+  cealaltă ar fi o divergență de membership **pe fiecare acțiune**.
+- `psVotes` ține **doar** voturile de DRep, pentru că R7 compară istoric de DRep, iar cele 3,24 M de
+  rânduri de comitet din preprod sunt spam de test.
+
+JSON-ul raportului e **scris de mână**, nu derivat: fișierul e citit de `jq`-ul nocturnei și de un
+om, deci numele cheilor sunt **contractul**, nu o consecință a numelor de câmpuri Haskell. Un rând
+sărit zice `skipped` în `status` și își poartă motivul sub cheia lui — un cititor care scanează după
+eșecuri nu trebuie să parseze proză ca să distingă un rând curat de unul neatins — iar un rând curat
+**n-are deloc** cheia aia. Șapte teste asertează seturile de chei, inclusiv că o divergență numește
+`koios` și `palmares`, nu `expected` și `actual`.
+
+**226 de teste unitare trec.**
+
+Mai rămâne din T-PARITY-5: executabilul — `admin reconcile-koios`, clienții HTTP pentru ambele părți
+(76 de cereri Koios cu pauză de 250 ms și `Retry-After`, 365 locale), `--dump-snapshots`, și
+înregistrarea perechii comise. Plus T-PARITY-6 (wrapper + workflow nocturn warn-only).
