@@ -1709,3 +1709,37 @@ e speculativă — și un test asertează că cele șapte grafii ale Koios **sun
 constructori ai noștri, în loc să se bazeze pe asta.
 
 **181 de teste unitare trec.**
+
+### Garda de secrete a căzut pe fixture-uri, și avea dreptate să se uite
+
+`secrets` a picat pe commit-ul de fixture-uri cu **81** de găsiri. Toate 81 `generic-api-key`,
+toate în `proposal_list.json`, și fiecare un **hash de credențial on-chain**: descrierea unei
+acțiuni `NewCommittee` își numește membrii ca `"keyHash": "<28 de octeți hex>"`, adică o valoare cu
+entropie mare lângă un nume de câmp care conține „key".
+
+Hash-urile sunt **publice prin construcție** — pe lanț, servite de un API public, și sunt chiar
+conținutul pe care o paritate îl compară. A tăia `meta_json` din înregistrare ar face fixture-ul să
+nu mai fie sârmă, singurul lucru pentru care există.
+
+Deci regula e pe allowlist pe acea cale. Două lucruri o fac **îngustare**, nu gaură:
+
+1. `[[allowlists]]` cu `targetRules`, **nu** un bloc `[[rules]]`. A declara o regulă cu un id pe
+   care config-ul implicit îl folosește deja o **înlocuiește**, inclusiv allowlist-urile ei
+   proprii — măsurat: prima încercare a făcut exact asta și a înviat o găsire pe care implicitul o
+   suprima de la început, `root-keys:` din `cabal.project`, adică **cheia publică de verificare a
+   CHaP**. E acum pe allowlist explicit, cu motivul scris lângă ea, ceea ce bate să te bazezi pe un
+   stopword pe care nimeni nu-l vede.
+2. `scripts/check_gitleaks_allowlist.sh` (nou, în același job): plantează o cheie AWS și o cheie
+   privată **exact pe acea cale** și asertează că garda **tot** cade, apoi plantează un `keyHash`
+   on-chain și asertează că nu cade. O gardă care nu prinde nimic și una care prinde totul sunt
+   la fel de inutile, deci se asertează ambele jumătăți.
+
+Scanează o **copie** la aceeași cale relativă într-un root temporar: gitleaks raportează căile
+relativ la ținta scanării, deci `gitleaks dir test/fixtures/koios` raportează `proposal_list.json`
+și allowlist-ul nu se potrivește niciodată — iar scanarea rădăcinii ar umbla prin `dist-newstyle`
+(969 MB, 1.984 de găsiri în artefacte de build).
+
+Setul plantat **exclude** intenționat un token `ghp_…`: protecția de push a GitHub scanează
+conținutul fișierelor și a **respins** prima versiune a commit-ului pentru că îl conținea ca
+literal. Și a avut dreptate — un token care arată valid într-un fișier comis nu se distinge de unul
+scurs. Cheia AWS plus un bloc de cheie privată fac același lucru din două familii de reguli.
