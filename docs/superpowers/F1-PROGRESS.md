@@ -404,7 +404,47 @@ actualizeaza documentatia pentru ce ai implementat!"
    argumentație scrisă în secțiunea „Decizii luate ca builder calls" sau într-un ADR. Argumentația e
    obligatorie, nu decizia e opțională.
 2. **Când chiar nu se poate avansa fără owner** (acces, bani, o alegere de produs ireversibilă), se scrie
-   în secțiunea `## BLOCKED FOR USER` de mai jos — un rând cu ce lipsește, ce am încercat și ce deblochează
+   în secțiunea `## DECIZII CARE SCHIMBĂ UN NUMĂR PUBLICAT (owner-ul poate vrea să le revizuiască)
+
+### 2026-10-20 — `rationale_rate` exclude ce n-am putut evalua, în loc să-l acuze pe autor
+
+Măsurat pe corpusul real de preprod, în timp ce scriam fixtura de epoca 320:
+
+- peste toate cele **648** de voturi DRep finale există **ZERO** ancore `valid`;
+- **23** sunt `unreachable`, iar la nivel de rețea **140 din 237** de ancore unreachable sunt URI-uri
+  `ipfs://` pe care lista de gateway-uri a db-sync-ului nostru nu le poate aduce;
+- cele două raționamente ale DRep-ului-fixtură sunt chiar CID-uri `ipfs://`, `retry_count` 4,
+  „List of errors for each ipfs gateway".
+
+Cu formula din plan — `(verified + inline) / votes_cast` — API-ul ar publica *„practic nimeni pe
+preprod nu scrie raționamente"*. Asta e o afirmație despre **infrastructura noastră**, tipărită ca
+o judecată despre 36 de oameni care **au** publicat.
+
+Deci numitorul exclude acum ce n-am putut evalua:
+
+```
+rationale_rate = (verified + inline) / (verified + inline + absent)
+```
+
+`unverified` și `pending` ies din **ambele** părți. O ancoră inaccesibilă e dovadă că autorul a
+atașat ceva și zero dovadă despre conținut; a o număra ca eșec e aceeași eroare pe care gradele
+`inline` și `pending` există să o evite. Când nimic nu poate fi evaluat, rata e NULL — „n/a", nu 0%.
+**Efect măsurat: 10 din 514 DRep-uri trec de la un 0% publicat la n/a**, și niciunui DRep nu-i
+scade rata.
+
+Toate cele cinci contoare rămân publicate, deci un consumator care vrea altă bază — o rată de
+atașare, `(votes_cast - absent) / votes_cast` — o poate calcula fără noi.
+
+**Trei definiții diferite ale aceluiași număr erau în joc**: fixtura planului are
+`rationale_verified: 2, rationale_rate: 0.125`, care numără „e atașată o ancoră" ca „există un
+raționament" (2 din 16); SQL-ul din schiță număra doar fetched-and-valid peste toate voturile (0 din
+16); al nostru numără fetched-and-valid peste voturile evaluabile (0 din 14). Prima e cea mai
+generoasă cu autorii și cea mai puțin sinceră despre ce am verificat — și e cea pe care a folosit-o
+măsurătoarea din amonte, de unde și dezacordul dintre cifra fixturii și a noastră.
+
+---
+
+## BLOCKED FOR USER` de mai jos — un rând cu ce lipsește, ce am încercat și ce deblochează
    — **și se trece la altceva.** Niciodată „aștept răspuns".
 3. **Ordinea când firul principal e blocat:** (a) următorul task neblocat din plan; (b) review pe codul
    deja scris; (c) extindere de teste; (d) actualizare de documentație pentru ce există. În ordinea asta.
