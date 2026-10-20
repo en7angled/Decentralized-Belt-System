@@ -1848,3 +1848,67 @@ Raportul a câștigat `reportExplained` lângă `reportUnexplained`: o rulare al
 explicate urcă săptămânal merită văzută înainte să merite investigată.
 
 **214 de teste unitare trec.**
+
+### T-PARITY-4 închis: eșantionul fixat
+
+Două rânduri nu pot fi comparate pe toată populația — R7 ar trebui să pagineze istoricul complet de
+vot al fiecărui DRep, R6 și R9 cer o cerere pe acțiune — deci rulează pe un **eșantion**, iar
+eșantionul e **comis**.
+
+Un eșantion tras la rulare face verificarea **nefalsificabilă**: o divergență care apare într-o
+noapte și nu în următoarea poate fi o reparație, o regresie sau **un alt eșantion**, iar nimic din
+raport nu spune care. Un fișier comis transformă o schimbare de populație într-un `git diff`.
+
+Nici urmă de aleator. Un script de shell **nu poate** trage un eșantion aleator reproductibil, deci
+ambele liste sunt uniuni de **selectori determiniști** peste populații diferite:
+
+- `vote_history_dreps` (**37**) = cei 30 cu cele mai multe voturi (coada interesantă) ∪ cei 10
+  înregistrați cel mai recent care au votat (cohorta nouă, pe care coada n-o acoperă niciodată) ∪
+  DRep-ul din exemplul lucrat, **explicit**, pentru că cele 16 voturi ale lui nu sunt garantate să
+  ajungă în top 30 — un test asertează că e acolo — ∪ un DRep care **a re-votat** efectiv, ca
+  drumul de voturi depășite din R7 să ruleze pe date vii. Acel ultim id e **singura** valoare trasă
+  cu un apel Koios, și e un **id** pe care ambele părți sunt apoi comparate, niciodată o valoare
+  după care vreo parte e judecată.
+- `tally_actions` (**24**) = fiecare acțiune ratificată, fiecare doar-dropped, cele 5 retrageri de
+  trezorerie cu totalul cel mai mare și cele 2 acțiuni cele mai vechi din era bootstrap: fiecare
+  formă de ciclu de viață și tot drumul de retragere.
+
+Ambele liste sunt sortate, deci o re-trasare fie se potrivește octet cu octet, fie arată o schimbare
+reală.
+
+**Cinci teste** păzesc fișierul livrat, și CI le rulează, deci podeaua specificației nu poate
+regresa în liniște: un eșantion scăzut sub 20 de DRep-uri sau 10 acțiuni ar reconcilia tot curat și
+ar fi tot o verificare mai slabă decât a cerut specificația. Verifică și că **fiecare id e forma
+CIP-129** pe care ambele părți cheiază — un id malformat nu e o verificare mai slabă, e un rând care
+nu compară nimic și raportează ok — și că niciun id nu se repetă, singurul mod în care un eșantion
+poate părea mai mare decât e.
+
+`loadSample` întoarce `Left` pe fișier lipsă în loc să arunce: `eitherDecodeFileStrict` aruncă la
+eroare de IO și întoarce `Left` doar la eroare de parsare, ceea ce ar face „eșantionul nu e acolo" o
+excepție și „eșantionul e malformat" un mesaj.
+
+**219 de teste unitare trec.**
+
+### Comenzile de re-trasare (T-PARITY-4)
+
+Trase de pe API-ul nostru, cu **un** apel Koios. `sort -u` dă ambelor liste o ordine canonică.
+
+```bash
+P=http://localhost:8093      # sau https://gov.cardano.vip/api
+K=https://preprod.koios.rest/api/v1
+W=drep1y2qn0rf74zdk3u8upx2yk8un7tlts5f33uvklx96gq5a32qmwj3xg
+curl -fsS "$P/dreps?status=active&status=inactive&order_by=votes_cast&sort_order=desc&limit=30" \
+  | jq -r '.items[].id' > /tmp/tail.txt
+curl -fsS "$P/dreps?status=active&status=inactive&order_by=registered_at&sort_order=desc&limit=200" \
+  | jq -r '.items[] | select(.votes_cast > 0) | .id' | head -10 > /tmp/new.txt
+echo "$W" >> /tmp/new.txt
+curl -s "$K/vote_list?limit=1000" | jq -r 'group_by(.voter_id + .proposal_id)[] | select(length > 1)
+  | select(.[0].voter_role == "DRep") | .[0].voter_id' | head -1 >> /tmp/new.txt
+curl -fsS "$P/gov-actions?limit=200" | jq -r '[.items[] | select(.lifecycle.ratified_epoch != null
+  or (.lifecycle.dropped_epoch != null and .lifecycle.expired_epoch == null
+      and .lifecycle.enacted_epoch == null))] | .[].bech32' > /tmp/lifecycle.txt
+curl -fsS "$P/gov-actions?type=treasury_withdrawals&order_by=treasury_amount&sort_order=desc&limit=5" \
+  | jq -r '.items[].bech32' >> /tmp/lifecycle.txt
+curl -fsS "$P/gov-actions?order_by=proposed_at&sort_order=asc&limit=2" \
+  | jq -r '.items[].bech32' >> /tmp/lifecycle.txt
+```
