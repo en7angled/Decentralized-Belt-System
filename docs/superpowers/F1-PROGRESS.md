@@ -1743,3 +1743,39 @@ Setul plantat **exclude** intenționat un token `ghp_…`: protecția de push a 
 conținutul fișierelor și a **respins** prima versiune a commit-ului pentru că îl conținea ca
 literal. Și a avut dreptate — un token care arată valid într-un fișier comis nu se distinge de unul
 scurs. Cheia AWS plus un bloc de cheie privată fac același lucru din două familii de reguli.
+
+### T-PARITY-2 închis: primitiva, fișierul de derogări, garda de prospețime, raportul
+
+**O singură primitivă**, pentru că toate cele zece rânduri au aceeași formă: două hărți cheiate la
+fel; o cheie într-o singură parte e o divergență de `membership`; o cheie în ambele merge la un
+comparator de câmpuri care întoarce **doar** ce diferă. Egalitatea de multiset din R9 e la fel, cu
+cheia `(adresă, sumă)` și valoarea un contor.
+
+Patru decizii pe care stă reconcilierea, fiecare un loc unde un răspuns greșit arată exact ca unul
+bun — și fiecare cu un test:
+
+- Cele două părți se numesc `koios` și `palmares`, **niciodată** `expected` și `actual`. Un raport
+  care numește o parte „expected" a decis deja care index are dreptate. Prima divergență reală
+  găsită a fost **a noastră**.
+- O derogare mută o divergență din `unexplained` în `explained` și **nu suprimă nimic**: apare tot
+  în raport, cu motivul lângă ea. E cheiată pe **rând**, pentru că aceeași cheie înseamnă lucruri
+  diferite în rânduri diferite — un id de DRep e cheie de membership în R1 și cheie de profil în R2.
+- O derogare care n-a potrivit nimic e raportată **stale**, iar derogările unui rând **sărit** nu
+  sunt: nu s-a comparat nimic, deci nu putea potrivi nimic. Linia aia e și singurul semnal că o
+  divergență a fost **reparată** — derogarea care supraviețuiește problemei e ce te anunță.
+- Un decalaj de **o** epocă e normal (două indexuri la câteva secunde de o graniță); **două** e o
+  epocă întreagă de voturi, putere și tranziții de ciclu de viață, deci rularea **abandonează** în
+  loc să raporteze un perete de artefacte de sincronizare.
+
+Coduri de ieșire: **0** curat sau explicat, **1** neexplicat, **3** abandonat. **2 e rezervat**
+pentru eșec de transport și e produs de executabil, niciodată aici — „Koios n-a răspuns" și „Koios a
+răspuns altceva" sunt evenimente diferite, iar un test asertează că niciun raport nu poate da 2.
+
+Un rând sărit e **singurul** drum spre 3: `mkReport` întoarce `ReportAborted` oricând un rând e
+sărit, **înainte** de a număra divergențe, deci o rulare care n-a putut compara R3 nu poate raporta
+trecere, și apelantul nu are nevoie de ramură proprie de abandon.
+
+`config/reconcile-exceptions.yaml` e însămânțat **gol**, cu schema și motivul în comentarii: prima
+divergență pe care Koios a găsit-o a fost **reparată**, nu derogată.
+
+**196 de teste unitare trec.**
