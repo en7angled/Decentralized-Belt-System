@@ -2123,3 +2123,68 @@ oamenii s-o ignore.
 4. **`gh workflow run reconcile.yml`** — o rulare `workflow_dispatch` ca să vedem artefactul; cere
    imaginea `palmares-admin` publicată.
 5. **Planul B** (atestări) și **Planul C** (UI) — încă nescrise.
+
+## 2026-10-21 — `/votes` în patru etape: din >400 s în 3,3 s
+
+Endpoint-ul care nu putea răspunde pe rolul de comitet — 3.243.802 din cele 3.244.711 de rânduri de
+vot — răspunde acum. Măsurat la cauză înainte de orice linie de reparație, și cauza **nu** erau
+funcțiile de fereastră:
+
+| peste rândurile de comitet | timp |
+| --- | --- |
+| scanarea de bază (`voting_procedure ⋈ gov_action`) | **1,09 s** |
+| + `tx ⋈ block` | +8,7 s |
+| + `cc_cold_interval` | +9,5 s |
+| + funcțiile de fereastră | +3,5 s |
+
+Un `count` n-are nevoie de niciuna din cele trei; o pagină de cincizeci de rânduri are nevoie de
+ferestre **pentru cincizeci de rânduri**. Deci patru statement-uri:
+
+1. **count**, peste forma de bază plus **doar** join-urile cerute de filtre: **1,09 s** unde era 14,2 s
+2. **id-urile paginii**, aceeași formă cu `ORDER BY`/`LIMIT`: **6 ms**
+3. **id-urile → cheile de partiție**, restrâns **DE** id-uri: **291 ms**, unde același join de cheie
+   rece peste tot corpusul e 9,5 s
+4. **rândurile paginii**, prin `palmares.vote` restrâns la acele partiții: **286 ms**
+
+### Trei fapte măsurate pe care se sprijină
+
+**`ORDER BY v.id DESC` ESTE `ORDER BY b.time DESC, v.id DESC`.** db-sync atribuie id-uri în ordinea
+lanțului, deci id-ul e timpul blocului rafinat în interiorul blocului — exact ce spunea deja
+tie-break-ul publicat. **Verificat, nu presupus**: primele 50 după `id DESC` și primele 50 după
+`(b.time DESC, v.id DESC)` sunt **aceleași 50 de rânduri**, 0 dezacorduri. Asta scoate `tx ⋈ block`
+din sortarea implicită, iar join-ul ăla era 8,7 s din 9,9.
+
+**Etapa 4 leagă cheile de partiție ca PARAMETRI, și asta e portant.** Aceeași restricție scrisă
+`(voter_id_hash, gov_action_id) IN (SELECT …)` e **3.340 ms**, pentru că un `SubLink` e opac pentru
+`qual_is_pushdown_safe` și ferestrele se calculează peste tot corpusul înainte de filtru. Ca valori
+legate: **286 ms**. Lista de id-uri se leagă și ea — perechile dau împingerea, id-urile dau
+exactitatea: două rânduri ale unei partiții pot potrivi perechile în timp ce doar unul e pe pagină.
+
+**Etapa 3 e o etapă separată** pentru că pliată în etapa 2 a fost măsurată și costa 3,8 s din 3,8 s:
+rezolvarea credențialului rece **lângă** `ORDER BY` pune join-ul ăla înapoi peste tot ce a potrivit
+filtrul.
+
+**Filtrul de votant nu atinge `cc_cold_interval`.** E apartenență în tabelele mici de hash-uri — 805
+`drep_hash`, 686 `pool_hash`, 48 `committee_hash` — plus cheile fierbinți înregistrate vreodată la
+acel credențial rece. Fiecare subinterogare n-are referință exterioară, deci PostgreSQL o evaluează
+o dată ca InitPlan. Măsurat: rezolvarea unui id rece la cheile lui fierbinți e **11 ms**, contra
+celor 9,5 s ale join-ului de interval.
+
+### Cum arată acum
+
+| cerere | înainte | acum |
+| --- | --- | --- |
+| `voter_role=constitutional_committee` | **>400 s → 503** | **3,31 s** |
+| nefiltrat, 50 de rânduri | același cost patologic | 1,60 s |
+| `voter_role=drep` | 6,8 s | 1,57 s |
+| `voter_role=spo` | — | 1,48 s |
+| `voter_id=<drep>` | 2,5 s | 1,19 s |
+| `order_by=latency` | — | 1,59 s |
+| `order_by=voter_id` | — | 1,57 s |
+| `anchor_status=valid` | — | 0,91 s |
+| `q=Bitcows` | — | 1,15 s |
+
+Aserțiunea de smoke pentru pagina de comitet e **restaurată** — `known_defect` nu mai are nicio
+linie. Opt teste unitare noi fixează ce join-uri aduce fiecare formă de cerere, că sortarea
+implicită e cheia primară, și că filtrul de votant lovește toate patru sursele de credențial fără
+join-ul de interval.
