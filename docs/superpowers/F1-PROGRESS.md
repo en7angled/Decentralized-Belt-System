@@ -89,9 +89,11 @@ Registru open-source de reputație & track-record pentru guvernanța Cardano (CI
       (nu 320 — vezi secțiunea de la final), matview-ul `drep_metrics` + firul de refresh, și
       poarta de determinism (8/8 pe db-sync-ul nostru). Șapte fișiere de check în `sql/checks/`,
       toate verzi pe baza reală. Detalii în secțiunile de la finalul fișierului.
-- [ ] **P7b. Blocul 5 — API-ul public** (T-API-1…18). **ÎN CURS**: 1…8 gata (`c2f5709`),
-      131 de teste + 55 de asserțiuni de smoke verzi pe db-sync-ul nostru. Rutele servite acum:
-      `/health`, `/ready`, `/status`, `/metrics/formulas`, `/dreps` (JSON + CSV).
+- [ ] **P7b. Blocul 5 — API-ul public** (T-API-1…18). **ÎN CURS**: 1…10 gata (`044be81`),
+      142 de teste + 92 de asserțiuni de smoke verzi pe db-sync-ul nostru. Rutele servite acum:
+      `/health`, `/ready`, `/status`, `/metrics/formulas`, `/dreps` (JSON + CSV),
+      `/drep/{id}` ≡ `/pages/drep/{id}`, `/drep/{id}/power`, `/drep/{id}/delegators` (JSON + CSV),
+      `/drep/{id}/updates`.
       Rulare locală: `PG_CONN_STR=... PORT=8093 cabal run exe:query-api`, apoi
       `PALMARES_API=http://localhost:8093 scripts/smoke_query_api.sh`.
 - [ ] **P8. Blocul 3 — substratul** (db-sync pe cluster per D-28). Ținut separat de blocul 4
@@ -1127,3 +1129,74 @@ rândul de semnare a check-ului 3 (rularea pe preprod). Până atunci e în capu
 - **`applyLimits` / `applyFilterOrderLimit` nu sunt șterse** (planul le voia absente), ci
   redenumite `legacy*` cu forma F-17 numită în capul modulului: handler-urile moștenite încă le
   cheamă prin șapte call-site-uri. Pleacă împreună cu ele, la T-API-15.
+
+
+## 2026-10-20 — T-API-9/10: profilul DRep, și trei descoperiri care au schimbat codul
+
+`9d0c1e8`, `044be81`. 131 → 142 de teste, 55 → 92 de asserțiuni de smoke.
+
+### 1. `drep_hash.raw` NU e unic — și CIP-105 e motivul
+
+Măsurat: **două** hash-uri de 28 de octeți apar de două ori în `drep_hash`, o dată ca credențial
+de cheie și o dată ca credențial de script. În ambele cazuri **exact unul** din pereche e
+înregistrat, iar celălalt e o fantomă fără niciun certificat — există doar pentru că cineva a
+delegat folosind string-ul CIP-105, **care nu poartă bitul de script**, și db-sync a creat rândul
+de cealaltă natură.
+
+Și `drep_hash.view` e **identic** pentru ambele rânduri ale unei perechi (același HRP, același
+hash). Exact de-asta CIP-105 nu poate identifica un DRep, iar `palmares.drep` nu publică niciodată
+coloana `view`.
+
+Consecința pentru API: `/drep/{id}` rezolvă prin **hash-ul credențialului**, preferând rândul
+înregistrat, niciodată prin string-ul CIP-129 normalizat. Pentru unul din cele două,
+normalizarea la forma de cheie ar ateriza pe fantomă. Scris în haddock-ul lui `drepIdHex`, acolo
+unde următorul implementator citește.
+
+### 2. Servant își construia singur 400-urile, în text simplu
+
+Când un `Capture` sau un `QueryParam` nu parsează, handler-ul nu e atins niciodată: servant
+construiește răspunsul din `String`-ul întors de parser și-l servește ca **text simplu, fără
+`code`**. Măsurat: un id de DRep cu checksum bech32 stricat venea ca `400 Error parsing ...`, pe
+care niciun client nu putea să-l potrivească — lângă 400-urile noastre, care poartă `code`.
+
+Reparat la rădăcină cu un `ErrorFormatters` în contextul de servire. Funcționează pentru că
+**fiecare `parseUrlPiece` din codebase întoarce deja CODUL ca mesaj**: `invalid_drep_id` iese din
+parser și se întoarce ca `InvalidDrepId`. Acum fiecare eșec poartă `{code, message}`:
+404 `drep_not_found` pentru un id valid care nu numește nimic, 400 `invalid_drep_id` pentru unul
+stricat, 400 `invalid_parameter` pentru un enum greșit.
+
+### 3. Statisticile de delegatori erau o a DOUA derivare a formulei publicate
+
+Prima versiune număra „fiecare adresă care a delegat vreodată acestui DRep înainte de epoca N" —
+**o altă întrebare** decât „delegatorii pe care îi AVEA atunci". Măsurat pe DRep-ul din fixtură:
+26 de delegatori anteriori și o rată de retenție de 0,42, unde `delegator_retention_rate_v1` —
+care reconstruiește setul din intervalele de delegare — dă 11 și 1,0.
+
+Acum rulează **octeții proprii ai catalogului**, împachetați doar în convenția coloanei JSON, iar
+numele câmpurilor din DTO sunt numele coloanelor catalogului, ca să nu existe un strat de aliasuri
+în care două nume pentru un număr să se despartă. Blocul e măsurat la același `as_of_epoch` ca
+blocul de metrici, deci pagina nu poate arăta o rată de retenție dintr-o epocă lângă o rată de
+participare din alta.
+
+### 4. Un test pe care l-am scris ca să prindă o eroare de transcriere a prins una — în plan
+
+Vectorul planului aștepta `max_tx_ex_mem → dvt_p_p_technical_group`. CIP-1694 pune **limitele** de
+unități de execuție în grupul **network** și **prețurile** lor în grupul economic. Corectat, cu
+motivul scris lângă, și `collateral_percent` stă acum ca exemplu tehnic.
+
+Cele două enumerări OPEN din plan sunt închise: toate **55** de coloane din `param_proposal` sunt
+clasificate exact o dată — 46 ca parametri, 9 ca bookkeeping cu un motiv fiecare. Un test
+asertează acoperirea exactă și fără suprapunere, deci o coloană adăugată de un upgrade de db-sync
+**cade în CI** în loc să facă în liniște ca pragul unui ParameterChange să se întoarcă drept
+„niciun grup atins".
+
+### Decizii de secvențiere
+
+`votes` și `timeline` lipsesc deliberat din compozit: tipurile lor de rând aparțin lui
+`GET /votes` și `GET /activity`, iar inventarea lor aici ar fi exact dublarea pe care decizia
+„un handler, două căi" există ca să o evite. Fiecare sosește mai târziu ca un câmp opțional nou —
+un bump minor de Swagger, prin aceeași regulă care acoperă câmpurile de atestări.
+
+Lacunele din seria de putere sunt **reale și nu se umplu**: 141 de puncte peste epocile 174–320
+pentru DRep-ul din fixtură, cu 203–208 absente din `drep_distr`. Umplerea cu zero ar transforma o
+absență într-o măsurătoare, iar un client vede lacuna în seria de `epoch`.
