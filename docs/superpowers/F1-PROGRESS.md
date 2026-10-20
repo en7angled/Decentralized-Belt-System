@@ -1679,3 +1679,33 @@ fiindcă făceau aceeași greșeală. Restatează acum regula pe certificate.
 DRep-ul de fixture 13. Actualizate în smoke, în haddock-urile DTO-urilor, în descrierea rutei și în
 `test/fixtures/preprod-epoch-320-metrics.json` (cu motivul lângă valoare). Cele opt aserțiuni ale
 fixture-ului de epoca 319 trec din nou pe preprod; toate cele șapte verificări SQL trec.
+
+### T-PARITY-1 închis: decodoarele și 22 de teste
+
+`Palmares.Reconcile.Koios` (în `offchain-lib`) ține cele opt endpoint-uri ca **sârmă** — numele,
+grafiile și codificările lui Koios — iar maparea în vocabularul nostru e în patru funcții explicite
+la final. Separarea e ce face ca o schimbare la Koios să fie **un decodor care cade**, nu un număr
+diferit în liniște mai jos pe fir.
+
+Testele nu verifică dacă merge aeson. Fixează cele trei capcane pe care un decodor le greșește
+**silențios**:
+
+1. **Lovelace vine ca STRING** (`"3923709956713"`), fiindcă valoarea trece de ce round-trip-uiește
+   exact un Double. `KoiosLovelace` acceptă string sau număr și **refuză** o fracție în loc s-o
+   rotunjească — o paritate care rotunjește e o paritate verde pe un număr greșit.
+2. **`withdrawal` e un array**, `[]`, nu `null` — pe toate cele 131 de propuneri, umplut doar de o
+   acțiune `TreasuryWithdrawals`.
+3. **Un vot de comitet e publicat sub cheia FIERBINTE** (`cc_hot1…`), în timp ce noi publicăm pe
+   cea **RECE** (D-24). Comparate ca string-uri nu găsesc nimic nici când cele două indexuri sunt
+   perfect de acord. Testul asertează prefixul, ca reconcilierea să nu poată fi scrisă ca o
+   comparație de string-uri.
+
+`koiosDRepStatus` ia **două** intrări, pentru că Koios desparte ce noi unim: zice `registered`
+pentru un DRep căruia i-a expirat înregistrarea și marchează expirarea în `active`. Citit doar
+`drep_status`, fiecare DRep expirat ar fi raportat activ.
+
+Toate cele șapte tipuri de acțiune apar în înregistrare, deci nicio linie din `koiosActionType` nu
+e speculativă — și un test asertează că cele șapte grafii ale Koios **sunt** exact cei șapte
+constructori ai noștri, în loc să se bazeze pe asta.
+
+**181 de teste unitare trec.**
