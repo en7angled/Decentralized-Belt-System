@@ -89,6 +89,11 @@ Registru open-source de reputație & track-record pentru guvernanța Cardano (CI
       (nu 320 — vezi secțiunea de la final), matview-ul `drep_metrics` + firul de refresh, și
       poarta de determinism (8/8 pe db-sync-ul nostru). Șapte fișiere de check în `sql/checks/`,
       toate verzi pe baza reală. Detalii în secțiunile de la finalul fișierului.
+- [ ] **P7b. Blocul 5 — API-ul public** (T-API-1…18). **ÎN CURS**: 1…8 gata (`c2f5709`),
+      131 de teste + 55 de asserțiuni de smoke verzi pe db-sync-ul nostru. Rutele servite acum:
+      `/health`, `/ready`, `/status`, `/metrics/formulas`, `/dreps` (JSON + CSV).
+      Rulare locală: `PG_CONN_STR=... PORT=8093 cabal run exe:query-api`, apoi
+      `PALMARES_API=http://localhost:8093 scripts/smoke_query_api.sh`.
 - [ ] **P8. Blocul 3 — substratul** (db-sync pe cluster per D-28). Ținut separat de blocul 4
       pentru că atinge rack-ul; blocul 4 se validează local pe baza sincronizată din Experimentul A.
 
@@ -1039,3 +1044,86 @@ D-28) rămâne separat pentru că atinge rack-ul. Planul B (atestări) și planu
 
 **Datorie recunoscută:** `docs/deployment/preprod-dbsync-sync.md` îi e dator blocului 3 și trebuie să ducă
 rândul de semnare a check-ului 3 (rularea pe preprod). Până atunci e în capul lui `check_determinism.sh`.
+
+
+## 2026-10-20 — Blocul 5 pornit: T-API-1…8, API-ul public servește primele cinci rute
+
+`c2f5709`. 83 → 131 de teste, plus `scripts/smoke_query_api.sh` cu 55 de asserțiuni care rulează
+împotriva db-sync-ului nostru sincronizat. Rutele: `/health`, `/ready`, `/status`,
+`/metrics/formulas`, `/dreps` (JSON + CSV).
+
+### Trei lucruri scoase din query-api, fiecare cu motiv
+
+1. **Familiile moștenite** (profile/atestări/search/activity/pages). Serveau proiecțiile Belt
+   System; planul B reconstruiește suprafața de atestări peste schema de atestări, nu peste acele
+   tabele. Modulele rămân pe disc, comentate în manifest — convenția repo-ului pentru „extras,
+   încă nereaterizat".
+2. **Stratul BasicAuth.** API-ul publică ce e deja pe un lanț public, deci o credențială partajată
+   nu protejează nimic dar obligă fiecare consumator să ceară una; rate limiting-ul e treaba
+   BFF-ului, unde există identitate per client. Contextul de auth a plecat cu el: credențiale
+   configurate dar neaplicate **se citesc ca protecție**.
+3. **Provider-ul Cardano și contextul de scripturi deployate.** D-1 spune că fiecare rând vine
+   dintr-un view sau din matview, deci serviciul nu interoghează niciodată lanțul. Acum pornește
+   cu un singur DSN de Postgres — un secret mai puțin pe o cale de citire publică, fără token
+   Maestro, fără `config_atlas.json`, și **de-asta scriptul de smoke poate rula oriunde**.
+   `atlas-cardano` și `plutus-ledger-api` au ieșit complet din `build-depends`-ul lui query-api.
+
+### Două reguli de plumbing pe care le moștenește fiecare familie de rute
+
+- **O tranzacție per cerere, la `RepeatableRead`.** db-sync declară `-- noreference` pe cheile
+  străine de guvernanță, deci o citire compozită din mai multe statement-uri poate observa un id
+  atârnat în timp ce un rollback comite dedesubt. La `ReadCommitted` o pagină ar putea arăta un vot
+  pe o acțiune pe care statement-ul următor o raportează ca niciodată propusă.
+- **O coloană JSON per statement**, decodată de `FromJSON`-ul propriu al DTO-ului. O coloană
+  redenumită sau ștearsă cade atunci la graniță **numind câmpul**, în loc să deplaseze o decodare
+  pozițională cu o coloană la stânga și să publice numărul greșit sub numele corect.
+
+### Patru defecte găsite prin *rularea* serviciului, nu prin teste
+
+1. `X-Chain-Block-Time` era `show` de UTCTime — `2026-10-20 12:43:24 UTC`, pe care niciun parser
+   de date din browser nu-l acceptă, și care nu se potrivea cu forma ISO din corp. Acum
+   `iso8601Show`.
+2. Boot-ul tipărea ~1000 de linii de DDL (persistent loghează fiecare statement, iar pool-ul de
+   owner era creat cu `runStdoutLoggingT`). Linia de care are nevoie un operator era îngropată.
+   Acum 41 de linii.
+3. **Nicio linie de boot nu apărea sub un pipe.** GHC block-bufferează stdout când nu e TTY, adică
+   exact Docker și Kubernetes: serviciul servea deja cereri în timp ce `kubectl logs` arăta nimic.
+   Reparat în toate trei serverele, nu doar în cel unde a apărut.
+4. **`/dreps` publica 7 non-DRep-uri.** CASE-ul de status nu are ramură pentru un credențial fără
+   certificat, deci cele 7 `never_registered` cădeau pe `inactive` și totalul citea 301 în loc de
+   294. Acum excluse de o clauză necondiționată — pentru că **niciun** `DRepStatus` nu le numește,
+   deci filtrul de status nu le-ar fi putut exclude niciodată.
+5. CSV: `show` randa 0.099 ca `9.900990099009901e-2` (multe unelte CSV nu citesc asta) și boolenii
+   ca `True`/`False` unde JSON-ul spune `true`/`false`. Ambele reparate și asertate.
+
+### Decizii de builder în blocul 5
+
+- **`normalizeLimitOffset` primește `PageBounds` (plafon + default), nu doar plafonul.** Varianta
+  din plan derivă default-ul din plafon, ceea ce merge doar cât timp `/activity` e singurul
+  endpoint cu altă dimensiune de pagină și **cade în liniște** în clipa în care alt endpoint
+  nimerește același plafon: handler-ul ar primi 20 de rânduri din cauza unui număr pe care nu l-a
+  setat niciodată.
+- **Offset peste 10.000 e REFUZAT, nu plafonat.** Un limit în afara intervalului se plafonează în
+  liniște (ambele capete au un sens evident, iar valoarea aplicată se întoarce în envelope), dar
+  plafonarea unui offset ar servi în liniște pagina greșită, iar un client care citește rândul
+  10.001 n-are cum să observe.
+- **`voting_power` e 0, nu null**, când distribuția ledger-ului pentru epocă nu include DRep-ul.
+  Măsurat: 109 din 294, iar 8 dintre ele **au** delegări vii al căror stake sosește în snapshot-ul
+  epocii următoare. Zero e răspunsul onest pentru acea epocă. Planul aștepta null; ordonarea
+  `NULLS LAST` rămâne (clauză identică în ambele direcții, robustă dacă coloana devine nullable).
+- **Statusul implicit la `/dreps` e cele două valori ÎNREGISTRATE.** preprod are 511 retrase față
+  de 294 înregistrate, deci o pagină implicită nefiltrată ar fi aproape inutilă pentru singurul
+  lucru pentru care există lista.
+- **Smoke-ul asertează INVARIANȚI unde planul asertea magnitudini.** `eligible_actions` crește la
+  fiecare acțiune care se închide și `voting_power` se schimbă la fiecare epocă, deci
+  `participation_rate == votes_cast / eligible_actions` e asserțiunea care rămâne să însemne ceva.
+  Magnitudinile sunt pinuite la o epocă **închisă**, în fixtură.
+- **Nu re-exportăm envelope-ul din `QueryResponses`** (planul o cerea): ar însemna ca
+  `offchain-lib` să depindă de `webapi-lib`, dependență **spre exterior** interzisă de layering în
+  ambele direcții. Consumatorii importă `Palmares.WebAPI.Envelope` direct — o linie de import.
+- **`Query.Csv` ține instanțe ORFANE**, documentate ca atare. Clasa cassava, DTO-urile și
+  `safeCell` stau în trei locuri pe care layering-ul le ține despărțite, deci alternativele erau o
+  a doua copie a gărzii anti-formulă (așa driftează un control de securitate) sau niciun CSV.
+- **`applyLimits` / `applyFilterOrderLimit` nu sunt șterse** (planul le voia absente), ci
+  redenumite `legacy*` cu forma F-17 numită în capul modulului: handler-urile moștenite încă le
+  cheamă prin șapte call-site-uri. Pleacă împreună cu ele, la T-API-15.
