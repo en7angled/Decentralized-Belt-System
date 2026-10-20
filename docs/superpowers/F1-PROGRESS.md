@@ -2008,3 +2008,84 @@ corectat aici.
 și `set -e` nu avortează înainte de `case`), `.github/workflows/reconcile.yml` (nocturn, warn-only),
 `docs/deployment/koios-parity-gate.md` (poarta de release + cele patru coduri), `out/` în
 `.gitignore`, și `replayTests` care reconciliază perechea comisă **fără rețea**.
+
+## 2026-10-21 — F1 check 6 ÎNDEPLINITĂ: `status: ok`, 0 neexplicate, 135 explicate, 0 stale
+
+Prima rulare completă a dat **șapte din zece rânduri curate** fără nicio ajustare: R1 (294 de
+DRep-uri), R3 (968 de puncte de putere, lovelace **exact**), R4 (5 totaluri pe epocă, toleranță
+**zero**, incluzând ambele opțiuni rezervate), R5 (131 de acțiuni, tot ciclul de viață), R7 (170 de
+rânduri de istoric de vot), R8 (comitetul), R10.
+
+Trei divergeau. Niciuna n-a fost ce păreau.
+
+### R9 — bug-ul meu: comparam două populații diferite
+
+Partea Koios aduna retragerile din **toate** cele 131 de propuneri, a noastră doar din cele **24
+eșantionate** (detaliul se aduce per acțiune eșantionată). 59 de chei contra 4, și toate cele 55 de
+diferență raportate ca divergențe de membership unilaterale — **o comparație între două populații,
+care nu e o constatare despre niciun index**. Reparat: partea Koios se restrânge la acțiunile
+eșantionate, citite din `ksProposalVotes`, ale cărui chei **sunt** eșantionul. Un singur loc care
+spune ce acțiuni a privit o rulare.
+
+### R6 — Koios aruncă voturile DRep-urilor retrase. Noi nu.
+
+Măsurat pe `gov_action108a5htq…`: **fiecare** alt contor se potrivește exact (comitet yes 3, DRep
+yes 4, SPO yes 12) și singura diferență sunt **două abțineri de DRep** pe care Koios nu le listează.
+Ambii abținuți sunt **retrași** și absenți din propriul `drep_list` al Koios, deci
+`/proposal_votes` n-are la ce să-i lege.
+
+**Numărul nostru e cel corect**, și e corect după propria noastră regulă publicată: lista de cazuri
+limită a catalogului de metrici spune *„voturile anulate de retragerea DRep-ului tot contează ca
+date"*. Un tally de voturi date care ar scăpa în liniște retrașii s-ar **micșora** pe măsură ce
+DRep-urile se retrag, rescriind cum arăta votul unei acțiuni la momentul deciziei. **Derogat**, cu
+motivul ăsta, 5 chei.
+
+### R2 — trei diferențe DEFINIȚIONALE, și un flip pe care l-am implementat și l-am dat înapoi
+
+**`active_until_epoch` (101) + `status` (22).** db-sync înregistrează termenul ledger-ului **doar**
+în `drep_distr`, iar `drep_distr` ține un rând doar pentru un DRep pe care ledger-ul l-a inclus în
+distribuția epocii. Măsurat la epoca 320: **90 din cele 294** de DRep-uri înregistrate **n-au avut
+NICIODATĂ** un rând acolo — niciunul, la nicio epocă. Deci n-avem termen pentru ele, iar `status`
+cade pe `inactive`.
+
+Koios, care îl calculează singur, zice despre acele 90: **21 active** (termen 320–340) și **69
+inactive** (termen 185–224). Deci `false` e corect pentru 69 și greșit pentru 21.
+
+Flip-ul evident — „termen necunoscut înseamnă activ" — a fost **implementat, măsurat și DAT
+ÎNAPOI**: ar fi fost greșit pentru 69 ca să repare 21. Derivarea termenului a fost și ea măsurată și
+respinsă: `max(ultimul cert, ultimul vot) + drep_activity` nu e de acord cu valoarea ledger-ului cu
+**până la 5 epoci**, pentru că CIP-1694 **nu numără epocile DORMANTE** — cele fără nicio propunere
+în curs — spre inactivitate. A reimplementa contabilitatea aia ar fi o a doua derivare care poate
+contrazice ledger-ul, exact ce schema asta există **să nu facă**.
+
+> **Decizie pentru tine:** reparația onestă e **un al treilea status publicat** pentru „înregistrat,
+> termen necunoscut". `DRepStatus` e un enum publicat, iar adăugarea unei valori rupe fiecare
+> `match` exhaustiv scris de un client — deci e o decizie de API, nu de schemă, și e a ta.
+
+**`delegator_count` (7).** Două întrebări diferite, nu două răspunsuri la una. A noastră numără
+**delegările în vigoare**; `live_delegator_count` al Koios numără delegatorii **cu stake** în
+snapshot-ul curent. Măsurat: 7 DRep-uri diferă, a noastră e mai mare la **toate**, și **fiecare**
+delegator în exces are `lovelace: null` — niciun rând în `epoch_stake`. DRep-ul de fixture se
+potrivește la 13 pentru că toți cei 13 au stake. A noastră e numărul pe care registrul îl vrea: un
+delegator fără stake **tot a ales**.
+
+### Mecanismul de derogare a căpătat o cheie `*`
+
+101 de intrări pentru un singur fapt despre un singur câmp ar fi un fișier pe care nimeni nu-l
+întreține și o listă `stale_exceptions` care se agită cu populația. `key: "*"` derogă acel **câmp**
+pe fiecare cheie a rândului — și **trebuie** să numească un câmp: `*` fără câmp ar stinge rândul
+întreg, ceea ce nu e o divergență documentată, e un buton de oprire. Refuzat la **încărcare**, cu
+mesaj, și două teste în plus.
+
+### Rezultatul
+
+```
+R1  ok  compared=294  unexpl=0  expl=0     R6  ok  compared=37   unexpl=0  expl=5
+R2  ok  compared=294  unexpl=0  expl=130   R7  ok  compared=170  unexpl=0  expl=0
+R3  ok  compared=968  unexpl=0  expl=0     R8  ok  compared=4    unexpl=0  expl=0
+R4  ok  compared=5    unexpl=0  expl=0     R9  ok  compared=4    unexpl=0  expl=0
+R5  ok  compared=131  unexpl=0  expl=0     R10 ok  compared=1    unexpl=0  expl=0
+```
+
+`status: ok`, **0 neexplicate**, **135 explicate**, **0 stale**, exit **0**. Poarta de release din
+`docs/deployment/koios-parity-gate.md` trece.
