@@ -1946,3 +1946,65 @@ eșecuri nu trebuie să parseze proză ca să distingă un rând curat de unul n
 Mai rămâne din T-PARITY-5: executabilul — `admin reconcile-koios`, clienții HTTP pentru ambele părți
 (76 de cereri Koios cu pauză de 250 ms și `Retry-After`, 365 locale), `--dump-snapshots`, și
 înregistrarea perechii comise. Plus T-PARITY-6 (wrapper + workflow nocturn warn-only).
+
+## 2026-10-21 — T-PARITY-5: executabilul, și patru lucruri pe care numai rularea lui le putea găsi
+
+`admin reconcile-koios` aduce ambele părți, compară, scrie `out/divergences.json` și întoarce
+codul de ieșire. Totul se aduce ca `Value` și se decodează la final — de-asta `--dump-snapshots`
+merită: fișierul scris pe disc e **ce a venit pe sârmă**, nu o re-codificare a tipurilor noastre.
+Iar corpurile aduse se **scriu și se încarcă înapoi** chiar și fără `--dump-snapshots` (într-un
+director temporar), ca rularea vie și testul de reluare să decodeze prin **exact același** drum:
+o pereche nu poate trece testul și pica rularea.
+
+**R10 se aduce primul.** O rulare care nu poate stabili prospețimea n-are nimic de spus despre
+celelalte nouă rânduri, iar să afli asta după 441 de cereri ar fi 441 de cereri irosite.
+
+### 1. `POST /drep_info` dă HTTP 413 la 100 de id-uri
+
+Planul presupunea „cel mult 100 per POST". Măsurat pe serviciul viu: un corp de **100** de id-uri e
+6.623 de octeți și Koios răspunde **413**; **50** de id-uri e 3.323 de octeți și răspunde 200. Cele
+294 de DRep-uri de pe preprod sunt deci **6** POST-uri, nu 3 — 0,75 s de pauză în plus, și asta e
+toată diferența.
+
+### 2. `from_epoch=0` — bug-ul meu, prins de prima rulare
+
+Scrisesem `minimum (0 : epochs)`. Semănarea fold-ului cu 0 face `from_epoch=0` pe **fiecare**
+cerere, deci fiecare serie venea de la începutul lanțului și plafonul de 200 de puncte tăia în
+liniște exact epocile pe care R3 le compară.
+
+### 3. DEFECT, reparat: `/drep/{id}/power` dădea 404 pentru opțiunile rezervate
+
+Cele două opțiuni rezervate ale ledger-ului sunt rânduri `drep_hash` cu `raw IS NULL` — au id de
+rând și **au serie de putere** — dar `resolveDRepHex` caută după `drep_raw` în `palmares.drep`, care
+**deliberat** nu le ține (D-20 le scoate din registru și le lasă în distribuție). Iar
+`listEpochPower` avea `p.target_kind = 'drep'` **hardcodat**, deci chiar rezolvate ar fi întors o
+serie goală — ceea ce se citește ca „ținta asta n-are putere" pentru opțiunea care ține **46%** din
+puterea de vot a preprod-ului.
+
+Reparat: `resolveReservedDRep` caută după `view`, iar `target_kind` e acum **parametru**. Verificat:
+`drep_always_abstain` la epoca 319 = **431.863.790.957.959**, `drep_always_no_confidence` =
+**325.390.800.383** — exact cifrele D-20. `/drep/{id}` **tot** dă 404 pentru ele, și asimetria e
+**datele**: au serie de putere și nimic altceva — nicio înregistrare, niciun metadata, niciun vot.
+Înainte erau accesibile doar ca agregat pe `/pages/dashboard`.
+
+### 4. DTO-urile de răspuns nu se pot decoda cu propriul lor tip
+
+Prima înregistrare a picat cu `gov_actions.json: Error in $[0]: key "tx_hash" not found` — peste un
+fișier cu 131 de elemente **perfect uniforme**, toate cu aceleași 14 chei.
+
+Cauza: `FromJSON GovActionSummary` e scris de mână pentru direcția **RÂND DE SQL**, nu pentru client.
+Citește `tx_hash` + `index` și **emite** `id` + `bech32`, pentru că cele două forme de identificator
+se derivă o dată la granița aia. `DRepSummary` are aceeași formă. Deci răspunsul nostru
+`/gov-actions` **nu poate** fi decodat de tipul care îl definește.
+
+Asimetria e intenționată și merită păstrată. Ce înseamnă pentru reconciliator: am scris
+**decodoare proprii** care citesc exact cele nouă valori comparate, iar ce prinde o redenumire de
+sârmă e **testul de reluare și smoke-ul**, nu type checker-ul. Comitul anterior pretindea invers —
+corectat aici.
+
+### Livrate și netestate încă live
+
+`scripts/reconcile_koios.sh` (propagă codul de ieșire — verificat: `exit=1` cu o comandă care dă 1,
+și `set -e` nu avortează înainte de `case`), `.github/workflows/reconcile.yml` (nocturn, warn-only),
+`docs/deployment/koios-parity-gate.md` (poarta de release + cele patru coduri), `out/` în
+`.gitignore`, și `replayTests` care reconciliază perechea comisă **fără rețea**.
