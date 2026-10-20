@@ -814,3 +814,65 @@ magnitudinile vii merg în `RAISE NOTICE`.
 Postgres de test: container `palmares-test-pg` (postgres:17-alpine) pe `127.0.0.1:55439`.
 Fixtura de formă a crescut la 36 de tabele (`pool_stat` a fost adăugat când `vote_tally` a avut
 nevoie de el — prins de suita de teste, exact ce face fixtura).
+
+---
+
+## 2026-10-20 — T-SQL-METRICS-8: cursorul feed-ului nu era total, și acum e
+
+`a9ee614`. 62 de teste, șase fișiere de check trec pe baza reală.
+
+### OPEN-ul planului s-a declanșat
+
+Planul lăsase totalitatea cursorului ca întrebare deschisă: *„nimic din note nu măsoară dacă
+preprod conține o astfel de tranzacție; ASSERT-ul de unicitate e ce o detectează. Dacă se
+declanșează, cursorul are nevoie de o a patra componentă."*
+
+**S-a declanșat: 108.141 grupuri de triplete duplicate** peste 3,9 milioane de rânduri de feed,
+din **două cauze diferite**, și reparația a avut nevoie de ambele jumătăți:
+
+1. **Între arme — 108.130 grupuri.** `voting_procedure.index`, `gov_action_proposal.index` și
+   `cert_index` sunt trei contoare per-tranzacție **independente**, deci o tranzacție care cară
+   și un vot și un certificat produce același triplet de două ori. Testul de stres
+   AuthCommitteeHotKey din epoca 187 a făcut-o în masă: 108.128 de grupuri sunt
+   `committee_authorized` lovindu-se de `vote_cast`, cel mai rău cu 31 de rânduri.
+   Reparat cu `arm`, un ordinal per-armă în cursor.
+2. **În interiorul armei de voturi — 11 grupuri.** `voting_procedure.index` **nu e** un contor
+   per-tranzacție în aceste date: cele 3.243.802 rânduri CC au doar **108.176** perechi distincte
+   `(tx_id, index)`, iar valorile 0, 1 și 2 apar fiecare de ~648.000 de ori. Deci nu poate
+   identifica un vot într-o tranzacție. Arma de voturi folosește acum `voting_procedure.id`.
+
+Un ordinal de armă singur n-ar fi reparat (2); o cheie unică singură n-ar fi reparat (1).
+Cursorul e `(sort_slot, tx_index, arm, item_index)` și e acum total: **0 duplicate pe 3.906.391
+de rânduri**. Parserul de cursor al API-ului ia patru componente și trebuie să accepte în
+continuare și -1 și -2 pentru `tx_index`.
+
+### Restul se potrivește cu planul
+
+131 propuse, 11 ratificate, 11 intrate în vigoare, 103 expirate, și **6** dropped în loc de 108 —
+ASSEMBLY CORRECTION 1 se confirmă pe date reale.
+
+**Două feluri de eveniment sunt inaccesibile pe preprod**, deci cele două straturi de test se
+împart: `committee_de_registration` e gol și nicio retragere de trezorerie n-a intrat vreodată în
+vigoare (cele 11 acțiuni enacted sunt 6 ParameterChange, 2 HardForkInitiation, 3 NewCommittee).
+Deci asserțiunea celor treisprezece feluri stă în testul Haskell cu corpus semănat, iar fișierul
+de check spune de ce un `DISTINCT = 13` pe date vii ar fi o poartă nefalsificabilă.
+
+### Încă un defect de-al meu în Dockerfile-uri
+
+Primul job `bases` complet a reușit (fixul GHCR funcționează, cache-ul e semănat), dar toate cele
+patru build-uri de serviciu au picat:
+
+```
+cabal: sdist of palmares-0.1.0: filepath wildcard 'NOTICE' does not match any files
+```
+
+`cabal install` al unui pachet local face întâi un sdist, iar sdist-ul trebuie să conțină fiecare
+cale din `extra-source-files` — plus `license-file`. Dockerfile-urile copiau doar `src` și
+`config`. Deci imaginile de serviciu **nu funcționaseră niciodată**, consistent cu faptul că
+workflow-ul nu se terminase niciodată.
+
+Reparat: `COPY LICENSE NOTICE ./`, `COPY licenses`, `COPY sql`, `COPY test/fixtures`, plus un
+comentariu în `palmares.cabal` lângă `extra-source-files` care spune că lista trebuie ținută în
+pas cu Dockerfile-urile — pentru că o adăugire acolo sparge build-ul de imagine, nu build-ul
+cabal, deci se vede doar în CI. Verificat local cu `cabal sdist`: tarball-ul conține exact
+LICENSE, NOTICE, licenses/, palmares.cabal, cele patru `sql/*.sql` și fixtura.
