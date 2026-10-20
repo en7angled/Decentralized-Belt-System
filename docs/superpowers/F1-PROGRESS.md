@@ -1302,3 +1302,266 @@ rândurile acelui votant.
 Forma canonică `<tx_hash>#<index>` conține `#`, pe care un URL îl tratează ca delimitator de
 fragment — curl nu-l trimite niciodată. Ambele forme sunt acceptate în cale; descrierea rutei spune
 acum că `#` trebuie trimis ca `%23` și că forma **bech32** CIP-129 e cea de pus într-un link.
+
+
+## 2026-10-20 — T-API-14/16/17/18: cele șapte rute noi servesc
+
+`/delegations`, `/committee`, `/spos`, `/treasury-withdrawals`, `/search`,
+`/pages/drep-explorer` și `/pages/dashboard` răspund toate 200 cu date reale pe preprod.
+Swagger-ul regenerat are **22 de căi**. Cele 20 de teste de hardening trec, inclusiv noul test de
+numărare a placeholder-elor pentru statement-ul de facete.
+
+
+## 2026-10-20 — T-API-15: fluxul de activitate, de la 253 s la 1,0 s
+
+Ruta `GET /activity` e singura **paginată prin cursor** din tot API-ul: `cursor`, `next_cursor`,
+`total: null`. Patru componente în cursor (`sort_slot:tx_index:arm:item_index`), pentru că
+tripletul avea 108.141 grupuri duplicate. `renderCursor` trăiește în DTO, `parseCursor` în stratul
+de citire, iar round-trip-ul lor e test unitar.
+
+### 1. Brațul de voturi: patru subinterogări corelate → patru JOIN-uri
+
+Forma cu subinterogări evaluează `SELECT`-urile scalare **o dată pe rând, înainte de sortare**,
+deci 3,24 M de rânduri plăteau pentru cele 50 pe care le păstrează `LIMIT`: **39,8 s** pe o pagină
+nefereastruită, din care 36,1 s brațul de voturi și 34,5 s doar căutările de credențial. Scris cu
+JOIN-uri și **un singur COALESCE** (nu mai trebuie `CASE` pe `voter_role`, fiindcă exact una din
+`drep_voter`, `pool_voter`, `committee_voter` e non-null pe rând): **8,4 s**.
+
+Cele două forme au fost comparate rând cu rând: **0 dezacorduri** pe toate cele 3.244.711 de
+rânduri. Verificările 030, 060 și 070 citesc **exact aceleași numere** ca înainte — 3243802 rânduri
+CC → 193 finale prin 43 chei reci, 3906393 rânduri de flux cu 0 cursoare duplicate, 812 rânduri de
+metrici cu DRep-ul fixat la 16/114 (0,140351).
+
+### 2. Două indexuri care nu erau pe brațul la care te-ai aștepta
+
+Pe o pagină de 1.347 ms, **1.150 ms** veneau din două locuri și niciunul nu era scanarea voturilor:
+
+- `committee_registration` **nu avea index pe `tx_id`**, deci o fereastră de slot nu putea fi
+  parcursă `block → tx → committee_registration`. PostgreSQL citea toate cele 648.767 de rânduri și
+  întorcea 0: **389 ms ca să nu găsească nimic**.
+- `palmares.cc_cold_interval` ordonează fereastra după `(hot_key_id, tx_id, cert_index)`, iar
+  indexul existent se oprea la două coloane — deci view-ul plătea un *Incremental Sort* peste toate
+  cele 648.767 de rânduri ca să facă hash-join cu **28** rânduri de vot: **760 ms**.
+
+Cu ambele indexuri: pagina **2,03 s → 0,89 s**.
+
+### 3. 503 pe `/activity?actor=…`: memoria partajată a interogărilor paralele
+
+`53100: could not resize shared memory segment … to 16777216 bytes: No space left on device` —
+în timp ce `/dev/shm` arăta 1 MB din 256 MB folosiți. Peretele nu e tmpfs-ul, e **cgroup-ul**:
+paginile de tmpfs se numără în limita de memorie a containerului, iar limita de 2 GB și
+`work_mem=32MB` sunt chiar numerele din specificația de infrastructură — Pi-ul le va rula identic.
+
+Două reparații, amândouă păstrate:
+
+- `shm_size: 256mb` în `experiments/dbsync-preprod/compose.yaml`, pentru că 64 MB e default-ul
+  Docker și e sub ce cere un plan paralel. Containerul a fost **recreat**, volumul numit
+  `palmares-dbsync-exp_postgres` e intact (3.244.711 de voturi înainte și după).
+- `SET LOCAL max_parallel_workers_per_gather = 0` în `listActivity`. O pagină de flux întoarce cel
+  mult 100 de rânduri din brațe mărginite de index, deci nu e nimic de paralelizat — și e **mai
+  rapid** așa: prima pagină 875 → 393 ms, o pagină filtrată pe actor 913 → 433 ms, treapta
+  nemărginită neschimbată la 4,6 s.
+
+### 4. Scara de ferestre, și regula care citește `actor`, nu `hasFilter`
+
+O pagină fără limită inferioară construiește toate cele 3,9 M de rânduri înainte ca top-N să
+arunce tot în afară de 50: **4,6 s**. Cu o fereastră de 5 zile: **0,89 s**. Scara lărgește
+5 zile → 50 → 500 → fără limită inferioară, iar lărgirea e **idempotentă** (o fereastră mai largă
+întoarce aceleași rânduri noi plus unele mai vechi), deci o pagină scurtă se re-rulează în loc să
+fie publicată ca „sfârșit de flux".
+
+Prima regulă scrisă — *orice cerere filtrată sare direct la ultima treaptă* — a fost **greșită și
+măsurată ca greșită**: `source` nu elimină niciun braț (toate cele unsprezece publică
+`'governance'`; `'attestation'` vine cu schema de atestări), deci `?source=governance` **este**
+fluxul nefiltrat și regula îl făcea **8,3 s în loc de 1,0 s**. Regula citește acum `actor`:
+
+| cerere | timp |
+| --- | --- |
+| nefiltrat, 50 de rânduri | 1,04 s |
+| `source=governance` | 0,91 s |
+| `event_type=gov_action_proposed` | 0,093 s |
+| `event_type=committee_resigned` (0 rânduri) | 0,055 s |
+| `actor=<drep cu 18 evenimente>` | 6,6 s |
+
+`event_type` e **constantă** în lista de selecție a fiecărui braț, deci un filtru pe el colapsează
+nouă sau zece brațe la un qual fals o-singură-dată — de aceea păstrează scara și tot costă
+milisecunde. `actor` nu elimină nimic, dar evenimentele unui actor sunt rare, deci toate cele patru
+trepte vin scurte: 10,3 s pe scară față de 6,6 s direct pe ultima treaptă. Documentat în rută că
+**`/activity` nu e locul dosarului unui actor** — `/votes?voter_id=`, `/dreps/{id}/updates` și
+`/dreps/{id}/delegators` îl servesc din coloane indexate.
+
+### 5. Un defect găsit de propriul test: cursorul accepta mai mult decât un întreg
+
+`readMaybe :: Maybe Int64` **este** `Read`-ul lui Haskell, deci lua `" 1"`, `"(1)"` și `"1 "`. Un
+cursor e un token emis de serviciu: un client care l-a primit altfel nu l-a construit legitim.
+Parserul cere acum cifre cu minus opțional și nimic altceva — iar minusul **trebuie** acceptat,
+fiindcă cele cinci brațe de graniță de epocă au `tx_index = -1` și brațul de retragere `-2`.
+
+### Fluxul moștenit, retras
+
+Șters: `ActivityEventType` (PascalCase) din `Transfer/OrderBy.hs`, `ActivityFilter` +
+`activityFilterFromParams` din `Transfer/Filters.hs`, `ActivityEventDetails` +
+`ActivityEventResponse` din `Transfer/QueryResponses.hs`, `legacyApplyLimits` +
+`legacyApplyFilterOrderLimit` din `Query/Common.hs` și `getActivityFeed` din `Query/Projected.hs`.
+Cu ele au plecat și cele trei `hiding (ActivityEventType)`. `legacyNormalizeLimitOffset` rămâne:
+handler-ele moștenite de profil/atestare încă îl cheamă.
+
+### Cele două direcții, așa cum le cere planul
+
+`before` merge înapoi în timp (scroll infinit, ordine descrescătoare), `since` merge înainte
+(poll de recuperare, ordine **crescătoare**), amândouă **exclusive** față de rândul din cursor.
+Amândouă în aceeași cerere → 400 `both_cursors_given`: o pagină care numește două direcții nu are
+un singur răspuns, iar preferarea silențioasă a uneia ar pagina clientul altfel decât a cerut, dar
+raportând succes. Niciuna → cele mai noi, de la vârf.
+
+Direcția decide **trei** lucruri împreună — comparația de keyset (`<` sau `>`), `ORDER BY`-ul și
+capătul ferestrei pe care îl fixează cursorul. Un singur constructor (`FeedDir`) le alege pe toate
+trei, pentru că oricare dintre ele desincronizat paginează greșit *fără să dea eroare*. Testul
+unitar asertează că `since` inversează și comparația și ordinea.
+
+`since` **nu are nevoie de scară**: ambele limite sunt cunoscute de la început (cursorul jos,
+vârful sus), deci o singură interogare îl rezolvă — 0,9 s, exact același plan ca un `before`.
+
+`offset` nu e declarat pe rută. Servant **ignoră** un parametru de query nedeclarat, deci
+`?offset=10` e servit ca cererea nepaginată care este, nu refuzat; smoke-ul asertează atât 200 cât
+și faptul că n-a paginat.
+
+### Devieri de la plan, asumate și documentate
+
+| plan | livrat | motiv |
+| --- | --- | --- |
+| cursor cu **3** componente | **4** (`sort_slot:tx_index:arm:item_index`) | tripletul avea 108.141 grupuri duplicate, măsurat; `arm` face unicitatea **structurală** |
+| câmp `title` pre-randat | **absent** | view-ul nu publică niciun titlu; randarea unuia ar cere un join pe braț exact pe pagina care trebuie să rămână rapidă, iar un titlu derivat din `event_type` e acel enum scris în engleză |
+| `item_index` = index per-tranzacție | `voting_procedure.id` pe brațul de voturi | `voting_procedure.index` **nu** e un contor per-tranzacție în aceste date: 3.243.802 de rânduri CC au doar 108.176 de perechi distincte `(tx_id, index)` |
+
+
+## 2026-10-20 — Un timeout de citire, și un defect pe `/votes` care nu e al meu
+
+### Interogările orfane: de ce toate măsurătorile de azi au fost prea mari
+
+Un `curl --max-time` care expiră **nu** oprește interogarea: clientul pleacă, PostgreSQL macină
+mai departe. Trei încercări abandonate la rând au lăsat trei scanări complete peste 3,24 M de
+rânduri concurând pentru un container limitat la **0,75 CPU**. De-asta prima pagină de `/activity`
+„măsura" 2,0 s și `/votes?voter_role=drep` 6,8 s — cu orfanii uciși, aceleași cereri sunt **0,48 s**
+și **2,96 s**. Orice cifră luată în timp ce altceva rula e o cifră despre contenție, nu despre
+interogare.
+
+### `SET LOCAL statement_timeout = 30s` pe fiecare citire
+
+Fără el o interogare patologică nu se termină niciodată: clientul așteaptă până renunță, iar
+conexiunea din pool rămâne ocupată cât timp PostgreSQL lucrează — adică și **după** ce clientul a
+plecat. Cu el, `/votes?voter_role=constitutional_committee&limit=1` întoarce un **503
+`db_unavailable` la 30 s** și **nu lasă niciun backend în urmă** (verificat: `active now: 0`).
+Anularea vine ca SQLSTATE 57014, iar `runRead` transformă deja orice `SqlError` în 503 — răspunsul
+onest pentru „nu acum", și unul **definit**, care e tot scopul.
+
+30 de secunde pentru că cea mai lentă pagină legitimă măsurată în serviciu e ultima treaptă a
+scării de activitate, 4,6 s.
+
+### DEFECT: `/votes?voter_role=constitutional_committee` nu poate răspunde
+
+Rolul de comitet e **3.243.802 din 3.244.711** de rânduri de vot pe preprod, iar `palmares.vote`
+calculează trei funcții de fereastră partiționate pe `(voter_id_hash, gov_action_id, voter_role)` —
+deci o pagină de **un** rând sortează și partiționează tot. Măsurat: statement-ul de pagină 27,5 s
+și cel de count 24,0 s prin psql, peste 166 s prin serviciu.
+
+Celelalte roluri răspund în secunde (spo 90 de rânduri, drep 819) pentru că `voter_role` **este**
+coloană de partiție și qual-ul se împinge sub `WindowAgg`. Din același motiv, adresarea aceluiași
+membru **după id** e rapidă: 6 rânduri în 2,5 s.
+
+Verificat că nu e vina parametrilor: cu `plan_cache_mode = force_generic_plan` și aceiași
+parametri pregătiți, 18 s — deci nu planul generic, ci volumul.
+
+Reparația e o **pagină în două etape**: alege rândurile paginii din `voting_procedure` (ieftin,
+indexat), apoi rezolvă cele trei coloane de fereastră **doar pentru partițiile alea** — se împinge
+sub `WindowAgg` din exact același motiv. E o sarcină proprie, nu o coadă a T-API-15. Aceeași
+reparație rezolvă și `/votes` nefiltrat, care are același cost.
+
+Smoke-ul păstrează aserțiunea **neatinsă**, printr-un helper `known_defect` care o afișează și nu
+pică rularea. Nu slăbită, nu ștearsă: când reparăm, se șterge wrapper-ul, nu aserțiunea. Cele patru
+aserțiuni care depindeau de acea pagină citesc acum același membru **după id**.
+
+### Două aserțiuni vechi, reparate
+
+- `participation_rate` pe o epocă fără voturi e `0.0`, nu `0` — așa se scrie un double zero în JSON.
+- `[.participation_by_epoch[].votes_cast] | add` avea un total fix peste o **fereastră care
+  alunecă** cu vârful lanțului: era deja depășit cu 30 de voturi o epocă mai târziu. Magnitudinea
+  rămâne asertată pe epoca 313; peste fereastră se asertează doar ce nu poate aluneca.
+
+### Contractul de erori, publicat în Swagger
+
+`ErrorCode` și `ApiError` **nu apăreau** în `definitions`: servant tipizează doar corpul de succes,
+deci swagger2 n-avea de unde să le emită, și cele 24 de coduri pe care un client face `switch` nu
+se puteau descoperi din document. Declarate acum explicit, cu `$ref` pe răspunsurile globale 400,
+404 și 503. Versiunea documentului → **1.0.0** (valoarea din plan).
+
+`scripts/check_swagger.sh` (nou, în CI lângă garda de drift) asertează **ce spune** documentul:
+cele 22 de căi, cele 24 de coduri, `Accept` opțional, `q` doar unde trebuie, `/activity` fără
+`offset` și cu `before`/`since`, `produces` pe fiecare rută. Secțiunea de Swagger din smoke s-a
+redus la singura proprietate care e despre serviciul care rulează: documentul **servit** e identic
+cu cel **comis**.
+
+
+## 2026-10-20 — Prima rulare COMPLETĂ a smoke-ului, și trei defecte pe care numai ea le putea găsi
+
+Suita n-a mai ajuns niciodată la capăt în această sesiune: fiecare rulare se îneca în pagina de
+comitet. Cu timeout-ul de citire pus, a rulat până la sfârșit — și a găsit trei lucruri în
+T-API-14/17, rute considerate „verde" fiindcă răspundeau 200.
+
+### 1. `ORDER BY` într-o subinterogare NU supraviețuiește unui JOIN peste ea
+
+`listDelegations` e singura interogare de listă construită pe două niveluri: pagina e aleasă și
+ordonată într-o subinterogare, iar numele DRep-ului se adaugă cu un JOIN **deasupra**. Fără un
+`ORDER BY` și pe nivelul de sus, PostgreSQL întoarce cele cinci rânduri corecte în ordinea
+hash-join-ului.
+
+Măsurat: `/delegations?order_by=at&sort_order=desc&limit=5` → `136808533, 136808622, 136809426,
+136766068, 136815403`. Cele mai noi cinci delegări, **în nicio ordine**. Reparat cu
+`delegationOuterSortSpec` — o a doua specificație, nu un prefix pe prima, pentru că `es.amount`
+înăuntru e `lovelace` afară, o coloană pe care subinterogarea însăși a numit-o. Verificat pe toate
+trei cheile de sortare și în ambele direcții.
+
+Verificat și că e **singura** instanță: celelalte șapte funcții de listă pun proiecția în același
+`SELECT` cu `ORDER BY`-ul.
+
+### 2. Servant îmbracă mesajul unui parametru de query și îl lasă gol pe cel al unui capture
+
+Fiecare `parseUrlPiece` din codebase întoarce **codul de eroare** ca mesaj, exact ca să supraviețu-
+iască drumului prin servant până în formatter. Ce nu supraviețuiește e ca mesajul să fie **tot**
+string-ul: un capture ajunge verbatim (`invalid_drep_id`), un parametru de query ajunge îmbrăcat
+(`Error parsing query parameter drep_id failed: invalid_drep_id`).
+
+Deci `/drep/{id}` răspundea corect, iar `?drep_id=` și `?gov_action_id=` răspundeau
+`invalid_parameter` — adevărat, dar nu spune clientului **care** parametru, nici de ce. Și cazul
+identic pe `/votes?voter_id=` răspundea corect, fiindcă acolo decodarea e în handler, nu în parser.
+
+`errorCodeFromParserMessage` (nou, în `webapi-lib/Errors.hs`, unde îi e locul) citește codul de
+după ultimul `:`. Un mesaj fără `:` se întoarce neatins, deci cazul capture citește exact ca
+înainte. Șase teste unitare noi, inclusiv round-trip-ul tuturor celor 24 de coduri prin propriul tag
+și faptul că fiecare cod are un mesaj pentru oameni.
+
+Reparat și mesajul lui `BothCursorsGiven`: zicea „either a cursor or an offset", dar `/activity`
+n-are offset — sunt `before` și `since`.
+
+### 3. Un FAIL care era contenție, nu defect
+
+`/pages/drep-explorer?limit=10` a picat într-o rulare și răspunde `[10,10,0]` în următoarea:
+interogările orfane de la pagina de comitet mâncau CPU-ul containerului. Verificat după, nu
+reparat — n-avea ce.
+
+### Ce rămâne roșu, intenționat
+
+O singură linie `KNOWN`: pagina `/votes?voter_role=constitutional_committee`, cu aserțiunea
+neatinsă și motivul lângă ea.
+
+### 4. Și un al patrulea: aserțiunea era greșită, nu ruta
+
+`/pages/drep-explorer?limit=10` picase și în a doua rulare completă, deși cererea răspunde
+`[10,10,0]` când o dai de mână. Filtrul era `[.items | length, .limit, .offset]` — în jq asta
+**pipează** `.items` în toate trei, deci încearcă `.items.limit` pe un array și dă eroare; `j`
+întoarce string gol și aserțiunea raportează ruta ca stricată. Cu paranteze,
+`[(.items | length), .limit, .offset]`, trece.
+
+A stat ascunsă exact atât cât suita n-a putut ajunge până la linia aia. Verificat după aceea că
+**toate** filtrele jq din suită compilează (compilarea nu e corectitudine — ăsta compila — dar
+prinde clasa vecină).
