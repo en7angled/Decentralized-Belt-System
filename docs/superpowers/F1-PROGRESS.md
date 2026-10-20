@@ -1565,3 +1565,49 @@ neatinsă și motivul lângă ea.
 A stat ascunsă exact atât cât suita n-a putut ajunge până la linia aia. Verificat după aceea că
 **toate** filtrele jq din suită compilează (compilarea nu e corectitudine — ăsta compila — dar
 prinde clasa vecină).
+
+
+## 2026-10-20 — Diagnoza completă a defectului `/votes`, cu cifre, ca sarcina următoare să nu mai caute
+
+Am măsurat până la cauză înainte de a scrie o linie de reparație, și cauza **nu** era cea
+evidentă. Toate măsurătorile pe cele 3.243.802 de rânduri de comitet, pe preprod:
+
+| forma | timp |
+| --- | --- |
+| `count(*)` prin `palmares.vote` (cum e azi) | **14,2 s** |
+| idem, fără funcțiile de fereastră | 10,7 s |
+| idem, fără fereastră și cu `enable_mergejoin = off` | **19,3 s** (mai rău) |
+| `count(*)` direct pe `voting_procedure ⋈ gov_action`, **fără** join-ul de cheie rece | **1,14 s** |
+
+Deci: scanarea de bază e **1,1 s**, join-ul cu `palmares.cc_cold_interval` adaugă **~9,5 s**, iar
+funcțiile de fereastră încă **~3,5 s** peste. Nu invers.
+
+`EXPLAIN` arată de ce: planificatorul alege un **Merge Left Join** pentru `cc_cold_interval`,
+pentru care sortează toate cele 3,24 M de rânduri după `committee_voter` — *external merge,
+234.888 kB pe disc*, 12,3 din cele 14,2 s. Cu merge join interzis trece la hash join și construiește
+648.767 de rânduri ca să sondeze 3,24 M: 19,3 s. **Ambele drumuri sunt greșite** pentru că join-ul
+nu trebuie făcut deloc: un `count` nu are nevoie de identitatea rece, iar o pagină de 50 are nevoie
+de ea pentru 50 de rânduri.
+
+### Forma reparației (T-API-13b)
+
+Nu „`vote_base` fără ferestre" — asta taie 3,5 s din 14,2. Ci **trei interogări**, fiecare cu doar
+join-urile de care are nevoie:
+
+1. **count** — `voting_procedure ⋈ gov_action` (+ `anchor` doar dacă se filtrează pe `anchor_status`,
+   + `drep` doar dacă e `q`). Un `voter_id` de comitet se traduce întâi în id-urile de cheie
+   fierbinte, printr-o interogare mică pe `cc_cold_interval` după `cold_raw`. **~1,1 s.**
+2. **cheile paginii** — aceeași formă, cu `ORDER BY … LIMIT ? OFFSET ?`.
+3. **rândurile paginii** — `palmares.vote` restrâns la perechile `(voter_id_hash, gov_action_id)`
+   ale paginii. Ambele **sunt** coloane de partiție, deci qual-ul se împinge sub `WindowAgg` și se
+   calculează ferestrele doar pentru acele partiții. Legate ca **parametri**, nu ca subinterogare:
+   un `SubLink` nu se împinge.
+
+Trei dus-întors în loc de două, fiecare ieftin.
+
+### Un efect secundar al indexului de azi, raportat cinstit
+
+`gov_idx_committee_reg_hot_asc` face ieșirea lui `cc_cold_interval` **sortată**, ceea ce e exact ce
+tentează planificatorul spre merge join-ul de mai sus: 14,2 s cu el, 12,4 s fără. Dar pentru
+drumurile normale e invers — `count` pe rolul DRep e 818 ms cu merge join și 1.147 ms fără — și
+pagina de `/activity` a câștigat 1.150 ms din 1.347. Net pozitiv, dar costul e real și scris aici.
