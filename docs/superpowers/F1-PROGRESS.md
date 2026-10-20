@@ -670,3 +670,62 @@ nu se sare niciodată, și filtrarea nu reordonează.
 `127.0.0.1:55439`. Portul 55439, nu 5432 și nici 55432: pe 55432 ascultă deja un Postgres nativ
 al mașinii, iar baza sincronizată de la Experimentul A stă pe 5432 în containerul ei — testele
 creează și șterg baze, deci stau pe un server separat de cel cu singura copie sincronizată.
+
+---
+
+## 2026-10-20 — Blocul 4, continuare: două defecte de plan găsite prin rulare pe date reale
+
+### Defect 1: `images.yml` împărțea imaginile de bază prin store-ul greșit (al meu, din blocul 1)
+
+Prima rulare `images` care n-a fost anulată de un push mai nou a picat pe toate cele patru
+servicii: `failed to resolve source metadata for docker.io/library/palmares-builder:9.6.6`.
+
+`docker buildx build --load` pune imaginea în store-ul **demonului docker**, dar
+`docker/build-push-action` rulează prin builder-ul-container buildx, care are store-ul lui și nu o
+vede. Deci `FROM palmares-builder:9.6.6` cădea pe Docker Hub. Un registry e singurul store pe care
+cele două jumătăți îl împart.
+
+Reparat (`e41597f`): job `bases` care construiește și **împinge** ambele baze în GHCR, iar `build`
+depinde de el și suprascrie referințele prin build args, consumând tagul `:${{ github.sha }}` (nu
+`:9.6.6` flotant — o rulare concurentă nu poate schimba baza pe sub picioare). Dockerfile-urile
+păstrează tagurile locale ca `ARG` implicit, deci `docker build` manual merge în continuare.
+
+### Defect 2: lista de indici din design nu acoperă rezolvarea cheii reci a comitetului
+
+`palmares.vote` rezolvă credențiala **rece** a unui vot CC prin registrarea cheii fierbinți în
+vigoare la tranzacția votului: `WHERE hot_key_id = ? AND tx_id <= ? ORDER BY tx_id DESC`.
+
+Designul (T-DATA §1.4) listează `gov_idx_committee_reg_cold ON committee_registration (cold_key_id)`
+— **direcția opusă** (cheile fierbinți ale unui membru), nu aceasta. Fără un index pe
+`(hot_key_id, tx_id DESC)`, lookup-ul face seq-scan peste `committee_registration` **o dată per
+rând de vot CC**: 648.766 registrări × 3.243.802 rânduri de vot. Jumătatea CC a view-ului pur și
+simplu nu se termină — măsurat: am lăsat interogarea să ruleze minute și am oprit-o.
+
+Adăugat `sql/indexes/001_gov_indexes.sql` cu toată lista designului **plus**
+`gov_idx_committee_reg_hot ON committee_registration (hot_key_id, tx_id DESC)`.
+
+Fișierul e **deliberat în afara** `palmaresSqlFiles` / `applyPalmaresSchema`: indicii stau în
+`public`, pe care resetul de schemă nu trebuie să-l atingă; `CREATE INDEX` pe un tabel de milioane
+de rânduri ia minute și ține lacăte, ce n-are ce căuta la pornirea unui API; iar `CONCURRENTLY` nu
+poate rula într-un bloc tranzacțional, și bootstrap-ul de schemă e o tranzacție prin design. Se
+aplică o dată, de Job-ul de indici al blocului 3, și `scripts/verify_views.sh` presupune că a fost
+aplicat.
+
+### Disciplina de assert, acum aplicată consecvent
+
+Trei runde de măsurători au arătat același lucru: cifrele planului sunt corecte la momentul
+măsurării, dar unele sunt contoare vii.
+
+| cifră | plan (2026-10-19) | azi | de ce |
+|---|---|---|---|
+| `drep_hash` rânduri | 802 | 814 | db-sync inserează un rând per credențială care apare într-o delegare |
+| DRep înregistrați | 294 | **294** | cifra planului era corectă; 297-ul meu era fan-out-ul |
+| rânduri de vot DRep | 816 | 819 | voturi noi |
+| votanți DRep distincți | 511 | 514 | votanți noi |
+| propuneri | 131 | 131 | niciuna nouă încă |
+
+Regula pe care o aplic de acum în `sql/checks/*.sql`: **invarianți + istorie imuabilă**, iar unde
+o cifră e valoroasă ca pin de regresie, se taie la o epocă (`proposed_epoch < 320`,
+`vote_epoch < 320`) ca să devină imuabilă. Magnitudinile vii merg în `RAISE NOTICE`.
+
+Cu tăietura la epoca 320: 809 rânduri de vot DRep, 504 votanți distincți, 64 cu ancoră, 90 SPO.
