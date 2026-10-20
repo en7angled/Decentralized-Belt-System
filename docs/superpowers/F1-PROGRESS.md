@@ -2089,3 +2089,37 @@ R5  ok  compared=131  unexpl=0  expl=0     R10 ok  compared=1    unexpl=0  expl=
 
 `status: ok`, **0 neexplicate**, **135 explicate**, **0 stale**, exit **0**. Poarta de release din
 `docs/deployment/koios-parity-gate.md` trece.
+
+### Și patru lucruri pe care numai rularea executabilului le-a găsit
+
+1. **`POST /drep_info` → 413 la 100 de id-uri.** 50 merge. Planul presupunea 100; cele 294 de
+   DRep-uri de pe preprod sunt **6** POST-uri, nu 3.
+2. **`GET /drep/{id}/power` → 404 pentru opțiunile rezervate.** `resolveDRepHex` caută după
+   `drep_raw`, iar `listEpochPower` avea `target_kind = 'drep'` **hardcodat**. 46% din puterea de
+   vot a preprod-ului era accesibilă doar ca agregat. Reparat; `/drep/{id}` **tot** dă 404 pentru
+   ele, și asta e **datele** — au serie de putere și nimic altceva.
+3. **DTO-urile de răspuns nu se pot decoda cu propriul tip.** `FromJSON GovActionSummary` e direcția
+   **RÂND DE SQL**: citește `tx_hash` + `index` și **emite** `id` + `bech32`. Reconciliatorul citește
+   sârma noastră cu decodoare proprii pentru cele nouă câmpuri comparate; ce prinde o redenumire e
+   **testul de reluare**, nu type checker-ul.
+4. **`--max-lag-seconds` era citit și aruncat.** `reconcileAll` folosea constanta de 300 s, deci
+   `--max-lag-seconds 0` raporta `ok`. Un flag citit și ignorat e **mai rău** decât unul inexistent.
+   Acum: exit **3**, `status: aborted`, **9** rânduri sărite, motiv `lag 38s > 0s`.
+
+### Starea verificărilor
+
+**231** de teste unitare, **329** de aserțiuni de smoke (o linie `KNOWN`, pagina de comitet),
+**7** verificări SQL, determinism **8/8**, swagger și doc-ul de metrici fără drift, gitleaks curat.
+Perechea de snapshot comisă se reia **fără rețea** — asta e ce păzește un PR; nocturna contra
+serviciilor vii e **warn-only**, pentru că o poartă roșie de câte ori Pi-ul re-sincronizează învață
+oamenii s-o ignore.
+
+## Ce mai rămâne
+
+1. **Pagina `/votes` în două etape** — singurul endpoint livrat care nu poate răspunde pe rolul de
+   comitet. Diagnosticat complet (join-ul `cc_cold_interval` e 9,5 s din 14,2 s), design-ul scris.
+2. **Al treilea status de DRep** — decizia de API de mai sus, a ta.
+3. **Blocul 3** — substrat / manifeste k8s per D-28 (atinge rack-ul, ținut separat).
+4. **`gh workflow run reconcile.yml`** — o rulare `workflow_dispatch` ca să vedem artefactul; cere
+   imaginea `palmares-admin` publicată.
+5. **Planul B** (atestări) și **Planul C** (UI) — încă nescrise.
