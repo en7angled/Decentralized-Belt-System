@@ -1805,3 +1805,46 @@ să ne certăm cu o gardă care e de partea noastră.
 
 Verificat cu gitleaks 8.30.1, versiunea pe care CI o fixează: `gitleaks git --redact --no-banner
 --exit-code 1 .` → **no leaks found** peste toată istoria.
+
+### T-PARITY-3 închis: cele zece rânduri
+
+Fiecare rând e **un** apel `diffKeyed`; **ce** compară fiecare e specificația, scrisă lângă el,
+pentru că semnătura și testele nu o determină.
+
+**R10 rulează primul** și eșecul lui **sare** R1–R9 în loc să compare peste o graniță de epocă —
+ceea ce fabrică divergențe care sunt artefacte de sincronizare, nu defecte în vreunul din indexuri.
+Limita lui de lag e **aceeași 300 s** pe care o folosește `/ready` (D-7): o rulare contra unui index
+pe care serviciul însuși îl declară not-ready compară cu ceva ce nu e servit niciunui client.
+
+`PalmaresSnapshot` poartă o **proiecție**, nu DTO-urile de răspuns. Rândurile compară nouă valori,
+unde `DRepSummary` singur are douăzeci și două — un snapshot construit din DTO-uri ar face fiecare
+test de rând să scrie treisprezece câmpuri pe care nimeni nu le citește ca să asserteze unul pe
+care da. Dependența de DTO rămâne **acolo unde o redenumire de câmp trebuie să rupă** — în
+proiecțiile `from*` — iar acelea sunt exercitate cap-la-cap de `admin reconcile-koios` contra
+API-ului viu, singurul loc unde **pot** fi: un test unitar care construiește de mână un
+`DRepSummary` demonstrează că autorul testului și proiecția sunt de acord, nu că API-ul servește ce
+credem.
+
+Trei rânduri poartă o decizie care merită numită:
+
+- **Toleranța lui R4 e ZERO**, și asta **este** „toleranța documentată" din verificarea 5 a
+  specificației. Cele 46% de care avea nevoie înainte erau **filtrul de pseudo-DRep**, nu o eroare
+  de măsurare — opțiunile rezervate ale ledger-ului sunt rânduri ca oricare (D-20), iar în
+  fixture-ul de test `always_abstain` singur ține **98,8%** din putere.
+- **R7 compară ISTORICUL de vot**, inclusiv voturile depășite — adică e **poarta** pe
+  `GET /votes` să întoarcă fiecare rând din `palmares.vote`, nu doar pe cele finale. Doar rolul
+  DRep: cele 3.243.802 de rânduri de vot de comitet de pe preprod sunt spam de test.
+- **R9 e un multiset**, nu un set. Același beneficiar poate apărea legitim de două ori într-o
+  acțiune, iar colapsarea ar face invizibil un rând duplicat.
+
+**18 teste de rând** peste o pereche consistentă construită de mână — două DRep-uri, ambele opțiuni
+rezervate, o acțiune, un membru de comitet, o retragere, un vot — cu **o** mutație fiecare.
+Mutatorii sunt actualizări de record **în modulul de test**, nu cod de bibliotecă: o funcție care
+strică un snapshot intenționat e una pe care cineva o va chema din greșeală. Un test asertează că
+**fiecare rând a comparat cel puțin o cheie**, fiindcă un rând care a comparat în liniște zero ar
+trece pe orice pereche.
+
+Raportul a câștigat `reportExplained` lângă `reportUnexplained`: o rulare al cărei număr de
+explicate urcă săptămânal merită văzută înainte să merite investigată.
+
+**214 de teste unitare trec.**
