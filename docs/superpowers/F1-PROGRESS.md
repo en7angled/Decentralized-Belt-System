@@ -2188,3 +2188,117 @@ Aserțiunea de smoke pentru pagina de comitet e **restaurată** — `known_defec
 linie. Opt teste unitare noi fixează ce join-uri aduce fiecare formă de cerere, că sortarea
 implicită e cheia primară, și că filtrul de votant lovește toate patru sursele de credențial fără
 join-ul de interval.
+
+---
+
+## T-SUBSTRATE-7 + T-SUBSTRATE-8 — substratul măsurat, și grant-ul care nu se făcea niciodată
+
+Două comit-uri în palmares: `1c6da2a` (măsurarea) și `cca13eb` (rolurile). Blocul 3 rămâne cu
+restul la rack.
+
+### T-SUBSTRATE-7: numerele vin dintr-un script, nu dintr-o notiță
+
+`scripts/measure_substrate.sh` rulează pe oricare dintre cele două ținte — experimentul off-cluster
+care a dimensionat ADR-ul, sau cluster-ul după T-SUBSTRATE-3/4. Tot ce afirmă ADR 0001 iese acum din
+el, pentru că alternativa e un număr care îmbătrânește în liniște în timp ce decizia de PVC se
+sprijină pe o cifră pe care n-o mai poate reproduce nimeni.
+
+Re-măsurat la tip pe 2026-10-21:
+
+| ce | înainte | acum |
+| --- | --- | --- |
+| `pg_database_size('cexplorer')` | 5.909 MB | **6.260 MB** |
+| `block` (total) | 2.323 MB | **2.530 MB** |
+| `voting_procedure` (total) | 331 MB | **410 MB** |
+| schema noastră | — | **0 tabele, 19 view-uri, 1 matview, 680 kB** |
+| db-sync anon / reclaims | — | **5,90 GiB / 4.183** (recuperează) → **5,06 GiB / 35** (la tip) |
+| nod anon / reclaims | — | 2,88 GiB la plafon 3,5 GiB / 59.697 |
+
+Creștere la tip, nu o corecție. Linia care contează pentru ADR e a patra: toată suprafața de citire
+a produsului adaugă **sub un megabyte** la cele șase gigabytes ale lui db-sync.
+
+Scriptul separă în propriul header cele două feluri de cifră, pentru că nu se transferă la fel.
+Dimensiunile de bază de date și de relație sunt **fapte de lanț** și trec între gazde neschimbate. O
+cifră de memorie spune ce a folosit un proces **sub plafonul care i s-a dat**, și RTS-ul lui GHC își
+dimensionează heap-ul din `/proc/meminfo`, nu din limita cgroup — deci un db-sync care a atins
+plafonul îți spune că plafonul a ținut, nu care e setul viu. Verdictul de PVC rămâne deschis, legat
+de bifurcația de memorie pe care ADR-ul o enunță deja.
+
+### T-SUBSTRATE-8: defectul găsit pe drum
+
+`sql/000_schema.sql` începe cu `DROP SCHEMA palmares CASCADE`, care ia **fiecare privilegiu** de pe
+schema aia împreună cu obiectele — și rândul din `pg_default_acl` cu ele, deci `ALTER DEFAULT
+PRIVILEGES` nu-l poate purta. **Nimic din setul de boot nu acorda nimic.**
+
+Desfășurarea cu un singur rol nu a observat niciodată, pentru că rolul care aplică DDL-ul era rolul
+care servește cererile. Desfășurarea cu două roluri — exact ce creează acest task — ar fi servit 500
+pe fiecare rută de guvernanță **la prima repornire** a lui query-api.
+
+Dovedit viu, nu raționat: pe baza de date a experimentului, cu rolurile puse și cu schema dintr-un
+boot anterior, `check_roles.sh` a picat exact pe cele două linii, și `palmares_ro` nu putea citi
+`palmares.drep`. După un re-boot cu `040_grants.sql`: **16 din 16**.
+
+`sql/040_grants.sql` e deci **ultimul** fișier din `palmaresSqlFiles`, și asta e portant de două ori:
+
+* `GRANT … ON ALL TABLES` se rezolvă la relațiile care există **când rulează**, deci aceeași
+  instrucțiune cu un fișier mai devreme ar rata tot ce creează `030_metrics.sql`, inclusiv matview-ul
+  pe care-l citește lista de DRep-uri. `ALL TABLES` **acoperă** și view-urile și matview-urile —
+  măsurat pe PostgreSQL 17, unde matview-ul citește `has_table_privilege = true` după singura
+  instrucțiune.
+* e **păzit pe existența rolului**. `PALMARES_PG_OWNER_CONN_STR` cade pe `PG_CONN_STR`, deci forma cu
+  un rol n-are deloc `palmares_ro`, și un GRANT nepăzit ar aborta tranzacția de boot cu
+  `role "palmares_ro" does not exist` și ar omorî procesul. A adăuga grant-uri pentru rolurile noi ar
+  fi rupt fiecare desfășurare care încă n-are roluri.
+
+### Rolul greșit, și de ce fișierul refuză să ruleze sub el
+
+`ALTER DEFAULT PRIVILEGES` din `050_roles.sql` nu poartă **niciun** `FOR ROLE` — adică rolul curent.
+Un privilegiu implicit e legat de rolul care **creează** obiectul, iar al lui db-sync e `dbsync` în
+cluster și `postgres` în `experiments/dbsync-preprod`. A numi pe oricare dintre ele e greșit în
+celălalt loc, **în direcția silențioasă**: fiecare instrucțiune reușește și privilegiul nu acoperă
+nimic, deci următoarea migrare de db-sync adaugă un tabel pe care `palmares_ro` nu-l poate citi, și
+un view peste el cade peste luni cu o eroare de permisiune care se citește ca un bug în view.
+
+Prima versiune chiar numea `dbsync`, și fișierul nu s-a putut aplica deloc pe experiment —
+`role "dbsync" does not exist`, instrucțiunea 12.
+
+Deci presupunerea e **afirmată**, nu documentată. Instrucțiunea 1 compară `current_user` cu
+proprietarul lui `public.voting_procedure` și ridică dacă diferă. Verificat rulând-o ca un al doilea
+superuser, care a fost refuzat cu numele proprietarului în mesaj.
+
+### `assertIndexesValid` — verificarea pe care niciun cod de eroare nu ți-o dă
+
+`CREATE INDEX CONCURRENTLY` construiește în două treceri cu un commit între ele. Îl întrerupi — Job
+anulat, deadlock, pod omorât — și indexul **rămâne**, cu `indisvalid = false`. Planificatorul îl
+ignoră, iar `IF NOT EXISTS` vede numele și nu face nimic. Fiecare rulare ulterioară raportează succes
+în timp ce interogarea pentru care a fost construit rămâne pe scan secvențial, pentru totdeauna, fără
+nicio eroare nicăieri.
+
+Prima mea versiune filtra `relname LIKE 'palmares_idx_%'` și potrivea **patru** indexuri, niciunul din
+fișier — care-și numește proprii `gov_idx_*` și re-creează doi `idx_*` ai lui db-sync. Raporta "all
+valid" peste un set care excludea fiecare index pentru care exista. Numele se citesc acum **din
+fișier** (`declaredIndexes`), și un test unitar fixează că fiecare instrucțiune produce unul, că nu
+sunt duplicate, și că fiecare e un identificator curat.
+
+### Ce s-a verificat cap la cap pe `experiments/dbsync-preprod`
+
+| probă | rezultat |
+| --- | --- |
+| `check_roles.sh` **înainte** | 16 FAIL, `role "palmares_owner" does not exist` |
+| `admin apply-roles` | 23 instrucțiuni |
+| `admin apply-indexes` | 23 instrucțiuni, **toate cele 23 de indexuri declarate valide** |
+| `check_roles.sh` **după** | **16 ok**, `roles OK` |
+| `palmares_ro` prin scram-sha-256 | `voting_procedure` necalificat (public, al lui db-sync) = **3.244.711** |
+| | `drep` necalificat (palmares, al nostru) = **812** |
+| | `drep_metrics` (matview) = **812** |
+| | `search_path = palmares, palmares_attest, public` |
+| `DELETE FROM voting_procedure` ca `palmares_ro` | **permission denied** |
+| `apply-roles` ca alt superuser | refuzat la instrucțiunea 1, cu numele proprietarului |
+| `apply-roles` fără parolă | refuzat înainte de a atinge baza de date |
+
+Parola nu apare nicăieri în fișier. `apply-roles` o leagă la `set_config` și un bloc `DO` o citește
+înapoi prin `format('%L')`, care face ghilimelele cu regulile PostgreSQL însuși — DDL nu ia parametri,
+deci interpolarea valorii ar fi fost un client care construiește DDL din un secret. (`rawExecute`
+respinge un `SELECT`; `set_config` e o funcție, deci cele două apeluri merg prin `rawSql`.)
+
+**258 de teste trec.** Job-ul k8s, cheile din secretul SOPS și kustomization-ul rămân pentru rack.
