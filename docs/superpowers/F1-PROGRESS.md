@@ -1779,3 +1779,29 @@ trecere, și apelantul nu are nevoie de ramură proprie de abandon.
 divergență pe care Koios a găsit-o a fost **reparată**, nu derogată.
 
 **196 de teste unitare trec.**
+
+### Garda a avut dreptate de două ori
+
+Dupa allowlist, `secrets` tot a picat — dar cu **2** găsiri, nu 81. Amândouă în
+`scripts/check_gitleaks_allowlist.sh` **însuși**: cheia AWS și momeala `keyHash`, scrise ca
+literali într-un fișier care e comis și deci scanat.
+
+Fiecare plantă e acum **asamblată din fragmente** peste o concatenare de shell, deci niciun pattern
+nu se potrivește pe fișier, în timp ce JSON-ul pe care-l scrie (în `mktemp -d`, niciodată comis)
+poartă valoarea întreagă. Nu e obfuscare — e singurul mod în care un script a cărui treabă e să
+planteze un credențial poate trăi în depozitul pe care-l protejează.
+
+Cele două găsiri din commit-ul `2baed8c` **nu se pot edita** din istoria deja împinsă, deci sunt
+numite în `.gitleaksignore` prin **amprentă** — commit, fișier, regulă, linie. O amprentă **nu
+poate lărgi**: același pattern oriunde altundeva, inclusiv în același fișier la un commit ulterior,
+e o găsire nouă și tot pică garda. Alternativa era rescrierea istoriei împinse ca să ștergem un id
+de cheie AWS **sintetic, din corpusul de test al gitleaks-ului însuși**; nimic nu s-a scurs, nu e
+nimic de rotit, deci un force-push ar fi fost distructiv degeaba.
+
+Și protecția de push a GitHub a prins separat un `ghp_…` pe care-l pusesem ca a doua plantă. A avut
+dreptate și ea: un token care arată valid într-un fișier comis nu se distinge de unul scurs. Planta
+aia a dispărut de tot — cheia AWS plus un bloc de cheie privată acoperă două familii de reguli fără
+să ne certăm cu o gardă care e de partea noastră.
+
+Verificat cu gitleaks 8.30.1, versiunea pe care CI o fixează: `gitleaks git --redact --no-banner
+--exit-code 1 .` → **no leaks found** peste toată istoria.
