@@ -83,7 +83,11 @@ Registru open-source de reputație & track-record pentru guvernanța Cardano (CI
 - [x] **P6. Blocul 2 — extracția** (T-EXTRACTION-1…6): copie byte-identică → rename → strip (GREEN
       GATE) → `Core.Ids` CIP-129/105 → fixurile moștenite #3 și #5. **Done** 2026-10-20, `26432e9`,
       `All 50 tests passed`. Detalii în secțiunea de la finalul fișierului.
-- [ ] **P7. Blocul 3 — substratul** (db-sync pe cluster per D-28) + blocul SQL/metrici. **Următorul.**
+- [ ] **P7. Blocul 4 — SQL & metrici** (T-SQL-METRICS-1…13). **ÎN CURS**: task-urile 1 și 2 gata
+      (`01c9d97`, `a3cde2a`), 56 de teste. Restul: celelalte 13 view-uri, catalogul de metrici,
+      fixtura de epoca 320, matview-ul + firul de refresh, poarta de determinism.
+- [ ] **P8. Blocul 3 — substratul** (db-sync pe cluster per D-28). Ținut separat de blocul 4
+      pentru că atinge rack-ul; blocul 4 se validează local pe baza sincronizată din Experimentul A.
 
 ## Decizii luate ca builder calls (contestabile de owner)
 
@@ -594,3 +598,75 @@ Numărul de cazuri a nimerit exact predicția planului la fiecare pas: 31 → 41
 3. Retragerea `experiments/dbsync-preprod/` abia când stiva de sus are propria bază sincronizată.
 4. Un avertisment moștenit rămas, lăsat intenționat: `KupoAtlas.hs:42` umbrește `scriptHash` din
    `GeniusYield.Types`. Nu e codul blocului și fixul e cosmetic.
+
+---
+
+## 2026-10-20 — Blocul 4 pornit: bootstrap-ul de schemă și `palmares.anchor`
+
+`01c9d97` + `a3cde2a`. 56 de teste, zero avertismente. CI pe `26432e9` a fost **verde complet**
+(ambele job-uri, inclusiv `cabal test all` pe runner-ul arm64, ~40 min de la cache rece).
+
+**T-SQL-METRICS-1 — gata.** `Query.Views` încorporează cele patru fișiere DDL la compilare și le
+aplică printr-un singur `runSqlPool`, deci tot setul e o tranzacție: o eroare de sintaxă în
+ultimul fișier face rollback și lasă schema anterioară să servească trafic. `applyPalmaresSchema`
+moare la eșec — un query API pornit cu schema pe jumătate aplicată ar răspunde pe unele rute și
+500 pe altele.
+
+`Test.Pg.withScratchDb` dă fiecărui test baza lui `palmares_test_<pid>` cu forma db-sync deja în
+ea. **Moare numind `PALMARES_TEST_PG_CONN_STR` când lipsește** — verificat: fără variabilă cele
+două cazuri de bază PICĂ, nu se sar.
+
+**Fixtura de formă e GENERATĂ din schema reală** (db-sync 13.7.1.0 de la Experimentul A):
+`pg_dump --schema-only` pe cele 35 de tabele citite de view-uri, plus DDL-ul de enum-uri și
+domenii scos din `pg_type`, curățat de secvențe, indici, chei străine și ownership. Deci numele,
+tipurile și `NOT NULL` sunt cele reale, nu o transcriere a hărții de coloane din note.
+
+> **Asta a găsit imediat un defect în planul pentru T-SQL-METRICS-2:** seed-ul lui insera
+> `off_chain_vote_data (id, voting_anchor_id, hash, language, is_valid)`, dar tabelul real are
+> `json jsonb NOT NULL`, `bytes bytea NOT NULL` și `language` NOT NULL. Seed-ul ar fi picat pe
+> preprod. Reparat în T-SQL-METRICS-2.
+
+Două devieri, ambele forțate de ce face codul:
+- **`applySchemaSql` SARE un fișier fără statement.** Cele trei fișiere de view-uri încep ca un
+  comentariu-antet, iar `postgresql-simple` respinge o interogare fără comandă
+  (`execute: Empty query`) — deci aplicarea lor literală strica bootstrap-ul. `hasStatement`
+  decide golirea pe textul fără comentarii, dar execută mereu octeții fișierului.
+- **Fiecare pool se creează cu `withPostgresqlPool`, nu `createPostgresqlPool`.** Un pool lăsat
+  deschis face `DROP DATABASE` să pice cu „is being accessed by other users"; drop-ul e și
+  `WITH (FORCE)`, ca o conexiune scăpată de un test picat să nu blocheze rularea următoare.
+
+**T-SQL-METRICS-2 — gata. Validat pe baza REALĂ, nu doar pe fixtură:** 401 ancore intră, 401
+rânduri ies (deci join-ul LATERAL nu multiplică), și `verdict` nu e NULL pentru niciuna — adică
+**F1 check 7 satisfăcut pe date vii**.
+
+Distribuția măsurată pe preprod, 2026-10-20:
+
+| verdict | rânduri |
+|---|---|
+| unreachable | 237 |
+| valid | 75 |
+| hash_mismatch | 66 |
+| invalid_schema | 19 |
+| not_fetched | 3 |
+| inline | 1 |
+
+Trei lucruri pe care doar datele reale le dovedesc:
+- `invalid_schema` = 18 (`is_valid FALSE`) + 1 (`is_valid NULL`). db-sync scrie NULL când
+  verificarea CIP-100 e neconcludentă, și preprod chiar are un astfel de rând — deci colapsul
+  cerut de design e real, iar `cip100_valid` păstrează distincția „a picat" vs „neconcludent".
+- `inline` se testează **primul**, și singura ancoră `data:` vie o dovedește: are și un rând de
+  eșec URL-parse, deci în orice altă poziție ar fi citit `unreachable`.
+- `oversized` nu are instanță pe preprod azi, deci îl acoperă numai fixtura.
+
+Pattern-urile de eșec se potrivesc pe **proza** db-sync, nu pe numele constructorilor — confirmat
+citind șirurile vii din `off_chain_vote_fetch_error`. Cu `%HashMismatch%` toate cele 66 de
+hash-mismatch ar fi citit `unreachable`.
+
+**Corecție la mine:** testul „doar 000_schema.sql rulează" din commit-ul anterior era un
+instantaneu, nu un invariant, și a devenit stale în aceeași oră. Acum afirmă ce e invariant: 000
+nu se sare niciodată, și filtrarea nu reordonează.
+
+**Postgres de test local:** container `palmares-test-pg` (postgres:17-alpine) pe
+`127.0.0.1:55439`. Portul 55439, nu 5432 și nici 55432: pe 55432 ascultă deja un Postgres nativ
+al mașinii, iar baza sincronizată de la Experimentul A stă pe 5432 în containerul ei — testele
+creează și șterg baze, deci stau pe un server separat de cel cu singura copie sincronizată.
