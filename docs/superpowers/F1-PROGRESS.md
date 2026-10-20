@@ -89,11 +89,12 @@ Registru open-source de reputație & track-record pentru guvernanța Cardano (CI
       (nu 320 — vezi secțiunea de la final), matview-ul `drep_metrics` + firul de refresh, și
       poarta de determinism (8/8 pe db-sync-ul nostru). Șapte fișiere de check în `sql/checks/`,
       toate verzi pe baza reală. Detalii în secțiunile de la finalul fișierului.
-- [ ] **P7b. Blocul 5 — API-ul public** (T-API-1…18). **ÎN CURS**: 1…11 gata (`62524e8`),
-      142 de teste + 118 de asserțiuni de smoke verzi pe db-sync-ul nostru. Rutele servite acum:
+- [ ] **P7b. Blocul 5 — API-ul public** (T-API-1…18). **ÎN CURS**: 1…13 gata,
+      142 de teste + ~160 de asserțiuni de smoke verzi pe db-sync-ul nostru. Rutele servite acum:
       `/health`, `/ready`, `/status`, `/metrics/formulas`, `/dreps` (JSON + CSV),
       `/drep/{id}` ≡ `/pages/drep/{id}`, `/drep/{id}/power`, `/drep/{id}/delegators` (JSON + CSV),
-      `/drep/{id}/updates`, `/gov-actions` (JSON + CSV).
+      `/drep/{id}/updates`, `/gov-actions` (JSON + CSV),
+      `/gov-action/{id}` ≡ `/pages/gov-action/{id}`, `/votes` (JSON + CSV).
       Rulare locală: `PG_CONN_STR=... PORT=8093 cabal run exe:query-api`, apoi
       `PALMARES_API=http://localhost:8093 scripts/smoke_query_api.sh`.
 - [ ] **P8. Blocul 3 — substratul** (db-sync pe cluster per D-28). Ținut separat de blocul 4
@@ -1253,3 +1254,51 @@ ratificate** — zero pentru că fiecare acțiune ratificată a intrat în vigoa
 
 Forma CIP-129 calculată de noi se potrivește cu vectorul abreviat al notei de design: cea mai nouă
 propunere se randează `gov_action1qnergwfc…`, exact string-ul pe care f1-dbsync §1.3 îl trunchiase.
+
+
+## 2026-10-20 — T-API-12/13: două erori de identitate și una de ratio, toate găsite prin citirea ieșirii
+
+### 1. `ratio` NULL pe o acțiune UNANIMĂ
+
+`palmares.vote_tally` calcula
+`sum(power) FILTER (WHERE vote='Yes') / NULLIF(yes + no, 0)`, iar un `sum` cu `FILTER` peste zero
+rânduri e **NULL, nu 0**. Deci o acțiune unanimă — toate voturile Yes, niciun No — calcula
+`yes + NULL = NULL` și publica `ratio = null`, ceea ce se citește ca „nu s-a votat", **opusul** a
+ce s-a întâmplat.
+
+Măsurat: **33 din 49** de tallies care duc putere publicau un ratio nul. După `COALESCE` în
+interiorul aritmeticii: niciunul nul, 31 citesc un 1,0 unanim. `NULLIF` rămâne pentru cazul
+pentru care a fost scris — nicio putere în spatele niciunei părți.
+
+### 2. Identitatea rece a comitetului era publicată cu header-ul greșit
+
+`palmares.vote.has_script` raportează cheia **FIERBINTE**, în timp ce `voter_id_hash` e cea
+**RECE** (D-24). Împerecherea lor construia un id `cc_cold1…` al cărui octet de header spune
+cheie-sau-script pentru un alt credențial decât hash-ul.
+
+Măsurat: din cele **43** de chei reci care au votat, **32 sunt chei și 11 sunt scripturi** — deci
+unsprezece erau mis-identificate. Reparat purtând `voter_cold_has_script` din
+`palmares.cc_cold_interval` prin `palmares.vote`. Verificat că ambele feluri fac **round-trip**:
+id-ul întors de API, trimis înapoi ca filtru, găsește exact aceleași rânduri.
+
+### 3. Fiecare căutare după votant plătea un pas complet peste 3,24 M de rânduri
+
+Filtrul era `encode(v.voter_id_hash, 'hex') IN (?)`. `voter_id_hash` **este** în `PARTITION BY`-ul
+funcțiilor de fereastră ale lui `palmares.vote`, deci un qual direct pe el se împinge sub
+`WindowAgg` — dar învelit în `encode()` planificatorul nu-l mai vede ca qual pe coloana de
+partiție. Comparat ca **octeți**, cu `decode()` pe partea parametrului, interogarea atinge doar
+rândurile acelui votant.
+
+### Cifre din plan corectate de bază de date
+
+- `max(vote_rows)` e **21.626**, nu 20: o cheie fierbinte de comitet a votat de 21.626 de ori pe o
+  singură acțiune, în testul de stres din epoca 187.
+- Voturi de DRep cu ancoră `valid`: **1**, nu 65.
+- **Nu există** nicio retragere de trezorerie intrată în vigoare pe preprod (83 înregistrate, 0
+  enacted), deci testul de smoke al planului pentru T-API-12 nu putea rula așa cum era scris.
+
+### O capcană de URL, documentată în rută
+
+Forma canonică `<tx_hash>#<index>` conține `#`, pe care un URL îl tratează ca delimitator de
+fragment — curl nu-l trimite niciodată. Ambele forme sunt acceptate în cale; descrierea rutei spune
+acum că `#` trebuie trimis ca `%23` și că forma **bech32** CIP-129 e cea de pus într-un link.
