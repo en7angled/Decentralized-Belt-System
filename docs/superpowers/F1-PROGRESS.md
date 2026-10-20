@@ -83,9 +83,12 @@ Registru open-source de reputație & track-record pentru guvernanța Cardano (CI
 - [x] **P6. Blocul 2 — extracția** (T-EXTRACTION-1…6): copie byte-identică → rename → strip (GREEN
       GATE) → `Core.Ids` CIP-129/105 → fixurile moștenite #3 și #5. **Done** 2026-10-20, `26432e9`,
       `All 50 tests passed`. Detalii în secțiunea de la finalul fișierului.
-- [ ] **P7. Blocul 4 — SQL & metrici** (T-SQL-METRICS-1…13). **ÎN CURS**: task-urile 1 și 2 gata
-      (`01c9d97`, `a3cde2a`), 56 de teste. Restul: celelalte 13 view-uri, catalogul de metrici,
-      fixtura de epoca 320, matview-ul + firul de refresh, poarta de determinism.
+- [x] **P7. Blocul 4 — SQL & metrici** (T-SQL-METRICS-1…13). **ÎNCHIS** 2026-10-20, `b111ba2`,
+      `All 83 tests passed`. Cele 19 obiecte `palmares` + funcția de eligibilitate, catalogul de
+      8 formule + `docs/metrics.md` generat cu poartă de drift în CI, fixtura pe epoca **319**
+      (nu 320 — vezi secțiunea de la final), matview-ul `drep_metrics` + firul de refresh, și
+      poarta de determinism (8/8 pe db-sync-ul nostru). Șapte fișiere de check în `sql/checks/`,
+      toate verzi pe baza reală. Detalii în secțiunile de la finalul fișierului.
 - [ ] **P8. Blocul 3 — substratul** (db-sync pe cluster per D-28). Ținut separat de blocul 4
       pentru că atinge rack-ul; blocul 4 se validează local pe baza sincronizată din Experimentul A.
 
@@ -916,3 +919,123 @@ comentariu în `palmares.cabal` lângă `extra-source-files` care spune că list
 pas cu Dockerfile-urile — pentru că o adăugire acolo sparge build-ul de imagine, nu build-ul
 cabal, deci se vede doar în CI. Verificat local cu `cabal sdist`: tarball-ul conține exact
 LICENSE, NOTICE, licenses/, palmares.cabal, cele patru `sql/*.sql` și fixtura.
+
+
+## 2026-10-20 — Blocul 4 ÎNCHIS: T-SQL-METRICS-9…13, catalog + fixtură + matview + determinism
+
+`b111ba2`. 50 → 83 de teste de la începutul blocului. Ce a intrat în ultimele cinci task-uri și, mai
+important, ce s-a schimbat din ce prevedea planul.
+
+### Catalogul de metrici (T-9/T-10): o singură definiție, documentația generată din ea
+
+Opt formule în `resources/metric-formulas.json`, șase cu SQL propriu în `resources/metrics/*.sql`, două
+(`gov_action_state_v1`, `tally_cast_votes_v1`) care sunt view-uri și n-au statement separat.
+`docs/metrics.md` e **generat** din ele de `admin write-metrics-doc` și comis, iar CI rulează
+`write-metrics-doc && git diff --exit-code docs/metrics.md`. Deci o formulă nu se poate schimba fără ca
+documentația publicată să se schimbe în același commit — ceea ce e tot rostul: numărul servit și proza
+publicată ies din aceleași fișiere.
+
+Convenție care s-a dovedit necesară, nu estetică: fiecare statement leagă parametrii **o singură dată**,
+într-un CTE `p` în frunte, în ordinea din `params`. Motivul e că `postgresql-simple` numără `?` **lexical,
+peste tot textul**, comentariile incluse: un semn de întrebare în proză e citit ca parametru și interogarea
+cade cu „N single chars, but M parameters". Există un test care asertează numărul de `?` per fișier față de
+`params`, exact ca să aterizeze ca eșec clar.
+
+### Fixtura pinuiește epoca **319**, nu 320, și numele rămâne
+
+`test/fixtures/preprod-epoch-320-metrics.json`. Epoca 320 era **vârful** când am măsurat, deci deschisă, iar
+o epocă deschisă nu are cursor stabil: `age_days_v1` ia `max(block.time)` peste epocile `<= as_of_epoch`,
+care într-o epocă deschisă e „acum" și se mișcă la fiecare douăzeci de secunde. Măsurat: ultimul bloc al
+epocii 320 era `2026-10-20 11:19:14` și avansa, al epocii 319 e `2026-10-17 23:59:44` pe veci. Pinuirea unei
+epoci **închise** e ce transformă fișierul din instantaneu în fixtură. Numele a rămas pentru continuitate cu
+planul, iar `_about` din fișier spune de ce.
+
+### Două defecte prinse de fixtură (ambele în statement-urile publicate)
+
+1. **`votes_by_type_v1` era necitibilă din Haskell.** `action_type` e un enum PostgreSQL, iar persistent îl
+   dă înapoi ca `PersistLiteral`, pe care niciun decodor nu acceptă. Fixat cu `action_type::text`.
+2. **`delegator_retention_rate_v1` dubla contoarele la fereastră zero.** Sonda care pune
+   `retention_window_epochs = 0` — „cu fereastra zero, «anterior» trebuie să fie «acum», ceea ce e adevărat
+   doar dacă parametrul e într-adevăr legat, nu un 10 literal în statement" — a întors (24, 24) pentru 12
+   delegatori: cele două valori de epocă coincid și fiecare adresă se unea de două ori. `UNION ALL` →
+   `UNION`. Sonda a fost scrisă ca test al legării parametrului și a găsit un bug de corectitudine.
+
+### Matview-ul (T-12): forma e dictată de o optimizare a planificatorului
+
+`palmares.drep_metrics` e **singurul** obiect materializat din schemă. Forma e „un CTE per metrică, unite la
+final", nu „un LATERAL per DRep", pentru că `palmares.vote` calculează trei funcții de fereastră și un
+`WHERE` nu poate fi împins sub un `WindowAgg` în general — deci fiecare referință la view ar costa pasul
+întreg peste 3,2 M de rânduri, iar un LATERAL l-ar plăti 812 ori.
+
+**Măsurat: 3,1 s pentru statement plus cei patru indici.** Motivul e că `voter_role` apare în `PARTITION BY`
+al **tuturor** celor trei funcții de fereastră, iar PostgreSQL împinge qual-ul sub `WindowAgg` exact în acel
+caz (`qual_is_pushdown_safe`). Deci CTE-ul `dv` scanează ~1.400 de voturi de DRep, nu 3,2 M. Scris în
+fișier, pentru că o fereastră partiționată fără `voter_role` ar transforma asta în minute **în liniște**.
+
+`REFRESH` trece prin `runSqlPoolNoTransaction`: `ExecRefreshMatView` cheamă `PreventInTransactionBlock`
+pentru `CONCURRENTLY`, deci `BEGIN`-ul runner-ului obișnuit ar strica fiecare refresh — același hazard pe
+care D-15 l-a găsit pentru `CREATE INDEX CONCURRENTLY`, cu un strat mai sus. Marca se scrie **doar la
+succes**, deci un refresh picat se reîncearcă la următorul tick, iar tot pasul e în `try`: o excepție scăpată
+din `forever` ar omorî firul în liniște și ar servi numere vechi pe veci — singurul mod de eșec pe care un
+operator nu l-ar vedea.
+
+### `sql/checks/070` asertează invarianți, nu magnitudini — și de ce
+
+Fișierele de check anterioare puteau tăia numărătorile la `epoch < 320` și erau imuabile. Ăsta nu poate:
+matview-ul n-are parametru de epocă pe care să tai, are un rând per DRep **la vârf**. Deci un
+`eligible_actions = 114` înghețat ar fi greșit în clipa în care se închide epoca următoare. Asertat în
+schimb: un rând per credențial real, cele cinci grade însumează `votes_cast`, fiecare rată e NULL **exact**
+când trebuie (în ambele direcții), `votes_cast <= eligible_actions`, o singură `as_of_epoch` și o singură
+`voting_power_epoch` pe tot matview-ul, plus indicii. Și **acordul cu formulele publicate**: rândul DRep-ului
+pinuit e re-derivat din catalog în fișier și comparat. Verificat pe preprod: 812 rânduri la epoca 320, toți
+invarianții curați, fiecare contor și percentilă egale cu formula.
+
+`age_days` e singura coloană care nu poate fi asertată egală, și motivul e chiar rostul matview-ului:
+formula citește `max(block.time)` **viu**, matview-ul l-a înghețat la ultimul refresh. Invariantul e
+direcțional — un instantaneu al trecutului poate fi doar mai tânăr — cu o margine mult sub orice eroare de
+formulă. Măsurat la rulare: 58 de secunde de diferență, adică exact blocurile produse între build și check.
+
+### Decizii de builder în matview (toate scrise în fișier)
+
+- **`voting_power_epoch` e una singură pentru toți**, epoca ultimei distribuții din ledger, nu „ultimul rând
+  al fiecărui DRep". Altfel un DRep măsurat la epoca 320 ar sta lângă unul al cărui ultim rând e din 180, și
+  stake-ul vechi al celui de-al doilea ar fi numit puterea lui de vot curentă.
+- **`voting_power` e 0, nu NULL, când lipsește din `drep_distr`** (101 din 294 de DRep-uri înregistrate pe
+  preprod). Ledger-ul spune „zero stake delegat" prin absență; „necunoscut" ar fi o altă afirmație.
+- **`last_vote_at` nu e filtrat de eligibilitate**: „când a votat ultima dată" trebuie să numere și un vot pe
+  o acțiune încă deschisă, pe care setul eligibil îl exclude.
+- **`age_days` e NULL exact pentru credențialele niciodată înregistrate** (7 pe preprod) — există în
+  `drep_hash` doar pentru că cineva le-a delegat, deci n-au interval de însumat. Asertat în check.
+- **Zero rânduri dacă `public.block` e gol**, nu 812 rânduri de NULL-uri: fără vârf nu există `as_of_epoch`,
+  iar toate metricile sunt „as of" acea epocă.
+
+### Poarta de determinism (T-13, F1 check 3): 8/8
+
+`scripts/check_determinism.sh` rulează fiecare statement din catalog **de două ori** pe aceeași bază și
+compară digest-urile. Verificat pe db-sync-ul nostru la epoca 320: 8/8, ~3,5 minute (`vote_tally` e 12 s pe
+citire, și se citește de două ori).
+
+Trei decizii:
+- **Cursorul e epoca pinuită, închisă.** Asta face răspunsurile istorie, nu tally viu: ultimul bloc al unei
+  epoci închise nu se schimbă, deci un statement parametrizat de el nu se poate mișca odată cu vârful. Cele
+  două formule care sunt view-uri n-au cursor și citesc date vii — exact pentru ele e verificarea vârfului.
+- **Exit 2, nu 1, când un statement a driftat ȘI vârful a avansat în timpul rulării.** Un lanț în mișcare e
+  *inconcludent*, nu drift; a-l raporta ca drift ar da vina pe formulă pentru munca lui db-sync. Fără drift,
+  vârful e irelevant și rularea trece.
+- **Ieșirea se sortează înainte de hash.** Un result set fără `ORDER BY` n-are ordine canonică și două rulări
+  pot întoarce legitim aceleași rânduri în altă ordine; check 3 e despre numere, deci se hash-uiește
+  multiset-ul.
+
+Job-ul CI rulează poarta peste scheletul semănat, deci blochează un PR într-un minut fără build Haskell.
+Repetat local pe aceeași imagine de postgres: 8/8, `tip none`, `drep_hash_id 0` — două din opt întorc zero
+rânduri acolo, deci ce dovedește CI e că statement-urile **parsează pe schema reală** și sunt
+self-consistente. Rularea care **semnează** check 3 e cea pe preprod; scris în capul scriptului până când
+blocul 3 scrie runbook-ul de deployment.
+
+### Ce urmează
+
+Blocul 5 (API, T-API-1…18) și blocul 6 (paritate, T-PARITY-1…6). Blocul 3 (substratul, manifeste k8s per
+D-28) rămâne separat pentru că atinge rack-ul. Planul B (atestări) și planul C (UI) încă nescrise.
+
+**Datorie recunoscută:** `docs/deployment/preprod-dbsync-sync.md` îi e dator blocului 3 și trebuie să ducă
+rândul de semnare a check-ului 3 (rularea pe preprod). Până atunci e în capul lui `check_determinism.sh`.
