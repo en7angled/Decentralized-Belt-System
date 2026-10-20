@@ -729,3 +729,88 @@ o cifră e valoroasă ca pin de regresie, se taie la o epocă (`proposed_epoch <
 `vote_epoch < 320`) ca să devină imuabilă. Magnitudinile vii merg în `RAISE NOTICE`.
 
 Cu tăietura la epoca 320: 809 rânduri de vot DRep, 504 votanți distincți, 64 cu ancoră, 90 SPO.
+
+---
+
+## 2026-10-20 — Blocul 4: T-SQL-METRICS-5/6/7 gata; cinci defecte găsite pe date reale
+
+`main` la `8c936e2`. 57 de teste, cinci fișiere de check trec pe baza sincronizată.
+Commit-uri: `96326b8` (vote + thresholds + threshold_map), `d7c0991` (power + delegare + tally),
+`ce7c0f4` (gov_action + committee + treasury), `8c936e2` (trigger-ul de imagini).
+
+### Cifrele planului, reproduse pe propriul db-sync
+
+| ce | plan | măsurat | verdict |
+|---|---|---|---|
+| rânduri de vot CC | 3.243.802 | **3.243.802** | exact |
+| voturi CC finale (pe cheie rece) | 193 | **193** | exact |
+| chei reci CC distincte | 43 | **43** | exact |
+| chei fierbinți CC distincte | 648.766 | **648.766** | exact |
+| putere always_abstain @319 | 431.863.790.957.959 | **identic** | exact |
+| putere always_no_confidence @319 | 325.390.800.383 | **identic** | exact |
+| total putere @319 | 937.803.900.128.796 | **identic** | exact |
+| DRep înregistrați fără rând de putere @319 | 101 | **101** | exact |
+| acțiuni / enacted / expired / dropped-only | 131 / 11 / 103 / 6 | **identic** | exact |
+| comitet: membri, cvorum, expirare | 3, 2/3, 372 | **identic** | exact |
+| retrageri de trezorerie | — | 83, totaluri potrivite | ok |
+
+Raportul care justifică tot `voter_id_hash`: **3.243.802 rânduri → 193 voturi finale pe 43 de
+chei reci, peste 648.766 chei fierbinți.** Cu partiție pe cheia fierbinte ar raporta 3.243.798
+voturi „finale". Factor ~16.800.
+
+### Cele cinci defecte
+
+**1. Lista de indici a designului nu acoperea rezolvarea cheii reci.** `palmares.vote` caută
+`WHERE hot_key_id = ? AND tx_id <= ? ORDER BY tx_id DESC`; designul listează
+`(cold_key_id)` — direcția opusă. Fără `(hot_key_id, tx_id DESC)`, lookup-ul face seq-scan peste
+648.766 registrări **o dată per rând de vot CC** și nu se termină. Cu index: ~10 s per count.
+Adăugat în `sql/indexes/001_gov_indexes.sql`, deliberat **în afara** `palmaresSqlFiles`.
+
+**2. Bug-ul de rânduri duplicate din db-sync 13.7 afectează cel puțin CINCI tabele-copil, nu
+trei.** Designul listase `off_chain_vote_{author,reference,external_update}`. Măsurat, îl are și
+`off_chain_vote_drep_data` (3 DRep-uri duplicate → `palmares.drep` 815 rânduri pentru 812
+credențiale) **și** `off_chain_vote_gov_action_data` (2 id-uri duplicate → `palmares.gov_action`
+135 rânduri pentru 131 de acțiuni, care apoi dubla totalurile de trezorerie pe 6 acțiuni).
+Ambele reparate cu `DISTINCT ON ... ORDER BY id` și comentariu `ponytail:` care numește PR #2137.
+
+**3. `epoch_state` multiplica membrii comitetului cu numărul de epoci.** `epoch_state` are un rând
+per epocă și multe epoci arată spre același comitet, deci selectând un rând per **epocă** și
+făcând join pe `committee_id` am umflat 3 membri la **1.563**. `current_committee` e acum un
+singur rând (`LIMIT 1`), cu tie-break pe max-id pe care oricum îl cere issue-ul #2155.
+
+**4. Cifra „147 rânduri neîntrerupte" din plan e greșită.** DRep-ul-fixtură are **141** rânduri de
+putere pentru 174..320, cu o **gaură la epocile 203–208**. 147 e aritmetică (320−174+1), nu
+măsurătoare. Checkul pinuiește acum 141 și pinuiește explicit gaura — devine cea mai bună dovadă
+pentru regula „absența înseamnă putere zero", observată chiar pe DRep-ul folosit de restul
+checkurilor.
+
+**5. Workflow-ul `images` nu se terminase niciodată.** Imaginea de bază e un build static musl al
+întregului arbore Cardano, peste o oră pe runner arm64, cu patru servicii deasupra. Cu trigger pe
+`main` + `cancel-in-progress`, fiecare rulare era anulată de commit-ul următor: zero rulări
+complete, zero cache de layere, zero imagini. Mutat pe **taguri + workflow_dispatch**. Efect
+secundar util: fără trigger pe main, push-urile nu mai anulează rularea în curs, deci cea care
+construiește acum baza poate termina și semăna cache-ul.
+
+### O întrebare deschisă, închisă de sincronizare
+
+T-API §2.6 numea `pool_stat.voting_power` pentru puterea SPO, dar nicio notă nu verificase că
+tabelul e populat sub `preset: only_governance` + `shelley: enable: true`. **Măsurat: e populat** —
+99.872 rânduri, `voting_power` non-null de la epoca 163, cu doar 1–2 pool-uri per epocă lipsă.
+Deci `vote_tally` îl folosește în loc să publice zerouri: 0 lovelace de suport SPO e o afirmație
+falsă acolo unde datele există. 14 din 17 rânduri SPO au putere reală. Comitetul rămâne la 0 prin
+construcție — ratifică prin cvorum de membri, nu deține stake.
+
+### Disciplina de assert, consolidată
+
+Fiecare fișier de check începe fiecare grup cu un **invariant de ne-multiplicare** (un rând per
+propunere, un rând per retragere, exact trei membri). Niciunul dintre cele două fan-out-uri nu era
+vizibil în nicio altă asserțiune, și ambele corupeau sume în aval.
+
+Numerele se taie la o epocă (`proposed_epoch < 320`, `vote_epoch < 320`) ca să fie imuabile;
+magnitudinile vii merg în `RAISE NOTICE`.
+
+### Infrastructură de test
+
+Postgres de test: container `palmares-test-pg` (postgres:17-alpine) pe `127.0.0.1:55439`.
+Fixtura de formă a crescut la 36 de tabele (`pool_stat` a fost adăugat când `vote_tally` a avut
+nevoie de el — prins de suita de teste, exact ce face fixtura).
