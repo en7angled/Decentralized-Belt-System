@@ -1611,3 +1611,71 @@ Trei dus-întors în loc de două, fiecare ieftin.
 tentează planificatorul spre merge join-ul de mai sus: 14,2 s cu el, 12,4 s fără. Dar pentru
 drumurile normale e invers — `count` pe rolul DRep e 818 ms cu merge join și 1.147 ms fără — și
 pagina de `/activity` a câștigat 1.150 ms din 1.347. Net pozitiv, dar costul e real și scris aici.
+
+
+## 2026-10-20 — Block 6 început: paritatea Koios a găsit un bug de corectitudine în prima oră
+
+T-PARITY-1, pasul de înregistrare. Cele opt fixture-uri de pe `preprod.koios.rest` sunt în
+`test/fixtures/koios/`, cu comenzile de reîmprospătare și tabelul de potriviri în README-ul lor.
+
+**Șase numere s-au potrivit înainte de a scrie un singur decodor**: 294 de DRep-uri înregistrate,
+195 de rânduri de putere la epoca 319, 131 de propuneri, 16 voturi pentru DRep-ul de fixture, 2
+rânduri pentru o acțiune revotată, și comitetul (3 membri, quorum 2/3).
+
+Două OPEN-uri din plan, răspunse direct din înregistrare:
+- **OPEN 2** — din cele patru statusuri de comitet ale Koios, pe preprod apare **unul**:
+  `authorized`, pentru toți cei trei membri. Comanda planului era greșită: `committee_info`
+  întoarce un **ARRAY** de comitete, deci `.[0].members[].status`.
+- **OPEN 5** — **103** expirate, **11** fără nicio epocă de ciclu de viață. Ambele se potrivesc cu
+  ce publicăm.
+
+### Al șaptelea număr NU s-a potrivit, și avea dreptate Koios
+
+Koios: **13** delegatori live pentru DRep-ul de fixture. Noi: **12**. Diferența, adresă cu adresă:
+`stake_test1uzeq0nyprsk5e27qyej25l90lcqleqakvr8hxctns7f5epqs9cn6u`.
+
+Istoricul ei, din bază:
+
+| slot | epocă | ce s-a întâmplat |
+| --- | --- | --- |
+| 132.510.869 | 310 | înregistrare + delegare către alt DRep |
+| 132.862.106 | 311 | **de-înregistrare** |
+| 132.863.365 | 311 | **re-înregistrare + delegare către DRep-ul nostru** (același tx) |
+
+`palmares.live_delegation` compara **EPOCI**: `sd.epoch_no >= l.from_epoch`. De-înregistrarea e în
+epoca 311, delegarea e în epoca 311, deci regula anula o delegare folosind o închidere petrecută
+**1.259 de sloturi înaintea ei**. Și nu e o formă rară — a închide un cont și a deschide altul se
+face normal dintr-o mișcare.
+
+Măsurat pe tot corpusul: regula pe epoci excludea **344** de adrese, dintre care **52** se
+re-înregistraseră după delegare. După reparație: **2.015** delegări live în loc de 1.960, **289**
+arhivate în loc de 344, iar 2015 + 289 = 2304 — partiția ține în continuare. Setul DRep-ului de
+fixture e acum **identic cu cel al Koios**, adresă cu adresă.
+
+### Reparat în patru locuri, pentru că regula era copiată în patru
+
+`(sd.tx_id, sd.cert_index) > (from_tx, from_cert)` — db-sync atribuie `tx.id` în ordinea lanțului,
+deci perechea e o ordine totală peste certificate, iar indexul `gov_idx_stake_dereg_addr` e deja
+`(addr_id, tx_id)`, deci comparația e servită de index fără join la `block`. Aceeași ordonare pe
+care `palmares.cc_cold_interval` o folosește din același motiv.
+
+1. `palmares.live_delegation` (`sql/010_gov_views.sql`)
+2. `delegationIsCurrentExpr` (`Query/Gov.hs`) — copia inline, al cărei propriu haddock spunea „dacă
+   predicatul view-ului se schimbă vreodată, LINIA ASTA trebuie să se schimbe cu el". S-a schimbat.
+3. `palmares.drep_epoch_delegators` (`sql/020_views.sql`) — altfel cele două view-uri nu mai erau
+   de acord la vârf, ceea ce verificarea 040 **prinde**
+4. `delegator_retention_rate_v1.sql` — metrică publicată; `docs/metrics.md` regenerat
+
+`palmares.vote_delegation` expune acum `tx_id`, iar `delegationFrom` îl trece prin subinterogarea
+de pagină (a lipsi era un 42703 la prima rulare).
+
+Verificarea 040 își restatea propria regulă **pe epoci** — deci trecea în timp ce view-ul greșea,
+fiindcă făceau aceeași greșeală. Restatează acum regula pe certificate.
+
+### Numerele fixate, re-măsurate
+
+2015 curente / 289 arhivate / 2304 adrese; 1.020 abstain + 40 no-confidence + 955 credențial =
+2015; 1.092 cu lovelace; 194 cu nume; 24 peste 1 M ADA (neschimbat); CSV 2.016 linii cu header;
+DRep-ul de fixture 13. Actualizate în smoke, în haddock-urile DTO-urilor, în descrierea rutei și în
+`test/fixtures/preprod-epoch-320-metrics.json` (cu motivul lângă valoare). Cele opt aserțiuni ale
+fixture-ului de epoca 319 trec din nou pe preprod; toate cele șapte verificări SQL trec.
