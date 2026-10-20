@@ -89,11 +89,11 @@ Registru open-source de reputație & track-record pentru guvernanța Cardano (CI
       (nu 320 — vezi secțiunea de la final), matview-ul `drep_metrics` + firul de refresh, și
       poarta de determinism (8/8 pe db-sync-ul nostru). Șapte fișiere de check în `sql/checks/`,
       toate verzi pe baza reală. Detalii în secțiunile de la finalul fișierului.
-- [ ] **P7b. Blocul 5 — API-ul public** (T-API-1…18). **ÎN CURS**: 1…10 gata (`044be81`),
-      142 de teste + 92 de asserțiuni de smoke verzi pe db-sync-ul nostru. Rutele servite acum:
+- [ ] **P7b. Blocul 5 — API-ul public** (T-API-1…18). **ÎN CURS**: 1…11 gata (`62524e8`),
+      142 de teste + 118 de asserțiuni de smoke verzi pe db-sync-ul nostru. Rutele servite acum:
       `/health`, `/ready`, `/status`, `/metrics/formulas`, `/dreps` (JSON + CSV),
       `/drep/{id}` ≡ `/pages/drep/{id}`, `/drep/{id}/power`, `/drep/{id}/delegators` (JSON + CSV),
-      `/drep/{id}/updates`.
+      `/drep/{id}/updates`, `/gov-actions` (JSON + CSV).
       Rulare locală: `PG_CONN_STR=... PORT=8093 cabal run exe:query-api`, apoi
       `PALMARES_API=http://localhost:8093 scripts/smoke_query_api.sh`.
 - [ ] **P8. Blocul 3 — substratul** (db-sync pe cluster per D-28). Ținut separat de blocul 4
@@ -1200,3 +1200,56 @@ un bump minor de Swagger, prin aceeași regulă care acoperă câmpurile de ates
 Lacunele din seria de putere sunt **reale și nu se umplu**: 141 de puncte peste epocile 174–320
 pentru DRep-ul din fixtură, cu 203–208 absente din `drep_distr`. Umplerea cu zero ar transforma o
 absență într-o măsurătoare, iar un client vede lacuna în seria de `epoch`.
+
+
+## 2026-10-20 — T-API-11: un defect de performanță de 87 de secunde, reparat la rădăcină
+
+`62524e8`. Ruta `/gov-actions` a scos la iveală ceva ce nicio verificare de până atunci nu putea
+scoate: **selectarea `palmares.gov_action.votes_cast` pentru toate cele 131 de acțiuni dura 87 de
+secunde**. Asta nu e un endpoint lent, e un endpoint inutilizabil.
+
+### Cauza
+
+Testul de stres `AuthCommitteeHotKey` din epoca 187 a înregistrat **648.766 de chei fierbinți** și
+a lăsat **3,24 M de rânduri de vot de comitet**, concentrate astfel încât **cinci** acțiuni de
+guvernanță duc fiecare ~648.755 dintre ele. `palmares.vote` rezolva credențialul rece al fiecărui
+rând cu un `LATERAL` — „cea mai recentă înregistrare cu `tx_id <=` al votului" — pe care PostgreSQL
+execută ca **o căutare în index PER RÂND DE VOT**.
+
+### Reparația, în doi pași
+
+1. **`palmares.cc_cold_interval`**, un view nou care duce intervalul de tranzacții al fiecărei
+   înregistrări, unit ca interval. Cele 648.767 de înregistrări se hash-uiesc o dată, iar fiecare
+   rând de vot devine o sondă hash plus un test de interval. **87 s → 5,7 s.**
+   View propriu, nu subinterogare inline, pentru că atât `palmares.vote` cât și
+   `palmares.gov_action` au nevoie de regulă, iar **o a doua copie a „înregistrarea în vigoare la
+   momentul T" e o a doua șansă să greșești**.
+2. **`gov_action.votes_cast` numără VOTANȚI DISTINCȚI** direct din `voting_procedure`, în loc de
+   rânduri din `palmares.vote` cu `seq_last = 1`. Același număr prin definiție — un vot final per
+   votant per acțiune — fără să plătească funcțiile de fereastră ale view-ului peste 3,24 M de
+   rânduri. **5,7 s → 2,0 s** pentru toate 131.
+   Comitetul se numără în continuare după credențialul **rece**: numărarea cheilor fierbinți ar
+   raporta o acțiune ca fiind votată de șase sute de mii de membri de comitet.
+
+### Dovada că semantica n-a mișcat
+
+Checks 030 și 050 citesc **exact aceleași** numere ca înainte: 3.243.802 rânduri CC → **193**
+finale de **43** de chei reci (peste 648.766 fierbinți), DRep 819, SPO 90, și 11/103/6/11 acțiuni.
+Și suita de teste a scăzut de la 95 s la **57 s**, pentru că aplică acest DDL repetat.
+
+Rămâne pasul complet al lui `palmares.vote` la ~5,7 s, cu care `GET /votes` va trebui să se
+confrunte. Commit-ul nu pretinde că a rezolvat asta.
+
+**Nouăsprezece** view-uri simple acum, nu optsprezece cât lista planul — `smoke_views.sh`
+actualizat cu motivul lângă număr.
+
+### OPEN-ul planului, închis de bază de date
+
+Cele cinci stări cu valoare unică însumau 132 față de 131 de rânduri. Citit din bază:
+`proposed` e **11**, nu 12. 103 expirate, 11 intrate în vigoare, 11 propuse, 6 dropped, **0
+ratificate** — zero pentru că fiecare acțiune ratificată a intrat în vigoare epoca următoare, iar
+`enacted_epoch = ratified_epoch + 1` pe toate unsprezece. Smoke-ul asertează că cele cinci
+**partiționează** toate cele 131 de rânduri, ceea ce prinde un CASE prost ordonat.
+
+Forma CIP-129 calculată de noi se potrivește cu vectorul abreviat al notei de design: cea mai nouă
+propunere se randează `gov_action1qnergwfc…`, exact string-ul pe care f1-dbsync §1.3 îl trunchiase.
