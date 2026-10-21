@@ -2514,3 +2514,119 @@ T-ATTEST-9 le reconstruiește peste `palmares_attest`.
 al query-api **fără drift** · și suita de smoke de **330 de aserțiuni** dă `smoke OK` pe drumul de
 citire viu de pe experimentul preprod — care e dovada că 1.645 de substituiri n-au schimbat niciun
 comportament.
+
+---
+
+## T-ATTEST-2 și T-ATTEST-3 — claim-ul de identitate și cele trei fixuri moștenite
+
+`f6637fa` + `dc20205`. **290 de teste trec** (263 → 290). Nepushate: toate trei schimbă hash-uri de
+validator, iar T-ATTEST-4 (disputele) schimbă și hash-ul minting policy-ului prin `ProtocolParams` —
+deci granița naturală de push e după el, toată munca de hash într-o singură rulare de CI.
+
+### T-ATTEST-2: `MintProfile` și claim-ul
+
+Înainte de asta **nu se putea crea niciun profil la niciun strat**, deci toate cele trei operații de
+utilizator erau inaccesibile.
+
+Regula, din spec, într-o propoziție: **dovedește că poți cheltui ca acel credential.**
+
+| fel de credential | ce e controlul |
+| --- | --- |
+| **cheie** | hash-ul e printre semnatari. O singură apartenență în listă |
+| **script** | un input al tranzacției e guvernat de acel script — în jumătatea de **plată** a adresei lui sau în cea de **staking** |
+
+Pentru script **nu reverificăm** condiția scriptului și nici n-am putea: dacă ledger-ul cheltuie
+input-ul ăla, condiția a fost **deja** satisfăcută, înainte să ruleze validatorul nostru. Iar un script
+nativ (timelock/multisig) n-are redeemer de inspectat — și comitetele și organizațiile multisig sunt
+cazul majoritar pe care §4.3 îl numește.
+
+Datumul purtă un **`Maybe Credential`**, nu un hash. Un `Credential` e ce codifică CIP-129, octet de
+header inclus, deci distincția cheie/script pe care se bazează regula nu se pierde niciodată — și o
+singură regulă acoperă un DRep id, un credential rece de comitet și un credential de stake, fără cazuri
+per-fel. **`Nothing` e legitim**: o Comunitate sau un Auditor nu trebuie să corespundă vreunui
+credential on-chain.
+
+**Douăsprezece teste**, și cele care contează sunt cele patru negative. Două sunt subtile: cei 28 de
+octeți ai unui hash de script și cei 28 ai unui hash de cheie **sunt aceiași octeți**, deci testele
+afirmă că niciun braț nu poate fi satisfăcut cu dovada celuilalt.
+
+**Unicitatea e un fapt de citire.** Nimic nu oprește două profiluri să revendice același credential, și
+asta e deliberat: a o impune on-chain cere un UTxO de index global, anti-pattern-ul de contenție pe care
+regula 11 de securitate a repo-ului îl respinge. Lanțul înregistrează fiecare claim; T-ATTEST-9 marchează
+un credential cu mai mulți revendicatori drept `contested` și îi arată pe toți.
+
+Și ce **nu** dovedește claim-ul, spus cu voce tare pentru că UI-ul nu trebuie să exagereze: controlul
+unui credential, nu identitatea celui care-l ține. Formularea e "controlează acest credential",
+niciodată "este".
+
+`MintProfile` e **adăugat** la indicele 1 — `NewAttestation` păstrează 0. Mintează **ambele** token-uri
+CIP-68, spre deosebire de `NewAttestation` care mintează doar ref-ul: token-ul de user al unui profil
+**este** instrumentul de autoritate pe care fiecare alt redeemer îl cere în `valueSpent`, în timp ce o
+atestare n-are proprietar care să acționeze în numele ei.
+
+### Fixul #1, tras înainte
+
+`MintProfile` are nevoie de verificare de fee, deci l-am tras din T-ATTEST-3 (self-review-ul propriului
+plan semnalase referința înainte). `MintAction` înlocuiește selectorul:
+`feeFor :: MintAction -> FeeConfig -> Integer` e acum **singura funcție on-chain sau off** care numește
+un câmp din `FeeConfig`.
+
+Forma `(FeeConfig -> Integer)` e exact cum fee-ul de interval al Belt System-ului a ajuns să încarce
+câmpul de istoric de apartenență: cu un selector, **fiecare call site e un loc unde se poate scrie
+câmpul greșit**. Și off-chain — `getFeeSkeleton` și `getOracleFeeAndValiditySkeleton` își pierd
+argumentul funcție și apelează `feeFor`, deci fee-ul pe care-l plătește wallet-ul și fee-ul pe care-l
+verifică validatorul sunt **același număr din același cod**.
+
+Invarianta are două jumătăți și ambele sunt impuse: **tipul** interzice pasarea unui selector, și
+`check_vocabulary.sh` afirmă că un câmp din `FeeConfig` e numit doar unde e definit și în `feeFor` —
+cu excepția CLI-ului de admin, care construiește un config din flag-uri și îl printează înapoi.
+
+### T-ATTEST-3: fixurile #2 și #4, plus garda de dublă-acceptare
+
+**Fix #2 — rotația adminului.** `OracleSetAdmin` adăugat la indicele 4. Rotația nu era doar
+neimplementată, era **interzisă**. Validatorul **n-a avut nevoie de nicio schimbare** — a face funcția
+capabilă să exprime schimbarea e tot fixul, și e atât de ieftin pentru că validatorul fusese scris
+corect.
+
+Off-chain oglindește: `RotateAdminAction`, `admin rotate-admin --new-admin PUBKEYHASH_HEX`. **Niciun
+echivalent HTTP**, deliberat — `FromJSON` îl respinge ca fallthrough, deci o acțiune care schimbă cine
+controlează protocolul poate veni doar din CLI, unde cheia care trebuie s-o semneze stă deja. Nici
+`ToJSON` nu serializează hash-ul nou: instanța aia e pentru log-uri, iar linia de log a unei rotații
+n-are treabă să care cheia.
+
+Ce cumpără rotația, spus explicit: o cheie **încă ținută** poate fi predată, deci compromiterea e
+recuperabilă cât timp observi la timp; una deja pierdută nu, pentru că rotația are nevoie de semnătura
+ei. De-aia admin M-din-N rămâne în afara F1.
+
+**Fix #4 — data din datum legată de intervalul de validitate.** Verificarea veche era
+``date `before` txInfoValidRange``, care blochează **viitorul** și lasă **trecutul complet nemărginit**:
+o atestare putea pretinde 2015 și trecea. `checkDateInRange` cere **conținere**, și cere **ambele
+margini finite** — jumătatea greșită de două ori, pentru că simpla conținere e satisfăcută de un interval
+fără margine superioară, iar o tranzacție trimisă cu `always` putea apoi data un registru permanent
+oriunde.
+
+Are o consecință off-chain care altfel s-ar fi livrat ca eroare de script: fereastra e
+`[tip, tip + safeEraTime]`, deci o dată dată de client în afara ei cade acum on-chain — ceea ce unui
+client îi pare bug de protocol, nu cerere greșită. Deci `issueAttestationTX` o refuză întâi, ca
+`AttestationDateOutOfRange` → **400**, cu un mesaj care spune ce înseamnă câmpul.
+
+**Garda de dublă-acceptare.** `AcceptAttestation` nu verifica niciodată că atestarea nu e deja
+acceptată, deci o a doua acceptare rescria un datum identic și trecea. Drumul off-chain o refuză, dar
+oricine își construiește propria tranzacție ocolește asta — și rezultatul e un registru permanent a
+cărui acceptare e ce a ales ultimul acceptant. O citire booleană a unui datum deja parsat, deci **nu**
+e cazul de apărare neexploatabilă: garda off-chain e ocolibilă și consecința e permanentă. Cod de trace
+propriu `A3`, nu pliat în `A1`, pentru că "deja acceptată" și "output greșit" sunt greșeli diferite.
+
+### Dimensiuni de script după T-ATTEST-2
+
+| validator | octeți |
+| --- | --- |
+| Minting Policy | 9.568 |
+| Profiles | 7.671 |
+| Attestations | 7.123 |
+| Oracle | 7.122 |
+
+### CI
+
+Verde pe `3bc3297` (redenumirea): haskell, determinism, secrets — iar `check_vocabulary.sh` rulează
+acum în job-ul `haskell` și a trecut și acolo.
