@@ -2302,3 +2302,106 @@ deci interpolarea valorii ar fi fost un client care construiește DDL din un sec
 respinge un `SELECT`; `set_config` e o funcție, deci cele două apeluri merg prin `rawSql`.)
 
 **258 de teste trec.** Job-ul k8s, cheile din secretul SOPS și kustomization-ul rămân pentru rack.
+
+---
+
+## Planul B scris — și defectul pe care l-au găsit surveys-urile
+
+Patru surveys paralele pe `palmares@71fa00f` (validatoare on-chain, tx-building, interaction-api +
+attest-sync, modulele de test dormante), ca planul să se sprijine pe ce **e** codul, nu pe ce-mi
+amintesc. Au schimbat forma planului.
+
+### Protocolul nu poate rula deloc azi — și nu din cauza unor stub-uri
+
+Totul compilează, nu există niciun `undefined` pe drum. Și totuși:
+
+| ce | dovada |
+| --- | --- |
+| **Nu se poate crea niciun profil** | `MintingRedeemer` are exact **un** constructor, `NewAchievement` (`MintingPolicy.hs:70-78`). Nu există `CreateProfileAction`, nici `createProfileTX`, nici rută. Toate trei operațiile de utilizator iau un `ProfileRefAC` ca **intrare**, iar emiterea unei atestări cere user NFT-ul profilului emitentului (`:160`) — deci **toate trei sunt inaccesibile** |
+| Urmele ștergerii | `fcProfileCreationFee` (`Types.hs:47`), `ctxProfilesAddress` (setat la `:108`, citit niciodată), `profilesValidatorScriptHash` (folosit doar ca să calculeze câmpul ăla mort), și perechea CIP-68 mint/burn neapelată (`Skeletons.hs:161-166`) |
+| **Nu există claim de identitate**, pentru niciun fel de credential | `grep -rni "credential\|claim"` pe `onchain-lib` → **zero**. `txInfoSignatories` apare **o dată**, pentru adminul oracle. `Utils.hasTxInAtAddressWithNFT` e singurul helper de forma potrivită și nu-l apelează nimic |
+| **Disputele n-au existat niciodată** | `git log --all -- '*DisputesValidator*'` e gol. Ce există: un cod HTTP inaccesibil și o propoziție de intenție în `CLAUDE.md:48` |
+| **Blueprint-ul publică trei defecte** | Două afirmații false despre rotația adminului — iar validatorul o **interzice**: `O2` cere ca output-ul să fie egal cu `applyOracleAdminAction`, care păstrează `opAdminPkh` prin construcție. Al treilea: schema datumului de atestare e `definitionRef @()` |
+| **Codul nostru off-chain nu poate construi tx-ul cu emitent-script** pe care blueprint-ul îl anunță | `txMustSpendFromAddress` hardcodează `GYTxInWitnessKey` (`Skeletons.hs:124`) |
+| **Zero teste de emulator rulează** | Cinci module dormante există pe disc; trei linii din cabal **nu numesc niciun fișier** |
+
+### Defectul reparat imediat: un restart de query-api ștergea starea de chain-sync
+
+`71fa00f`. Fiecare entitate din blocul `persistLowerCase` e declarată **necalificat**, deci
+`CREATE TABLE` al lui `migrateAll` aterizează unde rezolvă primul `search_path`. Nimic din serviciu nu
+seta calea — `palmares_attest` și `search_path` **nu apăreau nicăieri** în `Storage.hs`, `Ingestion.hs`
+sau `src/exe/attest-sync/`. Iar `050_roles.sql` dă lui `palmares_owner`:
+
+```
+search_path = palmares, palmares_attest, public
+```
+
+Deci proiecțiile aterizau în **`palmares`** — schema pe care `000_schema.sql` o deschide cu
+`DROP SCHEMA ... CASCADE` la **fiecare boot de query-api**. Un restart al API-ului de **citire** ar fi
+șters starea drumului de **scriere** și ar fi costat un re-sync complet de Kupo, în liniște, cu API-ul
+de citire pornind perfect sănătos.
+
+Ironia e în fișier: header-ul lui `000_schema.sql` avertizează "This file must NEVER mention
+`palmares_attest` ... Dropping it here would delete chain-sync state that takes a full re-sync to
+rebuild." Nu-l menționează. Tabelele nu erau în el.
+
+Fix: `runAttest`, prin care trece acum **fiecare** acces la baza de date —
+`SET LOCAL search_path TO palmares_attest, public`, în tranzacția pe care `runSqlPool` o deschide deja.
+`SET LOCAL`, nu `SET`: pool-ul refolosește conexiunile, și o cale lăsată în urmă ar urma orice rulează
+după pe conexiunea aia. Aceeași formă pe care query-api o folosește pentru plafonul de citire.
+
+**Cinci teste, și unul dintre ele e comportamentul VECHI**: rulează migrarea **fără** pin sub
+`search_path`-ul adversarial și toate cele cinci tabele aterizează în `palmares`, zero în
+`palmares_attest`. Asta face un singur `SET LOCAL` demonstrabil portant — regula din
+`src/test/CLAUDE.md`. Celelalte: tabelele aterizează în `palmares_attest` și nu se scurg nici în
+`palmares` nici în `public`; **supraviețuiesc** unui `DROP SCHEMA palmares CASCADE` textual (consecința,
+nu numele schemei); pin-ul nu se scurge pe conexiunea din pool; și `chainSyncTableNames` listează exact
+ce creează migrarea — un nume lipsă acolo e un tabel pe care wipe-ul de versiune îl lasă în urmă.
+
+Plus o linie de drift: `defaultConnStr` zicea `dbname=chainsync`, o bază de date pe care nicio
+desfășurare de aici n-o are.
+
+**263 de teste trec** (258 + 5).
+
+### Planul B: `docs/superpowers/plans/2026-10-21-gov-registry-plan-b-attestations.md`
+
+Douăsprezece task-uri, cinci faze, 1.362 de linii. Decizia pe care sinteza §3 pasul 24 o numește
+"singura piesă de design on-chain cu adevărat nespecificată" e **așezată în plan**, nu descoperită la
+implementare:
+
+* Claim-ul purtă un `Credential` CIP-129, deci octetul de header care distinge cheie de script
+  supraviețuiește.
+* Credential de cheie → semnatar. Credential de script → un input al cărui credential de **plată sau de
+  staking** e acel script: dacă ledger-ul îl cheltuie, condiția scriptului a fost deja satisfăcută,
+  înainte să ruleze validatorul nostru. Nu o reverificăm și nici n-am putea — un script nativ
+  (timelock/multisig) n-are redeemer de inspectat, iar comitetele și organizațiile multisig sunt cazul
+  majoritar pe care §4.3 îl numește.
+* **Și staking, nu doar plată**, pentru că un credential de stake care e script stă normal în jumătatea
+  aia a adresei. Un câmp citit în plus pe input, și dispare o clasă întreagă de "nu-mi pot revendica
+  propriul script de stake".
+* **Limitarea e documentată, nu inginerită**: un script Plutus care nu ține UTxO la propria adresă nu
+  poate revendica într-o singură tranzacție. Workaround-ul lui e gratuit (trimite-ți un UTxO la propria
+  adresă de script, apoi revendică), deci nu adăugăm verificare pe `txInfoRedeemers` — ar costa ExUnits
+  la fiecare claim pentru un caz care are deja soluție. Regula permanentă a repo-ului.
+* **Unicitatea e un fapt de citire, nu unul on-chain.** Nimic nu oprește două profiluri să revendice
+  același credential; să impunem asta ar cere un UTxO de index global, exact anti-pattern-ul de
+  contenție pe care regulile proprii ale repo-ului îl resping. Lanțul înregistrează fiecare claim; API-ul
+  marchează un credential cu mai mulți revendicatori drept `contested` și îi arată pe toți, în loc să
+  aleagă un câștigător.
+
+Cinci lucruri sunt **lăsate deliberat afară**, fiecare cu motivul: fee-uri ca model de business
+(§4.3 explicit), admin M-din-N (`OracleSetAdmin` face compromiterea cheii **recuperabilă**, care e riscul
+real; M-din-N costă ExUnits la fiecare acțiune de admin pentru un risc pe care rotația deja îl
+mărginește — se revine înainte de F2), revocare/expirare, verificarea NFT-ului lipsă din
+`OracleValidator` (neexploatabilă: fiecare cititor autentifică prin NFT, deci un atacator poate doar
+planta și cheltui propriul UTxO), și existența subiectului la mint.
+
+### Trei decizii ale ownerului, niciuna blocantă
+
+1. `Auditor` e un **fel** de profil sau un **rol** pe care-l are o `Organization`? Spec-ul îl listează ca
+   fel, deci așa se construiește.
+2. Poate o atestare să înregistreze o dată de eveniment **mai veche** decât emiterea ei? Planul
+   construiește varianta strictă — `attestationDate` e timpul emiterii, mărginit de intervalul de
+   validitate. Dacă da, datumul are nevoie de un al doilea câmp explicit auto-raportat, iar API-ul nu
+   trebuie **niciodată** să-l prezinte ca verificat on-chain. Întrebare de produs, nu tehnică.
+3. Cele trei rămase din planul A: al treilea `DRepStatus`, handle-ul GHCR, bifurcația PVC din ADR 0001.
