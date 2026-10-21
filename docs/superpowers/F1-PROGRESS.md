@@ -2804,3 +2804,99 @@ cineva. Felul e eticheta, atestarea e faptul.
 Lucrul care nu trebuie să se întâmple niciodată e ca stratul de citire să prezinte `kind = auditor`
 ca pe o acreditare. Deci API-ul îl etichetează `self_declared`, exact cum
 `profileCredential = Nothing` se prezintă ca `unclaimed` — un cuvânt în swagger, aceeași disciplină.
+
+---
+
+## #1 livrat, și cercetarea despre verificarea codului on-chain
+
+### #1 — al treilea `DRepStatus`, implementat (`05c83bd`)
+
+Cele 9 situri, **295 de teste trec** (290 + 5), swagger regenerat și neînvechit,
+`swagger OK`, `vocabulary OK`. Zero linii schimbate în `010_gov_views.sql` în afară de comentarii —
+pentru că informația era deja publicată: `active_until_epoch` a fost mereu nullable.
+
+**Ce a găsit pe drum:** `searchSql` ținea un **exemplar verbatim** al CASE-ului de status. Paleta de
+căutare ar fi continuat să răspundă `inactive` după ce proiecția de lângă ea începea să răspundă
+`unknown` — exact defectul pentru care `drepStatusExpr` există. Pliat, cu un test care afirmă că
+statement-ul **interpolează** expresia, nu o repetă.
+
+**Testul care contează** e pe **ordinea brațelor**: `active_until_epoch IS NULL` trebuie testat
+**înainte** de `is_active`, pentru că `COALESCE` din `is_active` a colapsat deja „fără deadline" în
+„deadline trecut". E o proprietate de corectitudine, deci e afirmată ca ordine, nu ca potrivire de
+șir întreg — statement-ul rămâne liber să fie reformatat.
+
+**Waiver-ul R2 a fost rescris, nu îngustat.** Cei 90 diferă acum toți ca etichetă, unde înainte 21
+erau de-a dreptul greșiți: deci **numărul de divergențe a crescut** și onestitatea a crescut cu el.
+`koiosDRepStatus` nu a fost lărgit deliberat — Koios are mereu un răspuns și nu raportează niciodată
+„unknown"; a-i mapa răspunsul în propria noastră lacună ar fi să-i pui vorbe în gură referinței, fix
+lucrul pe care o verificare de paritate nu are voie să-l facă. Trade-ul e scris în motivul waiver-ului
+și în `docs/deployment/koios-parity-gate.md`, pentru că un număr de paritate care crește din motiv bun
+e exact genul de lucru pe care un cititor viitor va încerca altfel să-l „repare".
+
+### Cercetare: `smartcode-verifier` — **nu se aplică**, dar a dus la ceva care se aplică
+
+Ai cerut un agent separat pe <https://github.com/input-output-hk/smartcode-verifier>. Răspunsul scurt:
+**premisa e greșită — nu e un tool de proveniență.**
+
+**Ce e.** Un tool de **verificare formală automată** în Lean4: adnotezi contractul cu proprietăți care
+trebuie satisfăcute, iar un SMT solver le descarcă. Dovedește *„validatorul ăsta nu poate fi golit"*.
+Nu spune nimic despre ce sursă a produs un hash on-chain.
+
+**Starea lui, verificată independent prin API-ul GitHub:** **40 KB, zero limbaje detectate** (nu e cod
+în el), **ultimele trei commit-uri sunt editări de README din 2026-04-20**, 1 issue deschis fără
+răspuns, 9 stele. README-ul însuși o spune: *"kept only as a reference to the Catalyst project
+submitted where this repository was mentioned"*. Munca s-a mutat în trei repo-uri succesoare
+(`Lean-blaster`, `PlutusCoreBlaster`, `CardanoLedgerApiBlaster`), toate active, niciuna cu release
+instalabil. Niciun serviciu public.
+
+**Nu se suprapune cu `scripts/check_determinism.sh`** al nostru, care verifică altceva complet:
+că formulele SQL de metrici dau același răspuns de două ori pe un cursor pinuit de db-sync. Nimic din
+ce avem nu acoperă proveniența hash-ului de script.
+
+### Ce se aplică: **CIP-0171**, verificat direct în textul CIP-ului
+
+<https://cips.cardano.org/cip/CIP-0171> — *On-chain Smart Contract Bytecode Verification*, **Proposed**,
+creat 2026-01-19. Exact promisiunea din modelul nostru de încredere, și e **descentralizat prin
+construcție**, nu un Etherscan.
+
+* **Label de metadata 1984**, înregistrat în CIP-0010. PlutusData în CBOR, chunk-uit la 64 de octeți.
+* **PlutusTx e constructorul 2.** `compiler_fields = [source_url, commit_hash, source_path / null,
+  compiler_version, ? parameters]`.
+* **Cele două cazuri grele ale noastre SUNT exprimabile**: `parameters = { script_hash =>
+  parameter_list }`, iar `parameter_list = [ * bytes ]`, fiecare element „a bytestring wrapping the
+  CBOR encoding of one parameter", **în ordinea aplicării**. Deci atât `MintingPolicy ←
+  ProtocolParams ← oracle AssetClass`, cât și `OracleNFTPolicy ← TxOutRef` încap.
+* **Permisionless, și anti-spam prin construcție**: oricine poate trimite, nu doar cel care a făcut
+  deploy — deci un auditor poate verifica scripturile noastre fără noi. Iar o înregistrare fabricată
+  e inofensivă, pentru că hash-ul rezultat nu se potrivește cu niciun script on-chain. Costul e **o
+  tranzacție de metadata**, fără UTxO creat sau consumat.
+
+**Unde suntem mai bine plasați decât cazul PlutusTx generic.** Schema nu are câmp `env` pentru
+non-Aiken (Aiken are, pentru `aiken build --env`), deci reproductibilitatea unui build PlutusTx
+depinde de închiderea completă de dependențe — ceea ce `commit_hash` + `compiler_version` nu o prinde
+în general. **La noi o prinde**, pentru că `flake.lock` și `cabal.project` (cu Atlas pinuit pe un
+commit) sunt în arbore: `commit_hash`-ul repo-ului determină toolchain-ul. Un proiect pe cabal+ghcup
+nu are asta.
+
+**Implementarea de referință, și limita ei reală.** `uplc.link`
+(`easy1staking-com/uplc-link`) e **vie și activă**, dar mică: `/api/v1/stats` raportează 10
+verificări / 50 scripturi / 7 repo-uri, și **toate înregistrările live sunt `AIKEN`** — drumul de
+verificare e `git clone` + `aiken build`. PlutusTx există doar ca schelet (`CompilerType.PLUTUSTX(2)`,
+un `examples/plutus-example/`, un dockerfile cu GHC 9.6.6 — GHC-ul nostru, dar prin ghcup, nu Nix).
+**Dacă o trimitere PlutusTx funcționează cap-coadă azi: incert, n-am găsit dovadă că da.** Și
+intrările Aiken live arată `"parameterizationStatus":"PARTIAL","finalHash":null` — scripturile
+parametrizate nu sunt încă potrivite complet pe hash în practică, adică exact forma noastră. Toate
+cele cinci criterii de acceptare ale CIP-ului sunt nebifate, `Implementors: []`.
+
+### Verdict și singura acțiune de făcut acum
+
+**`smartcode-verifier`: nu. CIP-0171: da, la mainnet, nu înainte de preprod** — motivul care decide:
+nu poate potrivi pe hash un script PlutusTx parametrizat construit cu Nix **azi**, iar prezentarea
+onestă în stil L2BEAT înseamnă să nu pretindem o verificare pe care nu o putem demonstra.
+
+**Acțiunea gratuită, de făcut la T-ATTEST-10 (deploy-ul pe preprod), nu mai târziu:**
+`config/config_palmares_validators.json` nu există încă. Când deploy-ul îl scrie, să înregistreze
+**lângă hash-uri și cei doi parametri de deployment**: `AssetClass`-ul oracle-ului (în CBOR) și
+`TxOutRef`-ul seed al lui `OracleNFTPolicy`. Sunt singurul input al unei viitoare înregistrări
+label-1984 care e ieftin acum și dureros de reconstruit mai târziu — după deploy, `TxOutRef`-ul seed
+trebuie scos din istoricul lanțului.
