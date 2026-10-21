@@ -225,6 +225,14 @@ Confirmate pe cod: (1) selector de fee greșit la intervale de membership
 de validity range; (5) timestamps `insertedAt` în loc de timp de chain. Detalii: memoria
 `new-code-issues-2026-10`.
 
+**Actualizare 2026-10-21 — toate cinci sunt închise în `palmares`:** (1) la T-ATTEST-2 (`feeFor`,
+singura funcție care numește un câmp din `FeeConfig`); (2) la T-ATTEST-3 (`OracleSetAdmin`); (5) la
+T-EXTRACTION-6; (3) **scris** la T-EXTRACTION-5 și **cablat** abia la **T-ATTEST-8**
+(`authenticateStateUTxO` a stat apelat de nicăieri, cu bump de schemă la 3); (4) la
+T-ATTEST-3 și **reparat corect abia la `1668145`** — `checkDateInRange` mărginea capetele
+intervalului, nu lățimea lui, deci back-dating-ul a rămas deschis între timp. Secțiunile de la finalul
+fișierului.
+
 ## 2026-10-20 — Experimentul A închis, planul validat pe substratul real
 
 **Experimentul A: terminat în ≤ 7 ore, nu 48.** db-sync a ajuns la tip (epoca 320, blocul 5.313.085) și
@@ -469,8 +477,9 @@ măsurătoarea din amonte, de unde și dezacordul dintre cifra fixturii și a no
 
 *(gol la 2026-10-20 06:00 UTC — nimic nu blochează implementarea)*
 
-> **Depășit:** lista vie e `## BLOCKED FOR USER — o singură acțiune manuală, niciuna de cod`, mai
-> jos. La 2026-10-21 are o singură intrare: mutarea repo-ului `palmares` sub `mariusgeorgescu`.
+> **Depășit:** lista vie e `## BLOCKED FOR USER — două acțiuni manuale, niciuna de cod`, mai jos.
+> **Actualizare 2026-10-21:** mutarea repo-ului **s-a făcut** — primul `images.yml` de după ea a
+> publicat cu `GITHUB_TOKEN` — deci a rămas o singură intrare: trecerea pachetelor GHCR pe public.
 
 ## Decizii luate sub mandat, cu argumentație
 
@@ -595,6 +604,11 @@ build curat, și acela moștenit. Arborele: 71 fișiere `.hs`, 10.690 linii (de 
 | `26432e9` | curățenie | 45 de avertismente → 1 |
 
 Numărul de cazuri a nimerit exact predicția planului la fiecare pas: 31 → 41 → 47 → 50.
+
+> **Corecție 2026-10-21 la rândul `bd7d1a6`:** „fix moștenit #3" e **scris**, nu **aplicat**.
+> `authenticateStateUTxO` a aterizat acolo cu testele lui unitare și **apelat de nicăieri** — deci
+> ingestia a continuat să decidă din forma datumului până la **T-ATTEST-8** (`bab8f5f`), care e cel
+> care îl cablează. Secțiunea de la finalul fișierului.
 
 ### Deciziile luate sub mandat în stripul mare (toate argumentate în mesajele commit-urilor)
 
@@ -2386,6 +2400,16 @@ implementare:
 * **Și staking, nu doar plată**, pentru că un credential de stake care e script stă normal în jumătatea
   aia a adresei. Un câmp citit în plus pe input, și dispare o clasă întreagă de "nu-mi pot revendica
   propriul script de stake".
+
+  > **Depășit la 2026-10-21 — era o vulnerabilitate CRITICĂ, nu o comoditate.** Regula de martori a
+  > ledger-ului autentifică **doar** credentialul de plată al unui input, deci jumătatea de staking nu
+  > dovedește nimic: oricine punea cheia lui în jumătatea de plată și scriptul victimei în cea de
+  > staking revendica credentialul victimei. Disjuncția e **ștearsă** la `7e6b02a` — vezi reparația
+  > critică de la finalul fișierului. Cazul „script de stake" nu era de fapt rezolvat aici, pentru că
+  > o cheltuire nu-l poate martora; dovada sănătoasă e o retragere în `txInfoWdrl`.
+  >
+  > Se aplică și punctului de deasupra: „credential de **plată sau de staking**" se citește de acum
+  > **numai plată**.
 * **Limitarea e documentată, nu inginerită**: un script Plutus care nu ține UTxO la propria adresă nu
   poate revendica într-o singură tranzacție. Workaround-ul lui e gratuit (trimite-ți un UTxO la propria
   adresă de script, apoi revendică), deci nu adăugăm verificare pe `txInfoRedeemers` — ar costa ExUnits
@@ -2402,6 +2426,12 @@ real; M-din-N costă ExUnits la fiecare acțiune de admin pentru un risc pe care
 mărginește — se revine înainte de F2), revocare/expirare, verificarea NFT-ului lipsă din
 `OracleValidator` (neexploatabilă: fiecare cititor autentifică prin NFT, deci un atacator poate doar
 planta și cheltui propriul UTxO), și existența subiectului la mint.
+
+**Corecție 2026-10-21, la „fiecare cititor autentifică prin NFT":** adevărat **on-chain** (validatoarele
+rezolvă oracle-ul prin token-ul din datum), **fals off-chain** — ingestia decidea ce proiectează din
+**forma** datumului, deci un UTxO plantat era servit ca stare reală de protocol. Ăsta e fixul
+moștenit #3, cablat la T-ATTEST-8; argumentul de neexploatabilitate rămâne valabil doar pentru
+brațul on-chain.
 
 ### Trei decizii ale ownerului, niciuna blocantă
 
@@ -2542,10 +2572,15 @@ Regula, din spec, într-o propoziție: **dovedește că poți cheltui ca acel cr
 | **cheie** | hash-ul e printre semnatari. O singură apartenență în listă |
 | **script** | un input al tranzacției e guvernat de acel script — în jumătatea de **plată** a adresei lui sau în cea de **staking** |
 
+> **Depășit la 2026-10-21:** „sau în cea de **staking**" era gaura critică, reparată la `7e6b02a`.
+> Rândul se citește acum **doar** cu jumătatea de plată. Motivul e în secțiunea de reparații de la
+> finalul fișierului; restul tabelului și al secțiunii rămâne valabil.
+
 Pentru script **nu reverificăm** condiția scriptului și nici n-am putea: dacă ledger-ul cheltuie
 input-ul ăla, condiția a fost **deja** satisfăcută, înainte să ruleze validatorul nostru. Iar un script
 nativ (timelock/multisig) n-are redeemer de inspectat — și comitetele și organizațiile multisig sunt
-cazul majoritar pe care §4.3 îl numește.
+cazul majoritar pe care §4.3 îl numește. (Valabil **numai** pentru jumătatea de plată: ledger-ul
+cheltuie un input fără să ceară nimic de la credentialul lui de staking.)
 
 Datumul purtă un **`Maybe Credential`**, nu un hash. Un `Credential` e ce codifică CIP-129, octet de
 header inclus, deci distincția cheie/script pe care se bazează regula nu se pierde niciodată — și o
@@ -2556,6 +2591,10 @@ credential on-chain.
 **Douăsprezece teste**, și cele care contează sunt cele patru negative. Două sunt subtile: cei 28 de
 octeți ai unui hash de script și cei 28 ai unui hash de cheie **sunt aceiași octeți**, deci testele
 afirmă că niciun braț nu poate fi satisfăcut cu dovada celuilalt.
+
+> **Corecție 2026-10-21:** un caz din `UnitTests/Claim.hs` aserta claim-ul pe jumătatea de staking ca
+> **succes** (`@?= True`), cu un comentariu care argumenta pentru el — adică **pinuia** gaura critică
+> reparată la `7e6b02a`, verde, lângă cele patru negative. Acum e `@?= False`.
 
 **Unicitatea e un fapt de citire.** Nimic nu oprește două profiluri să revendice același credential, și
 asta e deliberat: a o impune on-chain cere un UTxO de index global, anti-pattern-ul de contenție pe care
@@ -2611,6 +2650,12 @@ o atestare putea pretinde 2015 și trecea. `checkDateInRange` cere **conținere*
 margini finite** — jumătatea greșită de două ori, pentru că simpla conținere e satisfăcută de un interval
 fără margine superioară, iar o tranzacție trimisă cu `always` putea apoi data un registru permanent
 oriunde.
+
+> **Depășit la 2026-10-21 — fixul mărginea capetele, nu LĂȚIMEA.** Finitudinea nu costă un atacator
+> nimic: `Interval (Finite 2015-01-01) (Finite acum+2h)` e finit la ambele capete, acceptat de ledger
+> pentru că slotul curent cade în el, și conține orice dată. Deci back-dating-ul a rămas **complet
+> nemărginit** până la `1668145`, care verifică lățimea contra `maxDateWindow` ≈ 28h. Vezi reparația
+> HIGH de la finalul fișierului.
 
 Are o consecință off-chain care altfel s-ar fi livrat ca eroare de script: fereastra e
 `[tip, tip + safeEraTime]`, deci o dată dată de client în afara ei cade acum on-chain — ceea ce unui
@@ -2668,13 +2713,17 @@ acum `secrets.GHCR_TOKEN`, un PAT classic al lui `mariusgeorgescu` cu `write:pac
 Deci PAT-ul nu se mai creează: `GITHUB_TOKEN` devine credentialul potrivit în momentul în care
 `palmares` stă sub `mariusgeorgescu`. Namespace-ul decis aici nu se schimbă, doar remediul.
 
+**Închis la 2026-10-21:** mutarea s-a făcut, iar prima rulare de `images.yml` de după ea a publicat
+ambele imagini de bază cu `GITHUB_TOKEN`. Niciun PAT, niciodată.
+
 ## BLOCKED FOR USER — două acțiuni manuale, niciuna de cod
 
-1. **Mutarea repo-ului `en7angled/palmares` sub `mariusgeorgescu`** (Settings → Transfer ownership).
-   Până atunci, `images.yml` nu poate publica: `GITHUB_TOKEN` e scoped la org, imaginile se numesc
-   sub utilizator. Verificat 2026-10-21: `mariusgeorgescu/palmares` e liber (404), rolul în
-   `en7angled` e `admin`, repo-ul e public, iar **secretele de repo sunt zero** (`total_count: 0`),
-   deci nu e nimic de salvat înainte.
+**La 2026-10-21 a rămas una: punctul 2.**
+
+1. ~~**Mutarea repo-ului `en7angled/palmares` sub `mariusgeorgescu`**~~ — **FĂCUTĂ, închisă la
+   2026-10-21.** Primul `images.yml` de după mutare a împins **ambele** imagini de bază în
+   `ghcr.io/mariusgeorgescu` cu `GITHUB_TOKEN`, pe pasul exact pe care rularea de dinainte picase
+   după 42 de minute. Deci decizia 1B e dovedită, nu doar argumentată.
 2. **Trecerea celor patru pachete GHCR pe public, DUPĂ primul publish.** Asta NU e eliminată de
    decizia 1B, cum s-a scris inițial — documentația GitHub e explicită: primul push al unui pachet
    aterizează **privat**, indiferent de namespace și indiferent de vizibilitatea repo-ului. Verificat
@@ -3319,6 +3368,10 @@ Dimensiuni măsurate, octeți flat-encoded:
 | OracleValidator | 7.293 | 7.427 | +1,8% |
 | MintingPolicy | 11.482 | 11.871 | +3,4% |
 
+> **Actualizare 2026-10-21:** coloana `preserve-logging` a minting policy-ului a mișcat de două ori de
+> atunci (11.871 → 11.850 → **11.865**), din cele două reparații de securitate. Tabelul pinuit, viu,
+> e cel de la finalul fișierului; delta-urile măsurate aici rămân valabile ca ordin de mărime.
+
 Minting policy-ul e ~70% dintr-o tranzacție întreagă de 16.384 de octeți și singurul script care
 crește per caz de redeemer — deci e și singurul loc unde decizia ar putea fi revizuită vreodată. Cu
 trace-urile păstrate codurile sunt **observabile**: cazul de oracle cu non-admin logează
@@ -3359,6 +3412,10 @@ de tabelul de dimensiuni de mai sus.
 
 ### Ce rămâne, în ordinea dependențelor
 
+> **Depășit la 2026-10-21** — tabelul viu e cel din secțiunea „Ce rămâne" de la **finalul
+> fișierului**. T-ATTEST-6, 7, 8 și 5b sunt **gata**; rândurile 5, 6 și 7 au rămas, plus backlog-ul
+> celor două audituri.
+
 | # | task | blocat de |
 | --- | --- | --- |
 | 1 | **T-ATTEST-6** — acțiuni de domeniu, builder-ul de claim, martorul de script | — |
@@ -3378,6 +3435,12 @@ validitate. Deci `opPaused` nu oprește nici un update de profil, nici o accepta
 comutatorul există în datum și nu e citit pe drumurile alea. Nu e o preferință de design, e un gol
 pe care planul îl numește și pe care task-ul următor îl închide.
 
+> **Corecție 2026-10-21 — T-ATTEST-6 a închis doar jumătatea off-chain.** `opPaused` e citit **numai**
+> de MintingPolicy, deci `AcceptAttestation` și `UpdateProfile` **nu se pot pune în pauză ON CHAIN**
+> nici acum; oricine își construiește propria tranzacție trece pe lângă pauză. Mesajul commit-ului
+> `8a1549c` („the pause was a fiction, and this fixes it") **exagerează** — jumătatea on-chain e în
+> backlog-ul de audit, `MintingPolicy.hs:161`.
+
 ### Blocat în continuare pe cluster (neschimbat)
 
 Jumătățile de cluster ale T-SUBSTRATE-2…6, Job-ul/secretul/kustomization-ul de k8s din T-SUBSTRATE-8,
@@ -3391,3 +3454,327 @@ dimensiuni e produs de `UnitTests/ScriptSize.hs`, deci de aici înainte o creșt
 aserțiune care pică, nu o notiță care îmbătrânește.
 
 Commit: `c0b270d`.
+
+---
+
+## Două audituri adversariale pe stratul on-chain — 2026-10-21
+
+Cerute explicit de owner, cu **F2 (review-ul extern) ținut în backlog** cât timp ele rulează: un
+review plătit care raportează ce găsesc gratuit două audituri proprii e bani dați pe aceeași listă.
+
+Amândouă au aceeași disciplină, pentru că fără ea un audit produce o listă de **suspiciuni**, nu de
+defecte: fiecare constatare trece prin **două lentile de refutare independente** — una citește codul
+și încearcă să arate că verificarea există, alta încearcă să construiască exploit-ul — și
+**supraviețuiește doar dacă cel puțin una n-a putut s-o refuze.**
+
+### Auditul 1 — tăiat pe dimensiuni
+
+Șase dimensiuni: minting policy, validatorul de profiluri, validatoarele de stare, oracle,
+conservarea valorii, identitate și griefing. **42 de agenți.**
+
+**15 confirmate** (cu duplicate între dimensiuni — două dimensiuni care găsesc același lucru separat e
+semnalul cel mai tare pe care metoda îl poate da), **3 refuzate**, **8 de severitate mai mică lăsate
+neverificate**.
+
+### Auditul 2 — tăiat pe clase de vulnerabilitate
+
+Din cele două cataloage date de owner — `https://scalus.org/docs/security/common-vulnerabilities` și
+`https://www.mlabs.city/blog/common-plutus-security-vulnerabilities` — opt familii:
+dublă-satisfacere, conservarea valorii, autentificare, minting, timp și aritmetică, datum și indici,
+scopuri și evaluare, resurse și design. **Deduplicat contra constatărilor auditului 1 înainte de
+verificare**, ca nimic să nu se plătească de două ori, apoi aceleași două lentile. **40 de agenți.**
+
+**12 confirmate**, **4 refuzate**, **5 neverificate**.
+
+### Ce NU s-a confirmat — consemnat ca rezultat, nu ca absență
+
+**`DS-1`/`DS-2` și multiple-satisfaction: zero confirmări.** Dubla satisfacere e **prima clasă din
+ambele cataloage**, și **opt agenți** au vânat-o anume. Nimic.
+
+**`VP-3`** (output-ul de continuare redirecționat) a ieșit la fel de curat: helper-ele **compară
+adresa**, deci numele `checkTxOutAtIndexWithDatumMinValueAndAddress` nu mințea.
+
+Iar ce a venit cel mai greu e o familie pe care n-o prezicea nimeni: **`DE-1`, valoare blocată —
+stări fără ieșire.** Două confirmate (`DisputesValidator.hs:119`, o dispută deschisă cu o singură
+ieșire și fără timeout; `AttestationsValidator.hs:81`, o atestare despre o atestare care nu poate fi
+acceptată niciodată) plus una neverificată (`DisputesValidator.hs:118`, o dispută rezolvată fără
+tranziție de retragere).
+
+> **Corecție 2026-10-21.** Prima redactare a acestui paragraf spunea „trei confirmări". Două erau
+> confirmate și una rămăsese neverificată, fiindcă plafonul de verificare a fost trei descoperiri pe
+> dimensiune. Numărul venea din mine, nu din datele auditului.
+
+---
+
+## Două reparații de securitate, amândouă comise
+
+### CRITIC (`7e6b02a`) — jumătatea de staking făcea orice credential de script revendicabil de oricine
+
+`checkCredentialControl` din `Utils.hs` citea:
+
+```haskell
+payment == credential || staking == Just (StakingHash credential)
+```
+
+A doua disjuncție e gaura. O adresă CIP-19 de **tip 2** — hash de cheie de **plată** + hash de
+**script** de staking — e o adresă perfect obișnuită și **nu are nevoie de niciun martor pentru
+script**, pentru că regula de martori a ledger-ului autentifică doar credentialul de **plată** al unui
+input. Deci oricine putea construi o adresă cu cheia **lui** în jumătatea de plată și hash-ul
+scriptului **victimei** în cea de staking, s-o cheltuie cu propria semnătură, și să revendice
+credentialul victimei.
+
+**Fiecare DRep id de script și fiecare credential rece de comitet constituțional era revendicabil de
+oricine.** Și **permanent**: `profileCredential` nu are redeemer de update, nu există `DeleteProfile`,
+și niciun braț de minting nu arde.
+
+Găsită **independent de două din cele șase dimensiuni** ale auditului 1 și confirmată de **toate
+patru** lentilele lor.
+
+Disjuncția e **ștearsă**. Nimic legitim nu o folosea: prover-ul off-chain `claimProofSkeleton` caută
+prin `utxosAtPaymentCredential`.
+
+**Ce costă, consemnat cinstit:** un credential care e **genuin** un script de stake nu mai poate fi
+revendicat pe drumul ăsta. Dar nici nu putea fi **dovedit** pe el — o cheltuire nu martorează un
+credential de stake. Dovada sănătoasă e o **retragere** în `txInfoWdrl`: altă funcție, cu ExUnits
+proprii, de care credentialele pentru care există registrul ăsta nu au nevoie.
+
+**Și testul care garanta gaura.** `UnitTests/Claim.hs` aserta cazul de atac `@?= True`, cu un
+comentariu care argumenta pentru el. **Un test verde care pinuia o vulnerabilitate critică**, într-o
+suită de **374 de teste trecute**. Acum e `@?= False`, plus un caz care arată că fixul a scos gaura și
+**nu** funcția.
+
+### HIGH (`1668145`) — fixul moștenit #4 mărginea capetele intervalului, nu LĂȚIMEA lui
+
+`checkDateInRange` cerea ambele margini de validitate **finite** și data **conținută**. Finitudinea nu
+costă un atacator **nimic**: `Interval (Finite 2015-01-01) (Finite acum+2h)` e finit la ambele capete,
+e **acceptat de ledger** fiindcă slotul curent cade în el, și conține **orice** dată vrea. Deci
+back-dating-ul a rămas **complet nemărginit** — exact gaura pe care fixul #4 fusese scris să o
+închidă. Auditul 2, clasa `TI-1`, **ambele lentile high**.
+
+Indiciul era haddock-ul funcției însăși: *"The caller's window is what gives this meaning: off-chain
+builds a ~7h window from the chain tip"*. **Caller-ul e cine construiește tranzacția, și un atacator e
+un caller.**
+
+Reparat verificând **lățimea** pe lanț, contra `maxDateWindow` = 4 × `safeEraTime` ≈ **28h**.
+
+**Deliberat o constantă, nu un parametru de oracle** — împotriva convenției proprii a protocolului, și
+pentru un singur motiv: un admin care poate **lărgi** fereastra poate valida retroactiv orice
+înregistrare back-datată, adică exact atacul pe care marginea îl oprește. E o afirmație despre **ce
+înseamnă o dată** aici, nu un preț.
+
+### Tiparul care merită un nume, pentru că s-a repetat de trei ori în aceeași zi
+
+**Artefactul care explica de ce ceva e sigur a fost, de fiecare dată, dovada că nu e.**
+
+| artefactul | ce explica | ce s-a întâmplat |
+| --- | --- | --- |
+| comentariul din `palmares.cabal` lângă `extra-source-files` | că lista trebuie ținută în pas cu Dockerfile-urile | a pierdut contra **exact** eșecului pe care-l descria (mai jos) |
+| `UnitTests/Claim.hs` | de ce claim-ul pe jumătatea de staking e corect | pinuia o vulnerabilitate critică, verde |
+| haddock-ul lui `checkDateInRange` | că fereastra caller-ului dă sens verificării | caller-ul poate fi atacatorul |
+
+Un comentariu, un test verde și un haddock sunt toate **afirmații neexecutate** despre cod — și a fi
+scrise convins e exact ce oprește următoarea citire.
+
+---
+
+## Patru task-uri de implementare, livrate în paralel
+
+Patru agenți au scris **în același timp**, fiecăruia **interzis să ruleze `cabal`** (două build-uri în
+același `dist-newstyle` se bat pe lock) și fiecăruia dat un **tabel explicit de fișiere INTERZISE**.
+`palmares.cabal`, `src/test/UnitTests.hs` și **toate commit-urile** au rămas la părinte — cele trei
+locuri în care patru fire ar fi produs conflicte, nu muncă.
+
+### T-ATTEST-6 (`8a1549c`) — drumul de scriere off-chain
+
+`ClaimProfileAction` (crearea de profil cu claim **opțional** de credential), `ClaimWitness` în trei
+forme, `DisputeActionType`, și `claimProfileTX` / `openDisputeTX` / `resolveDisputeTX`.
+
+**`txMustSpendFromAddress` primește acum martorul ca PARAMETRU.** Avea `GYTxInWitnessKey` **hardcodat**,
+ceea ce făcea claim-ul pe un credential de script nu doar neimplementat, ci **inexprimabil** — iar
+check-ul **8** din spec cere exact claim-ul ăla. O singură semnătură de funcție stătea între „nu e
+scris încă" și „nu se poate scrie".
+
+**`parseCredentialCip129` acceptă numai CIP-129** și refuză CIP-105 și hex-ul gol. Motivul e că nici
+una din formele respinse nu cară **octetul de header**, iar `drep` e HRP-ul pentru amândouă: o parsare
+permisivă ar fi **revendicat silențios fiecare DRep de script ca pe unul de cheie**.
+
+**Jumătatea off-chain a fixului #4:** `aa_attestation_date` a **dispărut** din tipul de cerere. Data se
+derivă din `slotOfCurrentBlock`, deci nu mai există nicio suprafață pe care un client s-o propună —
+iar lățimea verificată pe lanț o mărginește oricum.
+
+### T-ATTEST-8 (`bab8f5f`) — autentificarea proiecțiilor (fixul moștenit #3)
+
+Defectul: **ingestia decidea ce proiectează din forma datumului**, iar oricine poate pune orice datum
+la orice adresă — deci un UTxO **plantat** era servit ca stare reală de protocol. E `AU-1` /
+`missing-utxo-authentication` din cataloage, pe un drum pe care niciunul din ele nu-l are în vedere:
+off-chain, nu validator.
+
+Și partea care contează: **`authenticateStateUTxO` exista deja, era deja testat unitar, și era apelat
+de nicăieri.** Funcția potrivită, scrisă și verificată și **moartă** — vezi corecția de la rândul
+`bd7d1a6` din blocul 2.
+
+Acum e gardă pe **toate trei** brațele indexate, fără cale de ocolire. Un UTxO plantat ajunge în
+`NoEvent`, se păstrează ca **match brut** și nu se proiectează nicăieri — deci nici dovada că cineva a
+încercat nu se pierde.
+
+**`currentSchemaVersion` 2 → 3, și re-sync-ul NU e opțional.** Fiecare rând dintr-o bază v2 a fost
+scris **fără** verificare, deci o bază v2 poate **ține** rânduri plantate pe care niciun replay nu le
+mai produce. La bump-urile de dinainte re-sync-ul **completa coloane**; aici **scoate minciuni**.
+
+### T-ATTEST-5b (`0fd1df0`) — 31 de cazuri de emulator, 15 negative
+
+**Cazul 1.3 din plan a trebuit INVERSAT.** Îl specifica drept caz de **succes**: claim-ul pe jumătatea
+de staking. Pentru că asta **făcea codul** când s-a scris planul — deci planul, testul moștenit și
+comentariul lui spuneau toate același lucru greșit, în trei locuri diferite.
+
+**Șase builder-i malițioși unde planul bugeta trei.** `D1`, `D3`, `Ml` și `Mf` **nu sunt accesibile din
+drumul de producție** — off-chain-ul refuză înainte — deci un `mustFail` gol ar fi livrat **patru teste
+care trec și cu garda on-chain ștearsă**. Un test negativ care nu ajunge la validator nu testează
+validatorul; e exact defectul prins la T-ATTEST-5 pe `O1`, de patru ori.
+
+**Cazul 5.12** („o atestare back-datată EȘUEAZĂ") e **prima dovadă pe tranzacție reală** a verificării
+de lățime din `1668145`.
+
+### T-ATTEST-7 (`d55d2cc`) — suprafața HTTP, 12 căi documentate
+
+**O schimbare de comportament pe o rută vie: adminul peste HTTP e închis complet.** `FromJSON` eșuează
+acum pe **fiecare** constructor de `AdminActionType`, **inclusiv pe cele patru care parsau**. Motivul
+nu e precauția: validatorul de oracle cere semnătura adminului **pe lanț**, deci un server poate
+întoarce doar o tranzacție nesemnată — în timp ce parserele lăsau **orice** deținător de Basic-auth să
+pună serverul să construiască o tranzacție de **pauză de protocol**. O suprafață care nu putea produce
+nimic util putea produce ceva periculos.
+
+**Și Swagger-ul publicat contrazicea formatul de sârmă pentru fiecare tip de acțiune-sumă.**
+`swagger2` nu are `sumEncoding`, deci emitea `{"<Constructor>": {…}}` cu `maxProperties: 1`, în timp ce
+aeson folosește `{"tag": …}`. **Un client care urma documentul lua 400.** Reparat cu `taggedSumSchema`,
+care **desface** schema generică a lui `swagger2` în loc s-o înlocuiască — deci un braț nou
+actualizează documentul **singur**, și nu apare o a doua definiție de ținut în pas. Documentul
+regenerat: **+434/−110**.
+
+---
+
+## Build-ul de imagini, și ce a învățat
+
+**Prima rulare de `images.yml` de după mutarea repo-ului a dovedit decizia 1B**: ambele imagini de bază
+au ajuns în `ghcr.io/mariusgeorgescu` cu `GITHUB_TOKEN`, pe pasul **exact** pe care rularea de dinainte
+de mutare picase — după **42 de minute**.
+
+Apoi toate patru build-urile de serviciu au murit în ~90 de secunde fiecare:
+
+```
+cabal: sdist of palmares-0.1.0: filepath wildcard
+'resources/metric-formulas.json' does not match any files.
+```
+
+`cabal install` face întâi un sdist, iar acolo un glob din `extra-source-files` care nu potrivește
+nimic e **eroare dură**. `resources/` intrase cu catalogul de metrici și niciun Dockerfile nu fusese
+atins.
+
+**Și `palmares.cabal` căra un comentariu care spune exact asta** — scris în blocul 4, lângă
+`extra-source-files`, tocmai pentru că o adăugire acolo sparge build-ul de imagine și nu build-ul
+cabal. **Comentariul a pierdut.** Ăsta e datul util, nu bug-ul.
+
+Reparat în `0026157`: `COPY resources ./resources` în toate patru Dockerfile-urile, plus
+**`scripts/check_packaging.sh`** — parsează `extra-source-files` și `license-file` din fișierul cabal
+și verifică că fiecare cale e acoperită de un `COPY` în **fiecare** Dockerfile. **Rulat contra stării
+de dinainte de fix ca să confirm că PICĂ acolo**, și pus ca **primul** pas al job-ului `haskell` din
+`ci.yml`: costă sub o secundă, iar eșecul pe care-l prinde costă altfel o oră.
+
+O verificare executabilă în locul unui comentariu — pentru că un comentariu nu are cum să pice.
+
+### Dimensiunile de script, care și-au meritat locul
+
+Tabelul pinuit din `UnitTests.ScriptSize` a fost scris sesiunea asta ca **declanșator economic**, iar
+prima lui folosință reală a fost să **mărginească raza de explozie** a două reparații de securitate:
+
+| | octeți |
+| --- | --- |
+| ProfilesValidator | 7.879 |
+| AttestationsValidator | 7.554 |
+| DisputesValidator | 8.243 |
+| OracleValidator | 7.427 |
+| MintingPolicy | 11.865 |
+
+Minting policy-ul a mișcat de două ori — **11.871 → 11.850** la reparația critică, **11.850 → 11.865**
+la cea de dată — și **celelalte patru n-au mișcat niciuna dintre dăți**. Asta spune ceva ce o citire de
+cod nu dă la fel de repede: **ambele funcții sunt atinse numai din minting policy.** O schimbare
+**mărginită**, nu una descrisă.
+
+---
+
+## Ce rămâne — 2026-10-21
+
+T-ATTEST-6, 7, 8 și 5b sunt **gata**. Tabelul viu:
+
+| # | task | blocat de |
+| --- | --- | --- |
+| 1 | **T-ATTEST-9** — suprafața de citire peste `palmares_attest`; de decomentat `Query.Projected`/`Pages`/`Aggregates` | — |
+| 2 | **Backlog-ul de audit** — **6 high + 8 medium** confirmate și încă deschise, din ambele audituri (lista de mai jos le strânge în unsprezece intrări) | — |
+| 3 | T-ATTEST-10/11/12 — deploy pe preprod, `smoke_attest_flow.sh`, Kupo în compose | 1 |
+| 4 | **Planul C** — UI-ul, scope decis ca **varianta B** | cere o notă de design |
+
+### Backlog-ul de audit, deschis
+
+> **Corecție 2026-10-21.** Rândul din tabelul de mai sus spunea întâi „4 high + 5 medium", care era
+> numărătoarea **doar a auditului 1**, pusă lângă o listă care strângea descoperirile din **ambele**.
+> Cifra corectă, deduplicată pe ambele audituri, e **6 high + 8 medium**. Cele unsprezece intrări de
+> mai jos sunt mai puține decât paisprezece fiindcă trei locuri împart gaura „datumul parsează"
+> (`ProfilesValidator.hs:92`, `DisputesValidator.hs:88`, `AttestationsValidator.hs:70`) și două o
+> împart pe cea de `otherMetadata` (`MintingPolicy.hs:225`, `CIP68.hs:112`) — fiecare numărată o
+> dată. Greșeala a fost a mea, în brief-ul dat agentului, nu a lui: a scris rândul verbatim și a
+> refuzat să inventeze maparea de severități, care e exact ce trebuia să facă. — fiecare cu locul lui, ca sesiunea următoare să nu mai caute
+
+- **`MintingPolicy.hs:339`** — `handleOpenDispute` nu verifică **niciodată** currency symbol-ul lui
+  `openedBy`, deci o dispută nu are nevoie de profil, iar `openedBy` poate **impersona id-ul de profil
+  al unei victime**. Găsită de 3 dimensiuni.
+- **`DisputesValidator.hs:140`** — `D4` întoarce depozitul cu un `any` **la nivel de tranzacție**, fără
+  legătură per-dispută: **un singur output rezolvă toate disputele** care împart un `disputeDepositTo`.
+- **`MintingPolicy.hs:330`** — `disputeDepositTo` intră în datumul permanent **nevalidat**.
+  `Address (PubKeyCredential (PubKeyHash ""))` e o valoare `Data` **legală** care face `D4`
+  **nesatisfiabil** — deci un singur depozit de 5 ADA cumpără o dispută **permanent nerezolvabilă**,
+  care blochează pe deasupra canalul de dispute al atestării respective.
+- **`DisputesValidator.hs:119`** — o dispută deschisă are **exact o ieșire**, condiționată de **o
+  cheie**, **fără timeout**.
+- **`DisputesValidator.hs:110`** — o dispută **numește oracle-ul care autorizează propriul ei verdict**.
+  ⚠️ Auditul 2 a produs pe linia asta **și o constatare confirmată și una refuzată**, cu încadrări
+  diferite: **codul trebuie citit înainte de a acționa.**
+- **`OracleValidator.hs:74`** — `OracleSetAdmin` **nu cere nicio semnătură de la adminul ÎNTRĂTOR**,
+  deci un singur `PubKeyHash` greșit **bricuiește protocolul permanent**. (De consemnat ironia: e fixul
+  moștenit #2, adăugat tocmai ca să facă compromiterea cheii recuperabilă.)
+- **`MintingPolicy.hs:161`** — `opPaused` e citit **NUMAI** de MintingPolicy, deci `AcceptAttestation`
+  și `UpdateProfile` **nu se pot pune în pauză on-chain**. T-ATTEST-6 a închis **doar jumătatea
+  off-chain**, iar mesajul commit-ului `8a1549c` („the pause was a fiction, and this fixes it")
+  exagerează.
+- **`MintingPolicy.hs:226`** — **niciun** braț nu verifică prefixul de referință CIP-67 pe un câmp de
+  id, iar `deriveUserFromRefTN` taie patru octeți **orbește**.
+- **`MintingPolicy.hs:225` / `CIP68.hs:112`** — `otherMetadata` intră în datumul permanent fără
+  validare de **dimensiune, număr sau chei rezervate**, și poate construi un `AssocMap` cu **chei
+  duplicate**, încălcând precondiția lui `unsafeFromList`.
+- **`AttestationsValidator.hs:81`** — o atestare **despre o atestare** nu poate fi acceptată niciodată:
+  token-ul de user al subiectului nu există și nu poate fi mintat. Iar **lineage-ul e în spec-ul de
+  produs**.
+- **`Blueprint.hs:135`** — blueprint-ul CIP-57 publicat livrează minting policy-ul **deja aplicat** pe
+  un token de oracle placeholder, deci **niciun terț nu poate verifica ce instanțiere folosește**
+  (`AU-6`).
+
+### Două acțiuni de owner, ÎNCHISE în runda asta
+
+1. **Token-ul Maestro nu mai e necesar.** Drumul e provider-ul local al Atlas — `socketPath` + **Kupo**
+   — și devine **T-ATTEST-12**. ⚠️ **Ogmios e de EVITAT**: nodul 11.1.2 cere Ogmios v7, iar Ogmios v7
+   rupe Atlas — exact motivul pentru care Belt System-ul a plecat pe Maestro.
+2. **Robinetul de preprod nu mai e necesar.** Adresa de preprod a Belt System-ului ține **43.063 tADA
+   în 46 de UTxO-uri**, verificat prin Koios, deci cheia nouă de unică folosință a deciziei 3 se
+   alimentează de acolo.
+
+### Blocat în continuare (neschimbat)
+
+`## BLOCKED FOR USER` are o singură intrare rămasă: **trecerea pachetelor GHCR pe public** —
+`palmares-admin` **musai** public, altfel `reconcile.yml` cade cu `pull access denied` în loc de o
+divergență reală. Plus jumătățile de cluster ale T-SUBSTRATE-2…6, Job-ul/secretul/kustomization-ul de
+k8s din T-SUBSTRATE-8, și F1 checks **1** și **16**.
+
+### Verificat
+
+**326 → 440 de teste, toate 440 trec.** **Zece commit-uri** împinse în palmares,
+`405c8d9..d55d2cc`. Tabelul de dimensiuni de script e o aserțiune, nu o notiță — și a fost pârghia
+care a mărginit ambele reparații de securitate.
