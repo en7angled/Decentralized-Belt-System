@@ -2405,3 +2405,112 @@ planta și cheltui propriul UTxO), și existența subiectului la mint.
    validitate. Dacă da, datumul are nevoie de un al doilea câmp explicit auto-raportat, iar API-ul nu
    trebuie **niciodată** să-l prezinte ca verificat on-chain. Întrebare de produs, nu tehnică.
 3. Cele trei rămase din planul A: al treilea `DRepStatus`, handle-ul GHCR, bifurcația PVC din ADR 0001.
+
+---
+
+## T-ATTEST-1 — domeniul e atestare, peste tot
+
+`3bc3297` în palmares. 1.645 de substituiri în 33 de fișiere, și a compilat **din prima** pentru că
+"achievement" → "attestation" e un schimb de cuvânt 1:1 în aproape fiecare identificator.
+
+Straturile nu erau de acord pe substantiv: on-chain zicea deja atestare (`AttestationsValidator`,
+`ctxAttestationsAddress`) în timp ce DTO-urile, rutele și coloanele de proiecție ziceau achievement.
+Dezacordul ăla făcea fiecare task ulterior ambiguu.
+
+**Breaking pe sârmă, și acceptabil exact o dată — acum, înainte să existe vreun client.**
+`awarded_{to,by}_profile_id` → `{subject,issuer}_profile_id`; `/award-achievement` →
+`/issue-attestation`; `achievement_projection` → `attestation_projection`. Swagger-ul lui
+interaction-api 2.1.0 → **3.0.0** ca să o spună.
+
+### Șase feluri de profil, nu două
+
+`OnchainProfileType (Practitioner | Organization)` → `OnchainProfileKind (PersonDRep | Organization |
+Committee | Community | Vendor | Auditor)`, indici 0–5, `Organization` păstrând indicele 1 — singurul
+care supraviețuiește. **Constructor, nu câmp de metadata CIP-68**, deși niciun validator nu ramifică pe
+fel: stratul de citire filtrează și grupează după el, metadata e un `Map` pe care proiecția ar trebui
+să-l parseze, și un redeemer viitor de update l-ar putea schimba în liniște. Un octet care nu poate
+devia.
+
+CLI-ul de admin avea două flag-uri (`-p`, `-o`); acum are un `--kind` condus de ortografiile de pe
+sârmă ale tipului însuși, deci un al șaptelea fel nu cere nicio editare acolo.
+
+### Defectul pe care l-a găsit redenumirea
+
+`StripPrefix "aar"` al lui `deriving-aeson` e un **șir**, nu o referință la câmpurile înregistrării.
+Redenumind câmpurile din `aar*` în `iar*`, opțiunea a rămas numind un prefix care nu mai potrivea
+nimic — **și asta compilează perfect**. Fiecare cheie JSON s-ar fi livrat ca
+`iar_subject_profile_id` în loc de `subject_profile_id`, pe o rută vie, fără nicio eroare nicăieri.
+
+Mai rău: prefixul e scris **de două ori**, o dată pentru `FieldLabelModifier` și o dată pentru
+`mkStripPrefixSchemaOptions` care conduce Swagger — deci o reparație pe jumătate publică un document
+care descrie câmpuri pe care API-ul le respinge.
+
+### `scripts/check_vocabulary.sh` — opt verificări, în CI
+
+Redenumirea are un mod de eșec **parțial**: compilatorul e fericit cu jumătate din ea, iar jumătățile
+care ajung la un utilizator — un titlu de Swagger, un mesaj de eroare, o cheie JSON — sunt exact cele
+la care el nu se uită niciodată.
+
+| verificare | ce prinde |
+| --- | --- |
+| substantivul | orice `achievement` rămas |
+| domeniul moștenit | `practitioner`, `belt`, `promotion`, `dojo` |
+| mașinăria de rank/membership | `OnchainRank`, `RanksValidator`, `MembershipInterval`, … |
+| Swagger generat | un document care numește alt produs |
+| șiruri către utilizator | titluri, `displayException` |
+| nume de rețea hardcodat | `"Not enough preview ADA"` pe un config preprod |
+| licența moștenită | **trebuie** să-și păstreze numele — atribuire, nu rest |
+| fiecare `StripPrefix` | numește un prefix pe care vreun identificator din fișierul lui îl folosește |
+
+Ultima a fost **verificată reintroducând bug-ul** și urmărind-o să pice.
+
+Două pattern-uri sunt deliberat înguste, pentru că domeniul de guvernanță folosește cuvintele
+legitim: **`membership`** e propriul nume de câmp al raportului de paritate Koios
+(`Divergence k "membership"` = o cheie doar pe o parte) și apartenența la comitet e vocabular real —
+deci pattern-ul numește compușii BJJ, nu cuvântul. Și **`Belt System`** într-un comentariu care
+explică *de ce* ceva e cum e ("snake_case, nu PascalCase-ul moștenit") e proveniență care merită
+păstrată — deci ce citește un **utilizator** se verifică separat.
+
+### Trei defecte de blueprint, verificate în artefactul generat
+
+1. Schema datumului de atestare era `definitionRef @()` — blueprint-ul publicat descria **singurul
+   datum de care un cititor are cea mai mare nevoie** ca Unit. Tipul lipsea și din
+   `contractDefinitions`, ceea ce a permis referinței greșite să compileze.
+2. Preambulul lista "admin key" între capabilitățile oracle-ului.
+3. Descrierea oracle-ului zicea că protocolul poate fi "**re-keyed** without redeploying a validator".
+
+Rotația nu e neimplementată, e **interzisă**: `O2` cere ca datumul de output să fie egal cu
+`applyOracleAdminAction` al celui curent, iar funcția aia păstrează `opAdminPkh` prin construcție.
+Ambele afirmații spun acum adevărul **și de ce**. T-ATTEST-3 pune capabilitatea înapoi cu
+`OracleSetAdmin`.
+
+### O coliziune reală de nume
+
+`Committee` e felul nostru de profil **și** `PlutusLedgerApi.V3.Committee`, datumul comitetului
+constituțional CIP-1694. Trei fișiere importă ambele straturi și niciunul nu folosește pe cel Plutus,
+deci importul îl ascunde — ceea ce lasă o eroare de compilare pentru cine are nevoie de el mai târziu,
+nu o umbrire silențioasă.
+
+### Ce NU s-a șters
+
+Am deviat de la propriul plan aici. `CLAUDE.md` §3 zice să **menționezi** codul mort nelegat, nu să-l
+ștergi. Deci au plecat doar resturile de domeniu BJJ: cele 16 constructoare inaccesibile de
+`TxBuildingException` plus tot tipul `AddMembershipIntervalReason` (purtau șiruri ca *"Invalid belt
+number (must be 0–14)"* într-un registru de guvernanță), și blocul de haddock orfan care documenta un
+`UpdateEndDate` șters, inclusiv un parametru `validityOverride` care nu mai există.
+
+**Menționate, lăsate pe loc:** cele două derivări din `Protocol/Id.hs`, cele trei `unsafeGet*` din
+`Protocol/Lookup.hs`, cele două variante exact-value din `Utils.hs`, cele trei funcții nefolosite din
+`CIP68.hs`, și `hasUserNFTAt` din `Operations.hs`. Toate moarte, niciuna orfanul acestei redenumiri.
+
+Și `Query.Projected` / `Query.Aggregates` / `Query.Pages` **nu** au fost redenumite: sunt dormante
+**și deja rupte** față de DTO-urile vii — `Query/Projected.hs` citește `searchResultsPractitioners`,
+câmp care nu mai există în `QueryResponses.hs`. O redenumire mecanică nu le-ar face să compileze, deci
+T-ATTEST-9 le reconstruiește peste `palmares_attest`.
+
+### Verificat
+
+`cabal build all` curat · **263 de teste trec** · `check_vocabulary.sh` **OK** · Swagger-ul committat
+al query-api **fără drift** · și suita de smoke de **330 de aserțiuni** dă `smoke OK` pe drumul de
+citire viu de pe experimentul preprod — care e dovada că 1.645 de substituiri n-au schimbat niciun
+comportament.

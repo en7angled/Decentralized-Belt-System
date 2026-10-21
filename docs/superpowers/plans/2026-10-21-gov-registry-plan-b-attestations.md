@@ -265,6 +265,43 @@ is deployed; after deploy-reference-scripts each constructor is a hash change."
 
 ## Phase 2 — the on-chain protocol
 
+> **T-ATTEST-1 as executed — three deviations from this task as written, each a builder decision.**
+>
+> 1. **The guard is `scripts/check_vocabulary.sh`, not `UnitTests/Rename.hs`.** Embedding ~30 Haskell
+>    files into the test binary to grep them would mean listing each in `extra-source-files` and
+>    re-embedding on every edit, to do what grep does. The repo already has a family of CI check
+>    scripts (`check_swagger.sh`, `check_roles.sh`, `check_gitleaks_allowlist.sh`) and this belongs to
+>    it. Eight checks, all green.
+> 2. **The pre-existing dead code was NOT deleted** — only the BJJ-domain debris was. `CLAUDE.md` §3
+>    says to mention unrelated dead code rather than remove it, and `Protocol/Id.hs`'s two
+>    derivations, `Protocol/Lookup.hs`'s three `unsafeGet*`, `Utils.hs`'s two exact-value helpers,
+>    `CIP68.hs`'s three unused functions and `Operations.hs`'s `hasUserNFTAt` are domain-neutral dead
+>    code, not debris this rename orphans. **Mentioned, left in place.** What did go: the 16
+>    unreachable `TxBuildingException` constructors and `AddMembershipIntervalReason` (they carried
+>    user-facing strings like "Invalid belt number (must be 0–14)"), and the orphaned haddock block
+>    documenting a deleted `UpdateEndDate` with a `validityOverride` parameter that no longer exists.
+> 3. **`Query.Projected`, `Query.Aggregates` and `Query.Pages` were not renamed.** They are dormant
+>    *and already broken against the live DTOs* — `Query/Projected.hs` reads
+>    `searchResultsPractitioners`, which `QueryResponses.hs` no longer has. A mechanical rename would
+>    not make them compile, so T-ATTEST-9 rebuilds them over `palmares_attest` instead. They are in
+>    the guard's `DORMANT` exclusion list with that reason, and dropping a file from that list brings
+>    it back under the guard with no other edit.
+>
+> **One defect the task did not anticipate, found by the rename and now guarded.** `deriving-aeson`'s
+> `StripPrefix "aar"` is a *string*, not a reference to the record's fields. Renaming
+> `AwardAchievementRequest`'s fields from `aar*` to `iar*` left the option naming a prefix that
+> matched nothing — **and that compiles perfectly**. Every JSON key would have shipped as
+> `iar_subject_profile_id` instead of `subject_profile_id`, on a live route, with no error anywhere.
+> Worse, the prefix is written twice: once for `FieldLabelModifier` and once for
+> `mkStripPrefixSchemaOptions`, which drives Swagger, so a half-fix publishes a document describing
+> fields the API rejects. `check_vocabulary.sh` now asserts that every `StripPrefix` names a prefix
+> at least one identifier in its own file uses — verified to fail when the bug is reintroduced.
+>
+> Also: `Committee` is our profile kind **and** `PlutusLedgerApi.V3.Committee`, the CIP-1694
+> constitutional-committee datum. Three files import both layers and none uses the Plutus one, so the
+> import hides it — which leaves a compiler error for anyone who later needs it, rather than a silent
+> shadow.
+
 ### Task T-ATTEST-2: `MintProfile` and the identity claim — the piece synthesis §3 step 24 calls unspecified
 
 The spec's rule is one sentence (§2, §4.3): **prove you can spend as that credential.** The full
