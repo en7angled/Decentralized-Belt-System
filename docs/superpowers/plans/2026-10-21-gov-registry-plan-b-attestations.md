@@ -1397,3 +1397,150 @@ self-review found it.
 code blocks are test assertions and tables of checks, which are the decisions an implementer cannot make
 alone. The longest single piece of prose is Decisions §3, and it is the piece the synthesis explicitly
 says must be settled in the plan rather than discovered at implementation time.
+
+---
+
+## Addendum — 2026-10-21, after the owner's answers and two wiring surveys
+
+The owner answered the three open decisions (ledger: "Cele patru decizii de owner"). Two of the
+answers change this plan, and two read-only surveys of the repo found four things the plan asserts
+that the code does not. Both are recorded here rather than by rewriting the tasks above, so the
+history of what was planned and what was learned stays legible.
+
+### A new task: T-ATTEST-3b — the attestation kind and the claimed period
+
+**Why this task exists at all: the plan had a spec gap, and the self-review missed it.** Spec §3's
+glossary (line 40) defines an attestation as carrying one of **five types** — `MilestoneDelivered`,
+`AuditPassed`, `Affiliation`, `RoleHeld`, `Endorsement` — and says two of them carry **intervals**:
+`Affiliation` (organisation ↔ member, *cu intervale*) and `RoleHeld` (extra-chain mandate, *cu
+intervale*). A grep for all five names across this plan returns nothing. The self-review mapped
+§4.3, which is the attestation layer's own section, and never read §3's glossary — so the type and
+the interval were not deferred, they were **lost**.
+
+That gap is also what settles owner decision #3. An affiliation interval that begins before the
+attestation is issued is the normal case, not an edge case: "a member since March 2024, attested
+today". So "no, an attestation may not record an earlier date" was never an available answer.
+
+**The answer taken, and the reason it is two fields and not a looser one.**
+
+| field | meaning | validated against the validity interval? |
+| --- | --- | --- |
+| `attestationDate` | when the attestation was **issued** | **yes** — unchanged, `Ml` / `checkDateInRange` |
+| `attestationPeriod :: Maybe (POSIXTime, POSIXTime)` | the period the attestation **claims** | **no, deliberately** |
+| `attestationKind :: AttestationKind` | which of the five the attestation is | n/a |
+
+The period is **not** validated and must never be, because validating it would be a lie: nothing
+on chain can confirm when a membership began. That also means the validator gains **no new rule**
+for it — there is nothing to check — which is why this task is small on chain and almost all of its
+work is in presentation.
+
+`attestationKind` is a **constructor, not metadata**, for the same reason `OnchainProfileKind` is: a
+byte in the datum cannot drift, and a `Map BuiltinByteString BuiltinByteString` that the projection
+has to parse can. The period is meaningful for only two of the five kinds, and the read layer has to
+filter by kind anyway.
+
+**Follow `OnchainProfileKind` / `ProfileType` exactly** — it is the same shape, already built, and
+the survey confirms nothing in the repo branches on an attestation kind today:
+`Protocol/Types.hs:170-181` ↔ `Core/Types.hs:49-79`, bridged at `Conversions.hs:52-67`, persisted
+via `derivePersistFieldJSON`.
+
+**The surveyed sites, in the order they must change:**
+
+1. `onchain-lib/Palmares/Onchain/Protocol/Types.hs:219-229` — the two fields on `OnchainAttestation`,
+   plus `AttestationKind` with its own `makeIsDataSchemaIndexed` at indices 0–4, appended discipline
+   from the first deployment onward.
+2. `onchain-lib/…/Validators/MintingPolicy.hs:80-96` — `NewAttestation` gains two arguments;
+   `:132-134` the match; `:169-176` the on-chain datum literal. **`:187`'s `Mk` check compares that
+   literal to the off-chain one byte for byte and there is no shared constructor between them**, so
+   `Operations.hs:262-269` must change in the same edit or every issue transaction fails on chain.
+3. `onchain-lib/…/Blueprint.hs:37-51` — register `AttestationKind` in `contractDefinitions`
+   (`:192-195` records what a missed registration did last time); `:103-107` and `:186-190` are
+   **published interface prose** that enumerates the redeemer args and the datum fields — both must
+   list the new ones, and `:103-107` currently states the date "is validated against the transaction
+   validity range" with no qualification, which becomes wrong the moment a second date exists.
+4. `offchain-lib/…/TxBuilding/Operations.hs:262-269` (the datum), `:246-255` (the redeemer),
+   `:191-206` (the signature). **`:226-230` is the date-window check and the period must NOT be
+   routed through it** — that is the whole point of the field.
+5. `offchain-lib/…/TxBuilding/Exceptions.hs:52-55` — `AttestationDateOutOfRange`'s
+   `displayException` currently reads *"an earlier event date is self-reported and belongs in
+   other_metadata"*. Adding the period **directly contradicts** it. The new text has to send the
+   caller to `claimed_period` instead, or the error tells people to do the thing we just replaced.
+6. `offchain-lib/…/DomainTypes/Core/Types.hs:124-185` — the `Attestation` record, and three
+   hand-written instances that take positional care: `FromJSON` at `:142-156` (12 positional
+   applications — a field inserted in the wrong position mis-binds **silently**), `Show` at
+   `:161-175`, and `ToSchema` at `:177-185`, which is the one attestation schema that spells its
+   field-label modifier out by hand instead of using `mkStripPrefixSchemaOptions`.
+7. `offchain-lib/…/DomainTypes/Core/Actions.hs:55-61` — `IssueAttestationAction`.
+8. `offchain-lib/…/DomainTypes/Transfer/QueryResponses.hs:126-208` — **two** response mirrors
+   (`AttestationResponse`, `AttestationInformationResponse`) and their two copy functions.
+9. `exe/interaction-api/ServiceRequests.hs:62-85` — `IssueAttestationRequest`, its
+   `StripPrefix "iar"` **and** its `mkStripPrefixSchemaOptions "iar"`, plus a `describeField` for
+   each new field. `check_vocabulary.sh` already guards that the two prefixes agree.
+10. `offchain-lib/Palmares/Storage.hs:128-143` — the `AttestationProjection` entity, and
+    `:321-338` `putAttestationProjection`, which builds it with **13 positional arguments and no
+    field labels**. The survey calls this the most fragile site in the change and it is right.
+11. `offchain-lib/Palmares/Storage.hs:187-188` — **bump `currentSchemaVersion` to 2.** A column
+    added without the bump leaves a deployed attest-sync migrating onto a schema it then reads with
+    the wrong shape. `UnitTests/AttestSchema.hs` does **not** assert this constant today, so nothing
+    fails if it is forgotten — so this task also adds the assertion that would have caught it.
+
+**The dangling key the survey found, which is evidence the type was always meant to exist.**
+`webapi-lib/Palmares/WebAPI/Utils.hs:49` already attaches a swagger description to a definition
+named **`"AttestationType"`** — *"What an attestation asserts about its subject"* — and **no Haskell
+type of that name exists anywhere in the repo**. The key is absent from the generated swagger, so
+the `at` lens is a silent no-op. It is the only trace of the planned enum, inherited and half-wired.
+Name the off-chain enum `AttestationType` (the on-chain one `AttestationKind`, mirroring the
+existing `ProfileType` / `OnchainProfileKind` split) and the description attaches itself; the
+alternative is to delete a key that was right all along.
+
+**The presentation rule, which is half this task's value.** The period ships as `claimed_period`
+beside `issued_at`, and `/attestations` must never sort or filter the record as if the period were
+verified. One sentence per field in the swagger description, exactly as `profileCredential =
+Nothing` is presented as `unclaimed` rather than as verified. Owner decision #4's residue lands
+here too: `kind` on a **profile** is `self_declared` — an `Auditor` profile is not an accreditation,
+the accreditation is an attestation someone issued to it.
+
+**Ordering:** before T-ATTEST-4 or in the same batch. Both change validator hashes, and T-ATTEST-4
+changes the minting policy's parameter as well, so the two together are one CI run.
+
+### Four corrections the surveys made to this plan's assumptions about T-ATTEST-4
+
+1. **`mkProtocolParams` is point-free and positional.** `TxBuilding/Validators.hs:91-95` is
+   `ProtocolParams profilesValidatorHashPlutus attestationsValidatorHashPlutus` with the oracle
+   `AssetClass` as the eta-reduced last argument. Appending `disputesValidatorScriptHash` **after**
+   `oracleToken` breaks that eta-reduction, so the function has to be rewritten (named fields, or an
+   explicit two-argument form). The plan said "gains a field" and implied a one-line edit.
+2. **`ProtocolParams` is embedded in every profile datum** (`Protocol/Types.hs:206`), so appending a
+   field is a **datum-format change for all existing profiles**, not only a minting-policy parameter
+   change. Nothing is deployed yet, so the cost is zero today and infinite after T-ATTEST-10 — which
+   is the actual reason disputes must land before the deploy, stated more sharply than the plan
+   stated it.
+3. **`onchain-lib/CLAUDE.md:28-29` and `Blueprint.hs:127-128` both say the Profiles and Attestations
+   validators "get validator addresses from the datum's `protocolParams`". Neither validator reads
+   `protocolParams` at all.** Only `MintingPolicy.hs:121-122` resolves sibling addresses, and it
+   does so from its lifted compile-time parameter. The only datum-sourced reader,
+   `Protocol/Lookup.hs:44-52`, is unused by any validator. So the new disputes validator should
+   follow what the code actually does — own address from the spent input via
+   `unsafeFindOwnInputByTxOutRef`, oracle from the reference input — and the two documents should be
+   corrected rather than copied.
+4. **The dispute deposit cannot live on `FeeConfig` even if someone wanted it to.**
+   `scripts/check_vocabulary.sh:139-156` is a CI gate that permits a `FeeConfig` field name in only
+   four locations. `OracleParams.opDisputeDeposit`, which the plan already specified for the
+   semantic reason that a returned deposit is not a fee, is also the only shape that passes the
+   lint. Trace prefix **`D` is free**; `MintingPolicy`'s existing codes are an inconsistent mix of
+   `M0`/`M1`, letter suffixes on the attestation path and `Mp1`–`Mp5` on the profile path, so the
+   dispute path should use `Md1`–`Md5` and the disputes validator `D0`–`D5`.
+
+### Two pre-existing problems the surveys surfaced, mentioned and NOT fixed
+
+`CLAUDE.md` §3 — notice unrelated dead code, do not delete it.
+
+* **`src/test/TestRuns.hs` is stale against the current `Validators.hs`**: it references
+  `ranksValidatorGY` / `ranksValidatorSize` / `ranksValidatorHashAndRef` and the `memberships`
+  equivalents, none of which exist — Belt System leftovers. `src/test/UnitTests/Cleanup.hs:19` has
+  the same stale import. Both are comment-prefixed out of the test suite, so they are dormant rather
+  than broken, and `TestRuns.hs:80-101` is the **only** script-size reporting site in the repo
+  (namespace `SCRIPTSIZE`). T-ATTEST-5 revives it and will have to repair it then.
+* **There is no ExUnits or script-size gate.** `scripts/test_exunits.sh` exists in the Belt System
+  and not here; `Validators.hs:121-136` has the size functions and nothing invokes them. Worth a
+  task before mainnet, not before preprod.
