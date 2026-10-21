@@ -469,6 +469,9 @@ măsurătoarea din amonte, de unde și dezacordul dintre cifra fixturii și a no
 
 *(gol la 2026-10-20 06:00 UTC — nimic nu blochează implementarea)*
 
+> **Depășit:** lista vie e `## BLOCKED FOR USER — o singură acțiune manuală, niciuna de cod`, mai
+> jos. La 2026-10-21 are o singură intrare: mutarea repo-ului `palmares` sub `mariusgeorgescu`.
+
 ## Decizii luate sub mandat, cu argumentație
 
 ### D-28. Postgres pe pi5-2, db-sync singur pe pi5-1 (plasarea memoriei)
@@ -2116,6 +2119,10 @@ oamenii s-o ignore.
 
 ## Ce mai rămâne
 
+> **Depășit la 2026-10-21** — lista vie e „Ce rămâne, în ordinea dependențelor" de la finalul
+> fișierului. Punctele 1 (`/votes`), 2 (al treilea status) și jumătatea de Plan B din 5 s-au închis
+> de atunci; rămân blocul 3 și rularea de `reconcile.yml`.
+
 1. **Pagina `/votes` în două etape** — singurul endpoint livrat care nu poate răspunde pe rolul de
    comitet. Diagnosticat complet (join-ul `cc_cold_interval` e 9,5 s din 14,2 s), design-ul scris.
 2. **Al treilea status de DRep** — decizia de API de mai sus, a ta.
@@ -2617,6 +2624,10 @@ cărui acceptare e ce a ales ultimul acceptant. O citire booleană a unui datum 
 e cazul de apărare neexploatabilă: garda off-chain e ocolibilă și consecința e permanentă. Cod de trace
 propriu `A3`, nu pliat în `A1`, pentru că "deja acceptată" și "output greșit" sunt greșeli diferite.
 
+**Corecție 2026-10-21:** `A3` — ca toate celelalte coduri de aici — era **șters din script** de
+`remove-trace` până la `c0b270d`. Motivul pentru care e un cod separat rămâne valabil; ce e nou e că
+se poate și citi.
+
 ### Dimensiuni de script după T-ATTEST-2
 
 | validator | octeți |
@@ -2653,19 +2664,43 @@ rulează**. Cât timp repo-ul stă sub org-ul `en7angled` iar imaginile se publi
 write` nu ajută, pentru că permisiunea aia e asupra pachetelor org-ului. Deci login-ul folosește
 acum `secrets.GHCR_TOKEN`, un PAT classic al lui `mariusgeorgescu` cu `write:packages`.
 
+**Actualizare 2026-10-21 — owner-ul a ales mutarea repo-ului (decizia 1B, la finalul fișierului).**
+Deci PAT-ul nu se mai creează: `GITHUB_TOKEN` devine credentialul potrivit în momentul în care
+`palmares` stă sub `mariusgeorgescu`. Namespace-ul decis aici nu se schimbă, doar remediul.
+
 ## BLOCKED FOR USER — două acțiuni manuale, niciuna de cod
 
-1. **Secretul `GHCR_TOKEN`** nu există. Prima rulare de `images.yml` de după commit-ul ăsta cade la
-   login până e creat. (Settings → Secrets and variables → Actions, în `en7angled/palmares`.)
-2. **Vizibilitatea pachetelor.** `reconcile.yml` *trage* imaginea de admin și nu are `docker login`
-   deloc — corect pentru un pachet public. Primul push al unui pachet aterizează însă **privat**,
-   deci după prima publicare cele patru pachete trebuie trecute o dată pe public, altfel job-ul
-   nocturn de paritate cade pe `pull access denied` în loc să cadă pe o divergență reală.
+1. **Mutarea repo-ului `en7angled/palmares` sub `mariusgeorgescu`** (Settings → Transfer ownership).
+   Până atunci, `images.yml` nu poate publica: `GITHUB_TOKEN` e scoped la org, imaginile se numesc
+   sub utilizator. Verificat 2026-10-21: `mariusgeorgescu/palmares` e liber (404), rolul în
+   `en7angled` e `admin`, repo-ul e public, iar **secretele de repo sunt zero** (`total_count: 0`),
+   deci nu e nimic de salvat înainte.
+2. **Trecerea celor patru pachete GHCR pe public, DUPĂ primul publish.** Asta NU e eliminată de
+   decizia 1B, cum s-a scris inițial — documentația GitHub e explicită: primul push al unui pachet
+   aterizează **privat**, indiferent de namespace și indiferent de vizibilitatea repo-ului. Verificat
+   2026-10-21: niciunul din cele patru `ghcr.io/mariusgeorgescu/palmares-*` nu există încă (403 la
+   pull anonim), deci primul run de `images.yml` le creează private. Cel care **musai** trebuie
+   public e `palmares-admin`: `reconcile.yml` îl trage fără `docker login`, prin design, deci jobul
+   de paritate nocturn ar cădea cu `pull access denied` în loc de o divergență reală.
+
+**Acțiunea de dinainte e RETRASĂ** — decizia 1B o face inutilă, nu o amână:
+
+1. ~~**Secretul `GHCR_TOKEN`**~~ — nu mai e nevoie de niciun PAT; după mutare, `GITHUB_TOKEN` e deja
+   owner-ul namespace-ului. Fallback-ul `secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN` a fost **șters**
+   din `images.yml`, nu doar lăsat să cadă pe a doua ramură: `||` cade doar pe un secret *nesetat*,
+   niciodată pe unul expirat, deci un PAT vechi adăugat ulterior ar fi întrecut silențios tokenul
+   care funcționează.
+2. ~~**Vizibilitatea pachetelor**~~ — scopul flip-ului era ca `reconcile.yml` să poată *trage*
+   imaginea de admin fără `docker login`. ⚠️ **De verificat la prima rulare de `images.yml` de după
+   mutare:** GHCR pune pe privat orice pachet nou publicat, inclusiv sub un namespace de utilizator,
+   deci dacă cele patru pachete aterizează private, flip-ul rămâne o singură acțiune de UI. Semnalul
+   e același: job-ul nocturn de paritate cade pe `pull access denied`, nu pe o divergență reală.
 
 `secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN` nu e un fallback silențios: e exact ce face din
 **"mută repo-ul la `mariusgeorgescu`"** o alternativă cu zero editări, pentru că atunci
 `GITHUB_TOKEN` e deja credentialul potrivit și secretul se poate șterge. Ambele stări finale cad
-zgomotos; doar cea din mijloc are nevoie de PAT.
+zgomotos; doar cea din mijloc are nevoie de PAT — **și owner-ul a ales starea finală cu mutarea**,
+deci cea din mijloc nu se mai atinge niciodată.
 
 ### #1 — Al treilea `DRepStatus`: ce e, cât costă, și ce recomand
 
@@ -3110,6 +3145,11 @@ ExUnits sau de dimensiune aici; funcțiile de măsurare există în `TxBuilding/
 `disputesValidatorSize` lângă celelalte) și nimic nu le apelează. Singurul loc care raporta dimensiuni
 e `TestRuns.hs`, dormant și stale. Rămâne de făcut înainte de mainnet, nu înainte de preprod.
 
+**Închis la 2026-10-21, mai devreme decât am spus aici:** T-ATTEST-5 a adus poarta —
+`src/test/UnitTests/ScriptSize.hs` — și a înviat `TestRuns.hs`. Dimensiunile celor cinci scripturi
+ies acum dintr-o aserțiune, nu dintr-o notiță. `scripts/test_exunits.sh` rămâne inexistent în repo-ul
+ăsta, și nu mai e nevoie de el.
+
 ### Paralelizare
 
 La cererea owner-ului, trei fire în același timp: eu pe validator + minting policy + blueprint +
@@ -3177,3 +3217,177 @@ ordine (`AssetClass` ×3, `POSIXTime`, `Integer`, `Address`, `AssetClass`, `Mayb
 `OracleAdminAction` de la 0 la 5.
 
 Commit: `405c8d9`.
+
+---
+
+## Cele patru decizii de owner, LUATE — 2026-10-21
+
+Owner-ul a decis toate patru. Aici e ce a decis, argumentul pe care l-a acceptat și consecința pe
+care o trage fiecare; analiza care le-a precedat rămâne mai sus, neatinsă.
+
+### 1B — GHCR: se **mută repo-ul** `en7angled/palmares` sub `mariusgeorgescu`
+
+Nu PAT-ul, nu flip-ul de vizibilitate: **mutarea**. `GITHUB_TOKEN` e scoped la owner-ul repo-ului în
+care rulează, deci cât timp repo-ul stă sub org nu poate scrie în `ghcr.io/mariusgeorgescu`, iar
+`packages: write` nu ajută — permisiunea aia e asupra pachetelor **org-ului**. Mutarea face din
+`GITHUB_TOKEN` exact credentialul potrivit, deci secretul `GHCR_TOKEN` nu se mai creează niciodată,
+și nici cele patru pachete nu mai trebuie trecute o dată pe public. Alternativa cu PAT le-ar fi
+**amânat** pe amândouă; mutarea le face inutile. (Pe a doua jumătate am lăsat o verificare în
+`## BLOCKED FOR USER`: GHCR pune pe privat orice pachet nou, deci se confirmă — sau nu — la prima
+publicare de după mutare.)
+
+**E o acțiune de om și e încă nefăcută** — vezi `## BLOCKED FOR USER`. Zero editări de cod:
+`images.yml` cară deja `GHCR_OWNER=mariusgeorgescu`, iar `secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN`
+cade pe ramura a doua de la sine.
+
+### 2 — Codurile de trace: `preserve-logging` peste tot
+
+Build-ul care se desfășoară **păstrează** mesajele de trace. Costul e măsurat, nu estimat: **+1,8%
+… +3,4%** la dimensiunea de script (tabelul din descoperirea 1 de mai jos). Argumentul acceptat: un
+registru de reputație pe care nu-l poți depana în producție e unul pe care nu-l poți susține, iar
+octeții economisiți nu cumpără nimic la 45% ocupare de tranzacție.
+
+### 3 — Cheia de admin a oracle-ului pe preprod: una nouă, dedicată, de unică folosință
+
+Numai pentru preprod; alegerea pentru mainnet rămâne amânată. Argument: preprod e un mediu de test,
+iar rotația cheii e acum demonstrată cap la cap de cazurile de emulator **0.9–0.11** — deci o cheie
+pierdută pe preprod costă un `OracleSetAdmin`, nu un redeploy.
+
+**Consecința, pe care o asum și o consemnez:** deploy-ul de preprod **al protocolului de atestări**
+(T-ATTEST-10) rămâne pe **docker-compose**, nu pe drumul cluster/GitOps. O cheie de unică folosință nu
+are nevoie de SOPS+age și de un Kustomization proprietar, iar jumătățile de cluster sunt blocate
+oricum. Deploy-ul GitOps al lui F1-C (P8) nu e atins de asta.
+
+### 4 — Depozitul de dispută: **5 ADA rămâne** ca default de desfășurare
+
+E re-tarifabil **fără redeploy** prin `SetDisputeDepositAction` (demonstrat de cazul de emulator
+**0.5**), deci nu e o alegere pe care trebuie s-o nimerim acum. Și e **singura** frână pe spam-ul de
+dispute, pentru că „o singură dispută deschisă per atestare" e deliberat neimpus on-chain — N dispute
+costă N depozite, și asta e tot ce le mărginește.
+
+### Și cele închise mai devreme, rămân închise
+
+`Auditor` e **fel** de profil, nu rol — un octet de datum pe care niciun validator nu ramifică — cu
+eticheta de prezentare `self_declared` la stratul de citire. Felul e eticheta, atestarea e faptul.
+
+---
+
+## T-ATTEST-5, prima jumătate — suita de emulator rulează din nou
+
+`c0b270d` în palmares: *test(emulator): the suite runs again — 35 cases, and the trace codes are a
+fiction*.
+
+Până la commit-ul ăsta proiectul avea **zero** teste de emulator. Cinci module pe disc, dormante și
+stale față de un protocol pe care îl precedă, și trei linii de cabal care **nu numeau niciun fișier**.
+Validatoarele erau dovedite de teste pure și de blueprint-ul generat — adică de nimic care să fi
+construit vreodată o tranzacție.
+
+**326 → 361 de teste.** 35 noi, **11 negative**:
+
+- **`src/test/TestRuns.hs`** — înviat și tăiat de la contextul de desfășurare cu **șapte** câmpuri al
+  Belt System-ului la cele **șase** ale protocolului ăsta: patru validatoare de cheltuire ca scripturi
+  de referință, NFT-ul one-shot al oracle-ului, apoi minting policy-ul compilat contra lui. Blocul de
+  115 linii de promovare/grad și atacul `AcceptPromotion` au plecat împreună cu validatoarele pe care
+  le testau. Fiecare runner trece în continuare prin `interactionToTxSkeleton`, deci testele exersează
+  **drumul de producție**, nu unul paralel scris pentru ele.
+- **`src/test/UnitTests/Oracle.hs`** — **13** cazuri de emulator (erau 9, toate moarte). Acoperă
+  fiecare acțiune de admin, re-tarifarea depozitului de dispută adăugată la T-ATTEST-4, rotația de
+  admin cap la coadă, și conservarea valorii de către `O2`.
+- **`src/test/UnitTests/Cleanup.hs`** — **6** cazuri (erau 5, moarte, zero negative). Măturile se
+  asertează acum pe **numărul de UTxO-uri**, nu pe o linie de log care tipărea „succeeded" indiferent
+  dacă praful plecase sau nu.
+- **`src/test/PropertyTests.hs`** (nou) — `applyAdminAction` oglindit contra `applyOracleAdminAction`
+  pe fiecare acțiune de admin, plus round-trip `toBuiltinData`/`fromBuiltinData` pe fiecare tip de
+  datum.
+- **`src/test/UnitTests/ScriptSize.hs`** (nou) — poarta de dimensiune de script care lipsea din tot
+  proiectul.
+
+### Trei descoperiri
+
+**1. Codurile de trace documentate NU EXISTAU.** `palmares.cabal` compila fiecare validator cu
+`-fplugin-opt PlutusTx.Plugin:remove-trace`, deci `O1`, `D0`, `Md1`, `A3` și tot restul erau **șterse
+înainte să ruleze orice**. O tranzacție refuzată spunea doar „an error has occurred" — în emulator și
+pe preprod la fel; `mustFail` nu putea spune care verificare a refuzat-o, și nici un operator n-ar fi
+putut. Un flag de cabal `preserve-logging` adăugat, iar prin decizia 2 e acum **default-ul**.
+Dimensiuni măsurate, octeți flat-encoded:
+
+| validator | remove-trace | preserve-logging | delta |
+| --- | --- | --- | --- |
+| ProfilesValidator | 7.707 | 7.879 | +2,2% |
+| AttestationsValidator | 7.410 | 7.554 | +1,9% |
+| DisputesValidator | 8.032 | 8.243 | +2,6% |
+| OracleValidator | 7.293 | 7.427 | +1,8% |
+| MintingPolicy | 11.482 | 11.871 | +3,4% |
+
+Minting policy-ul e ~70% dintr-o tranzacție întreagă de 16.384 de octeți și singurul script care
+crește per caz de redeemer — deci e și singurul loc unde decizia ar putea fi revizuită vreodată. Cu
+trace-urile păstrate codurile sunt **observabile**: cazul de oracle cu non-admin logează
+`["O1","PT5"]`, iar cel de cleanup `["D0"]`.
+
+**2. Testul moștenit „update de oracle de non-admin eșuează" nu ajungea niciodată la validator.**
+`updateOracleTX` citește adminul din datumul oracle-ului și cere **chiar semnătura aceea**, deci un
+non-admin construiește o tranzacție pe care nu o poate semna și moare la stratul de required-signer,
+înainte să ruleze vreun script. Testul ar fi trecut cu `O1` **șters**. Un builder nou,
+`maliciousOracleUpdate` în `TestRuns.hs`, trimite aceeași tranzacție semnată de atacator, și cele trei
+cazuri `O1` îl folosesc.
+
+**3. Jumătatea on-chain a lui `Cleanup` n-avea nicio acoperire.** Toate cele cinci cazuri moștenite
+erau mături care **reușeau**, deci `Cleanup -> const True` ar fi trecut fiecare dintre ele. Cazul nou
+**3.5** blochează un datum care **parsează** ca stare de dispută fără token de protocol: selectorul
+off-chain de praf îl oferă măturii, iar singurul care-l poate refuza e validatorul.
+
+### Două abateri deliberate de la plan
+
+**1. T-ATTEST-5 împărțit în două și reordonat după T-ATTEST-6.** Planul cere T-ATTEST-5 înainte de
+T-ATTEST-6, și ordinea aia nu poate ține: `ProfileActionType` **nu are caz de mint de profil**, deci
+nu există niciun drum off-chain prin care să creezi profilul de care are nevoie fiecare test de
+atestare, de dispută și de claim. Oracle, Cleanup, testele de proprietate și poarta de dimensiune nu
+au nevoie de nimic din asta și sunt livrate. `UnitTests.Profile` (9 cazuri), `UnitTests.Attestation`
+(13) și cazurile de emulator de dispută (6) se mută după T-ATTEST-6 ca **T-ATTEST-5b**, cu numerotarea
+cazurilor păstrată.
+
+**2. Fără `hedgehog`.** Planul cerea teste de proprietate cu hedgehog. Ce era de acoperit e o sumă cu
+**șase** constructoare și un set fix de forme de record, deci tabelul exhaustiv **este** proprietatea —
+condus de `[minBound .. maxBound]`, cu o aserțiune pe **număr** care pică atunci când se adaugă un
+constructor. Un generator ar re-arunca zarurile peste aceleași forme, pentru o dependență nouă și o
+pagină de boilerplate de `Gen`. `src/test/CLAUDE.md` numește în continuare `PropertyTests.hs` ca locul
+oglinzilor on-chain/off-chain, iar modulul păstrează numele și treaba.
+
+Și de notat: `OnchainProfileKind` și `AttestationKind` au căpătat `Enum`/`Bounded` **stock**. E
+Haskell curat, nu generează cod Plutus, și **niciun hash de script nu s-a mișcat** — verificat chiar
+de tabelul de dimensiuni de mai sus.
+
+### Ce rămâne, în ordinea dependențelor
+
+| # | task | blocat de |
+| --- | --- | --- |
+| 1 | **T-ATTEST-6** — acțiuni de domeniu, builder-ul de claim, martorul de script | — |
+| 2 | T-ATTEST-7 — rutele interaction-api, `/status`, gaura de admin peste HTTP | 6 |
+| 3 | T-ATTEST-5b — emulatorul de Profile + Attestation + Dispute (~28 de cazuri) | 6 |
+| 4 | T-ATTEST-8 — Ingestion, `authenticateStateUTxO`, fixul moștenit #3 | 6 |
+| 5 | T-ATTEST-9 — suprafața de citire peste `palmares_attest` | 8 |
+| 6 | T-ATTEST-10/11/12 — deploy pe preprod, `smoke_attest_flow.sh`, Kupo în compose | 7, 9 |
+| 7 | Planul C — UI-ul (F1 checks 13–15), încă nescris | — |
+
+**T-ATTEST-6 e singurul task care deblochează ceva.**
+
+### Golul de corectitudine pe care T-ATTEST-6 îl închide: protocolul nu poate fi pus în pauză azi
+
+Numai `issueAttestationTX` atașează oracle-ul ca input de referință și construiește un interval de
+validitate. Deci `opPaused` nu oprește nici un update de profil, nici o acceptare de atestare —
+comutatorul există în datum și nu e citit pe drumurile alea. Nu e o preferință de design, e un gol
+pe care planul îl numește și pe care task-ul următor îl închide.
+
+### Blocat în continuare pe cluster (neschimbat)
+
+Jumătățile de cluster ale T-SUBSTRATE-2…6, Job-ul/secretul/kustomization-ul de k8s din T-SUBSTRATE-8,
+și F1 checks **1** și **16**.
+
+### Verificat
+
+**361 de teste** (326 + 35), **11** negative. Codurile de trace sunt observabile în ieșirea
+emulatorului — `["O1","PT5"]` pe cazul de oracle cu non-admin, `["D0"]` pe cel de cleanup. Tabelul de
+dimensiuni e produs de `UnitTests/ScriptSize.hs`, deci de aici înainte o creștere de script e o
+aserțiune care pică, nu o notiță care îmbătrânește.
+
+Commit: `c0b270d`.
