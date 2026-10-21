@@ -2994,3 +2994,186 @@ Swagger regenerate și neînvechite, `swagger OK`, `vocabulary OK`. Enum-ul `Att
 documentul de interaction citește acum snake_case — fixul e verificat în artefact, nu doar în cod.
 
 Commit: `a3b36d4`.
+
+---
+
+## T-ATTEST-4 — validatorul de dispute
+
+Al patrulea validator de cheltuire. Un depozit intră, admin-ul oracle-ului scrie un verdict,
+depozitul se întoarce — pe **oricare** verdict.
+
+### Forma
+
+**`DisputesValidator`**, nesparametrizat, coduri `D0`–`D5`:
+
+| cod | ce verifică |
+| --- | --- |
+| `D0` | `Cleanup` pe un datum care **parsează** e refuzat — pattern-ul casei, identic cu celelalte două validatoare de stare |
+| `D1` | `opAdminPkh` a semnat, citit din **input-ul de referință** al oracle-ului |
+| `D2` | output-ul la index duce datumul rezolvat, aceeași adresă, valoare `>=` (valoarea proprie − depozit), și UTxO-ul cheltuit poartă chiar NFT-ul disputei |
+| `D3` | disputa **nu era deja rezolvată** |
+| `D4` | depozitul se plătește la adresa din datum |
+| `D5` | scop care nu e de cheltuire |
+
+**`handleOpenDispute`** în minting policy, `OpenDispute` la **indexul 2**, coduri `Md1`–`Md7`: seed
+cheltuit; mintează **exact** NFT-ul de referință al disputei și nu arde nimic; NFT-ul de user al
+**disputantului**; ținta poartă currency symbol-ul protocolului; output la index la adresa
+validatorului de dispute cu valoare `>=` NFT + `opMinUTxOValue` + **depozit**; data de deschidere în
+intervalul de validitate; dimensiunile de metadata validate.
+
+**Nimic din asta nu atinge atestarea disputată.** Nu e cheltuită, nu e re-datumată, nu e nici măcar
+citită ca input — doar clasa ei de active e verificată pentru currency symbol. Asta e ce face o
+dispută deschizabilă **fără cooperarea subiectului sau a emitentului**, și ce lasă costul de execuție
+al drumului de atestare exact cum era.
+
+**Doar token-ul de referință se mintează, fără token de user.** Un token de user e autoritatea de a
+face ceva, iar deținătorul unei dispute nu are ce să facă: rezolvarea e a admin-ului, iar depozitul
+se întoarce la o adresă fixată în datum. Să mintezi unul ar fi să mintezi o autoritate fără puteri —
+ceea ce mai târziu se citește ca o capabilitate pe care cineva o caută.
+
+### Patru decizii peste plan, fiecare cu motivul ei
+
+**1. Datumul din plan nu-și putea implementa propriile verificări.** Planul specifica cinci câmpuri;
+îi lipseau trei fără care `D1` și `D4` nu se pot scrie deloc:
+
+* `disputeOracleToken` — un validator nesparametrizat nu poate ști **care** input de referință e
+  oracle-ul fără token-ul care-l identifică. Fără el, oricine atașează un UTxO fals cu el însuși ca
+  admin și rezolvă orice dispută. Doar token-ul, nu tot `ProtocolParams`: e tot ce-i trebuie, iar un
+  datum se plătește în min-ADA.
+* `disputeDepositTo` — depozitul trebuie să se întoarcă la disputant, iar un validator nu poate
+  rezolva un `ProfileId` într-o adresă. Disputantul o numește la deschidere; dacă o pune greșit, se
+  păgubește singur.
+* `disputeDeposit` — **suma plătită efectiv**, înregistrată la deschidere. A o citi din oracle la
+  rezolvare ar lăsa admin-ul să coboare prețul, să rezolve, și să păstreze diferența — sau să-l ridice
+  și să facă o dispută deschisă **nerezolvabilă**. Oracle-ul pune preț pentru dispute **noi**; prețul
+  uneia deschise e istorie.
+
+**2. `OracleSetDisputeDeposit` la indexul 5**, pe care planul nu-l are. Un parametru de protocol care
+nu se poate re-tarifa e unul pentru care trebuie să redeployezi un validator — exact ce oracle-ul
+există să evite. Aceeași formă ca `OracleSetMinUTxOValue`, și **nu** poate afecta o dispută deja
+deschisă.
+
+**3. `Md6` și `Md7` nu sunt adăugiri, sunt cerințe permanente** pe care lista planului le omitea:
+data din datum legată de intervalul de validitate (`onchain-lib/CLAUDE.md`, fixul moștenit #4) și
+validarea dimensiunilor de metadata, exact ca la celelalte două drumuri de mint.
+
+**4. Disputele n-au taxă de protocol.** Depozitul e returnabil și e singurul cost care le mărginește;
+o taxă nereturnabilă pe deasupra ar fi un impozit pe contestarea unei afirmații false — pe exact
+comportamentul pe care registrul îl vrea. De-aia `Verdict` are **două** constructoare și nu trei: nu
+există verdict punitiv, deci pierderea unei dispute costă doar fee-uri de rețea. Dacă se vrea vreodată
+una, e un câmp `fcDisputeFee` și un braț în `feeFor`.
+
+### Defectul latent pe care l-a scos decizia „gratuit"
+
+`checkFee` cu o taxă **zero** cerea un output către adresa de taxe purtând **cel puțin zero**
+lovelace — ceva ce nicio tranzacție onestă nu construiește. Deci `OracleSetFees (Just cfg)` cu
+**orice** câmp pus pe zero ar fi blocat acțiunea aia până observa cineva, iar specificația §4.3 spune
+că pe preprod taxele sunt zero. `MintActionDispute` l-ar fi lovit imediat; celelalte două îl loveau
+prima dată când cineva le punea prețul pe nimic. Reparat cu un scurt-circuit pe zero, iar testul din
+`UnitTests/Dispute.hs` care-l acoperă **pică pe codul vechi**.
+
+### Și o minciună într-un test, prinsă de agentul care lucra în paralel
+
+`UnitTests/Fees.hs` avea `allActions = [MintActionProfile, MintActionAttestation]` — o listă scrisă
+de mână care se numea „every action". `MintActionDispute` ar fi aterizat **netestat** acolo. Acum e
+`[minBound .. maxBound]`, iar `MintAction` derivă `Prelude.Enum`/`Prelude.Bounded` **doar pentru
+teste** — PlutusTx nu le vede. Testul despre „niciun două acțiuni nu împart un câmp" rămâne pe
+acțiunile **tarifate**, pentru că disputa nu numește niciun câmp: altfel ar fi un test despre
+constante, nu despre câmpuri.
+
+### Ce NU verifică lanțul, scris în trei locuri
+
+„O singură dispută deschisă per atestare" **nu** se verifică on-chain: ar cere un UTxO de index pentru
+care fiecare dispută ar trebui să concureze, ceea ce serializează deschiderea și cumpără o proprietate
+pe care depozitul o dă deja — fiecare dispută e UTxO-ul ei cu depozitul ei, deci N dispute costă N
+depozite. `checkNoOpenDispute` e o **curtoazie off-chain**, fără cod de trace, pentru că nu e nicio
+verificare. Spus în haddock-ul tipului, în haddock-ul validatorului **și** în proza publicată a
+blueprint-ului, ca nimic din aval să nu-l prezinte ca regulă de protocol.
+
+### `mkProtocolParams`
+
+Rescris pe câmpuri numite, cu argument explicit. Adăugarea lui `disputesValidatorScriptHash` a rupt
+oricum eta-reducerea, dar motivul pentru care **rămâne** așa e următoarea adăugare: trei câmpuri
+`ScriptHash` consecutive sunt trei poziții în care o transpoziție **trece la tipuri**, iar o adresă de
+validator care arată în silence spre validatorul greșit e o schimbare de hash pe care n-o vede nimeni
+până când o tranzacție cade pe lanț.
+
+Și de notat: `ProtocolParams` e **înglobat în fiecare datum de profil**, deci adăugarea câmpului e o
+schimbare de format de datum pentru toate profilurile, nu doar un parametru de minting policy. Ăsta e
+motivul real pentru care disputele trebuie să preceadă deploy-ul.
+
+### Abatere de la planul propriu
+
+Pasul 4 al task-ului cere ca `scripts/test_exunits.sh` să raporteze o dimensiune de script pentru
+`DisputesValidator`. **Scriptul nu există în acest repo** — e în Belt System. Nu există nicio poartă de
+ExUnits sau de dimensiune aici; funcțiile de măsurare există în `TxBuilding/Validators.hs` (am adăugat
+`disputesValidatorSize` lângă celelalte) și nimic nu le apelează. Singurul loc care raporta dimensiuni
+e `TestRuns.hs`, dormant și stale. Rămâne de făcut înainte de mainnet, nu înainte de preprod.
+
+### Paralelizare
+
+La cererea owner-ului, trei fire în același timp: eu pe validator + minting policy + blueprint +
+`Validators`/`Context`/`Constants` + cabal + teste; un agent pe toată instalația off-chain a
+depozitului (`AdminActionType`, cele două oglinzi din `Operations.hs`, `refGetters`, `cleanupDustTX`,
+`deployReferenceScripts`, `OracleParams` inițial, `admin set-dispute-deposit`, `query-oracle`); și un
+al treilea pe un review adversarial al commit-ului `a3b36d4`. Agenților li s-a interzis explicit să
+ruleze `cabal`, pentru că două build-uri în același `dist-newstyle` se bat pe lock și dau erori
+înșelătoare — build-ul e unul, al meu, la final.
+
+### Review adversarial pe `a3b36d4`, și o corecție la propriul meu mesaj de commit
+
+Al treilea fir a fost un review pe commit-ul lui #3. A găsit cinci lucruri, patru reale.
+
+**1. `Query/Projected.hs` — `toAttestation` scăpa silențios ambele câmpuri noi.** Modulul e comentat
+din cabal, deci nu compilează azi — dar `-Wmissing-fields` e doar un warning și nu există `-Werror`.
+Scenariul: T-ATTEST-9 îl reactivează, build-ul **trece** cu un warning, iar primul
+`GET /pages/attestations` aruncă `RecConError "Missing field in record construction attestationKind"`
+→ **500 pe fiecare rând**. Reparat, cu reasamblarea perioadei din cele două coloane și cu regula
+„ambele sau niciuna" scrisă la citire: un rând pe jumătate setat poate veni doar dintr-un UPDATE
+manual, iar „nicio perioadă" e răspunsul sigur.
+
+**2. O AFIRMAȚIE FALSĂ ÎN MESAJUL MEU DE COMMIT.** `a3b36d4` spune: *„fixtura de test dă cele trei
+valori distincte exact pentru asta"*, justificând trecerea lui `putAttestationProjection` pe câmpuri
+numite. **Nimic din suită nu apela `putAttestationProjection`.** Fixtura păzea round-trip-ul JSON, nu
+scrierea proiecției, deci o transpoziție între cele trei coloane `GYAssetClass` ar fi trecut verde
+oricum. Acum există un test care scrie efectiv un rând și-l citește înapoi.
+
+**Nu am amendat commit-ul.** Corecția stă aici și în mesajul commit-ului următor: a rescrie istoria ca
+să pară că aveam dreptate e mai rău decât a consemna că nu aveam.
+
+**3. `AttestationPeriodInverted` nu avea nicio acoperire** — garda era un `case` inline într-o acțiune
+monadică care cere un provider, deci niciun test o putea atinge. Extras ca `claimedPeriodIsInverted`
+și testat, inclusiv că bornele **egale nu** sunt inversate: „a început și s-a terminat în aceeași zi"
+e o revendicare legitimă.
+
+**4. „Un test păzește toată clasa" era o exagerare** — acoperea 2 din 14 enum-uri cu schemă
+publicată. Acum toate 14, plus o asserțiune pe **număr**, ca următorul enum adăugat să coste o linie
+și să nu poată fi uitat.
+
+**5. Un typo real**: două literale de string lipite fără spațiu în `ServiceRequests.hs`. Compila
+corect (verificat în JSON-ul generat); nu există gate de formatare în CI.
+
+**Și a greșit o dată**, ceea ce merită notat pentru că e motivul pentru care verificările unui agent se
+verifică: a raportat `Query/Aggregates.hs` cu același defect. Nu-l are —
+`attestationToInformation` pasează întregul `Attestation` lui `attestationInformationToResponse`,
+actualizat deja. Verificat înainte de a atinge fișierul.
+
+**Ce a verificat și n-a găsit nimic**, util în sine: cele două literale `OnchainAttestation`
+on-chain/off-chain coincid câmp cu câmp, deci `Mk` nu cade; toate 16 coloanele proiecției sunt mapate
+corect; `(Maybe GYTime)` e genuin nullable în persistent 2.14.5, deci niciun insert NOT-NULL; numărul
+de 17 coloane e corect; nimic altceva nu e legat de versiunea 1 de schemă; `FromJSON Attestation` are
+14 parsere pentru 14 câmpuri în ordine, cu cheile exact cum le produce `StripPrefix` + `CamelToSnake`;
+și nu există nicio sortare sau filtrare pe perioada revendicată pe nicio suprafață.
+
+### Verificat
+
+**326 de teste trec** (303 + 23). `cabal build all` curat, `swagger OK`, `vocabulary OK`, și
+niciunul din cele două documente Swagger nu s-a schimbat — nicio rută documentată nu numește
+`AdminActionType`.
+
+În blueprint-ul generat: **cinci validatoare**; `MintingRedeemer` cu arități 9/5/7 la indicii 0/1/2;
+`DisputesRedeemer` 2/0 la 0/1; `Verdict` la 0 și 1; cele opt câmpuri ale lui `OnchainDispute` în
+ordine (`AssetClass` ×3, `POSIXTime`, `Integer`, `Address`, `AssetClass`, `Maybe_Verdict`); indicii
+`OracleAdminAction` de la 0 la 5.
+
+Commit: `405c8d9`.
