@@ -2630,3 +2630,177 @@ propriu `A3`, nu pliat în `A1`, pentru că "deja acceptată" și "output greși
 
 Verde pe `3bc3297` (redenumirea): haskell, determinism, secrets — iar `check_vocabulary.sh` rulează
 acum în job-ul `haskell` și a trecut și acolo.
+
+---
+
+## Cele patru decizii de owner — 2026-10-21
+
+Owner-ul a decis #2 și a cerut detaliere + recomandare pe #1, #3 și #4. Aici e analiza completă;
+rezumatul din chat e o condensare a ei.
+
+### #2 — Namespace-ul GHCR: `mariusgeorgescu`. APLICAT (`e6a7fc5`)
+
+Nu fusese niciodată decis, fusese **moștenit**: fiecare tag venea din `${{ github.repository }}`,
+care se rezolvă la `en7angled/palmares` pentru că acolo trăiește repo-ul. Acum o decide o singură
+linie — `GHCR_OWNER` la nivel de workflow în `images.yml` — iar `${GH_OWNER:-…}` din `compose.yaml`
+și `IMAGE_PREFIX` din `scripts/build-images.sh` cară același default, deci un pull local și un push
+de CI numesc aceeași imagine. **Numele imaginii nu se schimbă**: `palmares-<svc>` era deja
+`<repo>-<svc>`, deci se mută doar namespace-ul.
+
+**Consecința, care e partea care contează.** `GITHUB_TOKEN` e scoped la **owner-ul repo-ului în care
+rulează**. Cât timp repo-ul stă sub org-ul `en7angled` iar imaginile se publică sub
+`mariusgeorgescu`, nu poate scrie în namespace-ul ăla — push-ul cade cu `denied`, și `packages:
+write` nu ajută, pentru că permisiunea aia e asupra pachetelor org-ului. Deci login-ul folosește
+acum `secrets.GHCR_TOKEN`, un PAT classic al lui `mariusgeorgescu` cu `write:packages`.
+
+## BLOCKED FOR USER — două acțiuni manuale, niciuna de cod
+
+1. **Secretul `GHCR_TOKEN`** nu există. Prima rulare de `images.yml` de după commit-ul ăsta cade la
+   login până e creat. (Settings → Secrets and variables → Actions, în `en7angled/palmares`.)
+2. **Vizibilitatea pachetelor.** `reconcile.yml` *trage* imaginea de admin și nu are `docker login`
+   deloc — corect pentru un pachet public. Primul push al unui pachet aterizează însă **privat**,
+   deci după prima publicare cele patru pachete trebuie trecute o dată pe public, altfel job-ul
+   nocturn de paritate cade pe `pull access denied` în loc să cadă pe o divergență reală.
+
+`secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN` nu e un fallback silențios: e exact ce face din
+**"mută repo-ul la `mariusgeorgescu`"** o alternativă cu zero editări, pentru că atunci
+`GITHUB_TOKEN` e deja credentialul potrivit și secretul se poate șterge. Ambele stări finale cad
+zgomotos; doar cea din mijloc are nevoie de PAT.
+
+### #1 — Al treilea `DRepStatus`: ce e, cât costă, și ce recomand
+
+**Unde se naște.** `sql/010_gov_views.sql:281`:
+
+```sql
+COALESCE(ld.active_until >= (SELECT epoch_no FROM palmares.sync_state), false) AS is_active
+```
+
+db-sync scrie deadline-ul ledger-ului **numai** în `drep_distr`, iar `drep_distr` ține un rând doar
+pentru un DRep pe care ledger-ul l-a inclus în distribuția epocii. **Măsurat pe preprod la epoca
+320: 90 din 294 de DRep-i înregistrați nu au avut NICIODATĂ un rând în `drep_distr`** — niciunul, la
+nicio epocă. Pentru ei nu avem deadline deloc, iar `COALESCE(…, false)` îi pune pe toți pe
+`inactive`.
+
+Koios își calculează singur deadline-ul și spune: **21 din cei 90 sunt ACTIVI** (expiry 320–340),
+**69 sunt inactivi** (expiry 185–224). Deci `false` e corect pentru 69 și **greșit pentru 21**.
+
+**Cele două ieșiri ușoare, ambele măsurate și respinse:**
+
+* *„deadline necunoscut înseamnă activ"* — implementat, măsurat, **revertit**: ar fi greșit pentru 69
+  ca să repare 21.
+* *derivăm noi deadline-ul* — `max(ultimul cert, ultimul vot) + drep_activity` diferă de valoarea
+  ledger-ului cu până la **5 epoci**, pentru că CIP-1694 nu numără epocile **DORMANTE** (fără
+  propunere pendinte) la inactivitate. A reimplementa contabilitatea aia ar fi o a doua derivare care
+  poate să nu fie de acord cu ledger-ul — exact lucrul pentru care schema asta există să nu-l facă.
+
+**Descoperirea care face decizia curată: informația e DEJA completă pe sârmă.**
+`active_until_epoch` se publică și e **nullable** (`QueryResponses.hs:618` îl citește cu `.:?`,
+`Query/Gov.hs:660` îl selectează, apare în swagger). Deci un client poate separa deja cei 90:
+`status = "inactive" AND active_until_epoch = null`. Varianta cu trei statusuri și varianta de azi
+**cară exact aceeași informație** — singura diferență e ce cuvânt stă în câmpul-titlu.
+
+Asta reduce întrebarea la una singură: **are voie câmpul `status` să conțină o presupunere?** Pentru
+21 de DRep-i reali, azi conține una falsă, iar `status` e fix câmpul pe care un client și UI-ul îl
+citesc (și pe care numără facet-urile).
+
+**Ce ar atinge valoarea a treia** (nu e o estimare, e lista):
+
+| sit | ce se schimbă |
+| --- | --- |
+| `Core/Types.hs:365` | constructorul; tag-ul de sârmă, `jsonEnumSchema` și `FromHttpApiData` se derivă |
+| `Query/Gov.hs:1640` `drepStatusExpr` | un braț nou în CASE |
+| `Query/Gov.hs:1562` `searchSql` | **al doilea exemplar** al aceluiași CASE — de pliat în `drepStatusExpr`, care există tocmai pentru asta |
+| `Query/Gov.hs:1650` `effectiveDRepStatus` | ce selectează pagina implicită |
+| `Query/Gov.hs:1662` `registeredDRepStatuses` | universul de facet-uri |
+| `Reconcile/Koios.hs:428` `koiosDRepStatus` | Koios **nu** întoarce niciodată „unknown", își calculează deadline-ul |
+| `config/reconcile-exceptions.yaml` R2 `field: status` | waiver-ul există deja cu `key: "*"`, deci nu apar 90 de divergențe noi — dar divergența **își schimbă forma** și motivul trebuie rescris (raportul de `stale_exceptions` prinde dacă uit) |
+| swagger + FE | regenerare + `switch`-ul exhaustiv din frontend |
+
+**Recomandarea mea: DA, al treilea status, numit `unknown`, și INCLUS în setul implicit.**
+
+Trei motive, în ordine:
+
+1. Nu se pierde și nu se câștigă nicio informație — e o **reetichetare pură**. Cei 90 sunt deja
+   identificabili; doar încetăm să pretindem că știm care-i care.
+2. `unknown` în default (`[active, inactive]` → `[active, inactive, unknown]`) înseamnă că
+   **populația nu se schimbă deloc**: 294 de înregistrați rămân 294 pe pagina implicită, apare un
+   rând de facet, și nu dispare niciun DRep. Varianta cu `unknown` **în afara** default-ului ar
+   scoate 90 de DRep-i din lista implicită ca să evite o etichetă — mai rău decât oricare etichetă.
+3. S2 din spec cere ca orice metrică afișată să fie reproductibilă, iar §10 numește **L2BEAT** ca
+   etalon de onestitate în prezentarea datelor. Un `status: inactive` pe care ledger-ul îl contrazice
+   e exact genul de titlu pe care etalonul ăla nu-l permite — și e despre reputația unor actori reali,
+   pe pagina pentru care produsul există.
+
+Alternativa de nume luată în calcul: `registered` (spune ce **știm**, nu ce nu știm), respinsă pentru
+că și DRep-ii activi și cei inactivi sunt înregistrați, deci stă prost lângă celelalte trei.
+Varianta „nu schimbăm nimic, doar documentăm combinația `inactive` + `null`" rămâne cea mai ieftină
+și e o notă de subsol lângă un titlu greșit.
+
+### #3 — Poate o atestare să înregistreze o dată de eveniment mai veche decât emiterea?
+
+**Ce e construit azi.** `attestationDate :: POSIXTime` în datum, validat de `checkDateInRange`
+contra intervalului de validitate al tranzacției, pe care off-chain-ul îl construiește ca
+`[tip, tip + safeEraTime]` (~7h). Deci data **e** timpul emiterii, verificat pe lanț cu precizie de
+ore. `issueAttestationTX` refuză întâi o dată în afara ferestrei, ca `AttestationDateOutOfRange` →
+400.
+
+**Specificația răspunde deja, și nu în direcția în care am construit.** §3 (glosar, linia 40)
+listează **cinci tipuri de atestare** — `MilestoneDelivered`, `AuditPassed`, `Affiliation`,
+`RoleHeld`, `Endorsement` — și spune explicit că două dintre ele au **intervale**: `Affiliation`
+(organizație ↔ membru, *cu intervale*) și `RoleHeld` (mandat extra-chain: lead de working group,
+președinte de comitet — *cu intervale*). Un interval de afiliere care **începe înainte** de emiterea
+atestării e cazul normal, nu excepția: „e membru din martie 2024, atestat azi". Deci „nu" nu e de
+fapt un răspuns disponibil dacă specificația e respectată.
+
+**Și golul pe care l-a descoperit asta: Planul B nu are NICIUN tip de atestare.**
+`OnchainAttestation` = id, issuer, subject, date, isAccepted. Zero din cele cinci tipuri ale
+spec-ului apar în plan sau în cod — un grep după toate cinci în plan întoarce nimic. Self-review-ul
+planului mapează §4.3 (stratul de atestări) și a ratat glosarul din §3. Gol real, nu o preferință.
+
+**Recomandarea mea: DA, dar în DOUĂ câmpuri separate, care nu se pot confunda niciodată.**
+
+1. **`attestationDate` rămâne exact cum e** — timpul emiterii, verificat pe lanț, legat de intervalul
+   de validitate. Nu se redenumește, nu se relaxează. E singura dată despre care lanțul poate spune
+   ceva.
+2. **Un câmp nou pentru perioada revendicată**, `Maybe (POSIXTime, POSIXTime)`, **care NU se
+   validează contra intervalului de validitate** — pentru că a-l valida ar fi o minciună: nimic
+   on-chain nu poate confirma când a început o afiliere. Auto-raportat prin construcție, deci
+   validatorul nu capătă nicio regulă nouă pentru el (nu e nimic de verificat).
+3. **Un `attestationKind` cu cele cinci constructoare ale spec-ului.** Perioada e semnificativă doar
+   pentru două dintre ele, iar stratul de citire trebuie oricum să filtreze pe tip — același
+   argument ca la `OnchainProfileKind`: un constructor, nu metadata, pentru că un octet din datum nu
+   poate devia și un `Map BuiltinByteString BuiltinByteString` da.
+4. **Regula de API, care e jumătatea care contează**: perioada se livrează sub alt nume și cu alt
+   tratament vizual decât data — `claimed_period` lângă `issued_at` — iar `/attestations` nu sortează
+   și nu filtrează **niciodată** înregistrarea ca și cum perioada ar fi verificată. O propoziție în
+   descrierea de swagger per câmp, exact ca `unclaimed` pentru `profileCredential = Nothing`.
+
+**Cost:** un câmp opțional în datum (câțiva octeți), un octet pentru `kind`, un `feeFor`-style match
+exhaustiv, zero logică nouă de validator. **Hash-ul se schimbă** — deci intră în același batch cu
+T-ATTEST-4, care e următorul task și care schimbă oricum hash-ul minting policy-ului.
+
+### #4 — `Auditor`: fel de profil sau rol al unei `Organization`?
+
+**Spec-ul o spune de două ori.** §3 linia 39 numește explicit cele șase tipuri, cu „numite explicit
+de owner (2026-10-20)", `Auditor` printre ele; §4.3 linia 83 le repetă. Deci așa e construit.
+Întrebarea reală, cum o pune planul, e doar dacă un auditor care e **și** organizație are nevoie de
+două profiluri.
+
+**Ce e de fapt în joc.** `OnchainProfileKind` e un octet din datum, enum închis, și **niciun
+validator nu ramifică pe el** — e pur și simplu un facet al stratului de citire. Deci „fel" costă
+nimic și cumpără filtrul `/profiles?kind=auditor`.
+
+Cealaltă citire — „auditor e un rol pe care-l ține o `Organization`" — s-ar exprima prin primitiva
+proprie a registrului: o atestare de tip `RoleHeld`/`AuditPassed` emisă de cine acreditează
+auditorii. Aia e **strict mai expresivă**: are un emitent (cine o spune), o dată, o contrasemnătură,
+și poate fi disputată. Un fel de profil nu are niciuna dintre ele — e **auto-declarat la mint** și
+nimeni nu-l contrasemnează.
+
+**Recomandarea mea: `Auditor` rămâne fel de profil (spec-ul o cere, costă un octet), dar NU e tratat
+niciodată ca acreditare.** Un profil, nu două: o organizație care auditează alege felul care-i
+descrie activitatea principală, iar statutul ei de auditor e o **atestare** pe care i-a emis-o
+cineva. Felul e eticheta, atestarea e faptul.
+
+Lucrul care nu trebuie să se întâmple niciodată e ca stratul de citire să prezinte `kind = auditor`
+ca pe o acreditare. Deci API-ul îl etichetează `self_declared`, exact cum
+`profileCredential = Nothing` se prezintă ca `unclaimed` — un cuvânt în swagger, aceeași disciplină.
