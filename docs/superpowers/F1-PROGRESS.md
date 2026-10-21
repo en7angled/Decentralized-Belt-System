@@ -2900,3 +2900,97 @@ onestă în stil L2BEAT înseamnă să nu pretindem o verificare pe care nu o pu
 `TxOutRef`-ul seed al lui `OracleNFTPolicy`. Sunt singurul input al unei viitoare înregistrări
 label-1984 care e ieftin acum și dureros de reconstruit mai târziu — după deploy, `TxOutRef`-ul seed
 trebuie scos din istoricul lanțului.
+
+---
+
+## #3 — tipul atestării și perioada revendicată (T-ATTEST-3b)
+
+Decizia owner-ului: da, dar în două câmpuri care nu se pot confunda. Implementat.
+
+### Forma
+
+| câmp | ce e | verificat on-chain |
+| --- | --- | --- |
+| `attestationKind` / `AttestationType` | unul din cele cinci tipuri ale spec-ului | — (niciun validator nu ramifică pe el) |
+| `attestationDate` | când a fost **emisă** | **da**, `Ml` / `checkDateInRange`, neschimbat |
+| `attestationPeriod` → `claimed_period` | perioada **revendicată**, `Maybe (POSIXTime, POSIXTime)` | **nu, deliberat** |
+
+Perioada nu e validată și nu trebuie să fie niciodată: a o valida ar fi o minciună, pentru că nimic
+on-chain nu poate confirma când a început o afiliere. De-aia validatorul **nu capătă nicio regulă**
+pentru ea — nu e nimic de verificat. Ce oprește o perioadă aberantă e același lucru care oprește o
+atestare aberantă: subiectul trebuie s-o contrasemneze.
+
+`Maybe` de o **pereche**, nu două borne opționale, ca „ambele sau niciuna" să fie structural. O
+perioadă pe jumătate deschisă ar fi o a treia stare pe care stratul de citire ar trebui s-o
+reprezinte; o afiliere fără capăt se exprimă cu capătul în viitorul îndepărtat, nu cu absența lui.
+
+### Patru decizii de constructor
+
+1. **O singură verificare pe perioadă, off-chain**: borne inversate → `AttestationPeriodInverted` →
+   400. **Nu** o verificare de fereastră — o perioadă care începe înainte de tranzacție e **cazul
+   normal**, ăsta e tot motivul pentru care câmpul există separat de dată. Bornele transpuse sunt
+   singurul lucru care nu poate fi o revendicare legitimă și singurul despre care un client poate fi
+   informat.
+2. **`--claimed-period FROM..TO` e o singură opțiune de CLI**, nu două. Două flag-uri opționale ar
+   lăsa `--claimed-from` singur să treacă, iar în aval nu-l mai prinde nimic: conversia în acțiune e
+   o funcție pură care nu poate eșua, iar validatorul deliberat nu verifică.
+3. **`putAttestationProjection` a trecut pe câmpuri numite.** Era pozițional cu 13 argumente și
+   perioada îl ducea la 16 — dar numărul nu e pericolul: `attestationId`, `subjectProfileId` și
+   `issuerProfileId` sunt toate `GYAssetClass`, deci o transpoziție între ele **compilează** și scrie
+   o atestare atribuită profilului greșit. Fixtura de test are cele trei valori distincte exact ca
+   asta să devină o asserțiune picată.
+4. **`currentSchemaVersion` → 2**, cu re-sync intenționat: cele trei coloane se citesc din datum,
+   deci rândurile scrise înainte nu se pot completa din bază, doar din lanț. Plus **asserțiunea care
+   lipsea** — numărul de coloane din `attestation_projection` e pinuit lângă versiune, deci o coloană
+   adăugată fără bump pică acolo, lângă bump-ul pe care-l datorează.
+
+### Trei defecte găsite generând documentul, nu citind codul
+
+**(a) Enum-ul publicat nu era enum-ul acceptat.** `AttestationType` a pornit cu `ToSchema` **derivat**,
+care publică numele constructorilor: `interaction-swagger-api.json` generat scria
+`["MilestoneDelivered", …]` în timp ce `FromJSON` acceptă `["milestone_delivered", …]`. **Documentul
+descria cinci valori pe care API-ul le respinge**, compila, și nimic nu picat. Toate celelalte enum-uri
+din `DomainTypes/Core/Types.hs` își citesc schema din `ToJSON` cu `jsonEnumSchema`; instanța derivată
+e capcana.
+
+Și **`ProfileType` stătea în ea** — latent, pentru că `ProfileType` lipsește azi din ambele documente
+generate, deci minciuna n-a fost încă publicată. Ar fi devenit vie în momentul în care aterizează
+rutele de profil (T-ATTEST-7). Reparat în același loc, pentru că e același fix de patru linii.
+
+Garda pentru **toată clasa**: un test care afirmă că enum-ul schemei **este** lista de tag-uri
+`ToJSON`, pentru ambele tipuri. Pică pe o instanță derivată, trece pe una cu `jsonEnumSchema`.
+
+**(b) `describeField "kind"` nu avea niciun efect.** Proprietatea e un `$ref` gol, iar un `$ref` din
+Swagger 2.0 nu poate purta o descriere alături — cheia era pur și simplu absentă din documentul
+generat. Mecanismul pentru un tip referențiat e descrierea la nivel de **definiție**, și exact de-aia
+`addSharedSwaggerDescriptions` avea deja un rând `AttestationType` **înainte ca tipul să existe**.
+Lentila `at` fusese un no-op silențios tot timpul. Textul real stă acum acolo.
+
+**(c) Documentul de interaction-api nu era nici commit-uit, nici regenerat în CI.** Se scria la fiecare
+boot, iar boot-ul **acestui** serviciu cere o configurație de provider Atlas — deci CI nu-l obținea
+niciodată. Rezultatul: contractul de cerere publicat al interaction API-ului nu avea nicio poartă de
+drift și nici nu era în repo, în timp ce al query API-ului avea amândouă. Că golul era neintenționat o
+spune `check_vocabulary.sh:89` însuși: „run the services with `--write-swagger-only`" — un flag pe care
+interaction-api nu-l avea.
+
+Adăugat (`--write-swagger-only`, un singur producător, aceeași formă ca la query-api), documentul
+commit-uit, și pasul de CI diffuiește acum **ambele**. Verificarea de vocabular globuiește directorul,
+deci îl acoperă de la sine.
+
+Argumentul pentru poartă nu e o teorie: defectul (a) a fost găsit **generând documentul de mână**.
+
+### Verificat în artefactul generat
+
+`AttestationKind` cu cinci constructori la indicii 0–4; `OnchainAttestation` cu șapte câmpuri în
+ordinea corectă; `NewAttestation` cu nouă argumente, `MintProfile` cu cinci;
+`Maybe_Tuple2_POSIXTime_POSIXTime` derivat automat, deci perechea se exprimă curat în CIP-57. Proza
+publicată a blueprint-ului spune acum explicit că **data e mărginită de intervalul de validitate și
+perioada nu**, și că un consumator nu are voie să le prezinte la fel.
+
+### Verificat
+
+Toate **303 testele trec** (301 + 2 pentru garda de enum). `cabal build all` curat, ambele documente
+Swagger regenerate și neînvechite, `swagger OK`, `vocabulary OK`. Enum-ul `AttestationType` din
+documentul de interaction citește acum snake_case — fixul e verificat în artefact, nu doar în cod.
+
+Commit: `a3b36d4`.
