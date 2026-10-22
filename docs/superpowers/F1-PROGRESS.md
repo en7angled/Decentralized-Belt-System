@@ -4241,6 +4241,39 @@ cumpăra 28,8 h; 2× cumpără 14,4 h. Nu 1×, fiindcă acolo lățimea onestă 
 doar prin `<=` — orice portofel care lărgește intervalul ar fi refuzat de validator, nu de o decizie
 recenzată.
 
+### Codurile de trace, despicate înainte de deploy
+
+Un cod de trace devine **intrare de runbook** în clipa în care ceva e desfășurat. Deci despicarea e
+gratuită azi și scumpă mâine — același argument de secvențiere care a guvernat toate schimbările de
+hash din ziua asta.
+
+**`A1` → `A1` + `A5` + `A6`.** Era un singur cod peste trei propoziții diferite: output-ul
+re-blocat, token-ul de user al subiectului cheltuit, și UTxO-ul cheltuit care ține chiar NFT-ul pe
+care datum-ul lui îl numește. Argumentul nu e al meu, e al codebase-ului: comentariul lui `A3`, la
+patru linii mai sus, spune *„«already accepted» and «wrong output» are different mistakes and an
+operator should be able to tell them apart"*. Cele trei jumătăți ale lui `A1` sunt între ele la fel
+de diferite ca oricare dintre ele față de `A3` — un output malformat, o contrasemnătură lipsă, și un
+UTxO care nu e atestarea pe care pretinde că e. Un singur cod pentru toate trei spunea unui operator
+doar că acceptarea a eșuat, ceea ce pe **singura scriere ireversibilă** a protocolului e cel mai
+puțin util lucru pe care l-ar putea spune.
+
+**`P0`/`A0`/`D0` → plus `P7`/`A4`/`D8`.** „Datum-ul ăsta nu e stare de protocol" și „**este** stare
+de protocol și nu ai dreptul să o mături" sunt greșeli diferite — a doua e cineva care încearcă să
+șteargă o înregistrare vie. Codurile de datum își păstrează sensul; regula de `Cleanup` capătă al
+ei. Două coduri, nu trei: „fără datum" și „datum nedecodabil" sunt amândouă imposibile pentru un
+client onest și spun operatorului același lucru.
+
+**`Ml` → `Mq`.** Un L mic e indistinguibil de cifra 1 în majoritatea fonturilor monospațiate, iar
+`M1` e un cod **diferit** pe **același** script („invalid purpose"). Un operator care citește logul
+unei tranzacții picate ar fi depanat altă regulă. Și secvența asta de coduri **sărea deja peste
+`i`** exact pe motivul ăsta — f, g, h, j, k, m, n — deci `l` era singura literă care își desfăcea
+propria convenție; `o` e sărit pe aceeași bază.
+
+Raza de acțiune: 3 situri pentru `Ml`, plus `Cleanup.hs` (care testează exact regula nouă), plus
+patru Haddock-uri a căror referință la `A1` însemna de fapt jumătatea de consimțământ — inclusiv
+**blueprint-ul publicat**, care spunea „a lineage attestation can never satisfy A1" când argumentul
+e despre token-ul de user al subiectului, adică `A5`.
+
 ### O lecție de unealtă, fiindcă a costat timp real
 
 Trei shell-uri de build în fundal au stat blocate **unul pe altul**: fiecare aștepta cu
