@@ -2716,9 +2716,32 @@ Deci PAT-ul nu se mai creează: `GITHUB_TOKEN` devine credentialul potrivit în 
 **Închis la 2026-10-21:** mutarea s-a făcut, iar prima rulare de `images.yml` de după ea a publicat
 ambele imagini de bază cu `GITHUB_TOKEN`. Niciun PAT, niciodată.
 
-## BLOCKED FOR USER — două acțiuni manuale, niciuna de cod
+## BLOCKED FOR USER — GOALĂ la 2026-10-22
 
-**La 2026-10-21 a rămas una: punctul 2.**
+**Nu mai e nicio acțiune de om pe lista asta.** Ambele intrări s-au închis în aceeași zi, una prin
+măsurătoare și una prin decizia owner-ului. Istoricul rămâne mai jos pentru că raționamentul greșit
+e partea utilă.
+
+**Punctul 2 (vizibilitatea pachetelor GHCR) — ÎNCHIS 2026-10-22, și NU prin flip.** Măsurat pe
+rularea `reconcile` 39697594482: jobul a tras `ghcr.io/mariusgeorgescu/palmares-admin:latest`
+**fără niciun `docker login`**, iar un token anonim de registry rezolvă `latest` pentru toate patru
+serviciile. Deci afirmația de la punctul 2 — „documentația GitHub e explicită: primul push al unui
+pachet aterizează privat, indiferent de namespace" — era documentația descriind **alt caz**: un
+pachet împins cu un PAT de pe o stație de lucru, care nu e legat de niciun repo și deci nu
+moștenește nimic. Un pachet publicat **de un workflow cu `GITHUB_TOKEN`** e legat de repo-ul în
+care a rulat și iese cu vizibilitatea acelui repo.
+
+Consecință de reținut: **decizia 1B a închis și punctul 2**, ca efect secundar, exact cum punctul 2
+susținea că NU se întâmplă. Verificarea din punctul 2 („niciunul din cele patru nu există încă, 403
+la pull anonim") era corectă și irelevantă: un 403 pentru un pachet inexistent nu spune nimic despre
+vizibilitatea lui după creare. Am citit absența ca pe o dovadă.
+
+**A5 (rotirea tokenului Maestro expus al Belt System) — ÎNCHIS 2026-10-22 prin decizia
+owner-ului, nu prin rotire:** *„nu ma deranjeaza ca tokenul maestro e expus e un token pentru
+preprod"*. O cheie Maestro e per-proiect și per-rețea, deci cea scursă cumpără interogări gratuite
+de preprod pe cota owner-ului și nu ajunge la nimic altceva. Nu se mai ridică. O cheie de mainnet e
+alt credential și decizia asta nu spune nimic despre ea. Cele trei fișiere de memorie care cereau
+rotirea au fost corectate, nu lăsate să ceară o acțiune pe care owner-ul a refuzat-o.
 
 1. ~~**Mutarea repo-ului `en7angled/palmares` sub `mariusgeorgescu`**~~ — **FĂCUTĂ, închisă la
    2026-10-21.** Primul `images.yml` de după mutare a împins **ambele** imagini de bază în
@@ -3778,3 +3801,175 @@ k8s din T-SUBSTRATE-8, și F1 checks **1** și **16**.
 **326 → 440 de teste, toate 440 trec.** **Zece commit-uri** împinse în palmares,
 `405c8d9..d55d2cc`. Tabelul de dimensiuni de script e o aserțiune, nu o notiță — și a fost pârghia
 care a mărginit ambele reparații de securitate.
+
+---
+
+## 2026-10-22 — poarta de secrete, transportul, șapte descoperiri on-chain și suprafața de citire
+
+Cinci commit-uri, `d55d2cc..87807f1`. **519 teste, toate trec** (de la 440). CI verde pe tot, inclusiv
+pe două porți noi.
+
+### Ce a schimbat lista de acțiuni ale owner-ului
+
+`## BLOCKED FOR USER` **e goală**. Ambele intrări s-au închis în aceeași zi — una prin măsurătoare,
+una prin decizia owner-ului — și secțiunea de mai sus poartă raționamentul greșit al fiecăreia,
+pentru că aia e partea utilă. Pe scurt:
+
+- **Vizibilitatea pachetelor GHCR**: rularea `reconcile` 39697594482 a tras
+  `ghcr.io/mariusgeorgescu/palmares-admin:latest` **fără `docker login`**. Documentația pe care mă
+  bazasem descrie un pachet împins cu un **PAT**, care nu e legat de niciun repo; unul publicat de un
+  **workflow cu `GITHUB_TOKEN`** moștenește vizibilitatea repo-ului. Decizia 1B a închis și asta.
+- **A5, token-ul Maestro**: *„nu ma deranjeaza ca tokenul maestro e expus e un token pentru
+  preprod"*. Cheie per-proiect și per-rețea. Cele trei fișiere de memorie care cereau rotirea au fost
+  corectate, nu lăsate să ceară o acțiune refuzată.
+
+### `60d9aea` — poarta de secrete a citit NUMELE unei legături
+
+CI a căzut pe `gitleaks`: o descoperire, `generic-api-key` pe
+`src/test/UnitTests/WritePath.hs:75`, `drepKeyBech32 = "drep1y2qn0rf…"` — un DRep id CIP-129,
+publicat pe lanț.
+
+**Diagnosticul e în cele trei linii de dedesubt.** `drepScriptBech32`, `drepCip105` și `ccColdBech32`
+țin aceiași 28 de bytes în același modul și niciuna n-a declanșat regula, iar `UnitTests.GovIds`
+fixează exact acești vectori de la T-ATTEST-2. Regula a potrivit cuvântul „Key" dintr-un
+identificator lângă o valoare cu entropie mare. Legătura e numită după **felul** credențialului —
+cheie versus script — adică distincția pentru care s-a reparat `checkCredentialControl` în `7e6b02a`,
+deci redenumirea ar fi costat testul subiectul lui.
+
+Îngustare **pe forma valorii, nu pe cale**: un bech32 cu HRP de guvernanță nu poate fi un credențial
+(28 de bytes blake2b-224, 29 cu header CIP-129, plus checksum, publicat pe lanț ca identitate), deci
+nu are unde să se lărgească. O alocare pe cale ar fi scuzat orice viitor șir cu entropie mare din
+fișierul acela. Testată din ambele părți: `check_gitleaks_allowlist.sh` are cinci aserțiuni, inclusiv
+un AWS key id plantat sub **exact** legătura care a declanșat regula.
+
+### `b71001b` — handler-ul pentru un transport care eșuează prinde singura excepție care nu apare
+
+Jobul de paritate a rulat prima dată (pentru că imaginea se putea trage) și a raportat
+`parity: UNEXPLAINED DIVERGENCES` împotriva unui deployment inexistent, arătând spre un fișier pe
+care rularea murise înainte de a-l scrie.
+
+```haskell
+Left (e :: IOError) -> retryOr attemptsLeft (show e)
+```
+
+`httpLbs` aruncă `HttpException`. Nu aruncă `IOError`. Handler-ul al cărui Haddock se numea „singura
+cale către exit 2" prindea **orice eșec de transport în afară de un transport care eșuează**: DNS,
+conexiune refuzată, timeout, certificat respins — toate scăpau și de el și de `try @TransportError`,
+omorând procesul cu codul 1 al unei excepții neprinse. Ce ajungea la exit 2 era inversul: răspuns
+non-200 și corp nedecodabil, adică exact cazurile în care transportul funcționase.
+
+Documentația modulului spune de ce contează trei paragrafe deasupra bug-ului. **Al patrulea** la
+tiparul înregistrat mai sus — artefactul care explică de ce ceva e în siguranță fiind dovada că nu e.
+
+Fixat la ambele apeluri. Fixat în CI cu `PALMARES_API` pe portul 1 (rezervat, neascultat, eșuează în
+milisecunde): asertează că **codul e 2** și că mesajul numește fetch-ul, fiindcă `loadSample` eșuat
+dă și el 2 și o verificare care nu le distinge ar trece cu fetch-ul rupt. Plus: wrapper-ul șterge
+`out/divergences.json` înainte de rulare — local, o rulare abandonată tipărea tabelul de ieri sub
+verdictul de azi.
+
+### `b22235c` — patru descoperiri în căile de dispută și oracol, una REFUZATĂ
+
+Luate **acum** și nu după T-ATTEST-10: nimic nu e deployat, deci schimbarea a patru hash-uri costă
+zero azi și un redeploy coordonat mâine. Același argument care a făcut decizia 2A gratuită.
+
+| Cod | Ce era | Consecința |
+|---|---|---|
+| `Md4` | `openedBy` nu avea verificare de symbol; `Mg`, handler-ul frate, verifică mereu ambele | `Md3` devine auto-emis — un token sub politica atacatorului îl satisface, deci oricine deschide o dispută fără să dețină niciun profil |
+| `Md8` | `depositTo` intra nevalidat în datum-ul permanent | o adresă pe care niciun output real nu o poate purta face `D4` **nesatisfiabil**: dispută nerezolvabilă, deschisă pe veci pe dosarul altcuiva, cinci ADA |
+| `D6` | `D4` demonstra obligația cu `any` peste output-uri | două dispute cu aceeași adresă de plată (cazul **obișnuit**) rezolvate într-o tranzacție, un depozit returnat, restul în change-ul adminului |
+| `O5` | handover-ul era unilateral | `OracleSetAdmin` greșit la tastare = **sfârșitul protocolului**: `O1` refuză apoi orice update inclusiv cel care l-ar desface, și fiecare dispută deschisă devine nerezolvabilă |
+
+**`DisputesValidator.hs:110` — REFUZAT, zero cod schimbat.** Auditul 2 a dat atât o confirmare cât și
+o refutare pe linia aia, cu încadrări diferite. Refutarea e corectă: `handleOpenDispute` scrie
+`disputeOracleToken = oracleToken protocolParams` — **parametrul** — deci o dispută nu poate numi un
+oracol fals; un datum fabricat la adresa validatorului nu controlează niciun activ, iar
+`authenticateStateUTxO` îl ține afară din proiecții. Citirea a economisit o schimbare de hash degeaba.
+
+Pentru `D6`: indexarea output-ului nu ajută (ambele instanțe pot numi același index), etichetarea cu
+id-ul disputei ar păstra batching-ul dar forțează un datum pe o plată către o adresă de cheie.
+Refuzul batch-ului e o comparație și renunță doar la o capabilitate pe care nimeni n-a cerut-o.
+
+Niciunul din cele trei teste de dispută nu a avut nevoie de un builder malițios: calea de producție
+exprimă deja ambele atacuri de mint, fiindcă `openDisputeTX` ia ambii parametri de la apelant și nu
+constrânge niciunul — de-aia erau descoperiri și nu ipoteze. Builder-ul scris pentru ele a fost șters.
+
+### `e6f54a7` — un profile id trebuie să fie token de REFERINȚĂ, plus `otherMetadata` mărginit
+
+**`Mg`/`Md4`, jumătatea CIP-67.** `deriveUserFromRefTN` înlocuiește primii patru bytes cu prefixul de
+user, deci pe un nume care deja începe cu prefixul de user e **identitatea**. Numește token-ul USER al
+unui profil drept id-ul lui și `Mf`/`A1` cer exact token-ul pe care proprietarul real îl deține:
+atestarea e emisă și acceptată de oamenii potriviți și înregistrată sub un id pe care nicio linie de
+`profile_projection` nu îl are. Acceptată pe lanț, deconectată în read layer — o înșelătorie, nu o
+pierdere. Testul pur asertează **mecanismul**: `deriveUserFromRefTN userTN == userTN`.
+
+**`Mn`.** `otherMetadata` intra nemărginit și neverificat. Costul cade pe **subiect** nu pe emitent:
+`A1` re-blochează `ownValue`, deci subiectul trebuie să cheltuiască și să reblocheze UTxO-ul ca să
+accepte, iar nimic nu-l arde. Plus chei duplicate care rup precondiția lui `unsafeFromList` — `lookup`
+întoarce prima intrare iar un decoder off-chain are dreptul să nu fie de acord, deci datum-ul înseamnă
+două lucruri după cine îl citește. 16 intrări, chei 64B, valori 256B, fără duplicate inclusiv față de
+cele trei rezervate. **Numărul se verifică PRIMUL** și ordinea e portantă: verificarea de unicitate e
+quadratică, și o scanare quadratică peste o listă dimensionată de atacator e un vector în sine.
+
+**O CORECȚIE la `b22235c`.** Acel commit spunea că o atestare despre o atestare „e o limită
+documentată… `ensureSubjectProfileExists` o refuză deja off-chain". **A doua jumătate e falsă**, iar
+Haddock-ul funcției spune invers: *„Existence only, not kind. It deliberately does not require the
+subject to be a profile: an attestation ABOUT an earlier attestation is a lineage record the spec asks
+for."* Deci atestările de descendență sunt o **funcționalitate livrată și testată** (`5.11`) care nu
+poate fi acceptată niciodată, fiindcă `A1` vrea NFT-ul de user al subiectului și o atestare mintează
+doar un token de referință. Am trecut o gaură reală la „auto-vătămare" pe baza unei afirmații pe care
+nu o verificasem. Rămâne nereparată pe lanț, acum pentru motivul care supraviețuiește citirii: un
+validator nu poate deosebi un profile id de un attestation id (ambele sunt token-uri de referință ale
+aceleiași politici), deci ar costa un reference input la **fiecare** acceptare. `5.11b` fixează limita
+și Haddock-ul validatorului o declară. Ce cere limita e o distincție în **read layer**.
+
+**Dimensiuni.** Cele patru care nu se mișcă sunt jumătatea utilă:
+
+```
+DisputesValidator      8243 -> 8340   D6
+OracleValidator        7427 -> 7492   O5
+MintingPolicy         11865 -> 11920  Md4(openedBy) + Md8
+MintingPolicy         11920 -> 12241  Mn + isProtocolRefToken
+Profiles, Attestations      nemișcate
+```
+
+321 de bytes pentru `Mn`, aproape tot din verificarea quadratică scrisă ca două funcții recursive —
+recursia e ce PlutusTx nu poate partaja. Politica e la 75% dintr-o tranzacție întreagă, sub plafonul
+de 14000, și e singura intrare din tabel unde costul merită reevaluat dacă se apropie vreodată.
+
+### `87807f1` — T-ATTEST-9, suprafața de citire a atestărilor
+
+Șapte rute, scope varianta B. **Decizia de codec: CIP-129 exclusiv.** CIP-105 și hex-ul brut nu au
+header byte iar `drep` e HRP pentru ambele feluri, deci acceptarea lor ar însemna să **alegi** un byte
+— și alegerea celui de cheie (ce face `FromHttpApiData DRepId` pentru rutele de guvernanță) ar raporta
+fiecare script DRep ca DRep de cheie **și** ar întoarce „nicio revendicare" pentru profilul de script
+care există. Rutele de guvernanță își permit normalizarea doar fiindcă rezolvă apoi rândul după
+hash-ul de 28 de bytes și re-randează din `drep_hash.has_script`; aici nu există un asemenea rând.
+`credential_is_script` e byte-ul **citit înapoi**, nu ghicit. Fixat de 8 cazuri de codec + 5 de lookup,
+inclusiv o credențială de cheie și una de script peste **aceiași** 28 de bytes.
+
+`rawSql "SELECT ??"` și nu `row_to_json`: fiecare coloană interesantă e scrisă prin
+`derivePersistFieldJSON`, deci `profile_id` ține cele cinci caractere `"abc"` — un document JSON, nu
+`abc`. O proiecție `row_to_json` le-ar publica dublu-encodate. `FROM palmares_attest.…` calificat, iar
+**testele Pg sunt ce ține calificarea**: citesc prin `runPg` (search_path implicit, ce primește un
+handler) și scriu fixture-urile prin `runAttest`, deci un `FROM` necalificat cade pe fiecare caz cu
+`relation does not exist` în loc să treacă local și să cadă în producție.
+
+JSON-only pe toate șapte, **decizie** nu omisiune, cu `check_swagger.sh` asertând-o — deci adăugarea
+CSV mai târziu e un diff recenzat și în poartă. Poarta a trecut 22 → 29 de căi; ambele verificări
+(numărul și numele) rămân, fiindcă prind greșeli diferite: o rută **dispărută** cade pe număr chiar
+dacă nimeni n-a numit-o, una **redenumită** cade pe linia ei în timp ce numărul trece.
+
+### Ce rămâne din backlogul de audit
+
+Neatins, cu motiv declarat pentru fiecare: timeout-ul lipsă al unei dispute deschise (redeemer nou +
+cale off-chain — o sarcină, nu un fix); `opPaused` citit doar de MintingPolicy (o decizie despre ce
+înseamnă o pauză); groapa de praf a adresei oracolului; `Blueprint.hs:135` (AU-6, politica
+pre-aplicată pe un token placeholder); `Cleanup` care nu inspectează valoarea la cele trei validatoare
+de stare — citit, și edge-ul periculos e **nereachabil** fiindcă NFT-ul nu poate părăsi UTxO-ul de
+stare, dar praful cu datum care parsează rămâne nemăturabil pe veci, ceea ce e un vector de aglomerare
+ieftin și ireversibil; merită fixat prin „datum-ul parsează **și** valoarea îl susține".
+
+### Următorul lucru
+
+T-ATTEST-10/11/12 — deploy pe preprod. E singurul lucru care ține check 6 roșu: jobul cade acum pe
+`NameMismatch "gov.cardano.vip"`, pentru că nimic nu e deployat acolo.
