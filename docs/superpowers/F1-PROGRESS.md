@@ -4241,6 +4241,55 @@ cumpăra 28,8 h; 2× cumpără 14,4 h. Nu 1×, fiindcă acolo lățimea onestă 
 doar prin `<=` — orice portofel care lărgește intervalul ar fi refuzat de validator, nu de o decizie
 recenzată.
 
+### `K2` nu avea NICIUN test de comportament, și de ce nimeni n-a observat
+
+Suma pe care `feeFor` o selectează era fixată. **Impunerea ei nu fusese exercitată niciodată.**
+`grep -rn "K2" src/test/` întoarce doar comentarii. În detaliu, verificat:
+
+- `UnitTests.Fees` fixează `feeFor` ca **mapare pură** — câmpuri distincte pe acțiune, niciunul
+  partajat, totul gratuit sub o configurație de zerouri. Nu apelează `checkFee` niciodată.
+- `UnitTests.Oracle`'s `setAndClearFees` setează un `FeeConfig`, citește datum-ul înapoi și îl
+  șterge — **fără niciun mint între**.
+- `TestRuns.hs:181` desfășoară oracolul cu `opFeeConfig = Nothing`.
+- Fiecare context pur de mint seta `Nothing` **intenționat**, ca să nu refuze calea de taxe un caz.
+
+Și motivul pentru care un test de emulator **nu putea** să închidă golul e același tipar care a
+produs tot modulul: builder-ul adaugă output-ul de taxă, deci o cale fericită cu preț trece
+indiferent dacă validatorul se uită sau nu.
+
+Cinci cazuri noi. Două discriminează între brațul `MintActionDispute` și garda `<= 0`, fiindcă o
+taxă zero și o cerere de sumă zero sunt aceeași aritmetică — 8.14 roșu + 8.15 verde ⇒ brațul; ambele
+roșii ⇒ garda; 8.12/8.13 roșii ⇒ `K2` însuși.
+
+**Și o mutație prinsă gratis:** taxa de profil e deliberat **mai mică** decât cea de atestare
+(3 vs 7 ADA). Dacă `feeFor MintActionProfile` ar fi recablat la `fcAttestationFee` — **chiar bug-ul
+moștenit #1**, taxa de interval din Belt System care taxa câmpul de istoric — ar cere 7 ADA de la un
+output care plătește 3, deci jumătățile **valide** se înroșesc. Invers prețuite, `geq` ar fi înghițit
+schimbul în silență.
+
+### `admin sign-tx` — Atlas livrează decodorul pentru forma asta și niciun encoder
+
+Testul de fum nu putea rula fiindcă nimic din repo nu producea o semnătură în forma pe care
+`tx_wit` o acceptă, iar documentul spunea de ce nu s-a livrat unul la întâmplare: *„a wrong signer
+would look like a convenience."*
+
+Descoperirea decisivă: `GeniusYield.Types.Tx` exportă `txWitFromHexBS`, `txWitFromHex`,
+`txWitFromLedger`, `txWitToLedger` și `txWitToKeyWitnessApi` — **și nimic în sens invers**. Encoderul
+e o linie, și nu are nici versiune de protocol nici base16 propriu: `AlonzoTxWits` e un `MemoBytes`,
+deci `ToCBOR`-ul lui emite **chiar octeții pe care ledger-ul i-a produs** pentru valoarea aia, nu o
+re-codificare, iar `serializeAsHexText` e codecul hex al ledger-ului peste ei. Nu există nimic cu
+care alegerea `eraProtVerHigh @ConwayEra` a decodorului să se contrazică.
+
+**Bannerul s-a mutat.** `main` tipărea „Palmares - …" pe **stdout** ca primă acțiune, iar scriptul
+de fum capturează stdout întreg (`wit=$(… | $signer)`). Acum se tipărește după `execParser` și e
+`pure ()` pentru `SignTx`.
+
+**Și testul agentului nu putea să cadă.** O suită cabal nu poate importa modulele unui executabil,
+deci testul purta **copii** ale celor două funcții — iar un test care fixează o copie trece pe veci
+în timp ce lucrul după care e numit putrezește. Le-am mutat în `offchain-lib` lângă `signGYTxBody`:
+trei linii, și acum aserțiunile spun ceva despre comandă. Bonus — după mutare, `lens` și
+`cardano-api` **nu mai trebuie** în stanza `admin`; verificat prin build, nu presupus.
+
 ### Codurile de trace, despicate înainte de deploy
 
 Un cod de trace devine **intrare de runbook** în clipa în care ceva e desfășurat. Deci despicarea e
