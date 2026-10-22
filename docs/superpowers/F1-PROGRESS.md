@@ -2716,11 +2716,51 @@ Deci PAT-ul nu se mai creează: `GITHUB_TOKEN` devine credentialul potrivit în 
 **Închis la 2026-10-21:** mutarea s-a făcut, iar prima rulare de `images.yml` de după ea a publicat
 ambele imagini de bază cu `GITHUB_TOKEN`. Niciun PAT, niciodată.
 
-## BLOCKED FOR USER — GOALĂ la 2026-10-22
+## BLOCKED FOR USER — două intrări noi la 2026-10-22, amândouă pe deploy
 
-**Nu mai e nicio acțiune de om pe lista asta.** Ambele intrări s-au închis în aceeași zi, una prin
-măsurătoare și una prin decizia owner-ului. Istoricul rămâne mai jos pentru că raționamentul greșit
-e partea utilă.
+Cele două vechi rămân închise (mai jos). Cele noi sunt amândouă pe calea de deploy T-ATTEST-10 și
+niciuna nu e de cod.
+
+**1. Config-ul de provider pentru palmares.** `config/config_atlas.json` nu există în palmares, doar
+`.example`. Am încercat să-l copiez din Belt System — **blocat corect** de poarta de permisiuni:
+fișierul poartă token-ul Maestro și mutarea unei credențiale între proiecte e exact ce poarta e
+pusă să prindă. Nu am ocolit-o. Deblochează: owner-ul pune fișierul (shape-ul e identic cu
+`.example`, un singur câmp de completat), sau îl dă prin `ATLAS_CORE_CONFIG` ca variabilă.
+
+Derivarea adresei **nu** a avut nevoie de el: am rulat `new-operator-key` cu un config inline cu
+token placeholder, fiindcă derivarea unei adrese nu face niciun apel de rețea — are nevoie doar de
+`networkId`. Deci cheia există deja fără să fi atins credențiala reală.
+
+**2. Finanțarea adresei de operator.** Cheia nouă, de unică folosință, e generată — 24 de cuvinte în
+`operation.prv`, mod 0600, gitignorat, fraza nu e tipărită niciodată și fișierul e singura copie.
+Citită înapoi prin `readMnemonic` **înainte** de a fi scrisă, deci o frază pe care binarul nu o
+poate încărca nu ajunge pe disc ca cheie vie.
+
+```
+addr_test1vpdqa29j3hhsf9lsj490j59t7cgf0k5la5q8nqgkqkahpwq87tp9t
+605a0ea8b28def0497f0954af950abf61097da9fed0079811605bb70b8   (hex, pentru câmpurile de API)
+```
+
+Verificat pe Koios: `[]` — adresa n-a fost folosită niciodată, zero UTxO. `deploy-reference-scripts`
+trebuie să plătească cinci output-uri de reference script plus oracolul, deci are nevoie de fonduri
+înainte. Deblochează: faucet-ul de preprod pe adresa de mai sus, sau un transfer din portofelul de
+preprod al owner-ului.
+
+**O corecție la propria mea notă:** am scris mai devreme că portofelul de preprod al Belt System are
+„43 063 tADA în 46 de UTxO, verificat pe Koios" și am asociat-o cu adresa
+`addr_test1vrpzyqnfedy39h8p7j5f0t5u6mdswqlu2dn6ywegemv0mns0q94rx`. **Adresa aia e greșită** — e
+cheia de unică folosință dintr-o verificare anterioară a comenzii `new-operator-key`, și Koios
+întoarce zero rânduri pentru ea. Nu știu, din afara `operation.prv`-ului din Belt System, care e
+adresa finanțată.
+
+### Ce NU e blocat și merge în paralel
+
+Nu e nevoie de niciuna din cele două pentru restul: `deploy-reference-scripts` e singurul pas care
+cere fonduri, iar testul de fum cere pe lângă el un **semnatar**, care nu există în repo (decizie
+documentată în `docs/deployment/attest-flow-smoke.md`: „a wrong signer would look like a
+convenience"). Comanda `admin sign-tx` care închide golul ăla e în lucru și nu atinge lanțul.
+
+### Cele două intrări vechi, rămân închise
 
 **Punctul 2 (vizibilitatea pachetelor GHCR) — ÎNCHIS 2026-10-22, și NU prin flip.** Măsurat pe
 rularea `reconcile` 39697594482: jobul a tras `ghcr.io/mariusgeorgescu/palmares-admin:latest`
