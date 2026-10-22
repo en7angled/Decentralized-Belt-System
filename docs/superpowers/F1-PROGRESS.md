@@ -4605,9 +4605,40 @@ granturi pe `palmares_attest` are două jumătăți și fiecare poate rata:
 Fișierul însuși semnalează riscul analog pentru schema lui db-sync („o tabelă adăugată după ce
 fișierul a rulat ar fi invizibilă pentru `palmares_ro`"), deci problema e cunoscută și tratată
 pentru `public`, dar pentru `palmares_attest` rămâne acoperită doar de o regulă legată de un rol
-anume. **Nu am schimbat-o:** reparația corectă depinde de rolul cu care attest-sync se conectează în
-deployment-ul real, ceea ce e informație pe care nu o am. Fluxul de fum o diagnostichează acum
-explicit, ceea ce e tot ce pot face fără acea informație.
+anume.
+
+**Am scris inițial că reparația „depinde de rolul cu care attest-sync se conectează, informație pe
+care nu o am". O am, și e exact rolul care ratează.** `src/exe/attest-sync/Main.hs:55`:
+
+```
+defaultConnStr = "host=localhost user=postgres password=postgres dbname=cexplorer port=5432"
+```
+
+Deci **`postgres`**, nu `palmares_owner`. Schema e creată `AUTHORIZATION palmares_owner`
+(`sql/050_roles.sql:71`), dar *tabelele din ea* sunt create de rolul cu care attest-sync se
+conectează — iar `ALTER DEFAULT PRIVILEGES` e `FOR ROLE palmares_owner`, deci nu le atinge. Pe calea
+implicită, cu `apply-roles` rulat înaintea primei porniri a lui attest-sync — care e ordinea
+naturală: întâi rolurile, apoi serviciile — `palmares_ro` **nu poate** face SELECT pe `chain_cursor`,
+`information_schema.tables` o ascunde, iar `/status` raportează `null` pe un deployment care
+funcționează corect. Nu e ipotetic; e implicitul.
+
+**Tot nu am schimbat-o, și acum pe un motiv mai bun decât ignoranța.** Reparația „curată" ar fi ca
+attest-sync să acorde el `SELECT` la boot, fiind proprietarul tabelei. Dar asta pune *acordare de
+privilegii* în calea de pornire a unui serviciu, iar `GRANT SELECT ON ALL TABLES IN SCHEMA` cade dacă
+schema conține o tabelă pe care rolul nu o deține — deci reparația poate rupe boot-ul exact în
+configurațiile mixte pentru care e gândită. O schimbare de privilegii în numele tău, care poate
+eșua la pornire, nu e a mea de luat.
+
+Ce sugerez, în ordinea costului:
+
+1. **Rulează `apply-roles` DUPĂ prima pornire a lui attest-sync** (sau încă o dată după). Zero cod:
+   `GRANT SELECT ON ALL TABLES IN SCHEMA palmares_attest` se rezolvă atunci și prinde `chain_cursor`.
+2. Sau adaugă în `sql/050_roles.sql`, lângă regula existentă, una pentru rolul real al lui
+   attest-sync — o linie, dacă rolul e fix în deployment-ul tău.
+3. Sau pune attest-sync să se conecteze ca `palmares_owner`, și regula existentă îl acoperă deja.
+
+Până atunci, fluxul de fum o diagnostichează explicit: mesajul de `die` numește exact această cauză
+și spune să verifici ordinea în care a rulat `sql/050_roles.sql`.
 
 ### 2. Lag-ul nu e față de tip, ci față de cursorul lui db-sync — și verdictul compara greșit
 
