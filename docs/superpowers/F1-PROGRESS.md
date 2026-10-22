@@ -4385,3 +4385,150 @@ o tranzacție malformată înainte să ajungă la validator.
 Și de două ori în runda asta o verificare a mea a fost greșită, nu doar afirmația: un `grep` pe
 `MintingPolicy.hs` nu răspunde la „ce e în script", fiindcă **scriptul compilat e întregul inlinat**;
 și am declarat un gol de test acolo unde `Dispute.hs:217` îl acoperea deja. Verifică verificarea.
+
+---
+
+## Runda 3 — lista neblocată, până la capăt
+
+CI pe `4eb9117`: run **39733351279 success** pe toate trei job-urile (determinism, haskell, secrets),
+plus un `reconcile` ulterior tot verde. Deci punctul de plecare era curat și tot ce urmează e nou.
+
+### 1. `operator-address` tipărește acum credențialul de DRep
+
+Amânase runda trecută pe motivul: *„derivarea octeților bruți dintr-un `GYPaymentKeyHash` nu are
+idiom în repo, iar felierea din hex-ul adresei e exact greșeala pe care Haddock-ul comenzii o
+avertizează."* **Ambele jumătăți ale motivului erau false, și amândouă existau deja în cod:**
+
+* Atlas exportă `keyHashToRawBytes :: GYKeyHash kr -> ByteString`, și `GYPaymentKeyHash` e doar
+  `GYKeyHash 'GYKeyRolePayment`. Idiomul exista.
+* Repo-ul are deja `claimCredentialToText :: Credential -> Text` în `TxBuilding/Conversions.hs` —
+  **chiar funcția cu care calea de citire randează un credențial revendicat.** Deci nu am scris un
+  codor nou: comanda folosește al cititorului, și cele două nu pot ajunge la două codificări.
+
+Linia tipărită e a treia din aceeași cheie, lângă cele două forme de adresă, **nu în spatele unui
+flag**: comanda tipărea deja două forme fiindcă doi consumatori vor forme diferite, iar fluxul de
+fum are nevoie de a treia la fiecare rulare. Un flag ar fi fost `Command`-ul, parser-ul și
+dispecerul, pentru o linie care nu costă nimic.
+
+**Ce NU spune linia aceea**, și e scris în comentariu fiindcă e exact jumătatea care s-ar citi greșit:
+nu spune că acest DRep e înregistrat pe lanț. E credențialul pe care cheia îl **controlează**, adică
+tot ce verifică registrul (`claimProofSkeleton` pune `mustBeSignedBy` și nimic altceva). Un portofel
+real derivă cheia de DRep pe rolul 3 din CIP-1852, deci id-ul unui DRep adevărat **nu** va fi egal cu
+hash-ul cheii lui de plată; aici coincid doar fiindcă mnemonica operatorului dă o singură cheie.
+
+Trei teste în `UnitTests.WritePath`, și al doilea e cel care contează: primul e un dus-întors, care ar
+trece și dacă randarea ar hash-ui cheia a doua oară atâta timp cât parsarea o desface. Al doilea
+afirmă că **cei 28 de octeți din id sunt octeții proprii ai hash-ului**, fiindcă tranzacția cere
+`mustBeSignedBy <hash>` — altfel id-ul tipărit numește un credențial pentru care nimic din portofel
+nu poate semna. Limita e scrisă în comentariu: testele fixează *compoziția de bibliotecă*, nu linia
+din `admin/Main.hs`, fiindcă suita nu poate importa modulele unui executabil — o schimbare acolo la
+`drepIdCip105` ar rămâne verde aici.
+
+Și o gardă de un rând în preflight-ul fluxului de fum: `drep1y*`. Prinde exact greșeala pe care nota
+scriptului o avertiza (un id CIP-105 sau hex brut, niciunul cu octet de antet), cu un `die` în loc de
+un 400 la pasul 2 — adică două profile emise mai târziu.
+
+### 2. `attest_lag_seconds` pe `/status` — și de ce nu e un câmp din `SyncStatus`
+
+`SyncStatus` e „cât de în urmă e indexul", iar `statusGovernance` e al lui db-sync. Proiectorul e **al
+doilea indexer**, și comentariul de pe `syncSource` o spunea deja: *„când va exista un al doilea
+indexer, un consumator trebuie să poată spune care a răspuns."* Un câmp în `SyncStatus` ar fi
+amestecat două lag-uri; iar refolosirea tipului ar fi cerut să **inventez** o epocă și un timp de
+bloc, fiindcă proiectorul publică un cursor și nimic altceva.
+
+`null` e un răspuns, nu o lipsă: nu există rând în `chain_cursor`, deci attest-sync nu a rulat
+niciodată pe baza aceea. Un zero ar citi „perfect la zi" — exact inversul. Documentul Swagger nu poate
+exprima diferența dintre *cheie absentă* (server prea vechi) și *`null`* (server care are câmpul și nu
+are de unde să-l umple), deci diferența e fixată pe codor, în `UnitTests.GovDto`, nu moștenită tacit
+din `omitNothingFields = False`.
+
+Swagger **1.0.0 → 1.1.0**, minor fiindcă nimic nu s-a șters, redenumit sau făcut obligatoriu; documentul
+regenerat, `check_swagger.sh` actualizat cu două verificări (câmpul există; **nu** e în `required`).
+
+Și consecința pe care o ratasem: comentariul din preflight-ul fluxului de fum spunea *„niciun serviciu
+nu raportează lag-ul lui attest-sync"*. Era adevărat când l-am scris și devenise fals odată cu câmpul.
+Acum scriptul îl citește și moare pe `null` — înainte găsea un proiector mort așteptând
+`ATTEST_SMOKE_TIMEOUT` secunde o proiecție care nu venea, și raporta un timeout: corect, dar cu zece
+minute întârziere și fără să spună care indexer era vinovat.
+
+### 3. `Protocol/Id.hs` plus nouă export-uri moarte — și un `K3` care nu putea fi citit niciodată
+
+Recensământul, nu presupunerea: pentru fiecare nume, referințe în afara modulului care-l definește, și
+apoi referințe **în** el. Distincția contează — „zero în afară" poate însemna *mort* sau
+*supra-exportat*, și al doilea nu se șterge, se dez-exportă. Două candidate au picat exact pe linia
+asta: `metadataVersion` e folosit intern de `mkCIP68Datum`, `deriveRefFromUserTN` de
+`deriveRefFromUserAC`. Niciunul nu era mort.
+
+Cele nouă, cu motivul fiecăruia:
+
+| Unde | Ce | De ce era mort |
+| --- | --- | --- |
+| `Protocol/Lookup.hs` | `unsafeGetProfile`, `unsafeGetProfileDatumAndValue`, `unsafeGetProtocolParamsFromProfileRefInput` | fiecare validator citește un profil direct prin `Utils.checkAndGetCurrentStateDatumAndValue`; acestea erau a doua cale |
+| `Utils.hs` | perechea exact-value (`check…WithDatumValueAndAddress`, `is…WithDatumValueAndAddress`) | o comparație exactă cere ca validatorul să știe valoarea la lovelace, iar fiecare output de stare poartă min-ADA dependent de mărimea datum-ului lui. Niciun apelant **nu putea** o satisface |
+| `Utils.hs` | `hasTxInAtAddressWithNFT` | întrebările despre input-uri le pun `spentExactlyOnceFromAddress` (care numără — și numărarea e ce cere garda de satisfacție multiplă) și `checkAndGetCurrentStateDatumAndValue` (care întoarce datum-ul) |
+| `CIP68.hs` | `updateCIP68DatumImage` | singura actualizare de datum din protocol e `UpdateProfile`, care înlocuiește toate trei câmpurile |
+| `CIP68.hs` | `validateImageURI` | **aceeași** comparație pe care `validateMetadataFields` o face deja inline pe `metadataImageURI`. Nu aplica nimic ce nu era aplicat, și lăsa două enunțuri ale unei limite |
+| `Operations.hs` | `hasUserNFTAt` | off-chain, fără apelant (orfanul creat: importul `Data.Typeable (cast)`) |
+
+Plus modulul: `deriveSeededId` / `deriveIndexedId`, re-exportate de bariera `Protocol.hs`, deci arătau
+ca suprafața publică de ID-uri a protocolului — iar `CLAUDE.md` trimitea tipurile on-chain noi acolo.
+**Cod mort pe care documentația îl indică activ e mai rău decât cod mort.** Cele trei indicatoare din
+`CLAUDE.md` (două în cel de sus, unul în cel din `onchain-lib`) sunt corectate, și cel de sus are acum
+un rând care spune unde se derivă de fapt un nume determinist.
+
+Efectul secundar care merită numit: `unsafeGetProtocolParamsFromProfileRefInput` era **singurul** loc
+cu `traceError "K3"`. Deci protocolul pierde o literă din alfabet — una pe care nimeni nu ar fi putut
+s-o citească vreodată, fiindcă funcția nu avea apelant: niciun test nu o fixa și niciun document nu o
+numea. Ștergerea e neutră pentru hash-uri din exact același motiv pentru care erau moarte — nimic nu
+ajungea la ele, deci nimic nu le inlina. `ScriptSize.hs` e proba, nu argumentul.
+
+### 4. Un defect real în `Utils.hs`: Haddock-ul atribuit funcției greșite
+
+`valueAtOutputIdx` fusese inserat **între** blocul de Haddock al lui `isUnbackedDatum` și
+`isUnbackedDatum`. Deci cele cincizeci de linii de argument despre vectorul de forjare — planta cu
+token de user plătit la o adresă de stare, `P2`, prefixul CIP-67 — erau atribuite în documentația
+publicată ajutorului de index, iar funcția despre care sunt apărea nedocumentată. Ambele stăteau, pe
+deasupra, sub bannerul **Credential Control**, la trei secțiuni distanță de ce fac. Reordonate, și cu
+un banner propriu care spune de ce bannerul contează mai mult decât de obicei aici.
+
+### 5. 43 de linii peste 120 de coloane — cifra era greșită și sarcina nu era definită
+
+Numărătoarea reală: **~265 de linii în 58 de fișiere**. Și nu există `.ormolu`, `fourmolu.yaml`,
+`.editorconfig`, `.hlint.yaml`, și niciun pas de CI care să verifice formatarea sau lungimea —
+regula „max 120" din `CLAUDE.md` e o convenție fără unealtă.
+
+Deci nu am rescris 58 de fișiere. Majoritatea linielor lungi sunt proză de Haddock; un re-wrap masiv e
+un diff uriaș fără câștig funcțional, care s-ar bate cu orice formator adăugat ulterior. Am corectat
+doar cele pe care le-am introdus eu — și acolo reparația corectă nu era o îndoire de linie, ci un
+`operatorDrepId` legat o dată, fiindcă aceeași expresie apărea de trei ori.
+
+**Decizie pentru owner, nu curățenie:** dacă vrei regula aplicată, forma ei e un `fourmolu.yaml` plus
+un pas de CI, iar costul de intrare e o reformatare de ~265 de linii sau o listă de excepții. Asta e o
+alegere de stil, nu o remediere, deci nu am luat-o în locul tău.
+
+### Starea
+
+* Suita: **605 → 610 de teste**, toate verzi (56.09s). Cele cinci dimensiuni de script
+  **neschimbate**, care e proba că cele nouă ștergeri erau cu adevărat neatinse.
+* `check_packaging.sh`, `check_vocabulary.sh`: OK. `check_swagger.sh`: 63 de verificări, zero
+  eșecuri.
+* Documentul Swagger regenerat; diff-ul are exact două lucruri în el — proprietatea nouă și versiunea.
+* Patru commit-uri: `39365fe` (DRep id), `9a8d79b` (`/status`), `45784f7` (gărzile din flux),
+  `3654f57` (ștergerile on-chain).
+
+### O capcană de mediu care arată identic cu o regresie
+
+`cabal test` într-un shell fără `PALMARES_TEST_PG_CONN_STR` raportează **„66 out of 608 tests
+failed"** în ~12 secunde, cu `Exception: ExitFailure 1` la fiecare — fiindcă `Test/Pg.hs` face `die`,
+iar tasty înghite mesajul și arată doar codul de ieșire. Indistinct de 66 de regresii reale.
+**Semnalul e durata:** o rulare verde ia ~57 de secunde. Containerul local e `palmares-test-pg` pe
+`127.0.0.1:55439` — și trebuie `host=127.0.0.1`, nu `host=localhost`, fiindcă Docker publică portul
+doar pe IPv4 iar `localhost` rezolvă la `::1`, ceea ce dă „Connection refused" pe toate 66. Salvat ca
+memorie.
+
+### Ce rămâne
+
+Neschimbat pe owner: `config/config_atlas.json` și finanțarea
+`addr_test1vpdqa29j3hhsf9lsj490j59t7cgf0k5la5q8nqgkqkahpwq87tp9t`. Neschimbat ca decizii: D-A, D-C,
+D-E. **Lista „neblocat, de cod" e goală** — tot ce mai urmează are nevoie de lanț sau de o decizie a
+ta, în afară de convenția de 120 de coloane, care e ea însăși o decizie.
