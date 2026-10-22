@@ -4111,6 +4111,51 @@ Niciuna nu e un bug de reparat în liniște — fiecare schimbă **ce este** pro
   condiția de **vot** — dovezile per-purpose sunt exprimabile (`txInfoVotes`). Și o revendicare e
   dovedită o dată și afirmată pe veci: fără retragere, fără expirare, fără burn.
 
+### Auditul de dimensiuni: aplicat 1 din 6, și estimarea a fost greșită de 6,75 ori
+
+Verdictele sunt acum în Haddock-ul lui `ScriptSize.hs`, nu într-un raport — **un item refuzat pe care
+nimeni nu l-a scris se re-propune.**
+
+**Aplicat:** `validateOtherMetadata` de la șase recursii la trei. Estimat ~135 de octeți din
+calibrarea proiectului („o recursie ≈ 45 de octeți"). **Măsurat: 20.** 12296 → 12276.
+
+Golul e rezultatul mai util, și drumul până la explicație merită consemnat fiindcă am greșit o dată
+pe parcurs.
+
+Prima explicație: `map`, `<>` și `elem` rămân folosite în altă parte, deci codul lor nu pleacă. Am
+verificat-o cu `grep` pe `MintingPolicy.hs`, n-am găsit niciunul, și am declarat-o falsă. **Greșit —
+verificarea era greșită.** `elem` *este* compilat în politică, prin
+`Utils.checkCredentialControl`, care e `INLINEABLE` și apelat din calea de revendicare, iar `any`
+cu el. **Scriptul compilat e întregul inlinat, nu un fișier**, deci un `grep` pe un modul nu e
+niciodată răspunsul la „ce e în script".
+
+Ce rămâne după corecție: `all`, `map` și `<>`-ul pe listă erau genuin unice funcției, deci scoaterea
+netă e de vreo două punct-fixe, pe care calibrarea de ~45 le prezice la ~90 și care au măsurat 20.
+Deci calibrarea supra-estimează cu un factor de ~4 chiar și corect aplicată, iar citirea onestă e
+că **a fost derivată din *introducerea* unor traversări într-un script care nu le avea și nu se
+inversează.** Orice estimare din raportul acela se citește de acum ca **plafon**.
+
+Schimbarea rămâne pentru ExUnits, acolo unde e câștigul real: trei traversări în loc de șase, fără
+lista intermediară `map fst`, și 168 de comparații în loc de 171.
+
+**Refuzate, cu motivul fiecăruia:**
+
+- `checkDateInRange` fără `Interval` (~150): testele noi îl fac *sigur*, dar e singura funcție care
+  datează o înregistrare permanentă și sunt ~1700 de octeți liberi. Nu rescrii semantica unei
+  biblioteci de mână fără presiune.
+- `and`→`&&` la Profiles/Oracle (~90): listele alea **conțin** `traceIfFalse`-urile, deci o listă
+  strictă loghează **fiecare** cod care cade, iar `&&` doar primul. Proiectul a luat decizia opusă
+  explicit când a ales `preserve-logging` peste `remove-trace`.
+- `valueSpent` → helper partajat: ~0 pe politica de mint. Lecția „+50 contra +502", în sens invers.
+- `checkFee` cu un singur `feeFor`: 0–20 de octeți, probabil deja constant-folded (toate trei
+  siturile pasează un constructor cunoscut), plus o capcană de parsare — `$` e `infixr 0` contra
+  `infixr 2` al lui `||`.
+- `MintingContext`: **0 octeți**. Record construit o dată și selectat în aceeași unitate de
+  compilare, deci case-of-known-constructor îl elimină înainte de UPLC. Scoaterea lui ar putea
+  **mări** scriptul.
+- Și itemul „case inexhaustiv în `ProfilesValidator`" nu e un defect: long-distance info din GHC 9.6
+  îl face exhaustiv, iar un al treilea constructor ar produce avertisment.
+
 ### O recomandare de agent refuzată, cu motiv
 
 Lentila de ExUnits a propus `unsafeFromBuiltinData` pe citirea oracolului: 450–850 octeți pe trei
