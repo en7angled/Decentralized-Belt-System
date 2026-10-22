@@ -4330,3 +4330,58 @@ Trei shell-uri de build în fundal au stat blocate **unul pe altul**: fiecare a�
 `cabal build`, deci `pgrep -f` îl găsea pe fratele lui. Deadlock pe trei căi; nimic nu s-a compilat
 niciodată. Dacă un guard de genul ăsta mai apare, el trebuie să caute procesul **real** (`pgrep -x
 ghc-9.6.6`), nu propria lui linie de comandă.
+
+---
+
+## Starea la 2026-10-22, sfârșitul rundei — 16 commit-uri, CI verde
+
+**Suita: 526 → 605 de teste.** Codurile de trace fixate: **19 din 40 → 36**.
+
+| val | ce închide |
+| --- | --- |
+| `MutationGuards` | `M0`, `A1`/`A5`/`A6`, `P3` |
+| `MetadataLimits` | `Mm`, `Mp4`, `Md7`, `P4`, `Mk`, `Mp5`, `Md5` |
+| `DisputeRules` | `D2`, `D4`, `Mj`, `Md2`, `Md3`, `Md6`, `O2` |
+| semințe + oracol | `Mp1`, `Mh`, `Md1`, `K1`, `D6` prin lambda |
+| taxe | `K2`, brațul `MintActionDispute`, garda `<= 0` |
+
+Plus trei comparații de lungime din `CIP68` la care niciun test nu ajungea, și **forma de interval
+pe care lanțul o livrează de fapt** — margine de sus exclusivă, pe care suita n-o văzuse niciodată.
+
+**Cele patru coduri rămase sunt limite oneste, nu omisiuni:** `K1` poate aserta eșecul dar nu codul,
+fiindcă `error` din PlutusTx își ignoră argumentul; iar brațele de parsare de datum ale lui
+`A0`/`P0`/`D0` sunt `traceError`-uri care nu pot fi șterse și să mai compileze.
+
+### Ce e gata și nu mai are nevoie de nimic
+
+Patru reparații de securitate; 16 afirmații false corectate (trei interfață publicată, patru reguli
+permanente din `CLAUDE.md`); poarta de secrete reparată și verificată în CI; `/ready` vede
+proiectorul de atestări; `admin sign-tx`; codurile de trace despicate; D-B și D-D decise cu
+argumentul în cod.
+
+### Ce rămâne, în ordinea în care se poate face
+
+1. **Blocat pe owner** — `config/config_atlas.json` și finanțarea adresei
+   `addr_test1vpdqa29j3hhsf9lsj490j59t7cgf0k5la5q8nqgkqkahpwq87tp9t`. Vezi `## BLOCKED FOR USER`.
+2. **Deciziile owner-ului** — D-A (timeout la dispută), D-C (pauză la acceptare, cost = un câmp în
+   datum, oglindind `disputeOracleToken`), D-E (revendicarea de credențial). D-C e singura care mai
+   mișcă hash-uri, deci dacă se ia după deploy cere un redeploy — ieftin cât timp registrul e gol.
+3. **Neblocat, de cod** — `operator-address --drep-id` (ultimul gol de configurare al testului de
+   fum: nimic nu tipărește credențialul de DRep al cheii care semnează); câmpul de proiector pe
+   `/status` (DTO + bump de Swagger + `check_swagger.sh`); ștergerea lui `Protocol/Id.hs` și a nouă
+   export-uri moarte, plus cele două indicatoare din `CLAUDE.md` care trimit acolo; 43 de linii peste
+   120 de coloane.
+4. **Deploy** — T-ATTEST-10/11/12, de făcut **o singură dată** după ce D-C se decide.
+
+### Nota care merită citită prima dată de o sesiune nouă
+
+Tiparul s-a confirmat de **16 ori** în două zile: *propoziția care explică de ce o regulă e corectă e
+aproape întotdeauna despre jumătatea care ESTE aplicată.* Iar măsurătoarea cea mai utilă a rundei nu
+a fost o găsire, ci **ștergerea unei verificări ca să vezi ce se înroșește** — care a arătat că 21
+din 40 de reguli puteau dispărea fără ca nimic să observe, și că motivul era structural: niciun test
+nu apelase vreodată un validator lambda, iar emulatorul trece prin builder-ul off-chain, care refuză
+o tranzacție malformată înainte să ajungă la validator.
+
+Și de două ori în runda asta o verificare a mea a fost greșită, nu doar afirmația: un `grep` pe
+`MintingPolicy.hs` nu răspunde la „ce e în script", fiindcă **scriptul compilat e întregul inlinat**;
+și am declarat un gol de test acolo unde `Dispute.hs:217` îl acoperea deja. Verifică verificarea.
