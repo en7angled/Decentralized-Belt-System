@@ -4502,9 +4502,16 @@ un diff uriaș fără câștig funcțional, care s-ar bate cu orice formator ad�
 doar cele pe care le-am introdus eu — și acolo reparația corectă nu era o îndoire de linie, ci un
 `operatorDrepId` legat o dată, fiindcă aceeași expresie apărea de trei ori.
 
-**Decizie pentru owner, nu curățenie:** dacă vrei regula aplicată, forma ei e un `fourmolu.yaml` plus
-un pas de CI, iar costul de intrare e o reformatare de ~265 de linii sau o listă de excepții. Asta e o
-alegere de stil, nu o remediere, deci nu am luat-o în locul tău.
+**Decizie pentru owner, nu curățenie.** Trei forme, de la cea mai scumpă la cea mai ieftină:
+
+1. `fourmolu.yaml` plus un pas de CI — costul de intrare e o reformatare de ~265 de linii.
+2. La fel, dar cu o listă de excepții pentru fișierele existente — mai ieftin, și lista putrezește.
+3. **Un clichet:** un pas de CI care eșuează doar dacă NUMĂRUL de linii peste 120 crește față de
+   `main`. Zero reformatare, convenția se aplică de la următorul commit încolo, iar datoria existentă
+   se stinge singură pe măsură ce fișierele sunt oricum atinse.
+
+A treia e cea pe care aș alege-o, și n-am implementat-o fiindcă e o poartă care blochează *push-urile
+tale* pe un motiv de stil — asta e o alegere a ta, nu a mea. Dacă o vrei, e ~15 linii în `ci.yml`.
 
 ### Starea
 
