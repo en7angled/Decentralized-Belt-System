@@ -4567,3 +4567,115 @@ folosește codificatorul repo-ului și nu poate contrazice o greșeală comună 
 **Aceiași 28 de octeți, pe două derivări independente** — adresa prin `addressFromPaymentKeyHash`,
 id-ul prin `paymentKeyHashToPlutus` plus CIP-129. Asta e exact afirmația pe care se sprijină fluxul de
 fum: id-ul tipărit numește cheia care semnează.
+
+---
+
+## Auditul independent al rundei 3 — și ce a găsit în ce scrisesem chiar atunci
+
+Un agent independent pe codul **nou** (nu pe ștergeri: siguranța lor e demonstrată, nu argumentată —
+compilatorul a acceptat eliminarea, deci nimic nu le referea, și cele cinci dimensiuni de script sunt
+identice la octet, deci nimic nu le inlina). A confirmat lanțul cheie end-to-end și a găsit **trei
+defecte, toate în ce scrisesem în aceeași rundă**. Le-am verificat în cod înainte să acționez; toate
+trei erau reale.
+
+### 1. `null` are trei cauze; Haddock-ul meu afirma că are una — și construisem un `die` pe afirmație
+
+`attestCursorSlot` din `Storage.hs` spune explicit, în propriul Haddock, că `Nothing` înseamnă *„ori
+`ChainCursor` nu există încă, ori **rolul care citește nu o vede**"*, și le colapsează **intenționat**:
+„nicio dovadă". Eu am scris că `null` înseamnă „attest-sync nu a rulat niciodată aici" — una din cele
+două — și apoi am făcut lectura aceea **fatală** în fluxul de fum.
+
+A treia cauză e în poll: ramura `Left` din `pollAttest` loghează și **nu scrie** `av`, ceea ce e corect
+odată ce există o valoare, dar la boot lasă cache-ul pe `Nothing`. Iar `getStatusQuery` dă 503 doar pe
+`tv`, nu pe `av` — deci o primă citire eșuată la boot răspunde **200 cu `null`**.
+
+Consecința: un `GRANT` lipsă pe `palmares_attest.chain_cursor` citește ca absență (fiindcă
+`information_schema.tables` arată doar ce rolul curent are voie să vadă), iar nightly-ul ar fi dat
+vina pe attest-sync. Mesajul numește acum toate trei cauzele și spune **retry** pentru a treia.
+
+**Și o observație pre-existentă, pentru owner, verificată în `sql/050_roles.sql:87-92`.** Plasa de
+granturi pe `palmares_attest` are două jumătăți și fiecare poate rata:
+
+* `GRANT SELECT ON ALL TABLES IN SCHEMA palmares_attest` se rezolvă **la momentul rulării**, deci nu
+  acoperă nimic dacă `apply-roles` rulează înainte ca attest-sync să creeze `chain_cursor`.
+* `ALTER DEFAULT PRIVILEGES` e `FOR ROLE palmares_owner`, deci nu se aplică unei tabele creată de alt
+  rol — exact calea pe care `Storage.hs` o numește „pentru un deployment cu un singur rol, care nu a
+  rulat niciodată comanda aceea".
+
+Fișierul însuși semnalează riscul analog pentru schema lui db-sync („o tabelă adăugată după ce
+fișierul a rulat ar fi invizibilă pentru `palmares_ro`"), deci problema e cunoscută și tratată
+pentru `public`, dar pentru `palmares_attest` rămâne acoperită doar de o regulă legată de un rol
+anume. **Nu am schimbat-o:** reparația corectă depinde de rolul cu care attest-sync se conectează în
+deployment-ul real, ceea ce e informație pe care nu o am. Fluxul de fum o diagnostichează acum
+explicit, ceea ce e tot ce pot face fără acea informație.
+
+### 2. Lag-ul nu e față de tip, ci față de cursorul lui db-sync — și verdictul compara greșit
+
+`pollAttest av (freshSlot f)`, iar `freshSlot` e `palmares.sync_state.slot_no`, care în
+`sql/010_gov_views.sql` e `FROM public.block b ORDER BY b.id DESC LIMIT 1` — **ultimul bloc indexat de
+db-sync**, nu tipul lanțului. (Chiar SQL-ul îl numește `tip_time`; de acolo mi-a venit formularea.)
+
+Asta nu era doar o problemă de documentație. Garda pe care o adăugasem runda trecută era
+`lag > maxLag`, adică un număr **relativ** comparat cu un plafon **absolut**. Deci alocația reală a
+proiectorului era `maxLag + dbSyncLag`: cu db-sync la 250 s în urmă — în interiorul plafonului de
+300 s, deci verificarea de guvernanță trece — un proiector la 500 s în urmă față de tipul real
+publica `250` și **rămânea în rotație**.
+
+Garda însumează acum cele două lag-uri. Ajungând la ea e deja garantat `readyLagSeconds <= maxLag`,
+deci schimbarea e **strict mai strictă**: poate transforma un PASS în 503, niciodată invers. Un caz de
+test fixează exact fereastra pe care vechea formă o lăsa să treacă, cu contrastul alături (același lag
+de db-sync, proiector la 40 s → 290 s total → încă gata), ca să fixeze **limita**, nu doar „acum
+eșuează".
+
+Și `max 0` ascunde cazul invers: attest-sync **înaintea** lui db-sync e normalul, nu anomalia (urmează
+un match Kupo îngust, db-sync indexează tot), iar `0` se citește ca „perfect la zi". Documentat.
+
+### 3. Două din cele trei teste noi nu puteau eșua singure
+
+`parseClaimCredential operatorDrepId == Right (PubKeyCredential (paymentKeyHashToPlutus
+operatorKeyHash))` are `paymentKeyHashToPlutus operatorKeyHash` **pe ambele părți** — partea dreaptă
+*este* felul în care `operatorDrepId` e construit — deci se simplifică la
+`parseClaimCredential . claimCredentialToText == Right` pe o valoare. Auto-consistență a codecului, pe
+care un dus-întors pe vector golden de mai sus o fixa deja **mai tare**: un codec auto-consistent dar
+*greșit* trece varianta simplificată și cade pe cea golden. Al patrulea caz,
+`isScriptCredential … == Right False`, era implicat de primul.
+
+Șterse, cu motivul scris la locul lor, și înlocuite cu unul care închide bucla pe **calea de
+producție**: id tipărit → ce parsează API-ul → `pubKeyHashFromPlutus`, chiar conversia pe care
+`claimProofSkeleton` o face → cheia pe care portofelul o deține. Asta nu era fixat de nimic.
+
+### Afirmația centrală, confirmată
+
+Lanțul pe care se sprijină totul e **corect**: `extendedVerificationKeyHash` e
+`blake2b-224 (xpubPublicKey xpub)` — cheia ed25519 de 32 de octeți cu chain code-ul aruncat —
+identică la octet cu ce derivă cardano-api pentru `WitnessPaymentExtendedKey`, adică **martorul pe
+care `admin sign-tx` îl produce din aceeași mnemonică**. `paymentKeyHashToPlutus` e
+`serialiseToRawBytes` fără re-hash, iar `claimProofSkeleton` îi dă înapoi prin `pubKeyHashFromPlutus'`
+lui `mustBeSignedBy`. Hash tipărit == hash cerut == hash semnabil.
+
+### Două minore, verificate nu acceptate
+
+`drep1y*` admitea **1 id CIP-105 din 32**: primii cinci biți ai octetului de antet sunt ce codifică
+primul caracter bech32, și sunt `00100` pentru orice prim octet în `0x20..0x27`. Nu am crezut pe
+cuvânt — am scris un codificator bech32 separat și am **construit** contraexemplele:
+
+```
+drep1yqqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpkx9gpqa   (raw[0]=0x20, 56 car.)
+drep1yvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpkz7ch4k   (raw[0]=0x23, 56 car.)
+```
+
+Vechea gardă le **accepta**. Discriminantul exact e lungimea: CIP-129 are 29 de octeți → 58 de
+caractere, CIP-105 are 28 → 56, și un hash hex brut de 28 de octeți are tot 56. Verificat pe toți
+vectorii din `UnitTests.WritePath` plus un harnai de shell izolat.
+
+Și: id-ul de DRep nu depinde de rețea, dar `printOperatorAddress` murea pe `ATLAS_CORE_CONFIG` lipsă
+**înainte** să tipărească ceva — deci singura valoare de care are nevoie cineva blocat exact pe acea
+configurație era de neatins. Se tipărește acum primul, înainte de încărcarea configurației.
+
+### Nota care rămâne
+
+Tiparul, acum la **al 18-lea și al 19-lea caz**, și de data asta amândouă în aceeași rundă în care
+scrisesem propozițiile: Haddock-ul care afirma o cauză unică pentru `null`, și cel care numea „tipul"
+o referință care e cursorul lui db-sync. Diferența față de cazurile anterioare e că pe una dintre ele
+**construisem deja o verificare** — un `die` în nightly care ar fi acuzat serviciul greșit. O
+propoziție falsă despre jumătatea aplicată nu rămâne documentație: devine cod.
