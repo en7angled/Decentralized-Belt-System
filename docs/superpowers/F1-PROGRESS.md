@@ -3973,3 +3973,193 @@ ieftin și ireversibil; merită fixat prin „datum-ul parsează **și** valoare
 
 T-ATTEST-10/11/12 — deploy pe preprod. E singurul lucru care ține check 6 roșu: jobul cade acum pe
 `NameMismatch "gov.cardano.vip"`, pentru că nimic nu e deployat acolo.
+
+---
+
+## 2026-10-22, a doua rundă — opt lentile independente peste on-chain
+
+Cerut de owner: *"as vrea sa mai rulezi un set de agenti independenti care sa auditeze partea de
+onchain atat dpdv vulnerabilitati cat si performanta, eficienta, readability, relevant comments."*
+Opt lentile, fiecare cu propriul context, fiecare oprită de la a construi (un `cabal build`
+concurent coruptează `dist-newstyle` cu erori care arată ca erori de compilare și nu sunt).
+
+### Măsurătoarea care contează mai mult decât toate găsirile: testul de mutație
+
+S-au șters, simultan, `traceIfFalse "M0"` (poarta de pauză de pe **fiecare** mint) și **tot**
+conjunctul `A1` (regula de acceptare a unei atestări). Rezultat: **`1 out of 526 tests failed`**, iar
+singurul test roșu a fost `UnitTests/ScriptSize.hs` — pentru că scripturile s-au făcut **mai mici**.
+
+Adică: zero teste de comportament au observat că poarta de pauză și regula de acceptare au dispărut.
+Tripwire-ul de dimensiune le-a prins din întâmplare, fiindcă măsoară octeți, nu reguli.
+
+**21 din 40 de coduri de trace nu au niciun test care s-ar înroși dacă verificarea ar fi ștearsă.**
+Lista, în ordinea gravității: `M0`, `A1`, `P3`, apoi cele patru de dimensiuni de metadata
+(`Mm`/`Mp4`/`Md7`/`P4` — fixture-ul `profileDataOverLongName` **există deja** la
+`Test/Fixtures.hs:158` și nu e referit de niciun test), `Mk`/`Mp5`/`Md5`, `D2`/`D4`, `Mj`/`Md2`,
+`Mh`/`Mp1`/`Md1`, `Md3`, `Md6`, wiring-ul `Mg`, `O2`, `K1`, `K2` (niciun test de emulator nu mintează
+vreodată cu taxe configurate).
+
+Plus un gol de margine: **fiecare** caz existent pentru `checkDateInRange` folosește `interval`
+(inclusiv/inclusiv). Nu există niciun caz cu margine de sus **exclusivă**, deci o rescriere neatentă a
+funcției ar trece toată suita și ar muta granița cu o milisecundă.
+
+### Convergență: două lentile, căi diferite, aceeași cauză rădăcină
+
+Disciplina `isRefTokenName` era aplicată doar id-urilor care **sosesc în redeemer**, niciodată celor
+prin care un UTxO **se declară** stare. Trei situri ale aceleiași cauze:
+
+| Sit | Ce permitea | Reparat |
+| --- | --- | --- |
+| `Mg`/`Md4` | id de dispută/atestare care nu e token de referință | dimineață, `e6f54a7` |
+| `authenticateStateUTxO` (off-chain) | **vectorul de forjare** | runda asta |
+| `isUnbackedDatum` (on-chain) | plantul rămânea nemăturabil | runda asta |
+
+### Patru reparații de securitate (`bfe6b51`)
+
+1. **`authenticateStateUTxO`** (`offchain-lib/TxBuilding/Utils.hs`) — **HIGH.** Un token de **user**
+   legitim mintat autentica un datum scris de mână la o adresă de validator, deci ~1,3 ADA cumpăra o
+   atestare **forjată și acceptată** atribuită unei victime, servită pe propriul query „atestări
+   despre mine" al victimei, **ireversibil** (nimic nu arde în acest protocol). Off-chain, fără
+   schimbare de hash.
+2. **`isUnbackedDatum`** (`Onchain/Utils.hs`) — s-a adăugat `not (isRefTokenName tn) ||`, deci
+   plantul rămâne **măturabil**. Închide și varianta cu ancoră pe lovelace găsită de lentila de
+   datum: `isRefTokenName (TokenName "")` e `False`, deci `not(...)` e `True`.
+3. **`O6` / `oracleParamsAreWellFormed`** — `geq` e **vacuu adevărat** pe o cerință negativă.
+   Verificat în sursa plutus: `checkBinRel f l r` are brațele `This a -> f a 0`, `That b -> f 0 b`,
+   `These a b -> f a b`; cu `f = (>=)` și `b` negativ, fiecare braț e satisfăcut. Deci
+   `OracleSetMinUTxOValue (-5_000_000)` drenează ~3,8 ADA pe dispută **din portofelul adminului
+   însuși**, repetabil de oricine deschide una. Verificat pe REZULTAT, deci acoperă toate șase
+   acțiunile și orice acțiune viitoare.
+4. **`Mp6` / `Utils.valueAtOutputIdx`** — **HIGH, găsit doar de a opta lentilă.**
+   `profileUserAssetClass` apare exact o dată după construcție (în egalitatea lui `Mp2`), iar `Mp5`
+   folosește `geq`, care **permite pozitiv** token-ul de user **înăuntrul** output-ului de stare.
+   După care `P3` e satisfăcut de propriul input al profilului și **orice străin** poate rescrie acel
+   profil pe veci și emite atestări ca el.
+
+### 16 afirmații false corectate, trei dintre ele interfață publicată
+
+Blueprint-ul CIP-57 descria regula `Cleanup` de **dinainte** de `isUnbackedDatum` la toate trei
+validatoarele, și spunea că o atestare mintează un *pair* de token-uri când mintează doar ref —
+contrazicând o proprietate de securitate portantă dintr-un fișier vecin. Modulul respectiv își
+declară în header: *„Prose here is a published interface, not a comment — keep it accurate."*
+
+Și **patru reguli permanente** din `onchain-lib/CLAUDE.md`, unde regula **era** bug-ul: „must fail if
+datum valid" e verbatim regula pe care `isUnbackedDatum` a înlocuit-o; „All deterministic token names
+in `Protocol/Id.hs`" trimitea cititorii să scrie derivări într-un modul cu **zero** apelanți; o linie
+numea `unsafeGetAttestation`, funcție care n-a existat niciodată.
+
+Două numere portante: `CIP68.hs` raporta 120 de comparații când face 171; `palmares.cabal` raporta
+45% ocupare la 11871 octeți când e ~75% la 12241.
+
+Propoziția refutată despre `depositTo` era **în arbore de trei ori**; reparasem una.
+
+### `fb5f91d` — poarta de secrete a citit iar NUMELE unei legături, de data asta în hex
+
+CI era roșu pe main pe ultimele două push-uri, și **nu pe ScriptSize** cum credeam: jobul `secrets`
+cădea cu `leaks found: 1`, redactat în log. Reprodus local cu același binar: `hexCredential` la
+`AttestRead.hs:126`, un credențial DRep de 28 de octeți. Aceiași octeți pe care cele trei surori de
+două linii mai sus îi purtau în bech32 — și acelea **nu** au declanșat, fiindcă sunt calculate, nu
+literale. Nici `otherRaw` de la linia 120, care are tot 56 de caractere hex, nici `txIdHex` de la
+131, care are 64. În tot repo-ul: 15 astfel de literale în 9 module, exact unul a căzut.
+
+Al patrulea allowlist, mărginit de **lățime**: `"[0-9a-f]{56}"` = 28 de octeți = blake2b-224.
+Secretele emise sunt de 16, 24, 32 sau 64 de octeți; nimeni nu emite o cheie de 28, deci îngustarea
+n-are în ce secret să se lărgească. Ghilimelele din pattern sunt portante — fără ele, o cheie de 64
+hex conține șaisprezece subșiruri de 56.
+
+Trei aserțiuni noi, și a treia e cea care contează: **un 64 hex sub același nume trebuie să rămână
+prins**, altfel intrarea a încetat să însemne „un hash de credențial" și a început să însemne „hex e
+ok". Prima mea plantă de 64 hex era `aa` plus zerouri și `generic-api-key` nu o semnalează deloc —
+ar fi fost o aserțiune care trece și nu dovedește nimic; e notat în script ca măsurătoare. 8/8 trec,
+84 de commit-uri curate.
+
+Iar comentariul pasului susținea că allowlist-ul stinge „ONE rule off on ONE path" — într-un pas
+numit chiar „rule-scoped, not path-scoped". Sunt patru locuri și doar primul e o cale.
+
+### Tiparul, acum la 16 instanțe
+
+*Propoziția care explică de ce o regulă e corectă e aproape întotdeauna despre jumătatea care **ESTE**
+aplicată.* Instanțele din runda asta: poarta de secrete care citea NUMELE unei legături;
+`resolveDisputeTX` cu „o pauză nu o blochează"; `admin/Main.hs` care susținea că CI verifică drift pe
+un blueprint comis (nu există nici documentul, nici verificarea); blueprint-ul **publicat** mai sus;
+`onchain-lib/CLAUDE.md:58-59`; proza din `Operations.hs` care ținea locul verificării `Mp6`.
+
+### Cinci decizii de owner, toate cu argumentul scris
+
+Niciuna nu e un bug de reparat în liniște — fiecare schimbă **ce este** protocolul.
+
+- **D-A, timeout la dispută.** O ieșire, o cheie, și cel care plătește inacțiunea e **ținta**
+  (acuzație permanentă pe dosarul unui străin, fără nicio mișcare on-chain). Un admin viu care nu
+  acționează produce aceeași stare ca o cheie pierdută. Pauză + cheie pierdută = îngheț total
+  permanent. Recomandare: redeemer de retragere pentru disputant după N sloturi.
+- **D-B, credențial de stake. SINGURA CU TERMEN.** Niciun hash al protocolului nu are unul, iar
+  `Mp5`/`Mk`/`Md5` compară adresa **întreagă**, deci un output cu parte de staking cade la mint.
+  Trebuie decis **înainte de primul deploy**; după, e migrare de registru, fiindcă schimbarea adresei
+  schimbă currency symbol-ul. Încalcă regulile 13 și 14 din propriul `CLAUDE.md` al repo-ului și e
+  singurul tradeoff din codebase fără comentariu.
+- **D-C, pauză la `AcceptAttestation`.** Singura scriere ireversibilă și singura pe care pauza nu o
+  oprește. Motivul meu scris enumera două căi scumpe și **enumerarea era incompletă**: oracolul e
+  **deja** reference input la fiecare acceptare pe care produsul o construiește, deci parametrizarea
+  validatorului prin `AssetClass`-ul lui costă **zero** reference inputs în plus.
+- **D-D, `maxDateWindow` 4× → 1×.** Builder-ul off-chain hard-codează lățimea ca exact 1×, deci
+  factorul 4× nu absoarbe nimic — doar lărgește back-dating-ul atacatorului la 28,8 h. Remediu fără
+  schimbare de hash: stratul de citire compară `attestationDate` cu timpul blocului.
+- **D-E, revendicarea de credențial.** `Mp3` dovedește că credențialul a consimțit la **această
+  tranzacție**, nu la unde aterizează autoritatea: o tranzacție co-semnată pentru orice motiv
+  nelegat mintează un profil care revendică credențialul victimei, cu atacatorul ținând token-ul.
+  `checkCredentialControl` dovedește condiția de **cheltuire**, care pentru un script Plutus nu e
+  condiția de **vot** — dovezile per-purpose sunt exprimabile (`txInfoVotes`). Și o revendicare e
+  dovedită o dată și afirmată pe veci: fără retragere, fără expirare, fără burn.
+
+### O recomandare de agent refuzată, cu motiv
+
+Lentila de ExUnits a propus `unsafeFromBuiltinData` pe citirea oracolului: 450–850 octeți pe trei
+scripturi. Refuzat. La 12241/16384 cu plafon 14000 sunt ~1750 de octeți de spațiu, `K1` e valoare
+diagnostică pe **singura** cale care citește stare externă, și e singurul item din raport care
+schimbă o verificare pe octeți. Notat drept prima pârghie dacă politica se apropie vreodată de
+plafon.
+
+### De ce 21 de coduri erau nefixate: suita nu construise niciodată un `ScriptContext`
+
+Briefing-ul meu către agentul de teste spunea să urmeze „tiparul pur" din `Satisfaction.hs` și
+`MintInputs.hs`. Agentul a raportat că tiparul **nu există**: acele module testează ajutoare pure
+(`spentExactlyOnceFromAddress`, `isRefTokenName`, `validateOtherMetadata`), iar un `grep` arată că
+**niciun test din suită nu apelează `mintingPolicyLambda`/`profilesLambda`/`attestationsLambda`**.
+
+Asta explică exact cele 21: singura testare on-chain era prin emulator, iar o tranzacție de emulator
+trece prin **builder-ul off-chain**, care refuză o tranzacție malformată înainte să ajungă la
+validator. Conjunctele care pot fi atinse doar de un context construit de mână nu au fost niciodată
+executate — nu din neglijență, ci fiindcă nu exista niciun drum până la ele. `MutationGuards.hs` e
+primul test cu context construit de mână din repo.
+
+### Două decizii luate, cu argumentul în cod
+
+**D-B — închisă fără schimbare de comportament.** Egalitatea pe adresa întreagă **este** alegerea
+corectă; termenul exista doar fiindcă nu era nici documentată nici fixată de test. Argumentul e acum
+în `Utils.hs`, pe `isTxOutAtIndexWithDatumMinValueAndAddress`: recompensele se acumulează pe adresa
+de stake, nu pe UTxO, deci o adresă de script delegată ar strânge un sold mutabil doar cu un
+certificat de retragere semnat de credențialul de stake — **a doua cheie, fără niciun proprietar
+numit în protocol**, păzind fonduri al căror revendicator e genuin ambiguu între registru și
+depunători. Și relaxarea la „doar partea de plată" e strict mai slabă: două adrese care împart
+credențialul de plată și diferă în partea de staking sunt adrese **diferite** pe care protocolul
+le-ar trata pe amândouă ca fiind ale lui, ceea ce face setul nemărginit. Plus jumătatea cerută de
+regula 14: min-ADA pe UTxO de stare e blocat **permanent**, fiindcă nimic nu arde — e prețul unui
+registru care nu poate fi retractat; depozitul de dispută se întoarce pe orice verdict, deci nu e
+valoare blocată, e garanție depusă.
+
+**D-D — 2×, nu 1×.** Verificat, nu presupus: `safeEraTime = 25920` sloturi și
+`txIsValidForSafeEra` construiește exact `[tip, tip + safeEraTime]`, deci lățimea onestă e un 1×
+determinist care nu variază niciodată. Surplusul era în întregime al atacatorului, **și e tot
+bugetul lui**: raza de back-dating a unui interval forjat e exact `maxDateWindow`, fiindcă ledger-ul
+cere doar ca slotul curent să fie înăuntru, deci `[now - maxDateWindow, now]` e mereu disponibil. 4×
+cumpăra 28,8 h; 2× cumpără 14,4 h. Nu 1×, fiindcă acolo lățimea onestă **egalează** plafonul și trece
+doar prin `<=` — orice portofel care lărgește intervalul ar fi refuzat de validator, nu de o decizie
+recenzată.
+
+### O lecție de unealtă, fiindcă a costat timp real
+
+Trei shell-uri de build în fundal au stat blocate **unul pe altul**: fiecare aștepta cu
+`while pgrep -f "cabal (build|test)"`, iar linia de comandă a fiecărui shell **conține** șirul
+`cabal build`, deci `pgrep -f` îl găsea pe fratele lui. Deadlock pe trei căi; nimic nu s-a compilat
+niciodată. Dacă un guard de genul ăsta mai apare, el trebuie să caute procesul **real** (`pgrep -x
+ghc-9.6.6`), nu propria lui linie de comandă.
