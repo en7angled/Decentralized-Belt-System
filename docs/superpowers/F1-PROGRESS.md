@@ -4532,3 +4532,31 @@ Neschimbat pe owner: `config/config_atlas.json` și finanțarea
 `addr_test1vpdqa29j3hhsf9lsj490j59t7cgf0k5la5q8nqgkqkahpwq87tp9t`. Neschimbat ca decizii: D-A, D-C,
 D-E. **Lista „neblocat, de cod" e goală** — tot ce mai urmează are nevoie de lanț sau de o decizie a
 ta, în afară de convenția de 120 de coloane, care e ea însăși o decizie.
+
+### Valoarea de configurare, acum cunoscută — și verificată cu un decodor din afara repo-ului
+
+Comanda rulată pe `operation.prv` existent, cu o configurație Atlas de tip substituent în
+`ATLAS_CORE_CONFIG` (`printOperatorAddress` citește doar `cfgNetworkId`, deci nu se face niciun apel
+de rețea și nu e nevoie de token):
+
+```
+Operator address (bech32):   addr_test1vpdqa29j3hhsf9lsj490j59t7cgf0k5la5q8nqgkqkahpwq87tp9t
+Operator address (raw hex):  605a0ea8b28def0497f0954af950abf61097da9fed0079811605bb70b8
+Operator DRep id (CIP-129):  drep1yfdqa29j3hhsf9lsj490j59t7cgf0k5la5q8nqgkqkahpwq5hl35n
+```
+
+Deci `ATTEST_SMOKE_DREP_ID=drep1yfdqa29j3hhsf9lsj490j59t7cgf0k5la5q8nqgkqkahpwq5hl35n` și
+`ATTEST_SMOKE_ADDR=605a0ea8b28def0497f0954af950abf61097da9fed0079811605bb70b8`. Mai rămâne doar
+finanțarea adresei și configurația Atlas reală.
+
+Verificarea nu e testul unitar, ci un decodor bech32 **scris separat**, fiindcă un test din repo
+folosește codificatorul repo-ului și nu poate contrazice o greșeală comună amândurora:
+
+| | antet | sarcină utilă (28 B) |
+| --- | --- | --- |
+| adresă | `0x60` — doar cheie de plată, testnet | `5a0ea8b2…05bb70b8` |
+| DRep id | `0x22` — credențial de **cheie** CIP-129 | `5a0ea8b2…05bb70b8` |
+
+**Aceiași 28 de octeți, pe două derivări independente** — adresa prin `addressFromPaymentKeyHash`,
+id-ul prin `paymentKeyHashToPlutus` plus CIP-129. Asta e exact afirmația pe care se sprijină fluxul de
+fum: id-ul tipărit numește cheia care semnează.
