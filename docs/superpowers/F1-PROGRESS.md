@@ -5997,3 +5997,102 @@ ieftină față de ce costă o greșeală.
 Nimic altceva. `OC-05` (lineage scos), poziția `OC-09` + `attest-sync` pe listă de politici, apoi
 jumătatea a doua din `CS-01`, `OF-02`, `OF-03`/`OF-04`, `OC-06`, tot clusterul de livrare și `TD-04`
 nu ating lanțul. Merg mai departe pe ele.
+
+---
+
+## 2026-10-24 — `OC-05`: id-urile capătă tip, și lineage iese
+
+Fiecare id era `label 100 ‖ blake2b_224(seed)` sub o singură politică, deci `Mg` și `Md4` nu puteau
+întreba decât „e un token cu prefix de referință al politicii asta". Trei clase de gunoi permanent
+decurgeau din asta, și niciuna nu e o falsificare — toate sunt lucruri pe care o verificare de patru
+octeți le previne.
+
+### Mecanismul: o etichetă CIP-67 pe fel
+
+| | etichetă | prefix |
+| --- | --- | --- |
+| profil (referință) | 100 | `0x000643b0` |
+| profil (user) | 222 | `0x000de140` |
+| **atestare** | **1** (uz privat) | `0x00001070` |
+| **dispută** | **2** (uz privat) | `0x000020e0` |
+
+**De ce etichetă și nu un octet de discriminare.** Un nume de token are cel mult 32 de octeți, iar un
+id e deja `4 + 28` — exact 32. Nu e loc pentru un octet fără să scurtezi hash-ul, dar cei patru deja
+cheltuiți pe etichetă pot purta felul gratis.
+
+**De ce uz privat.** CIP-67 rezervă 0–15 pentru uz privat, care e răspunsul propriu al spec-ului
+pentru un protocol care are nevoie de clasele lui; iar id-ul politicii scopează deja fiecare
+verificare de aici. Profilurile păstrează 100/222 fiindcă un profil **chiar e** o pereche CIP-68 — are
+user token și un wallet ar trebui să-l vadă așa. O atestare și o dispută nu au, deci ocuparea
+etichetelor CIP-68 le-ar spune tuturor wallet-urilor care citesc etichete să caute un 222 care nu
+există.
+
+**Ambele checksum-uri le-am calculat cu CRC-8-ul propriu al CIP-67 și le-am verificat reproducând
+toate cele patru etichete CIP-68 înregistrate (100, 222, 333, 444) cu același encoder înainte de a-l
+crede pe una nouă.** Un checksum greșit e o etichetă pe care orice cititor CIP-67 o respinge, și ar fi
+fost îngheațat în fiecare id pe care protocolul îl mintează vreodată.
+
+### Regulile
+
+`Mg` cere acum **id de profil pe ambele părți**. `Md4` cere **țintă de atestare și deschizător de
+profil**. `Mr` e nou: refuză o atestare auto-emisă.
+
+### Lineage iese, și textul de fix din audit ar fi spart protocolul
+
+Auditul oferea lui `Mg` uniunea „profil ∪ atestare" ca să păstreze lineage posibil. Proprietarul a
+scos funcția pe 2026-10-24, ceea ce face regula mai simplă: uniunea exista **doar** ca să permită un
+subiect care nu e profil.
+
+E și decizia onestă, fiindcă **lineage n-a funcționat niciodată.** `A5` cere subiectului să cheltuie
+user NFT-ul derivat din id-ul lui, iar mintul unei atestări nu creează niciun user token — deci o
+înregistrare de lineage rămânea `isAccepted = False` cât există lanțul, iar stratul de citire are
+instrucțiune să prezinte asta ca „pending", unui subiect care nu putea acționa. Cazul de emulator care
+asserta exact asta (`5.11b`) e dovada; l-am înlocuit cu refuzul.
+
+Și **`Mr` așa cum era scris în audit ar fi brickuit fiecare înregistrare de credențial.** `Mc1`
+*cere* `subject == issuer` pe un `CredentialClaim` și pe un `CredentialWithdrawal` — o legătură e
+auto-emisă prin construcție — deci un `subject /= issuer` literal îl contrazice. ADR 0003 a aterizat
+după audit, deci textul lui de fix era scris contra unui protocol care nu mai exista. `Mr` exemptează
+felurile de credențial, iar `isCredentialKind` era deja în fișier ca să spună care sunt.
+
+### Regresia pe care a introdus-o schimbarea, și cum a fost prinsă
+
+`isUnbackedDatum` avea `isRefTokenName` hardcodat. Era corect doar cât fiecare id purta eticheta 100.
+Odată ce atestările au trecut pe 1 și disputele pe 2, testul citea „asta nu e un nume cu eticheta
+100" — **adevărat pentru fiecare atestare reală și fiecare dispută reală** — deci `A4` și `D8` ar fi
+declarat **toată starea protocolului** măturabilă, iar `Cleanup` e permisionless.
+
+Semnătura era neschimbată și codul compila. A fost prinsă citind apelanții predicatului pe care
+etichetele l-au schimbat; cazul de emulator „Cleanup CANNOT spend real protocol state" ar fi prins-o
+și el, și exact pentru asta există. `isUnbackedDatum` ia acum predicatul de nume al felului propriu,
+ceea ce e **strict mai tare** decât forma veche: un datum de dispută parcat la adresa de atestări e
+neacoperit acolo, oricât de bine îl acoperă propria lui valoare.
+
+### Costul
+
+| | înainte | după | |
+| --- | --- | --- | --- |
+| Profiles | 8262 | 8262 | **0** |
+| Attestations | 8608 | 8608 | **0** |
+| Disputes | 9978 | 9978 | **0** |
+| Oracle | 7856 | 7856 | **0** |
+| MintingPolicy | 12852 | 12924 | +72 |
+
+**+72 de octeți, într-un singur script, pentru tot `OC-05`.** Patru zerouri și un număr mic — cea mai
+ieftină reparație de corectitudine din istoria asta, și merită spus de ce: **etichetele nu costă nimic
+la mintare** (o altă constantă de patru octeți sunt tot patru octeți), deci singurul cod nou e trei
+predicate tipate plus inegalitatea lui `Mr`, tot în politica de minting, singurul script care decide ce
+poate numi un id.
+
+Cele patru zerouri poartă și o afirmație: cele trei validatoare de cheltuire au primit parametrul nou
+al lui `isUnbackedDatum` și **nu** au crescut, fiindcă pasarea unui predicat care înainte era hardcodat
+e aceeași muncă; iar validatorul de atestări a **pierdut** limita de lineage fără să se micșoreze,
+fiindcă limita aceea era documentație, nu cod. Auditul estima `OC-05` la efort M exact din motivul
+ăsta — costul e în id-urile însele, pe care fiecare fixture și fiecare derivare de client a trebuit
+să le urmeze.
+
+### Cod mort preexistent, semnalat și neatins
+
+`LineageGraphData`/`LineageNode` din `QueryResponses.hs` nu au niciun utilizator în afara propriului
+modul. Modelează un graf de **profiluri** — sensul din Belt System — nu atestări despre atestări, deci
+schimbarea asta nu le omoară; erau deja moarte.
