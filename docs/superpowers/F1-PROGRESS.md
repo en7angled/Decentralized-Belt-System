@@ -5511,3 +5511,84 @@ nevoie pe calea locală.
 **DNS-ul unui provider e o dependență fără pagină de status.** Eșecul vine ca o eroare de resolver
 înăuntrul unei erori de bibliotecă înăuntrul unei erori de CLI, iar cele trei bănuieli evidente sunt
 greșite toate trei. Când o chemare de provider eșuează, **rezolvă numele întâi.**
+
+---
+
+## 2026-10-23 — T-ATTEST-10/11/12: F1 e pe preprod, și fără niciun provider găzduit
+
+Șase tranzacții, toate confirmate, prin `GYNodeKupo` — **nu** prin Blockfrost, nu prin Maestro.
+
+| pas | script hash | tx |
+| --- | --- | --- |
+| oracle validator | `4dc6a21eba724a49b16c98293bad76cec1e88fe67cbb71b7243aa9e9` | `cf74f2f2…` |
+| oracle NFT + genesis `OracleParams` | policy `5af23e2c38806b80fb53fc16ef0fc977c237113a0152922279a773fe` | `2bbb6ff5…` |
+| profiles validator | `358baa0fb10539244e01456f3d4e6c764f7abd0e882a56fcb0b013d7` | `9d7b64a6…` |
+| attestations validator | `48c4eae4904bcf5b0036a007853a53ac45b1584d609accfc8fff4cf6` | `04fa7e0d…` |
+| disputes validator | `80568e630ad997a903c7e9a1f8bece3de6bf70e8e98a5d5a811784a1` | `e6c88b79…` |
+| minting policy | `589f6a0bd0a6d405b21c2f462d1fea303244a30578ecf47628ef4fbb` | `d3687318…` |
+
+**Hash-urile sunt verificate pe lanț, nu doar în fișier.** Kupo raportează un `script_hash` pe fiecare
+dintre cele cinci UTxO-uri de referință, și toate cinci se potrivesc cu ce scrie
+`config_palmares_validators.json`. Adică fiecare UTxO poartă chiar scriptul pe care îl pretinde.
+
+`admin query-oracle` citește datumul înapoi prin același provider: admin PKH
+`5a0ea8b28def0497f0954af950abf61097da9fed0079811605bb70b8`, `Paused: False`, min-UTxO 1 ADA, depozit
+de dispută 5 ADA, fee config `None`.
+
+### Costul real, și de ce cifra pe care am dat-o era înșelătoare
+
+**6,97 tADA arse.** Plus **205,40 tADA blocate** ca min-ADA în cele cinci UTxO-uri de referință —
+recuperabile prin cheltuirea lor. Estimarea mea de „~210 tADA" era **soldul pe care trebuie să-l ai**,
+nu prețul. E o diferență de treizeci de ori și merită scrisă, fiindcă „deploy-ul costă 210 ADA" ar fi
+o propoziție falsă repetată mai departe.
+
+Rămas lichid: 9.787,63 tADA din 10.000.
+
+### Spike-ul din ADR 0002 s-a închis în favoarea opțiunii pe care o spera
+
+ADR 0002 întreba „whether the local-node provider can build and submit the attestation transaction
+set, and what it costs in operational complexity versus one provider token". **Poate** — și e exact ce
+a făcut deploy-ul: build, submit și await-confirmed pe șase tranzacții, contra node 11.1.2 + Kupo
+v2.12.0. Deci calea de scriere nu are, momentan, **niciun secret**.
+
+Complexitatea operațională e o singură ciudățenie de platformă: pe Linux socketul nodului e o cale și
+nu există nicio punte. Pe macOS socketul stă în volum numit, deci sunt două hopuri până la un CLI de
+pe host — un container de socat care îl publică pe TCP loopback, plus un relay UNIX în stdlib Python.
+Problemă de laptop, nu de arhitectură. (Pe amândouă le-a pornit proprietarul: clasificatorul de
+permisiuni mi le-a refuzat, inclusiv rularea unui simplu fișier de script.)
+
+Decizia din ADR 0004 e deci mai îngustă decât se citea prima dată, și documentul o spune acum:
+`blockfrostKey` când calea de scriere și nodul sunt pe mașini diferite, `socketPath` + `kupoUrl` când
+nu sunt.
+
+### Un defect pe care l-a găsit chiar deploy-ul
+
+`query-oracle` tipărea cinci câmpuri și **nu** `opDisputeTimeoutMs` — deși `set-dispute-timeout`
+există ca să-l schimbe și `O6` refuză un datum în care nu e pozitiv. O comandă de admin care poate
+scrie o valoare dar nu o poate arăta lasă operatorul să ghicească exact numărul care decide când o
+dispută devine închidabilă de oricine, iar primul boot e momentul în care vrei să **confirmi** valoarea
+de geneză, nu să o deduci din sursa despre care speri că a fost compilată. Reparat; citește acum
+**2592000000 ms (30 de zile)**. `ce8edfd`.
+
+### Ce NU am comis, deliberat
+
+`config/config_palmares_validators.json` **nu** e gitignored, dar l-am lăsat necomis. E un deploy de
+repetiție, iar cele patru decizii care îngheață formatele (`OC-01` admin ca `Credential`, `OC-04`/`OF-16`
+rolul CIP-129 pe `attestationCredential`, `OC-05` id-uri tipate cu etichete CIP-67, `OC-09` poziția de
+upgrade) **mută hash-urile**. Un config de validatori comis și devenit stale e exact bug-ul pe care
+Belt System l-a avut deja o dată. Primul deploy care se păstrează îl comite.
+
+### Ce rămâne neverificat pe lanț
+
+Niciun **validator de cheltuire** nu a executat încă: mintul NFT-ului rulează politica de minting, iar
+datumul oracle doar se așază la adresă. Prima execuție a validatorului de oracle e prima cheltuire a
+acelui UTxO. Proba cea mai ieftină, cu stare neschimbată:
+
+```
+! cd /Users/mg/Projects/CardanoProjects/palmares && cabal run exe:admin -- set-dispute-timeout 2592000000
+```
+
+Scrie valoarea pe care o are deja, deci datumul iese **identic la octet**, dar cheltuiește UTxO-ul
+oracle și execută pe lanț `O1` (semnătura admin-ului), `O2` (output la index, la adresa proprie, cu
+valoare `>=`), `O6` (bună-formare pe **rezultat**) și indexul 6 de redeemer — cea mai nouă acțiune,
+care până acum era fixată doar în Haskell (`PropertyTests.hs`, lista `[0,1,2,2,3,4,5,6]`).
