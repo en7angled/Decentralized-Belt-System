@@ -5782,3 +5782,218 @@ credențial de script, orice arbitru-script ar fi impersonabil.
 
 **Deployment-ul de ieri e mort** — formatul datumului s-a schimbat, deci hash-urile s-au mutat. Exact
 pentru asta era repetiția.
+
+---
+
+## 2026-10-24 — `OC-04` + `OC-08`: rolul intră în datum, iar din datumul de profil ies trei hash-uri necitite
+
+Două schimbări de format în aceeași fereastră, și numărătoarea de octeți e argumentul că trebuiau
+luate împreună.
+
+### `OC-04`: o cheie rece de comitet era publicată drept DRep
+
+CIP-129 pune rolul în octetul de header — DRep `0x22`/`0x23`, comitet rece `0x12`/`0x13`, comitet cald
+`0x02`/`0x03`. Datumul stoca un `Credential` gol, care e 28 de octeți plus flag-ul cheie/script și
+nimic altceva, deci header-ul se arunca la parse și randatorul trebuia să ghicească. Ghicea `drep`
+pentru tot. Un profil `Committee` care revendica `cc_cold1…` ieșea deci ca **`drep1…` pe aceiași
+octeți**: un identificator care nu rezolvă la nimic în GovTool sau db-sync, deci cititorul nu putea
+verifica revendicarea care i se arăta. Regula de dovadă a fost mereu corectă; **înregistrarea era
+lossy.**
+
+Justificarea veche era că „rolul pe care îl joacă octeții ăia e `kind`-ul profilului". E greșită de
+două ori: un `Organization` poate fi DRep, un `Committee` poate ține ambele credențiale de comitet,
+și nimic on-chain nu leagă `OnchainProfileKind` de niciunul.
+
+Deci `attestationCredential :: Maybe ClaimedCredential`, sumă cu trei constructori la indicii 0-2, și
+`claimCredentialToText` randează sub HRP-ul pe care rolul îl cere de fapt. `ccColdIdCip129` și
+`ccHotIdCip129` **existau deja** în `Ids.hs` — lipsea doar dispatch-ul.
+
+Toate trei rolurile sunt revendicabile, inclusiv cel cald. Fără ADR 0003 ar fi fost un argument
+împotrivă, fiindcă o înregistrare care arată spre o cheie caldă rotită e dezinformare cu dată; cu
+lanțul claim/withdrawal e deja rezolvat, deci excluderea ar fi scos o capabilitate și n-ar fi reparat
+nimic. Credențialele de stake rămân nerevendicabile și au fost mereu, orice spunea Haddock-ul:
+`parseCredentialCip129` n-a acceptat niciodată unul, iar controlul unui credențial de stake se
+dovedește printr-o retragere în `txInfoWdrl`, nu printr-o cheltuire.
+
+**O retragere trebuie acum să numească același ROL** ca revendicarea pe care o înlocuiește. Asta e
+regula corectă, nu un efect secundar: retragerea unei revendicări de DRep nu are treabă să anuleze una
+de comitet-rece pe aceiași 28 de octeți.
+
+### `OC-08`: parametri pe care nimeni nu-i citea, în fiecare profil mintat vreodată
+
+`OnchainProfile.protocolParams` era tot recordul `ProtocolParams` și **exact unul din cele patru
+câmpuri** era vreodată citit de pe un datum de profil: `ProfilesValidator` lua `oracleToken` și nimic
+altceva. Cele trei hash-uri de validator călătoreau necitite, iar politica de minting le are deja ca
+parametru de compilare, care e locul unde aparține o adresă de validator. Acum
+`profileOracleToken :: AssetClass`. Fixarea token-ului oracle în datum nu s-a schimbat și e tot
+corectă: e ce împiedică substituirea unui UTxO oracle fals la cheltuire.
+
+### Tabelul e argumentul
+
+| | înainte | după | |
+| --- | --- | --- | --- |
+| Profiles | 8384 | **8207** | −177 |
+| Attestations | 8322 | 8516 | +194 |
+| Disputes | 9978 | 9978 | **0** |
+| Oracle | 7856 | 7856 | **0** |
+| MintingPolicy | 12652 | 12756 | +104 |
+
+**+121 net: `OC-08` a rambursat 177 din cei 298 ai lui `OC-04`.** Reparația de corectitudine singură
+ar fi costat +298; scoaterea recordului mort în același commit a plătit mai mult de jumătate din ea.
+Asta valorează „aceeași fereastră de format", în octeți și nu în proză.
+
+Cele două zerouri confirmă ambele afirmații: Disputes și Oracle nu citesc niciunul din cele două
+datum-uri, deci niciunul nu s-a mișcat — ceea ce înseamnă că validatorul de profile **era** singurul
+cititor al parametrilor încorporați într-un datum de profil, și că wrapper-ul de credențial se plătește
+doar unde se parsează un datum de atestare.
+
+### Testele care nu se puteau scrie înainte
+
+`WritePath` a primit: rolul supraviețuind round-trip-ului, un id `cc_cold` randat înapoi ca `cc_cold`,
+și regresia într-o linie — **aceiași 28 de octeți sub două roluri produc doi identificatori
+diferiți.** Până la commit-ul ăsta, ambele părți ale acelei aserțiuni erau `drep1…` și aserțiunea nu
+putea exista.
+
+`4d1502b`. 655 de teste, de la 651.
+
+### Și setul de audit a trecut pe main
+
+`4447d93`, 40 de fișiere, **zero cod** — verificat cu
+`git diff --name-only main...branch -- src/ scripts/ palmares.cabal`, care e gol.
+
+Două motive. **Raportul 07 nu mai e un audit, e backlog-ul pe care îl execut**, iar un backlog care
+stă pe un branch lateral în timp ce main se mișcă e un backlog care minte — ăsta deja mințea, spunea
+OPEN pentru șase constatări închise în codul din main. Și **main nu avea deloc documentație de
+arhitectură**: cele trei documente reconciliate plus 26 de diagrame randate existau numai pe branch,
+deci cine clona main primea un protocol cu cinci validatoare și 70 de coduri de trace și nicio
+imagine a niciunuia.
+
+Rapoartele 01-06 (instantaneu `4eb9117`) și 07 (instantaneu `2bfbde`) **nu se mai editează** —
+editarea lor ar distruge exact ce le face utile. Lista ținută la zi e `README §3`, cele 22 de rânduri,
+care a primit o coloană `Status`. Branch-ul e șters, local și pe remote.
+
+---
+
+## 2026-10-24 — `OC-03`: regula lui `Mp6` în cele patru locuri unde lipsea
+
+Patru conjuncte, o singură regulă: **token-ul de autoritate al actorului nu are voie să intre în
+output-ul de stare.** `Mp6` o impunea deja la mint-ul de profil; celelalte patru căi care scriu stare
+erau deschise.
+
+| cod | unde | ce păzește |
+| --- | --- | --- |
+| `Pa` | `ProfilesValidator`, calea de update | user token-ul profilului |
+| `Ms` | `MintingPolicy`, `handleNewAttestation` | user token-ul emitentului |
+| `A8` | `AttestationsValidator`, `AcceptAttestation` | user token-ul subiectului |
+| `Md9` | `MintingPolicy`, `handleOpenDispute` | user token-ul celui care deschide |
+
+### De ce era nevoie de un conjunct, când patru verificări se uită deja la acele output-uri
+
+`P5`, `Mk`, `A1` și `Md5` cer toate ca output-ul să poarte **cel puțin** valoarea așteptată și nu spun
+nimic despre ce altceva e în el. Deci parcarea unui token trece prin toate patru, datumul e identic la
+octet, și nimic altceva din protocol nu observă. Ăsta e exact genul de gaură pe care o lasă un `>=`.
+
+### Ce costă victima, și de ce calea de profil e mai rea decât celelalte
+
+Nimic în protocolul ăsta nu arde un user token, deci unul parcat într-un output de stare e pierdut.
+Pe calea de profil e mai mult decât pierdut: `P3` devine satisfăcut de **propriul input al
+profilului**, fiindcă `valueSpent` însumează toate input-urile inclusiv cel de script — deci oricine
+poate cheltui profilul acela. Și în aceeași tranzacție poate minta `NewAttestation` cu el ca
+`issuer`, fiindcă `Mf` citește și el `valueSpent`. **Identitate scriibilă de oricine, permanent** —
+exact ce descrie comentariul lui `Mp6`, ajuns prin calea de update în loc de mint.
+
+Doar deținătorul token-ului o poate declanșa, prin autovătămare sau semnând tranzacția unui
+front-end. De asta e Medium și nu High. Și e tot ireversibil.
+
+### De ce `Pa` și nu `P8`
+
+Textul de fix din audit propunea `P8`. **`P8` și `P9` sunt arse** — aparțineau brațului
+`RevokeCredential` pe care ADR 0003 l-a scos. Reutilizarea ar fi pus o regulă vie în spatele unui cod
+care înseamnă deja altceva în log-urile de dinainte, adică exact eșecul pe care nota din
+`ProfilesValidator` există ca să-l prevină. Deci secvența continuă cu o literă după perechea arsă, cum
+face `Da` după `D9` în validatorul de dispute. `Mp3` e ars pe aceleași temeiuri în politica de minting
+— de aceea regulile noi de acolo sunt `Ms` și `Md9`, nu o reutilizare.
+
+Recensământul: **74 de coduri** acum, de la 70.
+
+### Costul în octeți
+
+| | înainte | după | | |
+| --- | --- | --- | --- | --- |
+| Profiles | 8207 | 8262 | +55 | `Pa` |
+| Attestations | 8516 | 8608 | +92 | `A8` |
+| Disputes | 9978 | 9978 | 0 | |
+| Oracle | 7856 | 7856 | 0 | |
+| MintingPolicy | 12756 | 12852 | +96 | `Ms` + `Md9` |
+
+**+243 pentru patru conjuncte**, față de estimarea auditului de 30–55 fiecare. `Pa` a aterizat la
+exact cei 55 ai lui `Mp6` — comparația care merită, fiindcă e același conjunct pe aceeași formă. `A8`
+a costat 92 fiindcă validatorul de atestări nu folosea încă `valueAtOutputIdx` și acum îl cară; cele
+două din politica de minting îl împart și au ieșit 48 bucata.
+
+Cele două zerouri spun din nou unde aterizează costul: `Md9` păzește **deschiderea** unei dispute,
+care e treaba politicii de minting, nu a validatorului de dispute.
+
+### Testele
+
+Patru perechi de context pur în `MutationGuards.hs`, fiecare cu un `True` lângă `False`-ul ei —
+**cazul valid trebuie să rămână verde, altfel testul doar demonstrează că ceva e rupt.** Am
+parametrizat cele trei builder-e care își construiau output-ul intern (`updateCtxParking`,
+`credentialMintCtxParking`, `openDisputeCtxParking`); `acceptCtx` era deja parametrizat.
+
+Perechea de la acceptare e cea mai ascuțită: `A5` a **cerut tocmai** ca token-ul subiectului să fie
+cheltuit, deci e în mână și la un index de output distanță de a fi blocat într-o înregistrare pe care
+nimic nu o arde. `A5` spune că token-ul trebuie să se miște; `A8` spune unde nu are voie să se mute.
+
+`TD-04` se plângea că două fix-uri de securitate au plecat netestate. Astea patru nu.
+
+---
+
+## BLOCKED-ON-USER — redeploy-ul preprod
+
+**Nu e blocat pe decizii, e blocat pe clasificatorul de permisiuni.** Se face UNA SINGURĂ dată, după
+ce `OC-05` și poziția `OC-09` au aterizat — fiecare schimbare de format mută hash-urile, deci un
+redeploy intermediar aruncă min-ADA-ul blocat degeaba.
+
+Trei comenzi, în ordine. Prima și a doua sunt refuzate de clasificator („Production Deploy",
+respectiv „Auto-Mode Bypass"), a treia cheltuie fonduri și merită să rămână manuală:
+
+```
+! docker run --rm -d --name palmares-nodefwd -v palmares-dbsync-exp_node-ipc:/ipc:ro -p 127.0.0.1:13001:13001 alpine/socat TCP-LISTEN:13001,fork,reuseaddr UNIX-CONNECT:/ipc/node.socket
+```
+```
+(terminal separat, lăsat deschis)
+python3 /Users/mg/Projects/CardanoProjects/palmares/scripts/node_socket_relay.py
+```
+```
+! cd /Users/mg/Projects/CardanoProjects/palmares && cabal run exe:admin -- deploy-reference-scripts
+```
+
+**Precondiții, toate verificate pe 2026-10-24:** `config/config_atlas.json` e deja pe
+`{"socketPath": "/tmp/palmares-node.socket", "kupoUrl": "http://localhost:11442"}`; Kupo e la tip
+(slot 137111892) cu `--match '*'`; portofelul de admin are **9.992,61 tADA** în 6 UTxO-uri, din care
+cinci sunt scripturile de referință moarte (~205 tADA recuperabili prin cheltuirea lor).
+
+**Reparația durabilă**, dacă proprietarul vrea rularea complet neîntreruptă — cinci reguli în
+`permissions.allow` din `~/.claude/settings.json`:
+
+```json
+"Bash(docker run --rm -d --name palmares-nodefwd:*)",
+"Bash(python3 /Users/mg/Projects/CardanoProjects/palmares/scripts/node_socket_relay.py)",
+"Bash(docker ps:*)",
+"Bash(docker logs palmares-nodefwd:*)",
+"Bash(nc -z:*)"
+```
+
+Nu le adaug eu — nu-mi lărgesc singur permisiunile. Relay-ul a fost mutat din scratchpad în
+`palmares/scripts/node_socket_relay.py` (`accd192`) tocmai ca regula să aibă o cale stabilă de numit;
+în scratchpad calea moare cu sesiunea.
+
+**Submit-ul de tranzacții rămâne manual deliberat.** Cheltuie fonduri, iar o confirmare pe el e
+ieftină față de ce costă o greșeală.
+
+### Ce NU e blocat
+
+Nimic altceva. `OC-05` (lineage scos), poziția `OC-09` + `attest-sync` pe listă de politici, apoi
+jumătatea a doua din `CS-01`, `OF-02`, `OF-03`/`OF-04`, `OC-06`, tot clusterul de livrare și `TD-04`
+nu ating lanțul. Merg mai departe pe ele.
