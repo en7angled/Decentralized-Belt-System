@@ -5641,3 +5641,144 @@ Deci lipsesc exact două lucruri: un `--build-only` pe `rotate-admin` care tipă
 în loc să trimită o tranzacție refuzată, și o comandă `submit-tx` care primește tranzacția plus unul
 sau mai multe witness-uri, adaugă pe al său și trimite. Fluxul devine: admin curent face build →
 admin care intră rulează `sign-tx` pe mașina lui → admin curent face `submit-tx`.
+
+---
+
+## 2026-10-24 — ADR 0005: admin-ul e `Credential`, arbitrul e al doilea, și `OF-01` se închide odată cu el
+
+Proprietarul a pus întrebarea corectă: *putem porni pe o singură cheie și să mutăm mai târziu pe
+multisig?* Răspunsul a decis forma câmpului, nu invers.
+
+### Ce s-a schimbat în datum
+
+```haskell
+opAdmin   :: Credential   -- era opAdminPkh :: PubKeyHash. Parametri, pauză, taxe, rotație (O1)
+opArbiter :: Credential   -- nou. Verdicte de dispută, și nimic altceva (D1)
+```
+
+Ambele se dovedesc cu `Utils.checkCredentialControl`, care **exista deja** — e exact proba pe care o
+folosește `Mc3` pentru claim-ul de credențial. Ramura `PubKeyCredential` e `elem pkh
+txInfoSignatories`, adică **byte-for-byte comportamentul de dinainte**; ramura `ScriptCredential`
+acceptă un input cheltuit la propria adresă, ceea ce un native multisig satisface prin simplul fapt
+că e cheltuit — fără ExUnits, fără Plutus.
+
+Deci „pornește simplu, urcă mai târziu" e o **rotație**, nu un redeploy. Iar `PubKeyHash` era fix
+lucrul care închidea asta: nu poate numi un script, deci upgrade-ul ar fi cerut alt format de datum,
+iar după un deployment păstrat alt format de datum înseamnă alt registru (`OC-09`).
+
+### De ce nu NFT, deși intuiția era rezonabilă
+
+Un token de admin face predarea un simplu transfer. Exact proprietatea pe care n-o vrei la rădăcina
+încrederii:
+
+* **E modul de eșec pe care protocolul îl are deja înregistrat.** `OC-03`: token-urile de autoritate
+  pot fi blocate în output-uri de stare. A adopta un token la purtător ca rădăcină înseamnă a adopta
+  clasa aceea de bug la rădăcină.
+* **Pierderea devine mai rea:** o cheie de HD wallet se recuperează din seed; un token trimis greșit,
+  nu — și nu mai rămâne noțiunea de „admin-ul adevărat".
+* **Phishing-ul devine transfer de identitate** (`OC-10` e deja documentat).
+* **Fiecare acțiune plătește**: input + output + min-ADA + un punct de contenție între acțiuni
+  concurente, iar `D1` l-ar plăti la fiecare verdict.
+* **`O5` ar dispărea**, deci o adresă greșit tastată ar brickui protocolul fără a doua parte.
+
+Și nu e un compromis: **`ScriptCredential` poate indica un script a cărui regulă e „cine cheltuiește
+NFT-ul de admin"**, deci forma aleasă îl *conține* pe cel cu token. Invers nu merge.
+
+### De ce arbitrul e câmp separat
+
+Cu un singur credențial, `D1` citește ce citește `O1`. Deci un admin în multisig rece ar face
+**fiecare verdict** să coste multisig-ului o cheltuire de UTxO. Setarea parametrilor e rară și
+catastrofală dacă greșești; scrierea verdictelor e operațională și repetată.
+
+Geneza pune cele două egale, deci câmpul nu costă nimic cuiva care nu vrea despărțirea — și
+`query-oracle` tipărește explicit în care dintre cele două stări e deployment-ul, în loc s-o lase
+dedusă. E rotabil fiindcă un arbitru nerotabil ar fi `OC-01` reintrodus peste **banii altora**.
+
+### `OF-01`: rotația care nu putea roti
+
+`O5` cere părții care intră să dovedească controlul în aceeași tranzacție pe care o autorizează
+admin-ul care iese. `rotate-admin` construia, semna cu o cheie și trimitea, într-un pas — deci
+producea prin construcție o tranzacție pe care lanțul o refuză.
+
+Lipseau exact două primitive, și amândouă sunt subțiri fiindcă piesele existau:
+
+| piesă nouă | ce refolosește |
+| --- | --- |
+| `buildActionWithPK` | `interactionToHexEncodedCBOR`, același hex pe care rutele de scriere îl dau unui wallet |
+| `submitSignedTxWithWitnesses` | `appendWitnessGYTx` + `signGYTx` din Atlas |
+
+```
+admin curent:  admin rotate-admin --new-credential <hash> [--script] --build-only > tx.hex
+cel care intră: printf '%s' "$(cat tx.hex)" | admin sign-tx > incoming.wit
+admin curent:  admin submit-tx --tx tx.hex --witness incoming.wit
+```
+
+`submit-tx` ia tranzacția în loc să o reconstruiască, și asta e portant: **un witness semnează un
+hash de corp**, deci o reconstrucție a aceleiași acțiuni poate alege alte input-uri și invalidează
+fiecare semnătură deja strânsă.
+
+Forma fără flag **refuză** acum și numește cele trei comenzi. O eroare care spune ce urmează costă un
+mesaj; o tranzacție care se dovedește nesubmitabilă costă un fee și o investigație.
+
+### Linia de runbook ușor de ratat
+
+**Finanțează multisig-ul care intră ÎNAINTE de rotație.** `checkCredentialControl` dovedește controlul
+unui script găsind un input cheltuit la propria adresă, deci un script care nu deține niciun UTxO nu
+poate dovedi nimic — limitarea pe care propriul lui Haddock o notează deja pentru claim-uri.
+
+### Costul în octeți, și forma lui
+
+| | înainte | după | |
+| --- | --- | --- | --- |
+| ProfilesValidator | 8355 | 8384 | +29 |
+| AttestationsValidator | 8293 | 8322 | +29 |
+| DisputesValidator | 9439 | 9978 | **+539** |
+| OracleValidator | 7688 | 7856 | +168 |
+| MintingPolicy | 12618 | 12652 | +34 |
+
+**+799 octeți, deși doar două scripturi din cinci au fost editate.** Cei +29 pe care Profiles și
+Attestations îi plătesc fără ca o linie să se schimbe sunt `OracleParams` care câștigă un câmp: orice
+script care parsează datumul oracle plătește lățimea lui. Ăsta e costul tăcut al oricărui lucru pus
+acolo — și argumentul că `OC-08` merită luat în aceeași fereastră. Cei +539 pe Disputes sunt `D1`
+care schimbă `elem` pe `checkCredentialControl`, care trebuie să parcurgă input-urile. ~3,4 ADA în
+plus la deploy, față de cei ~205 deja blocați.
+
+### Două lucruri mici pe care le-a scos la iveală implementarea
+
+**`sign-tx --key-file`.** Comanda citea fix `operation.prv`. Pentru o predare normală e corect — cel
+care intră e altă persoană, pe altă mașină, cu propriul lui fișier. Pe **o singură** mașină era
+greșit: singurul mod de a semna ca cealaltă parte era să muți `operation.prv` deoparte și să pui
+altceva în locul lui, adică o mutare manuală de fișiere în jurul singurului fișier care controlează
+protocolul — exact fișierul pe care `new-operator-key` refuză să-l suprascrie, din același motiv.
+
+**Descrierea publicată a `ActionType` a pierdut un nume de tip.** Arm-ul `AdminAction` are acum două
+câmpuri, deci aeson îl împachetează într-un `contents` **array** și swagger2 nu mai emite un `$ref`
+pe care generatorul să-l citească. Am repus informația explicit în text, fiindcă un contract publicat
+care scapă tăcut un nume de tip e mai rău decât unul care îl scrie de mână.
+
+### Testele care contează
+
+Pe lângă cele pure pentru `applyOracleAdminAction` (rotație spre script, arbitrul neatins de rotația
+de admin, indexul 7), am adăugat **trei cazuri de contecst pur pe `D1`** în `DisputeRules.hs`, acolo
+unde există deja harness-ul `runResolve`: un arbitru-script care rezolvă cheltuind un UTxO la
+propria adresă (trece), același fără input propriu (cade), și același cu semnături dar fără input
+(cade). Ultimul e important — e forma în care s-ar redeschide tăcut gaura pe care
+`checkCredentialControl` a fost scris s-o închidă: dacă o semnătură oarecare ar satisface un
+credențial de script, orice arbitru-script ar fi impersonabil.
+
+`UnitTests.Claim` fixa deja `checkCredentialControl` pe ambele ramuri. Ce adaugă astea e
+**compoziția** — că `D1` chiar trece prin el, într-un context real de rezolvare.
+
+### Ce am lăsat deliberat nefăcut
+
+* **Un arbitru-script nu poate rezolva o dispută prin HTTP încă.** Ar cere un câmp opțional de
+  witness pe `ResolveDisputeAction`. E JSON și opțional, deci adăugat mai târziu nu rupe niciun
+  client — spre deosebire de formatul datumului. De asta jumătatea de datum se ia acum și asta
+  așteaptă. Prin CLI merge azi.
+* **Celelalte șase comenzi de admin presupun o cheie.** Doar cele două rotații iau `--admin-witness`.
+  Rotația e cea care nu putea aștepta, fiindcă e drumul înapoi la o cheie.
+
+### Consecința operațională
+
+**Deployment-ul de ieri e mort** — formatul datumului s-a schimbat, deci hash-urile s-au mutat. Exact
+pentru asta era repetiția.
