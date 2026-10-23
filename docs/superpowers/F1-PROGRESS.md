@@ -5240,3 +5240,164 @@ mult decât verifică**:
 
 Starea: `build rc=0`, zero warning-uri, **627 de teste trec**, swagger regenerat și verificat,
 vocabular ok. Commit-uri: `6d0a76a` (ADR 0003), `2bf5bde` (regulile Mc).
+
+---
+
+## 2026-10-23 — Reconcilierea auditului extern: ce a rezistat, ce era greșit, și ce au spart propriile mele commit-uri
+
+Un alt agent a produs, în paralel, un audit static complet plus o referință de arhitectură — 39 de
+fișiere, ~6.400 de linii, pe branch-ul `docs/audit-2026-10-22` (`fc550c9`), scris împotriva lui
+`4eb9117` **fără toolchain**: fără build, fără teste, fără bază de date. Între timp `main` a avansat
+**14 commit-uri**. Sarcina a fost să verific ce a produs și să reconciliez cu starea curentă.
+
+### Verdictul: auditul a rezistat
+
+**189 de rânduri judecate**: 163 încă deschise, 17 parțial, **3 închise**, 2 fără obiect, **4
+greșite**. Documentul e `docs/audit/07-reconciliation-2026-10-23.md`, cu verdict și `path:line`
+**curent** pentru fiecare finding, plus §10 de sinteză în README-ul auditului.
+
+Motivul structural pentru care s-a mișcat atât de puțin merită notat, fiindcă e și o lecție despre ce
+am făcut în ultimele zile: cele 14 commit-uri au fost decizii **on-chain**, o curățare de warning-uri
+și teste. `.dockerignore`, `compose.yaml`, cele patru `Dockerfile.*`, `README.md`, `.env.example`,
+`NOTICE`, ambele ADR-uri și ambele documente de deployment sunt **identice la octet** cu snapshot-ul.
+Toată datoria de livrare pe care auditul o descrie e exact unde a găsit-o.
+
+**Ce s-a închis:** `OC-02` — D-C a luat exact remedierea prescrisă. Dar estimarea lor de cost era
+greșită de **cinci ori**: „~100 de octeți de script" față de **+494** măsurați, pentru că `A7` a adus
+prima citire de oracol a acelui validator, nu doar un conjunct. Plus jumătatea structurală din
+`OC-06` (D-A) și cea mai mare parte din `OC-11` (`3654f57`).
+
+**Ce pierde o clauză:** `OC-01` susținea că pierderea cheii de admin blochează pentru totdeauna
+fiecare depozit deschis. Nu mai e adevărat — `ExpireDispute` nu cere nicio cheie. Findingul rămâne
+pe pauză, taxe, verdicte și rotație.
+
+### Patru findings erau greșite, și toate patru în același loc
+
+`GV-08`, `GV-13`, `GV-19` și un bullet din `GV-25` — toate întrebări de semantică de ledger pe care
+recenzorii le-au marcat ei înșiși **VERIFY** și le-au scris ca findings oricum. Rezolvate aici
+împotriva surselor db-sync și a regulilor Conway:
+
+* `ratified_epoch` e epoca în care db-sync **a determinat** ratificarea, nu epoca ale cărei voturi au
+  contat — remedierea propusă ar fi mutat verificarea cu o epocă mai târziu;
+* `is_valid IS NULL` înseamnă „corpul nu e JSON valid", nu „nu a fost verificat";
+* `spendable_epoch` și `enacted_epoch` se scriu din aceeași valoare, la două linii distanță.
+
+Și trei recomandări nu sunt greșite dar sunt **inaplicabile ca scrise**: `OC-03`/`OC-07` propun
+codurile `P8`/`P9` pe care ADR 0003 le-a ars, `OC-05` cere `subject /= issuer` global unde `Mc1` cere
+exact opusul pentru două din șapte feluri, iar `OF-16` cere un rol derivat din `profileKind` pe care o
+atestare nu-l are deloc.
+
+### Lista VERIFY e închisă, și două răspunsuri confirmă findingul
+
+Opt întrebări de ledger rezolvate cu citări. Patru din cinci despre Atlas rezolvate pe sursa pinned
+0.14.1: `adjustTxOut` **ridică** un output de 0 lovelace la min-ADA, deci taxa ascunsă din `OF-04` e
+reală; `GYAwaitTxException` **e** un newtype separat, deci gaura din `OF-05` e reală.
+
+`GV-03`/`DC-01` — promisiunea „SQL-ul pe care îl vezi e SQL-ul care rulează" — e rezolvată cu
+aritmetica exactă: matview-ul numără `count(*)` **după** un `LEFT JOIN` la fiecare **rând** de vot,
+deci rata servită e `V/(E+X)` unde SQL-ul publicat spune `V/E`. Comentariul din matview **știe** de
+duplicare: a pus `DISTINCT` pe numărător și a lăsat numitorul expus la exact aceeași multiplicare.
+Fișierul de check al repo-ului măsoară `X >= 69` azi.
+
+### Ce m-a prins pe mine: 39 de findings noi, majoritatea din ultima zi
+
+Despărțirea e partea utilă. ADR 0003 a schimbat patru datum-uri, două redeemer-e și suprafața HTTP —
+iar `Blueprint.hs` a avut **diff zero**. Contractul publicat descria două din trei redeemer-e de mint,
+omitea `ExpireDispute` în întregime, și lista patru din șase câmpuri ale oracolului.
+
+Cele reparate aici, alese pentru că sunt defecte în propriile commit-uri de ieri și pentru că trei
+mișcă hash-uri — ceea ce e gratis doar cât nimic nu e deployat:
+
+**`NEW-CS-1`, High — derivarea nu era sigură la replay.** `profile_credential` se scria incremental:
+o revendicare făcea `updateWhere`, iar `putProfileProjection` căra valoarea existentă. Corect doar
+cât rândul de profil există **înainte** de revendicare — adevărat în operare live și **fals la orice
+replay**: `projectChainEvent` nu emite nimic pentru un output cheltuit, deci un profil editat după ce
+a revendicat e văzut doar la slot-ul UTxO-ului său curent, care e **deasupra** revendicării.
+`updateWhere` nu potrivea niciun rând, în silențiu, și profilul revenea din re-sync fără credențială.
+Iar `currentSchemaVersion` 3 → 4 face exact acel re-sync **calea de upgrade**. Acum e un fold peste
+înregistrări (`deriveProfileCredential`), deci niciunul din cele două scrieri nu depinde de a ajunge
+primul. Două teste în ordinea pe care niciunul din cele trei teste existente nu o avea — toate trei
+aplicau potrivirea de profil prima.
+
+**`NEW-OC-1` — `oracleParamsAreWellFormed` accepta `opDisputeTimeoutMs = 0`.** Exact valoarea contra
+căreia argumentează paragraful de deasupra ei: cu zero, `disputeStaleAfter == disputeOpenedAt`, iar
+`Md6` forțează deja `disputeOpenedAt` în intervalul tranzacției, deci orice tranzacție ulterioară
+satisface `D9` — dispută expirabilă în blocul următor celui în care s-a deschis, un
+`OracleSetDisputeTimeout 0` și mecanismul de dispute nu mai există. Verificarea admitea precis
+valoarea pe care comentariul ei o numea „golește mecanismul cu o apăsare de tastă". Acum `> 0`.
+Deliberat **fără prag**: un timeout de o milisecundă e la fel de inutil, dar „cât trebuie să stea
+deschisă o dispută" e politică și aparține acolo unde se poate schimba fără redeploy.
+
+Și `O6` nu avea **niciun** test, de nici un fel — confirmat independent de două treceri. Acum are
+șapte, plus indexul 6 pentru `OracleSetDisputeTimeout`, pe care D-A îl adăugase fără aserțiune de
+index și fără loc în `otherActions`, deci testul „nicio altă acțiune nu atinge admin-ul" nu era
+despre el.
+
+**`OC-12`** — `mintOracleNFTAndLockDatum` asertează acum `oracleParamsAreWellFormed` înainte de
+submit, singurul loc unde `O6` nu rulează niciodată. (Prima variantă n-a compilat:
+`GYTxBuilderMonadIO` nu are instanță `MonadIO` — builder-ul refuzând efecte arbitrare în construcția
+tranzacției. Datum-ul a ieșit din builder, unde oricum era o funcție doar de `adminPKH`.)
+
+**Două scripturi de smoke ar fi picat la deploy** — `smoke_interaction_api.sh` asertează versiunea
+`3.0.0` și 12 rute (sunt `3.1.0` și 15), `smoke_attest_flow.sh` încă trimitea `credential` și
+`witness` la `/claim-profile`. Fluxul e rescris pe două tranzacții, cu o aserțiune în plus care e
+chiar demonstrația derivării: `credential` e `null` **înainte** de revendicare.
+
+**`NEW-OF-3`** — `/issue-attestation` accepta cele două feluri de credențială și construia o
+tranzacție pe care `Mc2` o refuză, ajungând la client ca un 400 generic. Refuzat acum off-chain, cu
+excepția lui proprie — care a înlocuit `ProfileClaimsNoCredential`, rămasă fără niciun throw site de
+la D-E și cu Haddock care cita codul ars `P8`.
+
+**`NEW-CS-2`** — `attestation_credential` era scris și servit nicăieri, deci un rând `credential_claim`
+ajungea la client cu tot conținutul lui invizibil. Publicat; swagger query 1.2.0 → **1.3.0**.
+
+Plus proza: blueprint-ul, descrierile `/claim-profile`, descrierea partajată `AttestationType`
+(„cinci feluri" lângă un enum de șapte, plus „niciun validator nu ramifică pe el" când `Mc3`/`Mc4` o
+fac), zece referințe rămase la `Mp3`, și două propoziții din `CLAUDE.md`-urile care îndreaptă munca
+viitoare spre cod șters.
+
+### Un număr care a trebuit arbitrat
+
+Patru treceri independente au numărat codurile de trace on-chain și au dat **63, 63, 69 și 70**.
+**70 e corect.** Un recensământ care caută `traceIfFalse "X"` pe o singură linie ratează fiecare cod
+scris pe linia **următoare** — `A1`, `D2`, `Md2`, `Mj`, `Mp2`, `N2` — și ratează `U0`, care e dat lui
+`parseData`. `P8`/`P9` apar doar în comentariul care le înregistrează arderea și sunt corect excluse.
+Trei din patru treceri au greșit în **același** fel, de asta §10 publică metoda și nu doar cifra.
+
+### Documentele de arhitectură
+
+`system-overview.md` reconciliat: 55 de modificări, 157 de citări verificate automat, șase diagrame
+re-randate. Patru dintre erorile lui erau **false deja la snapshot**, nu drift — și una contează:
+diagrama de componente punea `onchain-lib` în spatele unui nod extern etichetat „atlas-cardano,
+cardano-api, plutus-*", contrazicând în imagine exact afirmația pe care documentul o face în text și
+pe care arhitectura o impune. Altele două contraziceau un gate de CI din propriul arbore („30 de
+rute" când `check_swagger.sh` asertează 29) și propria secțiune §10 a documentului („41 de module de
+test" când cabal-ul listează 40).
+
+### Nu blochează deploy-ul
+
+`NEW-CS-7` sună alarmant — bump-ul de schemă face ștergerea tabelelor calea de upgrade — dar
+`needWipe` e `False` când nu există sondă. La o bază nouă, cazul preprod, nu se întâmplă nimic.
+T-ATTEST-10/11/12 e neatins.
+
+Starea: `build rc=0`, zero warning-uri, **637 de teste trec** (de la 627), swagger regenerat și
+verificat, vocabular ok, sintaxa scripturilor ok.
+
+### O corectare la intrarea din `3654f57`, și una la a mea
+
+Tabelul de la linia 4466 din acest ledger spune, pentru `Protocol/Lookup.hs`, că „fiecare validator
+citește un profil direct prin `Utils.checkAndGetCurrentStateDatumAndValue`". **E fals, și era fals
+când a fost scris** — e aceeași propoziție pe care `3654f57` a pus-o ca Haddock la `Lookup.hs:7` și
+care e acum findingul `NEW-OC-5`. Niciun validator nu apelează funcția aceea.
+
+Partea care merită reținută e istoria, pe care am greșit-o și eu într-o primă versiune a
+reconcilierii: lanțul **exista** la `4eb9117` — `unsafeGetProfile` și `unsafeGetProfileDatumAndValue`
+chiar o apelau (`Lookup.hs:29,36`). `3654f57` a șters cei doi apelanți și, **în același commit**, a
+scris Haddock-ul care susține apelul. Commit-ul care a eliminat singurii apelanți a afirmat apelul.
+De asta `U2` și `U3` sunt inaccesibile — iar funcția a rămas pe loc.
+
+Doi agenți independenți au raportat variante diferite ale acestei istorii, inclusiv același agent în
+notele intermediare față de raportul final. Am verificat-o pe `git show 4eb9117` înainte de a o
+publica, iar prima mea versiune — cea greșită — fusese deja comisă și a avut nevoie de un commit de
+corectare (`c0b1191`). Lecția nu e „nu te încrede în agenți": e că o afirmație despre istoria unui
+fișier se verifică în istoria fișierului, nu în raportul despre el.
