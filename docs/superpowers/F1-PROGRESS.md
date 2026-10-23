@@ -5137,3 +5137,106 @@ scriere noi nu aveau rută și cazul a rămas verde.
 **Și o afirmație despre inlining e o convingere până e un build.** Tabelul de dimensiuni e locul în
 care acest proiect scrie ce a *măsurat*; o propoziție despre compilator, scrisă acolo ca fapt, nu era
 măsurată. Acum e, și era greșită.
+
+---
+
+## ADR 0003 — varianta cea mai curată: revendicarea de credențial devine o atestare
+
+Owner-ul a cerut **„varianta cea mai curată"**, nu cea mai ieftină. Diferența era reală: opțiunea A
+(reversibilitate, ~300 de octeți, un braț) repara defectul găsit de audit; **E scoate primitiva
+distructivă din protocol**, fiindcă un jurnal append-only nu are buton de ștergere de proiectat.
+
+Decizia, alternativele respinse și costurile declarate sunt în
+`docs/adr/0003-credential-claim-as-attestation.md` — un ADR, nu o notă de ledger, fiindcă schimbă
+**ce este** protocolul.
+
+### Forma
+
+O legătură profil↔credențial e acum **două feluri de atestare**, adăugate la indicii 5 și 6:
+
+* **`CredentialClaim`** — auto-emisă (`Mc1`: emitent = subiect), deci consimțământul profilului e
+  `Mf`, care exista deja, iar al credențialului e `Mc3`, exact același `checkCredentialControl` care
+  era `Mp3`. Ambele părți, într-o înregistrare pe care nimic nu o rescrie.
+* **`CredentialWithdrawal`** — dovada credențialului **singură**. `Mf` scutește felul ăsta,
+  intenționat: cazul pentru care există e un profil care a revendicat credențialul altcuiva, iar
+  token-ul acelui profil e ținut de cel care a făcut-o.
+
+`Mc2` cere un credențial pe cele două feluri, `Mc4` îl **interzice** pe celelalte cinci — ca să nu
+poată fi strecurat pe un milestone unde nici `Mc1` nici `Mc3` nu se uită.
+
+**Scos:** `profileCredential`, `Mp3`, argumentul de credențial din `MintProfile`, brațul
+`RevokeCredential`, `revokeCredential`. Indexul 2 din `ProfilesRedeemer` și codurile `P8`/`P9` sunt
+**arse**, nu refolosite: o disciplină de indici stabili care face o excepție prima dată când e
+incomodă nu e o disciplină, iar un operator care vede `P8` într-un log vechi trebuie să poată afla
+că regula nu mai există.
+
+### Și e mai TARE, nu doar mai curată
+
+`Mp3` dovedea că credențialul a consimțit la **o tranzacție**, care putea fi despre orice. Aici
+tranzacția **e** legătura — corpul ei mintează vizibil un token de revendicare — deci o semnătură pe
+ea e mult mai greu de deghizat. Nu absolut: o semnătură e în continuare o semnătură peste un corp,
+și de asta retragerea rămâne necesară.
+
+### Măsurat, și netul e NEGATIV
+
+```
+ProfilesValidator     8759 → 8355   (−404)  brațul de revocare, și cu el singurul apel al acestui
+                                            validator la checkCredentialControl — prima RESTITUIRE
+                                            măsurată din tabel
+MintingPolicy        12393 → 12618  (+225)  cele patru reguli Mc + datum mai larg, minus Mp3
+AttestationsValidator 8163 → 8293   (+130)  nicio regulă nouă: un Maybe Credential în plus de
+                                            decodat în fiecare datum de atestare pe care îl citește
+DisputesValidator     9439 → 9439   (0)
+OracleValidator       7688 → 7688   (0)
+```
+
+**−49 de octeți pe tot protocolul.** Cele două zerouri sunt afirmația care merită: o schimbare atât
+de largă a atins exact cele două scripturi care se ocupă de profiluri și atestări.
+
+### Stratul de citire își păstrează forma
+
+`profile_credential` rămâne coloană și câmp de API — se **derivă**. O revendicare o setează, o
+retragere care numește **același** credențial o golește, iar una care numește altul nu schimbă
+nimic: lanțul permite înregistrarea aceea (`Mc3` cere doar ca credențialul *numit* să consimtă), deci
+regula care o ignoră trebuie să fie în citire.
+
+`attestation_projection` capătă `attestation_credential` pentru istoric, iar
+`currentSchemaVersion` merge 3 → **4** — bump-ul care forțează re-sync-ul, fiindcă schimbarea face o
+proiecție existentă **greșită**, nu doar incompletă.
+
+**Trei teste pe bază de date** acoperă derivarea, singura parte nouă și nu mutată. Al treilea e cel
+care m-ar fi prins: `upsertByUnique` face `replace` pe tot rândul, deci un eveniment de profil care
+ar scrie coloana ar fi șters legătura la **fiecare** modificare de metadata. Scrisesem pericolul ca
+**paragraf** în `putProfileProjection` — iar un paragraf nu e o verificare.
+
+### Ce au spus testele despre forma aleasă
+
+**`UnitTests.Claim` a supraviețuit intact — toate treisprezece cazurile.** Testează
+`checkCredentialControl` ca funcție pură, deci mutarea apelului din `Mp3` în `Mc3` nu a invalidat
+niciunul. Semn bun: regula care **împiedică** o revendicare falsă e neschimbată; ADR 0003 schimbă ce
+se întâmplă **după**.
+
+Cele nouă teste de emulator sunt re-orientate pe fluxul în două tranzacții, și două au ieșit **mai
+bune**: 1.1 asertează acum și că înregistrarea e auto-emisă, iar cazul cu scriptul nefinanțat
+**izolează** legătura — înainte mint-ul și revendicarea erau o singură tranzacție, deci testul nu
+putea distinge „profilul n-a apărut" de „legătura n-a fost dovedită".
+
+Plus cinci cazuri noi pentru `Mc1`–`Mc4`, cu un detaliu care decide dacă izolează sau doar cad:
+input-ul sămânță poartă token-ul de user al **emitentului**, derivat din parametru. Altfel cazul
+pentru `Mc1` ar fi căzut pe `Mf` și ar fi rămas verde cu `Mc1` șters.
+
+### Nota
+
+Trei lucruri pe care le-am prins pe drum, toate din aceeași familie — **o verificare care spune mai
+mult decât verifică**:
+
+* un `FromJSON` scris de mână, **pozițional**, în singurul record ale cărui vecini au comentarii
+  despre exact capcana asta;
+* `AttestationType` asertat în Swagger ca **număr** („cinci feluri"), ceea ce ar fi rămas verde dacă
+  unul ar fi fost **redenumit** — acum e asertat ca mulțime de nume, ca și enum-ul de verdicte;
+* și al doilea argument al lui `kupoMatch`, pe care l-am citit ca etichetă când e un **id de
+  tranzacție**: `"gg"` nu e hex, deci potrivirile erau respinse la conversie și retragerea nu ajungea
+  niciodată la derivare. Testul meu cădea pe motivul corect, din cauza greșită.
+
+Starea: `build rc=0`, zero warning-uri, **627 de teste trec**, swagger regenerat și verificat,
+vocabular ok. Commit-uri: `6d0a76a` (ADR 0003), `2bf5bde` (regulile Mc).
