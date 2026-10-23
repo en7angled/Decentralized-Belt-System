@@ -5006,3 +5006,134 @@ DisputesValidator     8457 -> 9401  (+944: brațul de expirare)
 OracleValidator       7547 -> 7688  (+141: un câmp)
 MintingPolicy        12276 -> 12393  (+117)
 ```
+
+---
+
+## Auditul independent al celor trei decizii — și eroarea de design pe care a găsit-o în D-E
+
+Trei agenți în paralel pe **logica on-chain nouă** (brațele `ExpireDispute`, `RevokeCredential`,
+`A7`, cele trei câmpuri noi de datum și `checkDateHasPassed`): vulnerabilități, cost/eficiență, și
+dacă comentariile noi sunt adevărate. Niciunul nu a primit concluziile mele.
+
+**Rezultatul pe scurt:** una e o eroare de design în D-E care e a mea și care blochează deploy-ul;
+una e un defect de securitate reparat pe loc; cost — „nimic material"; comentarii — **15 propoziții**,
+nouă false.
+
+### F1 — remediul din D-E e mai periculos decât problema pentru care l-am construit *(DECIZIE DE OWNER, DESCHISĂ)*
+
+`RevokeCredential` cere dovada credențialului, exact aceeași pe care revendicarea a cerut
+(`checkCredentialControl`). Pentru un credențial de **script** dovada e „tranzacția cheltuie *vreun*
+UTxO de la adresa scriptului" — deci pentru un multisig **1-din-N sau un timelock, un singur membru**
+o satisface.
+
+Și revocarea e **ireversibilă**, verificat: `profileCredential` e scris într-un singur loc (la mint)
+și șters într-un singur loc; `UpdateProfile` calculează output-ul cu `updateCIP68DatumMetadata`, care
+atinge doar metadata, deci **niciun redeemer nu-l mai pune înapoi**. Nimic nu arde, deci o
+re-revendicare produce un `profileId` **nou**, în timp ce fiecare atestare existentă numește id-ul
+vechi. O revocare reușită rupe credențialul de **tot istoricul de atestări**, definitiv, iar pauza nu
+o oprește — fiindcă așa am proiectat-o intenționat.
+
+Asimetria e lucrul decisiv:
+
+| | abuz de `Mp3` (problema) | abuz de revocare (remediul) |
+|---|---|---|
+| efect | **aditiv** — apare un profil fals, al victimei rămâne | **subtractiv** — dispare legătura victimei |
+| reparabil | da | **nu, deloc** |
+
+Pentru un credențial de cheie e premisa cu care am *justificat* funcția, inversată: o tranzacție pe
+care victima o semnează pentru orice motiv, conținând profilul ei ca input cu `RevokeCredential`, îi
+șterge permanent propria revendicare. NFT-ul ei de user nu o apără — l-am scos din cerințe intenționat.
+
+**Recomandarea mea: revocare REVERSIBILĂ, nu dovadă mai tare.** Dacă un credențial e 1-din-N, atunci
+orice membru chiar vorbește pentru el — registrul nu poate fi mai strict decât credențialul însuși.
+Defectul nu e *cine* poate acționa, e că acțiunea e **finală**. Un braț de re-revendicare care cere
+**ambele** — NFT-ul de user al profilului **și** consimțământul credențialului, simetric cu mint-ul
+care cere sămânța plus credențialul — face ca victima să repare, iar nimeni să nu poată îndrepta
+credențialul lui spre profilul altcuiva. Cost: ~300 de octeți.
+
+### F2 — adminul putea scrie „a expirat ceasul" fără ceas *(REPARAT)*
+
+`ResolveDispute` ia `Verdict` ca argument **neconstrâns** de redeemer. Când D-A a adăugat al treilea
+constructor, brațul acela a căpătat în silență puterea de a scrie `VerdictExpired` — la o secundă
+după deschidere, identic pe lanț cu un timeout real, în timp ce stratul de citire e sub instrucțiunea
+de a-l prezenta ca inacțiunea nimănui. Ajungea și prin HTTP (`rd_verdict: "expired"`).
+
+Cod nou **`Da`** pe brațul de resolve plus un 400 off-chain, și un caz de test în care output-ul
+poartă tot `VerdictExpired`, ca `D2` să treacă și `Da` să fie singurul care refuză. Garanția lui D-A
+— că doar ceasul scrie `expired` — e acum adevărată despre lanț, nu doar despre documentație.
+
+### Cost: „nimic material" — dar măsurătoarea pe care a cerut-o mi-a refutat o propoziție
+
+Verdictul pe cele trei brațe noi: 30-80 de octeți contra 4 599 de spațiu pe scriptul care a crescut
+cel mai mult. Două lucruri acționabile, ambele luate:
+
+* **`!ownInput`** în ambele brațe. Nu e stil: `PlutusIR.Transform.StrictifyBindings` convertește o
+  legare non-strictă doar dacă RHS e pur, iar `unsafeFindOwnInputByTxOutRef` conține un `traceError`
+  — deci nu se califică niciodată, rămâne thunk, și UPLC nu memoizează un thunk forțat.
+  `disputeClosesWith` derivă patru valori din el, deci fiecare forțare re-rula un `find` peste o listă
+  de inputuri a cărei lungime o alege autorul tranzacției.
+* **Măsurarea afirmației mele despre inlining.** Scrisesem în tabel, ca fapt, că „PlutusTx inlinează
+  helper-ul la ambele situri, deci brațul își plătește copia oricum". Am măsurat cum a propus
+  auditul — `&& True` în locul apelului din brațul de resolve, rebuild, restaurare:
+
+```
+ambele situri   9439
+un singur sit   9415   (−24)
+```
+
+  **24 de octeți** pentru un sit care duce o comparație de datum întreg, un `any` peste output-uri și
+  o traversare cu numărare a input-urilor. Corpul e compilat **o dată**. Deci factorizarea nu a
+  cumpărat doar acordul la nivel de sursă — a costat și mult mai puțin decât duplicarea. Justificarea
+  era corectitudinea; octeții au mers în aceeași direcție din noroc, iar ca să pot spune asta a fost
+  nevoie de un build, nu de o convingere.
+
+Și un cost pe care tabelul nu l-a înregistrat niciodată: sub Conway, o tranzacție care **folosește**
+un reference script plătește `minFeeRefScriptCoinsPerByte`. La 15 lovelace/octet, cei 9 439 ai
+validatorului de dispute sunt ~0,141 ADA la **fiecare** închidere de dispută, iar cei +944 ai rundei
+adaugă ~0,014 ADA la fiecare, pentru totdeauna. Nu schimbă nicio concluzie — spațiul rămâne spațiu —
+dar „are spațiu" și „e gratis" sunt afirmații diferite, și doar prima fusese făcută.
+
+### Comentarii: 15 propoziții, nouă false — și două pe care le-am verificat singur
+
+Nu am luat raportul pe încredere pe cele mai consecvente două:
+
+* **`Utils.hs:313` spune „one that ONLY EVER votes or withdraws"** — eu inversasem clasa, scriind „a
+  script credential that NEVER votes or withdraws", ceea ce descrie calea care trece normal și o
+  eticheta „limita".
+* **`P5` e `geq`, nu egalitate.** Scrisesem „valoarea e neatinsă"; helper-ul cere „cel puțin".
+  Diferența contează: regula **permite** un output care duce mai mult, inclusiv NFT-ul de user al
+  profilului — forma pe care `Mp6` o închide la mint. Pre-existentă pe calea de update, nedeschisă de
+  mine, dar propoziția mea pretindea o garanție pe care codul nu o dă.
+
+Restul, pe scurt: „trei afirmații" unde sunt patru; `revokeCredential` enumera metadata, care stă pe
+**wrapper** și nu trece prin funcție; „**Strict**, și asta e tot rostul" pe o legare care nu e
+strictă (ce o forțează e că `A7` e primul conjunct necondiționat — atribuit strictității,
+comentariul licenția o reordonare care ar reintroduce gaura); două propoziții despre ordinea
+testului 7.4, amândouă greșite; inferența tabelului despre apelanți, contrazisă de propriile lui
+dovezi; și **trei reluări ale „singura scriere ireversibilă"**, pe care proza repo-ului o contrazice
+— un verdict se scrie o dată și nimic nu arde, deci orice mint e permanent. Afirmația adevărată, și
+singura care conta, e „**singura scriere la care pauza nu ajungea**".
+
+### Două pre-existente, consemnate, nereparate
+
+* Dacă `disputeDepositTo` e chiar adresa validatorului de dispute — ce `Md8` permite — un singur
+  output satisface `D2` și `D4` simultan, iar depozitul se re-blochează într-o dispută închisă pe
+  care `D3` și `D8` refuză amândouă să o cheltuie: distrus, nu returnat. Pierde doar deschizătorul,
+  care a ales adresa. Comentariul lui `D6` spunea mai mult decât acoperă; acum spune exact.
+* Datum-ul oracolului **de la geneză** nu trece prin `oracleParamsAreWellFormed`: `O6` rulează la
+  *cheltuirea* oracolului, iar politica one-shot nu constrânge nici adresa nici datum-ul output-ului.
+  Un `opDisputeTimeoutMs` negativ băgat la deploy ar face fiecare dispută expirabilă la naștere.
+  Calea de produs e corectă (30 de zile), dar verificarea nu poate vedea geneza.
+
+### Nota
+
+Tiparul, de la 20 la 29 de instanțe într-o singură rundă — fiindcă de data asta l-a căutat cineva
+care nu scrisese propozițiile. Două lucruri merită ținute minte dincolo de numere:
+
+**Un nume de test poate minți exact ca un comentariu.** `UnitTests.InteractionApi` avea un caz numit
+„every write action has a typed route" care verifică o listă de path-uri — deci două acțiuni de
+scriere noi nu aveau rută și cazul a rămas verde.
+
+**Și o afirmație despre inlining e o convingere până e un build.** Tabelul de dimensiuni e locul în
+care acest proiect scrie ce a *măsurat*; o propoziție despre compilator, scrisă acolo ca fapt, nu era
+măsurată. Acum e, și era greșită.
