@@ -4832,3 +4832,177 @@ scripturi trec `bash -n`, iar pasul nou de CI a fost repetat local verbatim. Tre
 Pe tine rămâne ce era, **minus golul de granturi**: `config_atlas.json`, finanțarea, D-A / D-C / D-E,
 și convenția de 120 de coloane. Deploy-ul T-ATTEST-10/11/12 e în continuare singurul pas rămas, de
 făcut o dată, după D-C.
+
+---
+
+## Runda 5 — D-C și D-A, cele două decizii care mișcă hash-uri, luate înainte de primul deploy
+
+Owner-ul a aprobat toate recomandările, iar pe D-A a răspuns la o întrebare pe care nu o pusesem
+bine prima dată (mai jos). Ambele sunt implementate, verificate și **nu sunt încă deployate** — ceea
+ce e exact fereastra în care costă zero.
+
+### D-C — pauza ajunge la acceptare
+
+**Ce era.** `admin pause-protocol` oprea tot, cu o excepție: acceptarea unei atestări. Și aceea e
+**singura scriere ireversibilă** din protocol. În singurul scenariu pentru care pauza există — ai
+descoperit un abuz și vrei să îngheți registrul — atestările continuau să aterizeze definitiv.
+
+**De ce nu se putea verifica.** `attestationsLambda :: ScriptContext -> Bool`: validatorul nu e
+parametrizat și datum-ul atestării nu numea niciun oracol. Oracolul *era* deja reference input la
+fiecare acceptare, dar validatorul nu avea cum să știe care UTxO e oracolul autentic.
+
+**Ruta aleasă: câmp în datum** (`attestationOracleToken`), scris de politica de mint din propriul ei
+parametru — oglinda exactă a lui `disputeOracleToken`, și motivul pentru care un datum nu poate numi
+un oracol fals (`Mk` compară tot datum-ul cu output-ul). Am evaluat și parametrizarea validatorului:
+ar fi fost zero octeți de datum, dar `attestationsValidatorHashGY` e un CAF folosit de indexer, de
+builder, de config-ul de deploy și de fixture-uri, deci ar fi însemnat să trec `oracleAC` prin tot
+lanțul. Câmpul în datum atinge 7 fișiere; parametrizarea ar fi atins de două ori mai multe. Iar
+proiecția îl aruncă, exact ca pe al disputei, deci stratul de citire nu află de el.
+
+**Prețul, măsurat:** AttestationsValidator 7640 → **8134** (+494), MintingPolicy 12276 → **12310**
+(+34). Tabelul de dimensiuni **prezisese numărul acum două runde**: „+50 contra +502 pentru același
+helper partajat e tot costul **ajungerii** la oracol, măsurat" — și propoziția aceea era chiar
+motivul pentru care pauza nu acoperea acceptarea. Acum a plătit +494 pe alt validator, la 8 octeți
+de predicție.
+
+Plus un cost care nu e în octeți de cod și pe care l-am scris în tabel: datum-ul fiecărei atestări
+crește cu ~45-70 de octeți de CBOR, deci podeaua de min-ADA a **ledger-ului** urcă cu ~0,2-0,3 ADA
+per dosar, la `coinsPerUTxOByte` = 4310.
+
+**Cod nou: `A7`**, pus primul, ca gardă — aceeași poziție și același sens ca `M0`. `readOracleParams`
+ridică dacă niciun reference input nu poartă token-ul, deci o acceptare construită fără oracol cade
+**închis**, nu trece peste verificare.
+
+**Două teste.** Unul unitar (`MutationGuards` 8.17): un singur bit diferă între cele două jumătăți,
+`opPaused` din datum-ul oracolului. Unul de emulator (`Pause` 7.4), cu tranzacție construită de mână
+ca să ocolească garda off-chain — fiindcă `getOracleRefInputSkeleton` aruncă `ProtocolPaused` la
+build și un test prin API ar fi asertat refuzul off-chain, nu regula. Ordinea e pauză-apoi-depauză,
+nu invers: o acceptare nu se poate repeta, deci controlul pozitiv trebuie să fie **aceeași**
+tranzacție reușind, altfel `traceIfFalse "A7" False` ar trece testul.
+
+Și `UnitTests.Pause` își documenta de mult propria lipsă, numind exact cele două rute posibile. Nu a
+trebuit să inventez decizia; a trebuit să o iau.
+
+### D-A — ieșirea care nu are nevoie de cheie
+
+**Întrebarea pe care o pusesem prost.** Recomandasem „disputantul poate retrage după N", motivând cu
+harm-ul că **ținta** plătește inacțiunea. Citind codul mi-am dat seama că recomandarea nu repara
+harm-ul pe care îl descriam: dacă disputantul vrea ca acuzația să rămână, ținta e în continuare
+blocată. Am semnalat golul și am întrebat; owner-ul a ales **„oricine, după termen"**.
+
+Alegerea aceea a simplificat și validatorul: zero autoritate de verificat.
+
+**Deci nu e „retragere", e expirare.** `VerdictExpired`, nu `VerdictWithdrawn` — nimeni nu retrage
+nimic, ceasul a expirat. Al treilea constructor nu e o a treia **constatare**: documentația tipului
+spune acum „două constatări și nicio a treia", iar stratul de citire are instrucțiunea explicită să
+nu-l randeze ca pe `upheld`.
+
+**Patru decizii de design, toate argumentate din cod:**
+
+1. **Termenul stă în datum-ul disputei** (`disputeStaleAfter`, absolut), calculat la deschidere din
+   `opDisputeTimeoutMs`. Fișierul argumenta deja asta pentru *depozit*: „oracolul stabilește prețul
+   pentru disputele NOI; prețul unei dispute deschise e istorie". Același argument, mai tare: citit
+   din oracol la închidere, un admin ar putea **mări** timeout-ul și amâna fiecare termen la infinit
+   — exact inacțiunea pe care D-A o limitează.
+2. **Brațul de expirare nu citește oracolul deloc** — deci nu are `D7`, intenționat. O ieșire de
+   urgență pe care adminul o poate închide prin pauză sau ținând singura cheie nu e o ieșire de
+   urgență; „pauză + cheie pierdută = îngheț permanent" era chiar defectul. Un test fixează asta:
+   un oracol **în pauză** în reference inputs nu schimbă nimic.
+3. **Am factorizat `D2`/`D4`/`D6` în `disputeClosesWith`**, partajat de ambele căi de închidere.
+   Aici am încălcat deliberat „nu refactoriza ce nu e stricat": adaug un al doilea apelant al
+   aceleiași reguli, iar trei invariante ținute egale de mână pe o cale care mișcă bani e tiparul
+   care a mușcat repo-ul de 19 ori. **Nu cumpără octeți** — PlutusTx inlinează la ambele situri —
+   cumpără imposibilitatea divergenței.
+4. **`opDisputeTimeoutMs` pe oracol, nu în validator**, cu `admin set-dispute-timeout`. Mecanismul
+   mișcă hash-uri și se ia acum; **numărul** se ajustează oricând cu o comandă. Implicit: 30 de zile.
+
+**Prețul, măsurat — prima schimbare din tabel care mișcă toate cinci scripturile:**
+
+```
+DisputesValidator     8457 -> 9401  (+944)  brațul ExpireDispute întreg
+OracleValidator       7547 -> 7688  (+141)  un câmp în OracleParams, plătit de două ori (O2 + O6)
+MintingPolicy        12310 -> 12393  (+83)  ctxDisputeTimeoutMs + aritmetica + decodarea mai largă
+ProfilesValidator     8414 -> 8444  (+30)   ← nimic din schimbare nu atinge calea de profil
+AttestationsValidator 8134 -> 8163  (+29)   ← nici calea de atestare
+```
+
+**Ultimele două sunt măsurătoarea care merită păstrată.** Ambele validatoare **decodează**
+`OracleParams` — `P6` și `A7` citesc `opPaused` — deci un al șaselea câmp în acel record costă ~30
+de octeți în **fiecare** script care îl parsează, fie că citește câmpul nou sau nu. Un record pe
+oracol nu e gratuit de extins: costă ~30 × numărul de validatoare care se uită la oracol, care acum
+e patru. Calibrarea auditului de dimensiuni nu avea nicio linie pentru asta.
+
+**Șapte teste noi** pe brațul de expirare: controlul pozitiv (fără oracol și fără nicio semnătură —
+dacă cineva adaugă un `D7` „pentru simetrie", cazul ăsta se înroșește, și trebuie), limita `D9` pe
+ambele părți la o milisecundă, dispută cu termen în viitor refuzată, dispută deja decisă refuzată
+(`D3` — ceasul nu e un buton de ștergere), scrierea unei constatări în loc de `expired` refuzată
+(`D2`), plata depozitului către apelant în loc de deschizător refuzată (`D4`), și oracolul în pauză
+care nu blochează nimic. `D6` nu e re-testat, deliberat: trăiește în `disputeClosesWith`, partajat,
+iar grupul de resolve îl fixează deja — ceea ce e chiar argumentul factorizării.
+
+### Starea
+
+`build rc=0`, **619 teste trec** (612 + 7), zero warning-uri, swagger regenerat, API bump-uit:
+query-api 1.1.0 → **1.2.0** (enum-ul câștigă o valoare), interaction-api 3.0.0 → **3.1.0** (o acțiune
+nouă).
+
+Și o propoziție publicată pe care D-A o făcea falsă, prinsă înainte: `/disputes?resolved=true` e
+`verdict IS NOT NULL`, iar documentația spunea „cele **decise**". Acum sunt trei valori non-null și
+`resolved=true` înseamnă **închise**, nu decise — scris explicit în descrierea rutei și în Haddock-ul
+DTO-ului, cu instrucțiunea că un client care vrea doar constatări trebuie să citească valoarea.
+
+### D-E — revendicarea de credențial capătă o revocare
+
+**Ce dovedește `Mp3`:** credențialul a consimțit la **tranzacția** care a mintat profilul. **Ce nu
+dovedește:** că a fost de acord să predea autoritatea celui care ajunge să țină token-ul. Deci o
+tranzacție co-semnată pentru orice motiv nelegat mintează un profil care revendică credențialul
+co-semnatarului, cu atacatorul ținând NFT-ul de user — iar o revendicare era dovedită o dată și
+afirmată pe veci: fără retragere, fără expirare, și nimic din protocol nu arde. Victima nu avea
+absolut nicio mișcare.
+
+`RevokeCredential` pe ProfilesValidator, index 2. **Trei lucruri pe care nu le cere, toate trei
+fiind decizia:**
+
+* **nu NFT-ul de user al profilului** (`P3`) — atacatorul îl ține; cerându-l, singurul remediu ar
+  ajunge la singura parte care nu trebuie să-l aibă;
+* **nu pauza** (`P6`) — un remediu pe care adminul îl poate suspenda nu e un remediu, același
+  argument pe care `ExpireDispute` îl face necitind oracolul deloc. Legarea `oracle` din
+  `profilesLambda` e leneșă și brațul ăsta nu o forțează, deci revocarea nu poartă reference input;
+* **nu o autoritate nouă** — `P9` cere exact `checkCredentialControl` pe credențialul revocat, adică
+  dovada pe care revendicarea însăși a cerut, iar off-chain refolosește `claimProofSkeleton`.
+
+**Și o propoziție a mea, prinsă înainte de commit.** Scrisesem despre `P8` („nu revendică nimic,
+deci nu e nimic de revocat") că **închide o gaură**. Fals: dacă `profileCredential` e `Nothing`,
+`P9` eșuează oricum. `P8` nu schimbă nicio decizie — e o despicare de **diagnostic**, aceeași
+afacere ca `A1` → `A1`/`A5`/`A6`. Haddock-ul spune acum asta explicit, inclusiv că prima versiune
+pretindea altceva. **Al 20-lea caz al tiparului**, din nou pe jumătatea *neaplicată*.
+
+**Prețul:** ProfilesValidator 8444 → **8759** (+315), celelalte patru nemișcate. Majoritatea e
+`checkCredentialControl`, care până acum era compilat **doar** în politica de mint — PlutusTx nu
+partajează nimic între scripturi, deci al doilea utilizator al unui helper plătește prețul întreg.
+
+### Un test al proiectului care spunea mai mult decât verifică
+
+`UnitTests.InteractionApi` avea un caz numit **„every write action has a typed route"**. Verifică o
+listă fixă de path-uri — deci cele două acțiuni de scriere noi (D-A, D-E) nu aveau rută și cazul a
+rămas **verde**. Invariantul din nume era menținut manual.
+
+Am adăugat rutele (`/expire-dispute`, `/revoke-credential`, cu DTO-uri și handlere) și am redenumit
+cazul în „the published path set is exactly this", cu motivul scris acolo: a numi un test după
+afirmația mai tare decât cea pe care o verifică e exact greșeala pe care repo-ul o tot găsește în
+comentarii — de data asta într-un nume de test.
+
+### Starea după cele trei decizii
+
+`build rc=0`, zero warning-uri, **624 de teste trec**, swagger regenerat și verificat, vocabular ok.
+Trei commit-uri: `b5797ca` (recensământul de warning-uri), `26d53f7` (D-C + D-A), `800a39d` (D-E).
+
+Dimensiunile finale, toate cu ~5 KB de spațiu până la plafonul de 14000:
+
+```
+ProfilesValidator     8414 -> 8759  (+345 în total: +30 de la OracleParams, +315 de la revocare)
+AttestationsValidator 7640 -> 8163  (+523: +494 ajungerea la oracol, +29 de la OracleParams)
+DisputesValidator     8457 -> 9401  (+944: brațul de expirare)
+OracleValidator       7547 -> 7688  (+141: un câmp)
+MintingPolicy        12276 -> 12393  (+117)
+```
