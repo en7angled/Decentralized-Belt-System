@@ -6213,3 +6213,111 @@ păstrează.
 
 `CS-01` jumătatea a doua, `OF-02`, `OF-03`/`OF-04`, `OC-06`, apoi clusterul de livrare și `TD-04`.
 Niciuna nu atinge lanțul.
+
+---
+
+## 2026-10-24 — `CS-01` (a doua jumătate), `OF-02`, `OF-03`, `OF-04`, `OC-06`
+
+Cinci constatări, și tema comună e **unde află utilizatorul că tranzacția lui nu merge.**
+
+### `CS-01` jumătatea a doua: o fereastră într-o singură tranzacție
+
+`applyMatches` împacheta toată fereastra într-un `runAttest`. Orice rând refuzat de Postgres o
+abandona, deci **nimic** din fereastră nu ateriza; cursorul se persistă doar după ce un interval se
+încheie, deci nu avansa niciodată; iar bucla de fetch reîncearcă doar erorile de client Kupo, deci
+nici nu reîncerca. O atestare construită manual, ~1,3 ADA, oprea stratul de citire definitiv.
+
+**Calea rapidă e neschimbată** — o tranzacție pentru zece mii de rânduri, contra unui eșec rar. Doar
+când aceea cade se trece la o tranzacție pe match. **Per-match și nu per-rând în tranzacție**, fiindcă
+un `catch` înăuntrul unei tranzacții Postgres abandonate nu are ce să salveze: tranzacția e deja
+moartă și orice instrucțiune ulterioară din ea cade și ea. Izolarea *trebuie* să fie o graniță de
+tranzacție.
+
+**Rândul rău e înregistrat, nu aruncat.** Să-l sari în silență ar schimba o oprire pe o **gaură** în
+registru, ceea ce e mai rău pentru ceva al cărui produs *e* înregistrarea. `attest_dead_letter` ține
+match-ul și textul erorii — nestructurat intenționat, fiindcă eșecurile utile sunt cele pe care nimeni
+nu le-a prezis, și un constructor pe cauză prezisă n-ar fi avut unul pentru `POSIXTime 10^20` care a
+pornit toată povestea. Rezolvă și `TODO`-ul care cerea exact masa asta.
+
+**Și `applyMatches` a trecut în bibliotecă** — trăia în `attest-sync`, ale cărui module nu sunt pe
+`hs-source-dirs` al suitei de teste, deci o politică despre ce se întâmplă când o scriere eșuează
+stătea în singurul loc unde un test nu putea ajunge.
+
+Schema v4 → v5. Un bump tot șterge (ADR 0007 a lăsat asta deliberat) și e inofensiv: singurul deploy
+pe care îl precedă e unul proaspăt.
+
+### `OF-02`: default-ul care rupea portofelele multi-adresă
+
+`Md8` cere un input **la** adresa depozitului. Default-ul era adresa de **change**, pe care `Md8` nu
+are motiv s-o accepte — o adresă de change nu trebuie să fie input — deci un portofel multi-adresă
+cădea pe calea onestă. Și cădea cu „Not enough ADA", despre un depozit pentru care avea fondurile.
+
+Default-ul e acum **adresa care ține user NFT-ul celui care deschide** — singura pe care `Md8` o
+satisface gratis, fiindcă cheltuirea acelui UTxO *e* modul în care autorizează.
+
+Prima mea variantă căuta un UTxO la orice adresă numită și îl forța ca input. **E greșit:** un input
+cere semnătura *acelui* deținător, pe care nimic din flux n-o poate produce, deci ar fi construit o
+tranzacție nesemnabilă — un eșec mai rău decât cel pe care constatarea îl descrie, fiindcă ar sosi
+*după* ce utilizatorul a semnat. Regula corectă e mai îngustă: adresa numită trebuie să fie una pe
+care clientul a declarat-o în `user_addresses`.
+
+Și comentariul care argumenta împotriva unei astfel de reguli **greșea mecanismul**: un portofel rece
+din care tranzacția asta cheltuie *trebuie* să fie în `user_addresses`, altfel nici **builder-ul** nu
+poate cheltui din el.
+
+### `OF-03`: ultima cale de scriere care construia o tranzacție condamnată
+
+`D7` refuză o rezolvare pe pauză, iar builder-ul nu se uita. Comentariul de deasupra funcției numea
+fix-ul **și un obstacol** — rutarea prin `getOracleRefInputSkeleton`, care ar atașa oracle-ul a doua
+oară. **Obstacolul nu era real:** funcția cheamă deja `queryOracleParams` pentru dovada lui `D1` și
+pentru depozit. Avea flag-ul în mână și nu se uita la el. Un `when`.
+
+`expireDisputeTX` rămâne negated, și nu din omisiune: garanția lui D-A e că depozitul unei dispute
+nedecise nu depinde de disponibilitatea nimănui, iar o ieșire de urgență pe care admin-ul o poate
+închide punând pauză nu e o ieșire de urgență.
+
+### `OF-04`: un preț de zero însemna un output de zero, care nu e nimic
+
+`adjustTxOut` din Atlas ridică un output de 0 lovelace la min-ADA — verificat contra surselor 0.14.1
+pinuite la reconcilierea auditului. `feeFor MintActionDispute` e `const 0` **prin proiectare**, fiindcă
+costul unei dispute e depozitul rambursabil, nu o taxă. Deci în clipa în care un operator configura
+orice `FeeConfig`, fiecare disputant plătea ~1 ADA nepublicată și nerambursată, către o adresă pe care
+lanțul nu i-a cerut-o niciodată. `checkFee` citește același `feeFor`: lanțul prețuia zero în timp ce
+builder-ul plătea.
+
+### `OC-06`: trei forme care pierdeau depozitul, un singur conjunct
+
+Partea (1) era deja închisă de `ExpireDispute`, și mai bine decât `WithdrawDispute`-ul propus, fiindcă
+e permisionless — nu cere nici măcar celui care a deschis să fie disponibil.
+
+`D4` plătește rambursarea ca output **fără datum**. Bun pentru un portofel, ruinător pentru altceva:
+(2) adresă de script Plutus → nerecuperabil pentru totdeauna; (3) o adresă de validator a protocolului
+→ praf măturabil de oricine; (4) adresa validatorului de dispute → `D4` poate fi satisfăcut de
+output-ul de continuare al disputei, blocând depozitul în înregistrarea rezolvată.
+
+Toate trei cer o **adresă de script**, deci `Mda` închide clasa în loc să enumere membrii: **+29 de
+octeți** și nimic altundeva.
+
+**De ce acum, după ce am spus că fereastra de format e închisă.** Fiindcă nu e: redeploy-ul e
+BLOCKED-ON-USER și nimic nu e deployat. Acum costă 29 de octeți; după redeploy ar costa un registru
+nou. Am declarat fereastra închisă cu un item prea devreme, și corectarea onestă e să iau itemul, nu
+să apăr propoziția.
+
+Costul, spus și nu ascuns: o organizație care acționează printr-un script trebuie să numească o
+adresă de **cheie** pentru rambursare. Alternativa din audit — un datum inline opțional pentru plată —
+ar servi corect o adresă de script, și e un câmp de datum plus o schimbare în `D4`, nu un conjunct.
+Pierderea silențioasă a depozitului e varianta mai rea, deci asta pleacă și aceea rămâne disponibilă.
+
+### Tema
+
+Patru din cinci au mutat un refuz **de pe lanț, de după semnătură, înainte de construcție**. Testele
+7.2 și 6.8 asertau coduri de trace și acum assertează refuzuri off-chain — iar 7.2 a primit și
+jumătatea care face un refuz să însemne ceva: nepauzat, aceeași rezolvare trebuie să **reușească**.
+
+`9b959a4`, `ec18712`, `fff93cd`, `fba6ed0`. **670 de teste**, de la 643 la începutul zilei. Swagger
+3.1.0 → 3.3.0.
+
+### Costul redeploy-ului, recalculat
+
+47.657 de octeți → **208,84 tADA blocați** (recuperabili) + ~7 taxe ⇒ **~219 de ținut**. Comenzile
+sunt neschimbate, în intrarea BLOCKED-ON-USER de mai sus.
