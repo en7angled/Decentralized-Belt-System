@@ -6096,3 +6096,120 @@ să le urmeze.
 `LineageGraphData`/`LineageNode` din `QueryResponses.hs` nu au niciun utilizator în afara propriului
 modul. Modelează un graf de **profiluri** — sensul din Belt System — nu atestări despre atestări, deci
 schimbarea asta nu le omoară; erau deja moarte.
+
+---
+
+## 2026-10-24 — `OC-09`: un redeploy e un registru nou. Și fereastra de format s-a închis
+
+Poziția, care **e** decizia: repararea oricărui validator produce o politică de minting nouă și deci
+un spațiu de nume nou de id-uri. Înregistrările mintate sub politica precedentă **rămân în bază,
+rămân citibile, și nu se mai actualizează.** Stratul de citire unește deployment-urile după id de
+politică. Niciun redeemer de migrare, și niciun id nu se re-mintează sub o politică nouă.
+
+### De ce trebuia decisă înainte de primul deployment păstrat
+
+Hash-ul politicii e funcție de cele trei hash-uri de validator plus token-ul oracle, deci repararea
+oricărui validator schimbă simbolul de monedă al **fiecărui** id. `Mg` și `Mf` refuză apoi id-urile
+vechi și user token-urile vechi, nimic din niciun datum nu spunea cărui deployment aparține, iar
+`attest-sync` **ștergea** proiecțiile când observa. Deci prima reparație de validator după lansare nu
+avea nicio cale — iar întrebarea nu era niciodată „cum migrăm", ci „avem voie să reparăm un
+validator".
+
+### De ce nu câmpul de versiune pe care îl propunea auditul
+
+Varianta (b) din `OC-09` deschide cu `protocolVersion :: Integer`, descris ca gratuit fiindcă e
+parametru de compilare. E aproape gratuit și aproape **redundant**:
+
+* `ProtocolParams` era încorporat în fiecare datum de profil, deci fiecare profil căra deja o
+  amprentă de deployment — trei hash-uri de validator și un token oracle. ADR 0006 l-a scos exact
+  fiindcă nimeni nu-l citea.
+* Id-ul politicii distinge deployment-urile singur, și e **deja în fiecare rând de proiecție**: orice
+  id e stocat ca `GYAssetClass`, adică `policy.name`. Un cititor unește deployment-urile gratis, fără
+  nicio coloană de adăugat și nicio migrare de rulat.
+* Redeemerul de migrare care ar da câmpului o treabă trăiește în politica **următoare** și ia id-ul
+  politicii precedente ca propriu parametru. Nu are nevoie de un câmp în asta.
+
+Deci câmpul cumpără o amprentă mai scurtă decât cea care există deja, în schimbul unui datum
+permanent mai lat.
+
+### Ce a trebuit schimbat, și a fost o condiție
+
+Poziția era **falsă în singurul loc care o putea face falsă**:
+
+```haskell
+needWipe = storedVersion < currentSchemaVersion || storedPolicy /= policyHexText
+```
+
+Un redeploy ștergea fiecare tabel de chain-sync. „Înregistrările vechi rămân citibile" ar fi fost o
+propoziție dintr-un document contrazisă de primele linii ale serviciului care ține înregistrările.
+
+`needWipe` citește acum **doar versiunea de schemă**. Un bump de schemă tot șterge — acele tabele ar
+cere un `ALTER` în loc pe care Postgres îl refuză, deci un `CREATE` proaspăt e singura cale sigură și
+înregistrările se re-indexează din lanț. O schimbare de politică nu mai șterge nimic.
+
+`chain_sync_config.policy_hex_text` ține acum un **istoric separat prin virgulă, cel mai nou primul**:
+aceeași coloană, același tip, **nicio migrare**, fiindcă un rând cu un singur id se parsează ca un
+istoric de un element. Asta contează mai mult decât sună — un bump de versiune pentru a adăuga o
+coloană de istoric ar fi șters exact rândurile pe care ADR-ul există ca să le păstreze.
+
+### Ce n-am construit, deliberat
+
+Indexarea a mai mult de o politică simultan. `attest-sync` urmărește un singur pattern Kupo, și după
+un redeploy urmărește pe cel nou — deci o dispută rezolvată pe registrul **vechi** după cutover nu e
+indexată. Registrul vechi e îngheațat în momentul redeploy-ului, și exact asta înseamnă poziția. E
+off-chain, nu îngheață la deployment, deci așteaptă primul deployment care are un predecesor care
+merită urmărit. Forma e deja decisă: coloana de istoric numește politicile, iar fiecare rând spune deja
+cărei politici aparține.
+
+`5bbd3d7`. 663 de teste, de la 659.
+
+---
+
+## BLOCKED-ON-USER (actualizat 2026-10-24) — fereastra de format e ÎNCHISĂ, redeploy-ul e gata
+
+Toate deciziile care mută hash-urile au aterizat: `OC-01`, `OF-01`, `OC-02`, `OC-03`, `OC-04`,
+`OC-05`, `OC-08`, `OC-09`, `OC-12`. **Nu mai urmează nicio schimbare de format**, deci redeploy-ul de
+acum e cel care se păstrează.
+
+### Costul, recalculat din dimensiunile actuale
+
+| script | octeți | min-ADA `(160 + size) × 4310` |
+| --- | --- | --- |
+| Profiles | 8.262 | 36,30 |
+| Attestations | 8.608 | 37,79 |
+| Disputes | 9.978 | 43,69 |
+| Oracle | 7.856 | 34,55 |
+| MintingPolicy | 12.924 | 56,39 |
+| **total** | **47.628** | **208,72 blocați** |
+
+Plus UTxO-ul oracle (3,5) și ~7 în taxe ⇒ **~219 tADA de ținut**, din care **208,72 sunt
+recuperabili** prin cheltuirea UTxO-urilor de referință. Față de deploy-ul mort: +1.235 de octeți,
++3,32 ADA blocați. Portofelul are 9.992,61 tADA, iar cei 205,40 din deploy-ul mort sunt și ei
+recuperabili.
+
+### Comenzile, în ordine
+
+```
+! docker run --rm -d --name palmares-nodefwd -v palmares-dbsync-exp_node-ipc:/ipc:ro -p 127.0.0.1:13001:13001 alpine/socat TCP-LISTEN:13001,fork,reuseaddr UNIX-CONNECT:/ipc/node.socket
+```
+```
+(terminal separat, lăsat deschis)
+python3 /Users/mg/Projects/CardanoProjects/palmares/scripts/node_socket_relay.py
+```
+```
+! cd /Users/mg/Projects/CardanoProjects/palmares && cabal run exe:admin -- deploy-reference-scripts
+```
+
+Prima și a doua sunt refuzate de clasificatorul de permisiuni, a treia cheltuie fonduri și merită să
+rămână manuală. Cele cinci reguli de `permissions.allow` care ar scoate primele două din drum sunt în
+intrarea BLOCKED-ON-USER precedentă.
+
+**Când vine output-ul:** verific hash-urile prin Kupo (un `script_hash` pe fiecare UTxO de referință),
+citesc oracle-ul cu `query-oracle` — care arată acum și arbitrul, și dacă e despărțit de admin — și
+abia apoi comit `config/config_palmares_validators.json`, fiindcă ăsta e primul deploy care se
+păstrează.
+
+### Ce continui între timp
+
+`CS-01` jumătatea a doua, `OF-02`, `OF-03`/`OF-04`, `OC-06`, apoi clusterul de livrare și `TD-04`.
+Niciuna nu atinge lanțul.
