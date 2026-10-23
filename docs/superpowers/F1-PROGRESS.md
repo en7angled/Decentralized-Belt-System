@@ -4710,3 +4710,125 @@ scrisesem propozițiile: Haddock-ul care afirma o cauză unică pentru `null`, �
 o referință care e cursorul lui db-sync. Diferența față de cazurile anterioare e că pe una dintre ele
 **construisem deja o verificare** — un `die` în nightly care ar fi acuzat serviciul greșit. O
 propoziție falsă despre jumătatea aplicată nu rămâne documentație: devine cod.
+
+---
+
+## Runda 4 — lista „neblocat, de cod" nu era goală: compilatorul avea patru intrări în ea
+
+Închisesem runda anterioară cu „**lista neblocat e goală** — tot ce mai urmează are nevoie de lanț
+sau de o decizie a ta". Era fals, și într-un fel instructiv: construisem lista din **lista de
+task-uri a ledger-ului**, nu din ce spune repo-ul despre sine. `-Wall -Wunused-packages` sunt pornite
+de la schelet, nimic nu le pune poartă, deci warning-urile s-au adunat necitite. Patru erau vizibile
+imediat, iar recompilarea pe care le-a adus reparația a scos încă patru. **O listă de task-uri nu e
+un recensământ.**
+
+Și unul dintre cele opt era un crash.
+
+### 1. Importuri redundante și dependențe pe care nimeni nu le importă
+
+`Koios.hs` importa `Parser` fără să-l folosească. `Envelope.hs` importa `Generic`, `FromJSON` și
+`ToJSON` din modulele lor, importând în același timp `Deriving.Aeson`, care re-exportă exact acele
+trei — ceea ce e și motivul pentru care GHC nu a reclamat `Value`/`toJSON` de pe aceeași linie:
+`deriving-aeson` re-exportă cele trei nume de care au nevoie clauzele `deriving`, nu tot `Data.Aeson`.
+Avertismentul însuși e dovada, deci nu a trebuit presupus.
+
+Trei `build-depends` pe care niciun modul nu le importă: `http-types` și `wai-extra` în
+`interaction-api` — singurul `Network.Wai.Middleware` de acolo e `Servant.Options`, din
+`servant-options`, nu din `wai-extra` — și `warp` în suita de teste.
+
+### 2. `scriptAddress` umbrea `scriptAddress`-ul lui Atlas, iar diferența era reală
+
+`Ingestion.hs` lega `scriptAddress = addressFromScriptHash nid` într-un `where`, iar
+`GeniusYield.TxBuilder` — importat deschis două rânduri mai sus — exportă `scriptAddress` și
+`scriptAddress'`. **Ale lor sunt monadice și iau network id-ul DIN monadă**; a mea e pură și primește
+`nid` explicit. Același cuvânt pentru două lucruri care diferă exact în locul unde o greșeală de
+rețea nu se vede. Redenumit `validatorAddress`, care e și ce compară de fapt cele trei gărzi.
+
+Nu e risc silențios — ștergerea legării locale ar da eroare de tip, nu alt comportament — dar e
+exact genul de nume pe care cineva care știe Atlas îl citește greșit.
+
+### 3. Trei constructori lipsă dintr-un `case` exhaustiv — crash latent
+
+`executeCommand`, clauza a doua, enumeră fiecare comandă în loc să se termine în `_ ->`, și îi
+lipseau **`NewOperatorKey`, `OperatorAddress` și `SignTx`**. `-Wincomplete-patterns` le-a numit pe
+toate trei. Ajungând la oricare: `Non-exhaustive patterns`, nu un mesaj de eroare.
+
+Nu e accesibil azi — `main` le dispecerizează pe toate trei înainte să încarce vreun provider și se
+întoarce, fără să cadă în `executeOnchainCommand`. Dar enumerarea e lucrul care merită păstrat: e ce
+face ca o comandă **nouă** să nu compileze aici, în loc să fie înghițită de una din cele două ramuri
+silențioase (prima clauză are `_ ->`, de asta nu reclamă nimic). Cele trei sunt adăugate în idiomul
+pe care cei cinci frați ai lor îl folosesc deja.
+
+Și `readPeriod` lega `from` și `to`, umbrind constructorii de interval din `PlutusLedgerApi.V3` într-un
+modul care construiește intervale. Sunt cele două jumătăți ale unui string `FROM..TO`: `fromStr`,
+`toStr`.
+
+### 4. Golul de granturi nu mai e o decizie a ta — și motivul pentru care îl amânasem era el însuși greșit
+
+Scrisesem, acum două runde: *„Tot nu am schimbat-o, și acum pe un motiv mai bun decât ignoranța"* —
+că reparația curată pune acordare de privilegii în calea de pornire a unui serviciu, și că opțiunea 2
+(o linie în `sql/050_roles.sql`) merge „dacă rolul e fix în deployment-ul tău". **Ambele premise erau
+ale unei alte reparații decât cea care exista.**
+
+`ALTER DEFAULT PRIVILEGES` **fără `FOR ROLE`** se leagă de *rolul curent* — iar rolul curent e deja
+fixat, nu de deployment, ci de garda din capul fișierului, care refuză să ruleze ca orice altceva
+decât rolul ce deține tabelele lui db-sync. Deci nu trebuia să știu rolul lui attest-sync. Trebuia să
+observ că fișierul folosește exact această formă, o secțiune mai jos, pentru `public` — și își
+argumentează acolo alegerea: *„No `FOR ROLE`, which means the CURRENT role — and that is deliberate
+rather than lazy."* Răspunsul era în fișier, scris despre schema vecină.
+
+**Și golul era mai mare decât îl raportasem.** Nu doar „calea implicită": **niciuna** din cele patru
+locuri care configurează attest-sync nu îl conectează ca `palmares_owner` — `defaultConnStr`,
+`Dockerfile.attest-sync:55`, `compose.yaml:267`, `.env.example:10`, toate spun `user=postgres`. Linia
+`FOR ROLE palmares_owner` acoperea, deci, **zero deployment-uri existente**.
+
+Măsurat, nu argumentat. Într-un postgres de unică folosință, o tabelă creată ca `postgres` într-o
+schemă deținută de `palmares_owner`, cu fișierul așa cum era:
+
+```
+ applied_as | arm_a_today | arm_b_proposed
+------------+-------------+----------------
+ postgres   | f           | t
+```
+
+iar `information_schema.tables`, citită ca `palmares_ro`, arăta **doar** schema cu privilegiul
+implicit. De asta eșecul e necitibil din afară: un `GRANT` lipsă și o tabelă absentă sunt aceeași
+observație.
+
+Perechea de acum face **ordinea să nu mai conteze**, ceea ce e tot rostul: `GRANT` explicit prinde o
+tabelă care există deja, privilegiul implicit prinde una creată după. Repetat cap-coadă — scheletul
+db-sync, fișierul, apoi tabela — și `palmares_ro` o citește.
+
+Deci: **nu mai are nevoie de o regulă de ordine la deploy și nu mai e pe lista ta.** Sfatul vechi
+(„rulează `apply-roles` DUPĂ prima pornire") e acum greșit, iar mesajul de preflight din
+`smoke_attest_flow.sh` trimite la `check_roles.sh` în loc de el.
+
+**Și de ce a supraviețuit atât:** `check_roles.sh` afirma privilegiul implicit analog pentru `public`
+și nimic pentru `palmares_attest`, iar CI nu rula scriptul deloc. Amândouă reparate — afirmația e
+oglinda fratelui ei, iar jobul `determinism` (care avea deja un serviciu postgres și scheletul)
+aplică acum fișierul într-un `cexplorer` propriu și creează tabela **în ordinea care pierdea
+granturile**. Pasul a fost repetat verbatim local înainte de a fi scris: 16 verificări ok, `roles OK`,
+și cititorul chiar citește.
+
+### Warning-ul pe care l-am lăsat intenționat
+
+`-Wunused-packages` numește și `plutus-tx-plugin`. **Nu l-am scos.** Niciun modul nu-l importă —
+cele cinci validatoare primesc plugin-ul prin `$$(compile [||…||])`, pe care numai plugin-ul îl poate
+expanda — deci „not needed for compilation" e un artefact al faptului că flag-ul se uită la importuri.
+Că plugin-ul rulează se vede în teste: printre cele 610 sunt eșecuri la nivel de validator cu coduri
+de trace, deci scripturile pe care le construiește sunt reale. Scoaterea lui ar rupe compilarea
+Plinth ca să stingă un warning într-un arbore fără `-Werror`.
+
+Consecința pentru owner: `-Werror` curat pe `-Wunused-packages` nu e posibil fără
+`-Wno-unused-packages` pe `onchain-lib`. Celelalte șapte warning-uri sunt închise, deci restul
+arborelui e curat — dacă vrei poarta, aceea e singura excepție de scris.
+
+### Starea
+
+`build rc=0`, **610 teste trec**, swagger neschimbat (nimic din rundă nu atinge schema), cele două
+scripturi trec `bash -n`, iar pasul nou de CI a fost repetat local verbatim. Trei commit-uri:
+`a9bfd71` (recensământul), `307b534` (admin), `5d50895` (granturile + poarta).
+
+Pe tine rămâne ce era, **minus golul de granturi**: `config_atlas.json`, finanțarea, D-A / D-C / D-E,
+și convenția de 120 de coloane. Deploy-ul T-ATTEST-10/11/12 e în continuare singurul pas rămas, de
+făcut o dată, după D-C.
