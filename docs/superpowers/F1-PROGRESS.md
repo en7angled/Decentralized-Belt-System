@@ -5585,10 +5585,59 @@ datumul oracle doar se așază la adresă. Prima execuție a validatorului de or
 acelui UTxO. Proba cea mai ieftină, cu stare neschimbată:
 
 ```
-! cd /Users/mg/Projects/CardanoProjects/palmares && cabal run exe:admin -- set-dispute-timeout 2592000000
+! cd /Users/mg/Projects/CardanoProjects/palmares && cabal run exe:admin -- set-dispute-timeout -m 2592000000
 ```
+
+(`-m`/`--milliseconds` e **opțiune obligatorie**, nu argument pozițional — vezi `setDisputeTimeoutParser`.
+Prima versiune a acestei linii o scria pozițional și parserul o respinge cu `Invalid argument`.)
 
 Scrie valoarea pe care o are deja, deci datumul iese **identic la octet**, dar cheltuiește UTxO-ul
 oracle și execută pe lanț `O1` (semnătura admin-ului), `O2` (output la index, la adresa proprie, cu
 valoare `>=`), `O6` (bună-formare pe **rezultat**) și indexul 6 de redeemer — cea mai nouă acțiune,
 care până acum era fixată doar în Haskell (`PropertyTests.hs`, lista `[0,1,2,2,3,4,5,6]`).
+
+### Validatorul de oracle a executat pe lanț — `dc83d5d5…`
+
+`set-dispute-timeout -m 2592000000` a scris valoarea care exista deja, deci datumul a ieșit
+**identic la octet** — am verificat câmp cu câmp cu `query-oracle` înainte și după: admin PKH, `Paused:
+False`, min-UTxO 1 ADA, depozit 5 ADA, timeout 30 de zile, fee config `None`. S-a mișcat doar
+referința UTxO-ului, `2bbb6ff5…#0` → `dc83d5d5…#0`, cu NFT-ul oracle și cei 3,5 ADA intacți la adresa
+de script `addr_test1wpxudgs7hfey5j…`, datum **inline**.
+
+Ce probează asta, și nu o proba nimic de până acum: **prima cheltuire a UTxO-ului oracle este prima
+execuție a validatorului de oracle.** Mintul NFT-ului rulase doar politica de minting, iar datumul se
+așezase la adresă fără să treacă prin validator. Acum au trecut pe lanț `O1` (semnătura admin-ului),
+`O2` (output la index, la adresa proprie, valoare `>=`), `O6` (bună-formare pe **rezultat**) și
+indexul 6 de redeemer — cea mai nouă acțiune, fixată până acum doar în Haskell.
+
+**Taxa: 0,426904 tADA** pentru o cheltuire Plutus care își ia scriptul din UTxO-ul de referință. Mică,
+și e și confirmarea că `minFeeRefScriptCoinsPerByte` se plătește la treapta de bază în loc ca scriptul
+să fie inclus în tranzacție.
+
+Rămân neexecutate pe lanț validatoarele de profiles, attestations și disputes. Primul profil se creează
+doar prin API (`/claim-profile`), deci proba lor e `scripts/smoke_attest_flow.sh`, care cere
+interaction-api + query-api + attest-sync pornite peste db-sync. Toate componentele există local
+(`palmares-pgfwd` → `127.0.0.1:55440`), dar boot-ul query-api face `DROP SCHEMA palmares CASCADE` —
+inofensiv pentru `public`, unde stau tabelele db-sync, dar nu pornesc trei servicii peste singura bază
+preprod sincronizată fără să întreb.
+
+### `OF-01` — proiectat, uneltele există toate
+
+`rotate-admin` cheamă `runActionWithPK` (`Transactions.hs:127-137`), care construiește, semnează cu
+**o** cheie și trimite, pe loc. `OracleValidator.hs:86` cere în plus semnătura admin-ului care intră.
+Deci comanda produce prin construcție o tranzacție pe care lanțul o refuză.
+
+Nimic nu trebuie inventat — toate primitivele sunt deja în arbore:
+
+| piesă | unde e deja |
+| --- | --- |
+| build fără submit | `interactionToHexEncodedCBOR` (`Transactions.hs:110`), folosit de rutele de scriere |
+| semnare separată | comanda `sign-tx` → `txWitToHex . keyWitnessesOf` (`Main.hs:876-891`) |
+| adăugarea unui witness | `appendWitnessGYTx :: GYTxWitness -> GYTx -> GYTx` (Atlas `TxBody.hs:116`) |
+| parse-ul witness-ului | `txWitFromHex` (Atlas `Tx.hs:320`) |
+| semnare peste o tranzacție deja semnată | `signGYTx :: GYTx -> [a] -> GYTx` (Atlas `TxBody.hs:126`) |
+
+Deci lipsesc exact două lucruri: un `--build-only` pe `rotate-admin` care tipărește CBOR-ul nesemnat
+în loc să trimită o tranzacție refuzată, și o comandă `submit-tx` care primește tranzacția plus unul
+sau mai multe witness-uri, adaugă pe al său și trimite. Fluxul devine: admin curent face build →
+admin care intră rulează `sign-tx` pe mașina lui → admin curent face `submit-tx`.
