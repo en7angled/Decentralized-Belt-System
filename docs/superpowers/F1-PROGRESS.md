@@ -5401,3 +5401,113 @@ notele intermediare față de raportul final. Am verificat-o pe `git show 4eb911
 publica, iar prima mea versiune — cea greșită — fusese deja comisă și a avut nevoie de un commit de
 corectare (`c0b1191`). Lecția nu e „nu te încrede în agenți": e că o afirmație despre istoria unui
 fișier se verifică în istoria fișierului, nu în raportul despre el.
+
+---
+
+## 2026-10-23 — Deploy-ul a eșuat pentru un motiv pe care nu-l căuta nimeni: Maestro a plecat din Cardano
+
+Prima încercare de `admin deploy-reference-scripts` nu a ajuns niciodată la lanț:
+
+```
+admin: MspvApiError "SlotOfCurrentBlock" ... host = "preprod.gomaestro-api.org"
+  (ConnectionFailure Network.Socket.getAddrInfo ...: does not exist
+   (nodename nor servname provided, or not known))
+```
+
+`does not exist` e un răspuns de la **resolver**, nu de la HTTP. Nu era nimic căzut, nimic
+rate-limited, niciun token greșit: **numele nu are adresă**. Primele trei bănuieli — sandbox-ul meu,
+tokenul, o scăpare în config — erau toate false.
+
+### Dovada
+
+| sondă | rezultat |
+| --- | --- |
+| `dig @8.8.8.8 preprod.gomaestro-api.org` | gol |
+| `dig @ali.ns.cloudflare.com` — **NS-ul autoritativ al zonei** | gol, și pentru apex și pentru `mainnet.` |
+| `gh api repos/maestro-org/haskell-sdk --jq .archived` | `true`, ultimul push **2026-04-30** |
+| `gh api repos/maestro-org/typescript-sdk --jq .archived` | `true`, același 2026-04-30 |
+| `gh api orgs/maestro-org --jq .description` | **„A Bitcoin capital allocation platform"** |
+| `status.gomaestro.org` | Mezzamine, Treasury, două landing-uri. **Niciun API Cardano.** |
+
+Un răspuns gol de la nameserverele **proprii** ale zonei e cel decisiv: un resolver local sau o
+restricție de rețea nu pot produce asta. SDK-urile au fost arhivate la sfârșitul lui aprilie 2026, iar
+DNS-ul API-ului a fost retras între timp. **E o ieșire de companie din lanț, nu o pană** — nu e nimic
+de așteptat și nicio pagină de status de urmărit.
+
+### Se știa deja, cu un repo mai încolo
+
+`apps-k8s-configs/chains/cardano/mainnet/README.md:382` o scrie negru pe alb: „TOA mainnet și
+delegation prod au trecut pe Blockfrost (`GYBlockfrost` în `ATLAS_CORE_CONFIG`, SOPS): **Maestro
+și-a retras API-ul**". Overlay-ul dev al delegation-service a fost șters pe 2026-10-18 parțial din
+cauza secretului rămas pe providerul retras, iar overlay-ul `bjj-belts` dev trecuse pe Kupo. Singurul
+loc care nu primise vestea era palmares — și cele două fișiere locale `config_atlas.json`, care sunt
+gitignored și de asta nu se uitase nimeni la ele.
+
+### Reparația e doar de configurație, și asta a fost verificat, nu presupus
+
+`GYCoreProviderInfo` din Atlas 0.14.1 e o sumă **untagged** (`sumEncoding = UntaggedValue`,
+`GYConfig.hs:109-121`): providerul se alege după **ce chei sunt prezente**. Deci schimbarea e un
+obiect JSON, **zero Haskell**. Corolarul merită numit ca footgun: **niciodată două providere în
+același obiect**, fiindcă primul constructor care parsează câștigă în silență.
+
+Trei lucruri fac swap-ul atât de ieftin:
+
+* palmares cere Atlas-ului exact șase lucruri — parametri de protocol, slot, interogare UTxO,
+  lookup de datum, submit, await-confirmed — și toate șase sunt implementate de providerul
+  Blockfrost. Funcțiile care dau `error` în `Providers/Blockfrost.hs` sunt `blockfrostGovState`,
+  `blockfrostDRepState`, `blockfrostDRepsState`, `blockfrostConstitution`, `blockfrostProposals` și
+  `blockfrostMempoolTxs` — **interogări de guvernanță, pe care palmares nu le rutează niciodată prin
+  Atlas.** Datele de guvernanță vin din db-sync și Koios (ADR 0001), iar `grep` confirmă că nu se
+  importă niciun modul Atlas de guvernanță. Un registru de guvernanță care și-ar fi citit DRep-urile
+  prin transaction builder ar fi fost blocat aici. Ăsta e un efect al D-1, nu noroc.
+* `providerFamily` (`interaction-api/ServiceStatus.hs:124-128`) enumera deja toate cele patru
+  providere, `GYBlockfrost {} = "blockfrost"` inclus, iar `smoke_interaction_api.sh:55` îl acceptă
+  deja în regex. `/status` raportează familia nouă fără nicio editare.
+* query-api nu are provider deloc — citește doar view-uri peste db-sync.
+
+`turboSubmit` dispare împreună cu blocul Maestro: era un hint de submisie specific Maestro
+(`maestroSubmitTx (Just True == turboSubmit)`), nu are echivalent Blockfrost, și lăsat într-un obiect
+altfel-Blockfrost e exact footgun-ul de mai sus.
+
+### Alternativa locală, și de ce nu e ea decizia
+
+`GYNodeKupo` — `{"socketPath", "kupoUrl"}` — ar scoate dependența de terți cu totul, adică exact ce
+își propunea secțiunea Spike din ADR 0002. **Infrastructura rulează deja și e la zi**: node 11.1.2
+healthy, Kupo v2.12.0 cu `--match '*'` la tip (`kupo_network_synchronization 1.0`, checkpoint == node
+tip 137101224, ultimul bloc acum 19s), expus pe `localhost:11442`. Și `compose.yaml` definește deja
+serviciul `kupo` sub profilul `write`, cu raționamentul scris.
+
+Două motive, unul local și unul general:
+
+* **Pe macOS host-ul nu ajunge la socketul nodului.** Stă într-un volum Docker **numit** exact
+  pentru că, în cuvintele `experiments/dbsync-preprod/compose.yaml:55`, „A UNIX socket in a macOS
+  bind mount does not work". CLI-ul de admin rulează pe host. Un pod de socat (container → host) e
+  instalație de unică folosință pentru o comandă.
+* **Nu repară un serviciu deployat.** Un `interaction-api` din cluster nu ajunge nici el la socketul
+  unui laptop. Un provider găzduit repară deployment-ul **și** calea de scriere care rulează, cu
+  aceeași cheie.
+
+Am încercat să pornesc podul de socat ca să duc deploy-ul la capăt pe loc; **clasificatorul de
+permisiuni l-a refuzat** („Production Deploy"). N-am forțat. E o comandă, și o poate da proprietarul.
+
+### Ce am scris
+
+`docs/adr/0004-maestro-withdrew-its-cardano-api.md` (nou, superseding 0002, cu tabelul de dovezi),
+`ADR 0002` marcat superseded, `config/config_atlas.example.json` trecut pe `blockfrostKey` —
+**șablonul comis arăta spre un host care nu mai există, deci oricine urma README-ul reproducea exact
+eroarea de mai sus** —, nota din README despre provider rescrisă cu regula „exact un provider în
+obiect", comentariul din `compose.yaml` corectat, și patru comentarii care numeau un vendor mort
+(`query-api/Main.hs`, `QueryAppMonad.hs`, `ServiceStatus.hs`, `smoke_views.sh`).
+
+### Ce s-a confirmat pe drum
+
+Portofelul de admin are **10.000 tADA** într-un singur UTxO — verificat prin Kupo-ul local, care
+indexează `*` și deci răspunde la orice adresă. Deploy-ul are nevoie de ~210. Finanțarea nu e o
+problemă, iar faptul că Kupo răspunde la adrese arbitrare e chiar precondiția de care Atlas ar avea
+nevoie pe calea locală.
+
+### Lecția
+
+**DNS-ul unui provider e o dependență fără pagină de status.** Eșecul vine ca o eroare de resolver
+înăuntrul unei erori de bibliotecă înăuntrul unei erori de CLI, iar cele trei bănuieli evidente sunt
+greșite toate trei. Când o chemare de provider eșuează, **rezolvă numele întâi.**
