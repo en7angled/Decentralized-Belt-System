@@ -6321,3 +6321,118 @@ jumătatea care face un refuz să însemne ceva: nepauzat, aceeași rezolvare tr
 
 47.657 de octeți → **208,84 tADA blocați** (recuperabili) + ~7 taxe ⇒ **~219 de ținut**. Comenzile
 sunt neschimbate, în intrarea BLOCKED-ON-USER de mai sus.
+
+---
+
+## 2026-10-24 — clusterul de livrare: `TD-01`, `GV-01`, `GV-04`/`CS-03`/`TD-02`/`TD-09`, `GV-02`, `TD-03`
+
+Cinci rânduri din §3, și patru dintre ele erau documente care **contraziceau fișierele**.
+
+### `TD-01`: ADR 0002 spunea „excluded by both `.gitignore` and `.dockerignore`"
+
+Jumătatea cu `.gitignore` era adevărată. `.dockerignore` n-a listat niciodată
+`config/config_atlas.json`, iar toate patru Dockerfile-urile încheiau stage-ul de runtime cu
+`COPY ./config /app/config`. `scripts/build-images.sh` construiește din **arborele de lucru**, deci un
+build local coace în patru imagini orice config de provider se întâmpla să fie acolo.
+
+**Și nimic nu citea vreodată copia coaptă** — ăsta e lucrul care face asta scurgere pură și nu un
+compromis. `compose.yaml` montează `./config:/app/config:ro` exact peste calea aceea și dă pe lângă
+`ATLAS_CORE_CONFIG` inline. Copia nu era citită, doar expediată.
+
+Garda e în scriptul care ar provoca problema, nu într-o suită de teste pe care nimeni n-o rulează
+înainte de un build manual: `build-images.sh` refuză să ruleze dacă vreuna din cele două excluderi
+lipsește din `.dockerignore`. O linie ștearsă din fișierul acela e silențioasă, iar scurgerea nu e
+recuperabilă după ce o imagine e împinsă.
+
+### `GV-01`: pana n-a fost niciodată despre vizibilitate
+
+DDL-ul în Postgres e tranzacțional, deci un cititor vedea schema veche sau pe cea nouă și niciodată o
+gaură. Costul e în **lock-uri**: `DROP` ia AccessExclusiveLock pe fiecare obiect din schemă, deci
+cititorii se blocau pe toată durata bootstrap-ului și — cu `lock_timeout = '10s'` — boot-ul însuși
+cădea dacă unul ținea un lock. O replică: un sughiț per restart. Mai multe: o pană de citire per
+restart, iar un rolling deploy nu e decât restarturi.
+
+Amprenta e cea care contează: un restart cu DDL neschimbat face trei citiri ieftine și **niciun DDL**.
+Lock-ul advisory serializează două replici care bootează simultan — o cursă pe care codul precedent
+pur și simplu o pierdea.
+
+**Postgres calculează hash-ul**, nu Haskell: `md5()` peste DDL-ul concatenat, stocat și comparat de
+aceeași funcție, deci cele două nu pot fi în dezacord despre algoritm — și nu se adaugă nicio
+dependență de hashing unui serviciu al cărui rost e să booteze cu un DSN și nimic altceva.
+
+**Testul care a căzut primul mi-a spus ceva.** `UnitTests.Refresh` chema `applyPalmaresSchema` a doua
+oară cu comentariul „rebuild, because the matview was populated when empty". Bootstrap-ul făcea și pe
+**refresh**, fiindcă ștergea și recrea tot la fiecare apel. Nu mai face, iar cele două treburi stau
+mai bine separat: testul cheamă acum `refreshDRepMetrics`, adică exact ce face refresh-ul periodic în
+producție, în loc să se sprijine pe un efect secundar al căii de boot.
+
+Asertat prin **identitatea obiectelor**, nu prin numărătoare: un rebuild dă fiecărui obiect recreat
+un oid nou, deci un oid neschimbat peste un al doilea boot e dovada că DDL-ul n-a rulat. Cazul
+existent „applies, and applies again" nu putea distinge un skip de un rebuild — ambele lasă exact o
+schemă.
+
+### `GV-04`/`CS-03`/`TD-02`/`TD-09`: profilul `write` cădea în două feluri diferite
+
+**Nu putea bota:** `interaction-api` e fail-closed pe `BASIC_USER`/`BASIC_PASS` și nimic din compose
+nu le dădea, deci `docker compose --profile write up` murea înăuntrul unui container. Sunt acum cerute
+cu `:?` și **fără default** — un credențial expediat e mai rău decât unul lipsă — deci compose numește
+variabila uitată.
+
+**Și odată botat, nu putea servi o atestare:** nu exista serviciu `attest-sync`. `interaction-api`
+construia și trimitea; nimic nu proiecta ce trimitea, deci calea de self-host putea scrie pe lanț și
+să nu citească niciodată înapoi.
+
+**Serviciul public de citire rula ca superuser al bazei.** `query-api` se conecta ca `user=postgres`.
+Servește trafic neautentificat și nu scrie nimic, deci e singura conexiune din stivă care ar trebui să
+fie cea mai puțin privilegiată. Plus un one-shot `palmares-roles` care rulează `apply-roles` înainte,
+ca rolurile să existe înainte să se conecteze cineva ca ele.
+
+**Și porturile erau pe toate interfețele.** Toate patru, inclusiv Postgres, leagă acum `127.0.0.1`.
+
+`PG_CONN_STR` era **mai rău decât spunea constatarea.** Auditul cerea fail-closed. Avea un *default*,
+și default-ul era un superuser cu parolă ghicibilă — `user=postgres password=postgres` — folosit în
+silență când variabila lipsea. Ambele executabile aveau copia lor, cu host-uri diferite și aceeași
+parolă, ceea ce e exact modul în care unul putea fi reparat și celălalt nu. E acum un singur
+`requirePgConnStr` în `webapi-lib` și face `die`. Tabelul de env din README spunea deja „required";
+codul nu impunea asta, deci fix-ul face documentul adevărat.
+
+### `GV-02`: 90 de divergențe false, în fiecare noapte
+
+Reconciliatorul cerea partea noastră cu `?status=active&status=inactive`. După decizia proprietarului
+din 2026-10-21, `drepStatusExpr` dă `unknown` pentru fiecare DRep înregistrat fără rând `drep_distr` —
+90 din 294 pe preprod — iar o listă explicită de status e onorată verbatim, deci cei 90 erau **absenți**
+din partea noastră a comparației. R1/R2 sunt cheiate pe id de DRep, deci o cheie prezentă doar la
+Koios e o divergență `membership`, iar waiver-ele R2 sunt cheiate pe `active_until_epoch` și `status`
+— `covers` cere ca field-ul să se potrivească, deci `membership` nu era acoperit.
+
+**Am scos filtrul, nu l-am lărgit.** Default-ul API-ului e `[active, inactive, unknown]` și îl include
+deliberat — e exact populația pe care o arată pagina implicită. Deci partea noastră e acum aceeași
+mulțime pe care o vede un cititor, și nu rămâne nicio listă de lărgit manual la următorul status.
+
+Asta face gate-ul să depindă de un default definit în alt director, deci **dependența e scrisă în
+testul care o fixează**, nu lăsată dedusă.
+
+**Ce nu e reparat, și de ce e înregistrat și nu făcut:** instantaneul comis precedă re-etichetarea —
+`dreps.json` ține 294 de rânduri cu statusuri doar `inactive` și `active`, din care 90 cu
+`active_until_epoch: null`, adică exact populația care citește acum `unknown`. Testul de replay
+asertează zero divergențe neexplicate peste o lume care nu mai există, și **așa a rămas CI verde în
+timp ce nightly-ul cădea.** Re-înregistrarea cere Koios live. BLOCKED-ON-USER, comanda e în
+`koios-parity-gate.md`.
+
+### `TD-03`: două intrări de cache, fiindcă cele două directoare au reguli opuse
+
+O singură intrare ținea și store-ul cabal și `dist-newstyle`, cheiată pe `cabal.project.freeze` și
+`cabal.project` — **nu** pe `palmares.cabal`. Deci o schimbare de `ghc-options`, de `default:` al unui
+flag sau a listei de module nu o invalida, iar `restore-keys` restaura **orice** cache anterior peste
+asta.
+
+Store-ul e content-addressed, deci restaurarea unuia mai vechi poate furniza doar pachete care sunt
+încă corecte — `restore-keys` laxe sunt corecte acolo. `dist-newstyle` primește `palmares.cabal` în
+cheie și **niciun** `restore-keys`: o restaurare aproape-potrivită e defectul, nu o economie.
+
+E aceeași capcană înregistrată mai devreme ca gotcha local — schimbarea unui `default:` de flag nu
+re-resolvă, și reparația era să ștergi fișierele de plan din `dist-newstyle` de mână. CI făcea opusul,
+prin default.
+
+`c8ae1bf`, `38a0d7b`, `ecf5228`, `a6ef22d`, `3acdb39`. **673 de teste.** 15 din 22 de rânduri §3
+închise.
