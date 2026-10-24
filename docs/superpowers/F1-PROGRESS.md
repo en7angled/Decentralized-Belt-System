@@ -6606,3 +6606,125 @@ schimbări: asertează 103 acțiuni cu `expired_epoch` printre cele propuse îna
 acum sunt **107**. Header-ul fișierului spune că tăietura la 320 face numerele „istorie, nu un
 tally live" — nu e adevărat: o acțiune propusă în 319 expiră după 320, deci pinul se mișcă odată cu
 lanțul. E un defect al verificării, nu al view-ului, și nu l-am reparat: nu e în §3 și nu e al meu.
+
+---
+
+## 2026-10-24 — `CS-02`/`CS-04`: furcile scurte erau invizibile, iar un rollback ștergea înregistrări
+
+Două constatări, un singur mecanism: **ce înseamnă „am ajuns până aici" pentru un indexer.**
+
+### `CS-02`: comparația de sloturi nu poate vedea o furcă
+
+`evaluateChainSyncState` consultă header-ul **doar când sloturile sunt egale**. Deci forma obișnuită
+a unei furci scurte — blocul nostru orfanizat, iar Kupo a aplicat deja un înlocuitor la un slot mai
+mare — se citește ca `Behind` simplu. Nimic nu șterge proiecțiile blocului orfan, iar orice bloc de
+înlocuire sub slotul cursorului cade **în afara fiecărei fereastre viitoare** de fetch: registrul
+servea stare care nu e pe lanțul canonic și continua s-o servească.
+
+Specul Kupo avertizează exact asta („outputs may end up in another block than the one they were
+initially advertised in") și livrează endpoint-ul care o detectează. Clientul pentru el exista în
+repo **fără niciun apelant** de la început.
+
+**Măsurat pe Kupo v2.12.0 live, nu citit din memorie:** `GET /v1/checkpoints/{slot}` fără `?strict`
+întoarce **strămoșul** — pentru un slot cu bloc, acel bloc; pentru un slot fără bloc, cel mai nou
+bloc anterior; pentru un slot peste tip, tip-ul. Deci **un** apel răspunde la ambele întrebări de
+care am nevoie: a supraviețuit blocul nostru, și dacă nu, care e cel mai nou punct care a
+supraviețuit. Ăla e ținta de rollback, precisă, iar marja de 2160 rămâne doar ca fallback pentru
+cazul în care Kupo nu știe nimic la sau sub slotul nostru.
+
+Un cursor cu header **gol** e o bază care n-a stocat niciodată unul (`getLocalTip` dă slotul 0): e
+pe lanț prin definiție, altfel un registru care n-a indexat nimic s-ar da înapoi la fiecare tick.
+Iar o eroare de la Kupo **nu e dovadă de furcă** — raportează „pe lanț" și lasă tick-ul pe calea
+existentă, care deja reîncearcă.
+
+### `CS-04`: un `spent_at` învechit ștergea înregistrarea
+
+Un rând brut e un **instantaneu**, luat când Kupo l-a predat. Un UTxO văzut prima dată *după* ce
+fusese cheltuit poartă `spent_at` pentru totdeauna, iar `projectChainEvent` nu emite nimic pentru un
+output cheltuit. Deci un rollback sub cheltuială ștergea output-ul pe care cheltuiala l-a **creat**
+și lăsa cel cheltuit neproiectabil: atestarea **dispărea complet** din registru, iar sincronizarea
+înainte nu o mai aducea niciodată, fiindcă fusese creată sub slotul de rollback.
+
+Un `accept` orfanizat putea deci să șteargă o atestare până când cineva o accepta a doua oară.
+
+Reparația: `rollbackTo` curăță `spent_at` când slotul cheltuielii e **peste** slotul de rollback —
+și în rândul stocat, nu doar în replay, fiindcă următorul rollback citește iar rândul. Dacă
+cheltuiala e într-adevăr pe lanțul canonic, re-fetch-ul cu suprapunere o pune înapoi.
+
+### Testele, și de ce aproape au fost vacue
+
+`CS-02` a devenit testabil mutând `src/exe/attest-sync` în `hs-source-dirs`-ul suitei, cum repo-ul
+face deja pentru `src/exe/query-api` — un test-suite cabal nu poate importa `other-modules`-ele
+unui executabil. Șase cazuri pure, iar primul e cel care contează: aceeași situație pe două lanțuri
+diferite dă `Behind` în ambele, deci verificarea cursorului **trebuia** să fie o întrebare separată.
+
+Pentru `CS-04`, două cazuri pe Postgres — și prima versiune a mea trecea **din motivul greșit**.
+Pusesem `spent_transaction_id = "spendtx"`, care nu e hex, deci conversia cădea și match-ul lua
+ramura de eroare: „niciun rând", dar nu pentru că era cheltuit. Exact capcana despre care
+header-ul modulului avertizează („adresa fixturii era literal `addr`, deci fiecare match lua ramura
+de eroare"). Cu un tx id hex valid, ambele cazuri trec prin calea reală.
+
+Al doilea caz — „o cheltuială la sau sub slotul de rollback e lăsată în pace" — ar fi fost vacuu
+asertat pe `is_accepted`: ambele output-uri supraviețuiesc, cel acceptat se reaplică ultimul oricum,
+deci flagul publicat nu poate distinge o cheltuială păstrată de una ștearsă. Asertează coloana.
+
+Verificat că prinde: cu pasul de un-spend scos, primul caz cade cu `expected: Just False, but got:
+Nothing` — adică exact dispariția pe care o descrie constatarea.
+
+---
+
+## 2026-10-24 — `DC-43`: specificația pe care o citează codul nu era în repo
+
+Douăzeci și două de citări `spec §N` în Haddock-uri și comentarii SQL, cincisprezece id-uri `D-n`,
+unsprezece `F-n`, iar câmpul `spec` al fiecărei metrici trimitea la un document din
+`docs/superpowers/`. **Niciunul nu era în repo.** Deci cerințele protocolului nu erau revizuibile din
+cod: un reviewer nu putea distinge „validatorul implementează cerința" de „cerința a fost editată ca
+să se potrivească validatorului".
+
+### `protocol.md` — spec-ul, cu numerotarea înghețată
+
+Tradus din specificația funcțională a ownerului (2026-10-19, română) în limba repo-ului.
+**Numerotarea e păstrată exact**, deci toate cele 22 de citări `§N` se rezolvă fără să ating un
+singur fișier sursă.
+
+Nimic nu e înmuiat ca să se potrivească cu ce s-a livrat. Unde o decizie ulterioară a depășit o
+linie, propoziția originală **rămâne** și o notă `[Superseded: …]` numește ADR-ul: arbitrul de dispute
+a devenit propriul `Credential` rotabil (ADR 0005), lineage-ul a ieșit (ADR 0006), fetcher-ul propriu
+de metadata a fost tăiat în favoarea celui din db-sync, întrebarea de admin multisig s-a dizolvat în
+`opAdmin :: Credential`, iar calea de scriere pe Maestro a murit cu API-ul Cardano al lui Maestro
+(ADR 0004 — unde **ultima propoziție a cerinței însăși**, „dependența de Maestro ar putea dispărea
+complet", e exact ce s-a întâmplat).
+
+O cerință editată ca să se potrivească codului ar anula rostul comiterii ei. Două efecte secundare:
+„inherited fix #3" se rezolvă acum (§8 le listează pe toate cinci), și la fel „F1 check 6" (§9).
+
+### `metrics.md` — decizia din spatele fiecărui numitor
+
+`/metrics/formulas` servește deja expresia, numitorul, condiția de null și SQL-ul. Ce nu putea servi
+e **de ce** acest numitor și nu celălalt, evident, și ce cifră a decis. O secțiune per intrare de
+catalog; cele opt câmpuri `spec` trimit acum la `docs/spec/metrics.md#<formula_id>`.
+
+Conține și abaterile, cu măsurătorile: `rationale_rate` livrează cinci grade, nu patru, și exclude
+din **ambele** părți ce nu poate fi evaluat — fiindcă împărțirea la `votes_cast` publica incapacitatea
+**indexer-ului nostru** de a aduce `ipfs://` drept neglijența a 36 de autori.
+
+### `decisions.md` — id-urile
+
+Toate cele 15 `D-n` cu întrebarea și rezoluția, extrase din sinteza de design. Toate cele 11 `F-n` cu
+constatarea din Belt System (2026-07-04) și cum stă aici — inclusiv `F-08`, a cărui jumătate „`Ahead`
+nu caută strămoșul comun" s-a închis ieri ca `CS-02`.
+
+Familia `T-…` e documentată și **deliberat nerezolvată**: sunt id-uri de task din planuri, un plan e
+un orar de construcție, nu o cerință, iar în ce task a aterizat o linie e proveniență pe care
+`git log` o duce mai bine. Regula de acum încolo e scrisă: un comentariu care trebuie să spună de
+unde vine o regulă citează spec-ul, un ADR sau o constatare de audit — nu un task.
+
+### Și restul
+
+`config/reconcile-sample.preprod.json` trimitea la `F1-PROGRESS.md` (fișierul ăsta, din **celălalt**
+repo) pentru procedura de redesenare; trimite acum la `docs/deployment/koios-parity-gate.md`, care e
+comis și are comenzile. Nicio referință `docs/superpowers/` nu mai supraviețuiește în afara
+rapoartelor de audit, care o citează ca dovadă a propriei ei absențe.
+
+**17 din 22 de rânduri §3 închise.** Rămân: `TD-04` (perechi pure pentru 7 coduri de trace),
+`CS-07`/`GV-23` (freshness de atestări în `/status` și headere), `OF-05` (coduri de eroare distincte).
