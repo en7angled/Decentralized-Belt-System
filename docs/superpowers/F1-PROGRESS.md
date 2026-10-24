@@ -7299,3 +7299,97 @@ cea mai adâncă. Nicio garanție nu trebuia vândută. Motivul real e mai îngu
 
 `?is_final=true` face rapide **doar primele pagini** — pagina 1 e 0,53 s peste 101 rânduri de
 partiție, pagina 9 e **9,57 s peste 1.621.907**. Afirmasem de trei ori că face ruta utilizabilă.
+
+---
+
+## Al treilea val — cinci agenți, și cele patru lucruri pe care le aflasem greșit
+
+Cinci felii paralele, integrate de mine (eu țin lock-ul de build; niciun agent nu compilează).
+Build curat, **796 de teste** verzi serial și la `-j4`, zece porți verzi.
+
+### `unknown_dreps` — tabloul de bord număra 294 și putea explica 204
+
+Brațul `unknown` din starea unui DRep a fost adăugat într-un val anterior: 90 din cele 294 de
+credențiale înregistrate nu au **niciun** termen de activitate scris de ledger, deci nici `active`
+nici `inactive` nu se poate afirma despre ele. `total_dreps` a fost corectat atunci să le numere.
+Câmpul care să le **numească** nu a fost publicat.
+
+Așa că un client care citea cele patru numere ale tabloului găsea `17 + 187 = 204` în fața unui total
+de **294**, fără nimic care să dea seama de restul. Un câmp, swagger `1.8.0 → 1.9.0`, și identitatea
+`active + inactive + unknown == total` e de acum o aserțiune, nu o presupunere.
+
+### Poarta de citire era fixată pe 17 cifre care se mișcă singure
+
+`smoke_query_api.sh` a trecut de la 316 la **351 de aserțiuni verzi**, dar nu pentru că serviciul s-a
+reparat: pentru că poarta cerea cifre pe care lanțul le schimbă la fiecare epocă. Epoca a trecut de
+320 la 321 și poarta a raportat cincisprezece „regresii" care erau patru acțiuni expirate,
+douăsprezece DRep-uri retrase și o distribuție nouă.
+
+Convertite după direcția în care se mișcă fiecare:
+
+- cifre **monotone** (retrase, expirate, rânduri de delegare, pool-uri) → `assert_min` / `check_min`,
+  cu data măsurătorii în comentariu. Un număr care **scade** rămâne o regresie.
+- cifre **indexate pe epocă** (seria de putere, epoca comitetului, ștampila unui pool) → comparate cu
+  epoca pe care serviciul **însuși** o publică. Forma asta e mai tare decât pinul: o serie care se
+  termină înaintea epocii publicate e un defect real, iar una care se termină după e imposibilă.
+- **numărătoarea de rânduri CSV** → contra `.total` al aceluiași endpoint. Identitatea e „fiecare
+  rând pe care JSON-ul îl numără e o linie în CSV", și rămâne adevărată cât timp setul crește.
+- `proposed` nu primește nicio margine: se mișcă în **ambele** direcții. Îl ține partiția celor cinci
+  stări și un acord între `/gov-actions` și `/pages/dashboard` — ambele mai tari decât o cifră.
+
+**Partea onestă: trei dintre aserțiunile acelea nu rulaseră niciodată.** `/disputes/{id}` verifica
+`.dispute.id` pe o rută care publică rândul la nivelul de sus — plicul fusese copiat de la
+`/attestations/{id}`, singura rută compozită. Ramura a rulat prima dată abia după ce re-indexarea de
+schemă 6 a proiectat trei dispute, și a fost greșită la prima rulare. Aceeași clasă ca `materialized
+views: 2` din valul doi: o verificare care tace până apar datele și apoi se dovedește greșită.
+
+### Un 400 care încetase să spună unde se duc acțiunile de admin
+
+`FromJSON AdminActionType` eșuează **întotdeauna**, iar mesajul lui e scris ca să fie citit de un
+client — Haddock-ul lui o spune explicit: „the message is a 400 body a client reads, so it says where
+the action belongs rather than only that it was refused."
+
+`bodyParserErrorFormatter`-ul pe care l-am pus în valul precedent înlocuiește **orice** eșec aeson cu
+formularea generică, și are dreptate să o facă: un eșec aeson numește constructori Haskell și câmpuri
+de înregistrare. Doar că l-a înlocuit și pe acesta. Rezultatul măsurat: un refuz care trimitea
+clientul să se uite la query string pentru o acțiune de admin.
+
+Acum formatorul publică mesajul **marcat** și suprimă restul. Convenția e ținută la ambele capete de
+o regulă de vocabular, fiindcă `webapi-lib` nu are voie să depindă de `offchain-lib` și o constantă
+comună nu există: dacă unul din capete pierde marcajul, poarta cade și spune care. Două teste
+unitare, câte unul pe ramură.
+
+### Neutralitatea hash-urilor, verificată în loc de argumentată
+
+Ștergerea lui `isProtocolRefToken` — gemenul octet cu octet al lui `isProfileId` — fusese argumentată
+neutră prin `INLINEABLE`: o dezvelire *disponibilă* nu e una *inclusă*. Blueprint-ul regenerat după
+ștergere: **cele patru hash-uri publicate, identice**. Deployment-ul de pe preprod rămâne valabil, și
+nu pentru că așa am spus.
+
+### `apply-indexes` tipărea o linie verde despre 23 de indecși pe care nu-i număra
+
+`assertIndexesValid` căuta doar indecși **INVALID**. Pe o bază care nu primise niciunul, „all 23
+declared indexes are valid" era adevărat în gol — o afirmație despre 23 de indecși pe care funcția
+nu-i numărase. Acum acoperă și **MISSING**, iar fiecare linie spune care din cele două e și ce se
+face cu ea.
+
+### Trei constatări închise de a cincea felie
+
+**DC-06.** Toate trei serviciile anunță la boot politica CORS rezolvată — inclusiv deny-all, cu
+anteturile pe care tot le trimite și un avertisment pentru fiecare intrare care nu poate potrivi
+niciodată un `Origin` (`*`, un slash final, o gazdă fără schemă). Default-ul rămâne deny-all; doar a
+devenit vizibil. Din afară, fail-closed și prost configurat arată identic.
+
+**OF-13.** TTL de 5 s pe fan-out-ul sondelor, prin `modifyMVar` și nu `IORef`: ținând lock-ul peste
+acțiune, amplificarea e mărginită de **TTL**, nu de numărul de conexiuni ale atacatorului. Cinci
+secunde fiindcă intervalul mediu de bloc pe Cardano e ~20 s — un TTL din interiorul unui bloc nu
+costă prospețime care ar fi putut exista.
+
+**GV-17** e cel de mai sus, și mecanismul pe care-l dădusem eu în brief era greșit, concluzia bună.
+
+### Ce rămâne
+
+`TD-08` (plafoane de resurse) și arm64-only, ambele decise-sărite cu motiv; re-randarea
+`diagrams/system-overview-*.svg`; `/status.missing_indexes` la query-api; coada `73 OPEN · 47
+PARTIAL`. Nedeschis și cerând decizie proprie: **frontend-ul** — cele trei documente de caz de
+utilizare (~4.600 de linii) există ca intrare a lui.
