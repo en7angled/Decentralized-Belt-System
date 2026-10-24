@@ -6182,10 +6182,14 @@ acum e cel care se păstrează.
 | MintingPolicy | 12.924 | 56,39 |
 | **total** | **47.628** | **208,72 blocați** |
 
-Plus UTxO-ul oracle (3,5) și ~7 în taxe ⇒ **~219 tADA de ținut**, din care **208,72 sunt
-recuperabili** prin cheltuirea UTxO-urilor de referință. Față de deploy-ul mort: +1.235 de octeți,
-+3,32 ADA blocați. Portofelul are 9.992,61 tADA, iar cei 205,40 din deploy-ul mort sunt și ei
-recuperabili.
+Plus UTxO-ul oracle (3,5) și ~7 în taxe ⇒ **~219 tADA de ținut**. Față de deploy-ul mort: +1.235 de
+octeți, +3,32 ADA blocați. Portofelul are 9.992,61 tADA, iar cei 205,40 din deploy-ul mort **sunt**
+recuperabili — au aterizat la adresa admin-ului.
+
+⚠️ **Actualizat după `OF-08`:** min-ADA-ul redeploy-ului **nu** mai e recuperabil. Scripturile de
+referință se duc acum la validatorul limbo (`\datum redeemer sc -> ERROR`), deci cei ~208,8 sunt
+cheltuiți, nu parcați. Asta e exact prețul pe care îl cere constatarea: nicio cheie nu le mai poate
+mătura.
 
 ### Comenzile, în ordine
 
@@ -6319,8 +6323,9 @@ jumătatea care face un refuz să însemne ceva: nepauzat, aceeași rezolvare tr
 
 ### Costul redeploy-ului, recalculat
 
-47.657 de octeți → **208,84 tADA blocați** (recuperabili) + ~7 taxe ⇒ **~219 de ținut**. Comenzile
-sunt neschimbate, în intrarea BLOCKED-ON-USER de mai sus.
+47.657 de octeți → **208,84 tADA blocați** + ~7 taxe ⇒ **~219 de ținut**. Comenzile sunt neschimbate,
+în intrarea BLOCKED-ON-USER de mai sus. (După `OF-08` cei 208,84 nu mai sunt recuperabili — vezi
+intrarea de la finalul fișierului.)
 
 ---
 
@@ -6436,3 +6441,73 @@ prin default.
 
 `c8ae1bf`, `38a0d7b`, `ecf5228`, `a6ef22d`, `3acdb39`. **673 de teste.** 15 din 22 de rânduri §3
 închise.
+
+---
+
+## 2026-10-24 — `OF-08`: scripturile de referință pleacă unde nimeni nu le mai poate lua
+
+Un rând din §3, două jumătăți, și a doua s-a dovedit mai mare decât o descrie constatarea.
+
+### Jumătatea întâi: `my_addr` → limbo
+
+Cele cinci UTxO-uri de referință erau output-uri obișnuite la adresa cheii de deploy. Raportul 07
+verificase deja partea care-l liniștea pe autor: Atlas **exclude** UTxO-urile cu script de referință
+din selecția de monede (`TxBuilder/Common.hs:253`), deci propriul builder nu le atinge. Rămâne însă
+orice portofel care nu e Atlas, restaurat din aceeași frază mnemonică — și o cheltuire deliberată a
+cui obține `operation.prv`, pe care `new-operator-key` o numește „disposable". După aceea **fiecare**
+tranzacție de protocol moare la rezolvarea `GYInReference` și `/ready` stă roșu până la un redeploy
+al output-urilor de referință plus o rulare de config în ambele servicii.
+
+Reparația era de trei linii, iar auditul arătase deja cu degetul unde: `addRefScriptSkeleton` exista
+în `Skeletons.hs` și **nu era chemat de nimeni** — trimite la `limboValidatorV2` din Atlas, care e
+literal `\datum redeemer sc -> ERROR`. `deployReferenceScript` chema varianta parametrizată cu
+`my_addr`. Acum cheamă prima.
+
+Prețul, spus și nu ascuns: **min-ADA-ul nu mai e recuperabil.** ~208,8 tADA se cheltuie, nu se
+parchează. Asta e exact schimbul pe care-l cere constatarea, iar intrarea BLOCKED-ON-USER de mai sus
+a fost corectată — spunea „recuperabili", ceea ce era adevărat pentru deploy-ul mort și nu mai e
+adevărat pentru următorul.
+
+### Jumătatea a doua: verificarea de readiness nu verifica nimic
+
+`verifyDeployedScriptsAreReady` era `all isJust` peste cinci `utxoAtTxOutRef`. Trece **orice** script
+de referință care se rezolvă la ref-ul corect, inclusiv unul dintr-un alt deployment. Acum trei
+lucruri trebuie să fie de acord: ce compilează build-ul ăsta, ce a înregistrat config-ul, și ce e
+efectiv pe lanț.
+
+### Ce am găsit făcând-o, și e mai mare decât constatarea
+
+**Hash-ul din config e portant, și nimic nu-l verifica.** `attest-sync/Main.hs:79` îi dă lui Kupo
+`getMintingPolicyHash` ca filtru de politică, în timp ce fiecare adresă de validator pe care se uită
+builder-ul e derivată din scriptul **compilat** (`scriptAddress oracleValidatorGY` în `Lookups.hs`).
+Un config rămas de la un deployment anterior trimite deci indexer-ul la o politică și calea de
+scriere la alta, **și fiecare jumătate pare sănătoasă separat**: Kupo indexează cuminte un registru
+mort, API-ul construiește cuminte pentru unul viu.
+
+E clasa de bug pe care Belt System a trăit-o deja — „committed validator config JSON is stale,
+Minting Policy hash mismatch". Verificarea de acum compară config-ul cu compilatul **fără nicio
+interogare de lanț**, fiindcă în ramura aia întrebarea n-are răspuns pe lanț: config-ul nu descrie
+build-ul ăsta, deci ce e deployat e irelevant.
+
+Și `deploy-reference-scripts` se verifică singur acum, **înainte** să scrie fișierul de config, și
+`fail`-uiește dacă nu trece. Un deploy spart care tot produce un config cu aspect plauzibil e exact
+cum ajunge un policy id vechi comis și rulat în două servicii.
+
+### Testele
+
+Emulatorul deployează și el la limbo acum (`deployReferenceScriptRun` a pierdut parametrul
+`toWallet`, care a devenit orfan). Nu e cosmetic: așa, cele 674 de teste trec printr-un reference
+input citit dintr-o adresă de **script** cu datum inline unit. Că e read-only și nu cere redeemer e o
+regulă de ledger care merită un test sub ea, și acum fiecare runner depinde de ea.
+
+`Test Case 0.1b` adaugă patru assert-uri: deployment proaspăt = zero probleme; toate cinci UTxO-urile
+la adresa limbo; un config care numește un hash pe care build-ul nu-l compilează = o problemă; și
+cazul care contează — un script de referință **prezent, dar greșit** (ref-ul oracle-ului pus pe
+slotul validatorului de profile). Testul asertează explicit că vechiul `all isJust` ar fi trecut
+cazul ăsta, ca să nu devină în liniște unul pe care-l prindea și el.
+
+### Costul
+
+Zero octeți pe lanț: nicio schimbare de validator, nicio schimbare de format. Redeploy-ul care
+așteaptă rămâne singurul, iar acum scripturile lui aterizează la limbo. **674 de teste.** 16 din 22
+de rânduri §3 închise.
