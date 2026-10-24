@@ -6728,3 +6728,48 @@ rapoartelor de audit, care o citează ca dovadă a propriei ei absențe.
 
 **17 din 22 de rânduri §3 închise.** Rămân: `TD-04` (perechi pure pentru 7 coduri de trace),
 `CS-07`/`GV-23` (freshness de atestări în `/status` și headere), `OF-05` (coduri de eroare distincte).
+
+---
+
+## 2026-10-24 — `TD-04`: șase coduri fără pereche, și rularea de mutație care le justifică
+
+Regula repo-ului e că un fix fără test „e o speranță", iar `MutationGuards.hs` există fiindcă o
+rulare de mutație a șters `traceIfFalse "M0"` și tot conjunctul de acceptare din codul on-chain:
+**526 de teste au rulat și unul a căzut** — `ScriptSize`, fiindcă scripturile s-au făcut mai *mici*.
+Niciun test comportamental n-a observat dispariția regulii.
+
+Auditul a numărat 22 de coduri de trace fără test la nivel de validator și a numit șapte de închis.
+
+### Cele șase
+
+| cod | ce apără | ruptura din perechea nouă |
+| --- | --- | --- |
+| `Mp6` | mint-ul de profil nu blochează user token-ul cu starea | token-ul **mutat** în output-ul 0 |
+| `Mg` | subiect și emitent sunt id-uri de **profil** ale protocolului | subiect = jumătatea user a unui profil real |
+| `O6` | params rezultați sunt bine-formați | `OracleSetMinUTxOValue (-1)` |
+| `P2` | UTxO-ul cheltuit ține Ref NFT-ul profilului | valoare proprie fără NFT (și în input, și în output) |
+| `P5` | profilul actualizat e re-blocat la adresa lui | output-ul pleacă în portofel |
+| `N0` | NFT-ul oracle one-shot cheltuie sămânța cu care a fost parametrizat | se cheltuie alt `TxOutRef` |
+
+### Dovada, nu argumentul
+
+O pereche `(True, False)` arată doar că jumătatea ruptă e refuzată **de ceva**. Așa că am șters toate
+cele șase conjuncte simultan din codul on-chain și am rulat grupul: **toate șase au devenit
+`(True, True)`**. Fiecare pereche e refuzată exact de codul pe care îl numește și de nimic altceva —
+asta e disciplina pe care modulul o cere, rulată pe bune, nu raționată.
+
+### Al șaptelea nu există, și alte două sunt cod mort
+
+`K3` **a fost retras**: trăia înăuntrul lui `unsafeGetProtocolParamsFromProfileRefInput`, una din trei
+funcții de lookup fără apelanți, ștearsă la curățenia de tier-low. Un test pentru un cod pe care
+protocolul nu-l poate emite ar fi un test al testului.
+
+Celelalte două pe care raportul le numea „care contează" — `U2` și `U3` — sunt în aceeași situație,
+și n-o spusesem nimeni: `checkAndGetCurrentStateDatumAndValue` și `checkAndGetInlineDatum` **nu au
+niciun apelant** în tot `src/`. Sunt exportate, sunt documentate, iar comentariul din `Lookup.hs:7`
+spune chiar „fiecare validator citește un profil prin ele" — ceea ce e **fals**: validatoarele merg
+prin `unsafeFindOwnInputByTxOutRef`. Deci nu e o gaură de acoperire, e cod mort cu un comentariu
+învechit. **Semnalat, nu șters** (regula din CLAUDE.md §3, și e cod on-chain înainte de un redeploy).
+
+Dintre cele 22, auditul însuși spune că **14 sunt brațe structurale** (scop greșit, datum neparsabil)
+a căror ștergere n-ar compila sau ar rupe fiecare test pozitiv. Rămâne nimic de închis aici.
