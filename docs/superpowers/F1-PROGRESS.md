@@ -7413,8 +7413,99 @@ trece. Aserțiunea mea paralelă era redundantă și mai slabă; am șters-o.
 `c9783147…`, profil subiect `fbdb5991…`, atestare emisă `c9efa215…`, acceptată `92bc3ab4…`, dispută
 deschisă `e7f04783…`, rezolvată `37dc94fe…`.
 
+### Coada `§11`, luată rând cu rând
+
+**Patru nume din fișierele `CLAUDE.md` nu aveau niciun corespondent în `src/`** — zero potriviri
+fiecare: `mkPalmaresApp`, `runPalmaresActionWithPK`, `utxoDatum'`, `utxosDatums`. Un `CLAUDE.md` intră
+în contextul fiecărui agent, deci un nume greșit acolo nu stă într-un document pe care nu-l citește
+nimeni: se propagă în fiecare sesiune viitoare. Înlocuite cu cele reale, iar la `mkWebApp` și cu
+ordinea middleware-urilor, care e portantă (CORS în exterior ca un refuz să-și păstreze anteturile,
+`refusedRequestMiddleware` în interiorul lui `provideOptions` ca un 405 real să fie reformat și un
+preflight nu).
+
+Idempotența schemei era descrisă prin **mecanismul greșit**: „every statement is `CREATE OR REPLACE`",
+când `sql/000_schema.sql` începe cu `DROP SCHEMA palmares CASCADE`, care ia un lock ACCESS EXCLUSIVE
+pe fiecare vedere. Ce face un restart sigur e poarta de amprentă md5 sub `pg_advisory_xact_lock`
+(`GV-01`): un checkout neschimbat nu execută **niciun** DDL, deci a doua replică nu aruncă schema din
+care servește prima.
+
+Plafonul de ~80 de linii pe lambdă, măsurat: `attestationsLambda` 115, `disputesLambda` 137, celelalte
+patru 19–66. Nu se despică — cele patru hash-uri publicate sunt îngheţate pe preprod, iar
+restructurarea unei lambde nu e neutră la hash cum e ștergerea unei legături moarte. Regula spune acum
+ce e de fapt: extragerea e regula, numărul de linii e cum observi că ai nevoie de ea.
+
+Plus: „only MintingPolicy is parameterized" → **două din șase** (și exact cele două pentru care
+blueprint-ul nu publică hash); `/claim-credential` lipsea cu totul din tabelul de pași al
+runbook-ului, care spunea „șase" peste cinci rânduri; `PALMARES_READY_MAX_LAG_SECONDS` e citit și de
+`admin reconcile-koios`; „every executable depends on webapi-lib" — `admin` nu, fiindcă nu servește
+nimic.
+
+### Diagramele, și o numărătoare de învechire care era ea însăși greșită
+
+Re-randare: **10 blocuri, 0 eșecuri, exact UN SVG schimbat** — `system-overview-04`, calea de citire a
+datelor, care numea o vedere materializată unde schema are două. Celelalte nouă au ieșit identice
+octet cu octet.
+
+Deci nota din `diagrams/README.md` care spunea că **șase** sunt în urma sursei era greșită, și în
+direcția care contează: s-ar fi citit ca șase diagrame în care un cititor nu are voie să aibă
+încredere. Una era. O numărătoare de învechire afirmată fără a rula randorul — care costă ~20 s.
+
+### `RL-3` și `RL-6` — nu goluri de produs, promisiuni ținute pe o singură rută
+
+Astea două erau clasate F2. Citite atent, niciuna nu e o funcționalitate lipsă.
+
+**`RL-3`.** Specificația spune că o atestare disputată nu e niciodată ascunsă sau ștearsă și că disputa
+se arată **lângă** ea. Ținea pe `GET /attestations/{id}`, care include disputele, și nicăieri
+altundeva: un rând de listă pentru o atestare cu o dispută **susținută** publica `accepted: true` și
+nici un cuvânt despre contestație — pe `/attestations` și pe palmaresul `/profiles/{id}/attestations`
+la fel.
+
+Trei numărători, nu două. `1` total cu `0` deschise nu se distinge între **susținută**, **respinsă** și
+**expirată**, iar `expired` nu e un verdict pe fond (D-A): ar fi publicat o concluzie la care nu a
+ajuns nimeni. Doar `upheld_dispute_count` spune că acuzația a fost susținută, și asta e faptul despre
+care e `RL-3`.
+
+**`RL-6`, aceeași promisiune din partea cealaltă.** O revendicare duplicată de credențial e *raportată
+ca disputată* în loc să fie refuzată la ingestie — deci raportul trebuie să existe. Exista într-o
+direcție: `/profiles/by-credential/{id}` răspunde `total > 1`. Un ecran de verificare pornește de la
+un **profil**, și de acolo contestația era invizibilă. `claimant_count` o spune, `null` când rândul nu
+revendică nimic: `0` sau `1` ar fi amândouă o afirmație despre un credențial care nu există.
+
+Câte un `LEFT JOIN LATERAL`, **folosit de interogarea de listă ȘI de cea pe id**, ca cele două să nu
+poată fi în dezacord dacă un rând e contestat. Ruta de detaliu ar fi putut număra disputele pe care le
+include deja — și ar fi fost greșit peste `inlineDisputeLimit`: o listă trunchiată la cincizeci ar
+publica `dispute_count: 50` pentru o atestare cu o mie.
+
+Verdictul călătorește ca **parametru legat**, nu literal: `DisputeVerdict` se persistă prin
+`derivePersistFieldJSON`, deci valoarea stocată e `"upheld"` **cu ghilimele** și literalul în SQL ar fi
+trebuit să fie `'"upheld"'`. Legat, comparația folosește aceeași instanță `PersistField` care a scris
+rândul, deci o schimbare de codificare nu poate lăsa numărătoarea tăcut pe zero.
+
+Măsurat pe preprod: **patru** atestări cu `accepted: true` și `upheld_dispute_count: 1` — exact rândul
+pe care `RL-3` îl descria. **Șase** profiluri revendică un singur credențial de DRep, iar `.total` de
+pe ruta by-credential e egal cu numărul pe care îl publică fiecare rând al ei: cele două direcții sunt
+acum un singur fapt.
+
+Swagger 1.8.0 → **1.12.0**. Numărătoarea fixată de proprietăți nulabile a prins singură adăugarea lui
+`claimant_count` (132 → 133) — exact rolul pentru care e acolo. `PG-15` închis pe ambele jumătăți.
+
+Două verificări care nu au găsit nimic și meritau făcute: cele trei rute de atestare răspund 406 la
+`text/csv`, deci nu există encoder CSV de actualizat cu coloanele noi; iar lateralul costă 0,063 ms
+măsurat.
+
+### Check 11, a treia rulare
+
+Șapte pași, exit 0, cu cele patru aserțiuni `RL-3` noi din pasul 6. Lanțul: profil emitent
+`136b107c…`, subiect `da85d626…`, atestare emisă `ec63d78e…`, acceptată `134d3a4b…`, dispută deschisă
+`87112f85…`, rezolvată `6532ffda…`. Verificat și independent după rulare: lista, palmaresul și ruta de
+detaliu publică toate trei `accepted: true` cu `upheld_dispute_count: 1`, iar numărătorile sunt pe
+rând și nu pe pagină (una disputată, trei curate).
+
 ### Ce rămâne
 
-`TD-08` (plafoane de resurse) și arm64-only, ambele decise-sărite cu motiv; re-randarea
-`diagrams/system-overview-*.svg`; coada `72 OPEN · 47 PARTIAL`. Nedeschis și cerând decizie proprie:
-**frontend-ul** — cele trei documente de caz de utilizare (~4.600 de linii) există ca intrare a lui.
+Coada de backend e **goală**. Cele patru care mai stau în audit sunt F2 prin decizie: explorer și
+fluxul CIP-95 (amândouă frontend), rate limiting (treaba BFF-ului, prin nota de design a lui
+query-api) și un endpoint Prometheus (infra). `TD-08` și arm64-only rămân decise-sărite cu motiv.
+
+Nedeschis și cerând decizie proprie: **frontend-ul** — cele trei documente de caz de utilizare
+(~4.600 de linii) există ca intrare, dar nimic nu spune încă ce formă ia.
