@@ -6839,3 +6839,68 @@ calculează în poller ca verdictul să rămână pur și testabil.
 
 Swagger 1.3.1 → **1.4.0**. **706 teste.** **22 din 22 de rânduri §3 închise** — rămâne doar
 re-înregistrarea snapshot-ului Koios (cere Koios live) și redeploy-ul, ambele BLOCKED-ON-USER.
+
+---
+
+## 2026-10-24 — redeploy-ul s-a făcut: DEBLOCAT
+
+Intrarea BLOCKED-ON-USER de mai sus e **închisă**. Deployment-ul cu formatul înghețat e pe preprod și
+verificat, iar `config/config_palmares_validators.json` e comis pentru prima dată: `61e280b`.
+
+### Prima încercare nu a ajuns la deploy, și vina era a mea
+
+Am lipit cele trei comenzi într-un singur bloc, cu o notă în proză între ele. Ce s-a întâmplat:
+containerul socat rula deja de zece ore (deci `docker run` a dat conflict de nume — redundant, nu o
+eroare), iar a doua linie era **nota mea**, pe care zsh a încercat s-o expandeze ca glob:
+`(eval):2: no matches found: (terminal separat, lăsat deschis)`. La un glob fără potriviri zsh
+**abandonează toată evaluarea**, deci linia a treia nici nu a pornit.
+
+Lecție operațională: comenzile de lipit nu împart blocul cu proză. Niciodată.
+
+Am verificat apoi condițiile înainte de a doua încercare, ca paste-ul să fie o singură linie: socat up,
+relay-ul up pe `/tmp/palmares-node.socket` (PID 1565), `config_atlas.json` arătând exact acolo plus
+Kupo pe `:11442`, **Kupo la tip** (checkpoint 137137467 = node tip, `connection_status 1`) și binarul
+`admin` prelinkat ca `cabal run` să nu recompileze în mijlocul deploy-ului.
+
+### Ce a aterizat
+
+Șase tranzacții, toate confirmate. Cele cinci scripturi de referință la validatorul **limbo**,
+`addr_test1wpgexmeunzsykesf42d4eqet5yvzeap6trjnflxqtkcf66g0kpnxt`:
+
+| script | hash | UTxO de referință | min-ADA |
+| --- | --- | --- | --- |
+| oracle | `377ab8d0…604fb2` | `297f49c1…28b0b1#0` | 34,92 |
+| profiles | `5954df64…bcb4df` | `ac1c4cca…f360de7#0` | 36,67 |
+| attestations | `36db1679…8a2150` | `c02c0557…c90de3#0` | 38,17 |
+| disputes | `2c399be0…d50d26` | `23c5f976…9cf4bad#0` | 44,07 |
+| minting | `648c6a73…1496d3` | `09066dbc…5738d95#0` | 57,02 |
+
+Oracle NFT `6eeda179a28fc866f834dc98ad91ee258baaa911989a65f7ce0edbd7` (nume gol), parametrii la
+`1b9080d2…fcbc9047#0`: admin = arbitru = `5a0ea8b2…5bb70b8` (nedespărțit, cum era și intenția pentru
+F1), nepauzat, min-UTxO 1 ADA, depozit de dispută 5 ADA, **timeout de dispută 30 de zile**, fără taxe.
+
+Cele 30 de zile au venit **din cutie**: `Transactions.hs:285` pune `opDisputeTimeoutMs = 2592000000`
+în `OracleParams` la mint, din `26d53f7`. Pe oracle-ul mort a fost nevoie de un `set-dispute-timeout`
+manual; aici nu mai e. O comandă mai puțin în runbook, și o stare mai puțin în care oracle-ul poate fi
+uitat.
+
+### Costul, măsurat din delta portofelului
+
+**217,87 tADA** în total: **210,85 blocați la limbo** (irecuperabili de oricine, inclusiv de noi — asta
+e `OF-08`) și **7,02 în taxe** pe șase tranzacții. Estimarea din intrarea anterioară era 208,72 +
+~7 ⇒ ~219; diferența la min-ADA vine din dimensiunile reale la parametrii de protocol de acum.
+
+Portofelul: **9.774,74 tADA**, din care 9.569,33 în output-ul de rest și **205,40 în cinci UTxO-uri ale
+deploy-ului mort** — acelea stau la adresa de cheie a admin-ului și **rămân recuperabile**.
+
+### Verificat de două ori, și a doua oară nu de unealta care a scris
+
+Deploy-ul își verifică singur rezultatul (`configured = compiled = on-chain` prin `hashAnyScript` pe
+fiecare UTxO de referință) și **refuză să scrie config-ul** altfel — ăsta e chiar mecanismul lui
+`OF-08`. Dar un self-check nu e o verificare independentă, deci am întrebat și Kupo direct: cinci
+UTxO-uri necheltuite la adresa limbo, cu `script_hash` identic fiecărui rând din tabel.
+
+### Ce rămâne
+
+**Un singur element BLOCKED-ON-USER:** re-înregistrarea perechii de snapshot-uri Koios (cere Koios
+live), comanda e în intrarea de mai sus. Nimic altceva din §3 nu mai așteaptă nimic.
