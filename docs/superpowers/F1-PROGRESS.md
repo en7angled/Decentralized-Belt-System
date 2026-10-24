@@ -7199,3 +7199,103 @@ trei adrese de stare ale protocolului transformă fiecare taxă în praf pe care
 `/votes` fără `is_final` rămâne lent. Un path neruat răspunde 404 cu corp gol pe ambele servicii —
 aceeași clasă ca 405/406, și singurul hook pe care servant *îl* expune, dar niciun cod de eroare nu
 numește încă un 404 de rutare.
+
+---
+
+## 2026-10-24, al doilea val — F1 check 11 VERDE, și două numere pe care le publicasem greșit
+
+```
+smoke OK — all seven steps passed          82 aserțiuni, 0 eșecuri
+```
+
+F1 check 11, capăt la capăt pe preprod: două profiluri, o revendicare de credențial, o atestare
+emisă și acceptată de subiectul ei, o dispută deschisă cu depozit de 5 ADA și rezolvată de admin-ul
+oracolului, o atestare **ancorată** la o retragere reală de trezorerie de 1 M tADA, una cu ancoră
+care nu rezolvă **marcată ca atare și nu ascunsă**, una fără ancoră, și cele două refuzuri la scriere
+înainte de orice semnătură. Fiecare aserțiune citește **proiecția**, nu „cererea n-a dat eroare".
+
+### Cele două numere pe care le-am publicat greșit
+
+**`/drep/{id}/power` e 11,07 s, nu 1,14 s.** Măsurat de trei ori la rând. Afirmasem 1,14 s în corpul
+commit-ului `0402a3c` și în fiecare raport de după. Cifra care se verifică e cealaltă: un DRep
+**înregistrat** răspunde în 0,015 s. Deci fix-ul de pushdown a funcționat pentru DReps înregistrați și
+a lăsat lente **cele două opțiuni rezervate de ledger**, care țin majoritatea puterii de vot din
+preprod. Explicația pentru de ce a reușit re-înregistrarea Koios supraviețuiește în direcție — 77,5 s
+→ 11 s e suficient ca reconcilierea să termine — iar numărul cu care am argumentat era inventat.
+
+**`OC-11d` și `OC-11f` le-am marcat `FIXED` pe cod neatins.** Le-am trecut rezolvate pe baza
+raportului unui agent plus propriile mele editări parțiale, fără să verific codul pe care fiecare rând
+e *numit*. Exact modul de eșec pentru care auditul auditului există, și l-a prins la mine.
+
+### `NEW-GV-8` — defectul pe care l-am introdus, decis empiric
+
+Clamparea pusă dimineață (`last_votable_epoch + 1`) e corectă pentru o acțiune care a **expirat** și
+greșită pentru una **ratificată**: pentru acelea `last_votable_epoch` *este* `ratified_epoch`, iar
+ledger-ul a decis la granița **către** epoca aceea, pe distribuția scrisă pentru ea.
+
+Raportul nu putea decide — toate cele nouă acțiuni ratificate cu voturi DRep au avut susținere
+unanimă, și `1,0 = 1,0` la oricare epocă. **Totalurile** au decis: acțiunea 23, ratificată în epoca
+228 cu 100.110.000.000.000 lovelace în spatele voturilor, are la epoca 229 **110.000.000.000** pentru
+aceiași votanți — de **910× mai puțin**. API-ul publica o fracțiune din stake-ul care ratificase
+acțiunea. Iar faptul că raportul a supraviețuit e **noroc**: e un cât între două sume din distribuția
+greșită, și prima ratificare contestată ar fi publicat un **verdict** greșit.
+
+O definiție, pe `palmares.action_window`. Două consecințe ale faptului că e una singură:
+
+- `/votes` citea la `last_votable_epoch` și tally-ul la `+1`, deci **același vot avea greutăți
+  diferite după ruta întrebată**. Acum 0 dezacorduri, verificat prin SQL.
+- Prima încercare a pus coloana pe `gov_action` și schema n-a mai aplicat: `vote_tally` e definit cu
+  140 de linii mai sus, iar `CREATE VIEW` nu poate referi o vedere inexistentă. 20 din 787 de teste
+  au căzut în 32 s, toate în aval de un singur `relation does not exist`. Vederea de fereastră era
+  casa corectă de la început — `sync_state`, de care clamparea are nevoie, e definit cu 240 de linii
+  înaintea ei.
+
+### Clasa de refuzuri fără corp, închisă — și avea patru membri, nu doi
+
+404 neruat, 401, 403, 415: toate răspundeau **zero octeți fără content-type**. Două constatări din
+închidere valorează mai mult decât fixul:
+
+**403 e cel pe care niciunul din noi nu-l căuta.** `authCheck` întoarce `Unauthorized` pentru
+credențiale greșite, iar servant mapează asta la `err403` — deci statusul pe care-l primește *fiecare
+parolă greșită* era cel nedeclarat și fără corp. Închiderea doar a lui 401 ar fi lăsat cazul comun
+deschis, sub un raport care spunea că clasa e închisă.
+
+**Un fix naiv ar fi pierdut `WWW-Authenticate`.** `mkServantErr` pune în `errHeaders` exact
+content-type-ul, deci refolosirea căii de 405/406 pentru 401 ar fi servit un corp citibil fără
+challenge — fără prompt în browser, și cu un client incapabil să distingă „autentifică-te" de
+„pleacă". **Mai rău decât corpul gol.** Întrebarea a prins-o înainte de livrare.
+
+### Poarta de vocabular scutea module vii
+
+Cinci din opt intrări de pe lista `DORMANT` — `TestRuns.hs`, `Test/Fixtures.hs`, `Attestation.hs`,
+`Cleanup.hs`, `Oracle.hs` — sunt compilate și cablate, deci erau scutite de fiecare grep de cuvinte
+interzise în timp ce scutirea se citea ca deliberată. Dez-scutirea a scos o violare reală. Și lista
+**nu** e derivată, argumentat: o derivare din căi reproduce exact bug-ul, fiindcă un nume derivat
+greșit nu se potrivește cu nimic și fișierul rămâne scutit în silențiu.
+
+### Auditul, auditat
+
+**237** de elemente cu status re-verificate contra HEAD și a serviciilor vii: ~190 depășite, **24
+greșite**, fișa de la `163 OPEN · 17 PARTIAL · 3 FIXED` la **`73 · 47 · 61`**. Din cele 39 de
+constatări ale primului audit, **31 sunt închise**; `F1`–`F9` e 8 din 9. Și **20 de defecte în niciun
+document**, raportate, nereparate.
+
+### ADR 0009 — și două decizii inversate, înregistrate ca inversări
+
+Vederea fără fereastră **nu** se construiește, cu un trigger verificabil în loc de re-argumentabil.
+Trigger-ul pe care-l dădusem eu era rupt: percentila 99 a partițiilor e deja 21.625, deci se declanșa
+pentru totdeauna și nu spunea nimic. Forma din document exclude acțiunile grele **prin regulă**.
+
+Plafonul de offset **nu** se coboară, și ăsta e o inversare: curba de latență e o **treaptă, nu o
+pantă** — 1,10 s la offset 600, **12,15 s** la 800, fiindcă 901 voturi sunt mai noi decât cel mai nou
+vot din testul de stres, iar corpusul real e 958. Deci tot ce ar parcurge un utilizator real e deja
+în zona rapidă, pragul scade singur sub rândul 1.000 în ~66 de zile, iar 600 ar cumpăra viteză
+uniformă **refuzând pagina 13 a unui scroll de 50** — un refuz permanent pentru o încetineală
+temporară.
+
+Și motivul refuzului variantei hibride e rescris, fiindcă măsurătoarea l-a retras: corectarea **doar
+a cozii neacoperite** costă 24-131 ms, în interiorul dispersiei între rulări, cu 32× rămas la pagina
+cea mai adâncă. Nicio garanție nu trebuia vândută. Motivul real e mai îngust și scris ca atare.
+
+`?is_final=true` face rapide **doar primele pagini** — pagina 1 e 0,53 s peste 101 rânduri de
+partiție, pagina 9 e **9,57 s peste 1.621.907**. Afirmasem de trei ori că face ruta utilizabilă.
