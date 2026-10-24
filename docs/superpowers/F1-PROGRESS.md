@@ -6773,3 +6773,69 @@ prin `unsafeFindOwnInputByTxOutRef`. Deci nu e o gaură de acoperire, e cod mort
 
 Dintre cele 22, auditul însuși spune că **14 sunt brațe structurale** (scop greșit, datum neparsabil)
 a căror ștergere n-ar compila sau ar rupe fiecare test pozitiv. Rămâne nimic de închis aici.
+
+---
+
+## 2026-10-24 — `OF-05` și `CS-07`/`GV-23`: ultimele două rânduri din §3
+
+### `OF-05`: refuzul unui validator nu mai e „n-ai destul ADA"
+
+Patru eșecuri diferite ajungeau la client ca un singur răspuns, iar al cincilea nu ajungea deloc.
+
+`GYBuildTxException {} -> insufficientFunds` acoperea tot, **inclusiv un script Plutus care refuză
+tranzacția**. Un utilizator căruia i se spune să adauge fonduri pentru un `Md8`, un `D7`, un `Mq` sau
+un `K2` adaugă fonduri și primește același mesaj. Acoperea și cele două plafoane de protocol —
+ExUnits și dimensiune — unde adăugarea de ADA e exact lucrul care nu ajută.
+
+`try action` era tipat de pattern-uri la `GYTxMonadException`, deci o eroare HTTP de la provider sau
+o submisie respinsă de nod **nu era prinsă**: ajungea la handler-ul implicit al lui Warp, care
+răspunde `text/plain` fără niciun `code`, sub un 500 unde adevărul e 502.
+
+Și `pollTxConfirmation` prindea `GYTxMonadException` — dar Atlas semnalează „am așteptat și tot nu e
+acolo" cu `GYAwaitTxException`, care e un newtype separat. Deci singura excepție pe care funcția
+exista ca să o absoarbă era singura pe care nu o prindea. Scriptul de smoke supraviețuia doar fiindcă
+`curl -f` citește acel 500 ca „încă nu".
+
+Acum e **o funcție pură și totală**, `classifyWriteFailure`, lângă maparea de statusuri pe care o
+extinde, cu tabelul pinuit de zece cazuri. Codurile de trace se citesc din render-ul excepției —
+`traceCodesInRender` — și **același parser e acum cel pe care îl folosește `failedWithTrace`**, deci
+vreo șaizeci de cazuri de emulator îi sunt poartă. E și mai strict decât cel pe care îl înlocuiește:
+acela compara codul ghilimelat ca **substring** în primele 200 de caractere.
+
+Direcția de eșec e mărginită corect: o schimbare de render face lista de coduri **goală**, deci un
+refuz de script degradează la răspunsul de shortfall pe care îl dădea înainte. Nu poate produce un
+cod greșit.
+
+### `CS-07`/`GV-23`: cursorul era singurul semnal, și e scris prea târziu
+
+`attest-sync` scrie `chain_cursor` **doar după** ce o trecere completă peste fereastră a fost
+aplicată. Deci la primul sync — sau după orice wipe — tabelele de proiecție se umplu ore în timp ce
+cursorul arată valoarea de dinainte: `/ready` rămânea verde, `/profiles` răspundea cu pagini parțiale
+cu încredere, și nimic pe fir nu spunea asta. Două sloturi egale nici nu pot distinge „ajuns la zi"
+de „n-a pornit niciodată", iar un proiector **mort** în timp ce db-sync e și el oprit nu produce
+niciun lag de observat.
+
+Acum scrie un rând `attest_sync_state` pe **fiecare tick** și din nou după **fiecare fereastră**, cu
+starea lui (`syncing` | `following` | `rolled_back` | `error`), momentul raportului, politica pe care
+o urmărește și textul ultimei erori. `following` se pretinde într-un singur loc: o trecere încheiată
+cu cursorul la tip-ul lui Kupo.
+
+`/status` publică blocul întreg, iar trei headere — `X-Attest-Slot`, `X-Attest-Lag-Seconds`,
+`X-Attest-State` — călătoresc pe fiecare răspuns. Plus cele patru numere din `GV-23` pe care
+verdictul le folosea și corpul nu le publica, inclusiv `amber_lag_seconds`, care era parsat din
+environment de la introducere și **nicio dată publicat** — deci fiecare client își hardcoda propriul.
+
+### Abaterea deliberată de la ce cerea auditul
+
+Auditul cerea **roșu la absență**. Codul argumenta deja invers, și cu un motiv mai bun: un deployment
+doar-guvernanță nu rulează niciun proiector. Iar `syncing` merită același răspuns — un proiector în
+mijlocul unui backfill e un serviciu sănătos care servește pagini parțiale **onest**, și roșu acolo ar
+scoate din rotație rutele de guvernanță ale unui deployment proaspăt, care sunt complete și corecte,
+pentru orele cât durează backfill-ul.
+
+Deci roșu pe cele două stări pe care niciun lag nu le poate prinde: un tick care a **aruncat**, și un
+raport care a **încetat să sosească**. A doua e cazul proiectorului mort; vârsta raportului se
+calculează în poller ca verdictul să rămână pur și testabil.
+
+Swagger 1.3.1 → **1.4.0**. **706 teste.** **22 din 22 de rânduri §3 închise** — rămâne doar
+re-înregistrarea snapshot-ului Koios (cere Koios live) și redeploy-ul, ambele BLOCKED-ON-USER.
