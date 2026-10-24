@@ -6511,3 +6511,98 @@ cazul ăsta, ca să nu devină în liniște unul pe care-l prindea și el.
 Zero octeți pe lanț: nicio schimbare de validator, nicio schimbare de format. Redeploy-ul care
 așteaptă rămâne singurul, iar acum scripturile lui aterizează la limbo. **674 de teste.** 16 din 22
 de rânduri §3 închise.
+
+---
+
+## 2026-10-24 — `GV-03`/`DC-01`: numărul publicat nu era numărul din formulă
+
+Auditul spunea „o derivă ÎNTR-O formulă AR schimba fiecare număr servit în timp ce toate porțile
+rămân verzi". Reconcilierea a corectat timpul verbului: deriva **era deja acolo**. Am măsurat-o pe
+preprod.
+
+### Defectul
+
+`sql/030_metrics.sql`, CTE-ul `part`: `count(*)` **după** un `LEFT JOIN` pe `dv`, care e fiecare
+**rând** de vot de DRep, re-voturi incluse și fără `DISTINCT`. Pentru o acțiune cu `n` voturi joinul
+dă `max(1, n)` rânduri, deci numitorul publicat era `E + X`, nu `E`.
+
+Comentariul din view e partea care doare: pune `DISTINCT` pe numărător „ca un re-votant să nu
+depășească 100%" și lasă `count(*)` în numitorul **aceluiași** agregat. Marginea de 100% era
+obținută prin umflarea numitorului, nu prin deduplicarea lui.
+
+### Măsurat pe preprod, epoca 321, 809 DReps
+
+| | |
+| --- | --- |
+| DReps afectați | **23** |
+| rânduri în exces, total | 171 |
+| cea mai mare umflare pe un DRep | **+90 de acțiuni** (65 → 155) |
+| cea mai mare eroare de rată | **0,3395** |
+
+Pentru credențialul 5871: formula publicată spune `38/65 = 0,5846`; matview-ul servea
+**0,2452** — exact valoarea pe care o prezice bug-ul, verificată citind coloana din matview, nu
+recalculând-o. 34 de puncte procentuale de subevaluare pe palmaresul public al unui om.
+
+Reparația e un cuvânt: `count(DISTINCT e.gov_action_id)`.
+
+### De ce n-a prins-o nimic
+
+Singura verificare de acord — `sql/checks/070_drep_metrics.sql` — rulează **manual**, pe preprod,
+pentru **un** credențial fixat. Iar credențialul fixat nu e între cei 23. Porțile de CI nu ating
+subiectul: fixtura epocii 319 compară catalogul cu baza sincronizată (șapte ore de construit, deci
+nu rulează în CI), iar `smoke_query_api.sh` asertează doar că rata servită = `votes_cast /
+eligible_actions` **servite** — pe care perechea umflată o satisface prin construcție.
+
+### Poarta care ar fi prins-o
+
+`UnitTests.MetricAgreement`: un corpus semănat de patru blocuri și nouă rânduri, aplicat într-o bază
+de unică folosință, și apoi — pentru **fiecare** DRep din el — răspunsul pe care îl servește
+`drepMetricsQuery` comparat cu cele cinci formule rulate prin `formula_id` din bytes-ul catalogului.
+Nimic nu re-tastează o formulă; altfel ar fi un test al lui însuși.
+
+Compară **răspunsul servit**, nu matview-ul, și asta acoperă și a **treia** copie: `votes_by_type`
+e calculat în Haskell, înăuntrul lui `drepMetricsQuery`, nu în matview.
+
+Corpusul conține formele pe care o bază goală nu le are: o acțiune re-votată, una decontată și
+nevotată, una încă deschisă, un DRep înregistrat care n-a votat niciodată, și trei grade de
+rationale diferite. Primul caz de test asertează că formele **sunt încă acolo** — un acord peste un
+corpus gol e două zerouri care cad de acord.
+
+Verificat că prinde: cu `count(*)` pus la loc, testul cade cu `drep 1: eligible_actions expected 4
+but got 5`. Cu `count(DISTINCT ...)`, trece.
+
+### 070, lărgit cât se poate plăti
+
+Numitorul, pentru **fiecare** DRep: `palmares.eligible_actions` nu atinge niciodată
+`palmares.vote`, deci un `LATERAL` peste toate rândurile costă **736 ms** și ar fi prins exact
+această constatare pe date reale. Acordul complet pe toate metricile nu se poate lărgi la fel —
+fiecare metrică **chiar** referă `palmares.vote`, iar un `LATERAL` per DRep re-plătește trecerea
+peste fereastră de 812 ori: măsurat în **minute**, nu secunde (am încercat; am anulat după 14).
+Deci acela rămâne pe credențialul fixat, iar CI-ul acoperă restul prin corpusul semănat.
+
+Rulat pe baza preprod reală, cu reparația: **trece**, 821 de rânduri la epoca 321.
+
+### Ce n-am făcut, deliberat: sursa unică
+
+Auditul propunea „generează corpul matview-ului din fișierele catalogului". Header-ul lui
+`030_metrics.sql` explică de ce nu: un `LATERAL` per DRep plătește trecerea peste 3,2 M de rânduri
+de `voting_procedure` o dată pe DRep, iar forma actuală o plătește **o dată**, în 3,1 secunde. Am
+măsurat exact asta încercând să lărgesc 070 și am confirmat cifra. Generarea ar cere o transformare
+mai deșteaptă decât o incluziune textuală — adică un al doilea generator de întreținut — sau ar
+arunca măsurătoarea. A doua variantă a auditului, „publică DDL-ul matview-ului ca formulă", dă un
+produs mai prost: promisiunea e „fiecare metrică vine cu SQL-ul care o calculează", nu „un DDL mare
+pentru cinci metrici".
+
+Deci: două implementări, și **acordul lor asertat în locul promis**. Iar textul spune acum asta, în
+toate cele patru locuri care spuneau altceva — `Catalog.hs` (invoca un modul `Query.Metrics` care nu
+există), `Doc.hs` (deci și `docs/metrics.md`), descrierea endpoint-ului și a documentului în
+`RestAPI.hs` (în care „no second derivation" era fals exact în direcția care contează), și README §1.
+Swagger 1.3.0 → **1.3.1**, PATCH: nicio schemă, niciun câmp, niciun cod de status.
+
+### Găsit pe drum, neatins
+
+`sql/checks/050_actions_committee_treasury.sql` **cade** pe preprod, și nu din cauza acestei
+schimbări: asertează 103 acțiuni cu `expired_epoch` printre cele propuse înainte de epoca 320, iar
+acum sunt **107**. Header-ul fișierului spune că tăietura la 320 face numerele „istorie, nu un
+tally live" — nu e adevărat: o acțiune propusă în 319 expiră după 320, deci pinul se mișcă odată cu
+lanțul. E un defect al verificării, nu al view-ului, și nu l-am reparat: nu e în §3 și nu e al meu.
