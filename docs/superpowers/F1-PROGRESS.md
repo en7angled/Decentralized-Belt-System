@@ -6904,3 +6904,117 @@ UTxO-uri necheltuite la adresa limbo, cu `script_hash` identic fiecărui rând d
 
 **Un singur element BLOCKED-ON-USER:** re-înregistrarea perechii de snapshot-uri Koios (cere Koios
 live), comanda e în intrarea de mai sus. Nimic altceva din §3 nu mai așteaptă nimic.
+
+---
+
+## 2026-10-24 — opt agenți de audit, și ce au găsit pe un deployment de trei ore
+
+Ownerul a cerut audit paralel (corectitudine, completitudine, documentație) plus documentarea
+funcțională a use-case-urilor ca input de frontend. Opt agenți: cinci de audit (on-chain, off-chain +
+API, SQL guvernanță, documentație, onestitatea testelor) și trei de use-case-uri. Peste 100 de
+constatări, toate cerute cu `file:line`, scenariu de eșec și măsurătoare.
+
+**Lecția de proces, înainte de orice:** fiecare constatare care a contat a venit din *rularea*
+lucrului, nu din citirea lui. Stack-ul a rulat live tot timpul auditului — primul lucru care s-a
+întâmplat vreodată cu acest produs cap-coadă.
+
+### Defectul care a oprit F1 check 11 la primul pas
+
+`authenticateStateUTxO` — poarta prin care un datum devine înregistrare — autentifica **toate cele
+trei feluri** contra etichetei CIP-67 **100**, a profilului. `OC-05` mutase atestările pe eticheta 1
+și disputele pe 2. Deci poarta era `False` pentru fiecare id pe care policy-ul poate să-l producă
+pentru acele feluri: **suprafața de citire a atestărilor nu a funcționat niciodată.** Măsurat în
+timpul rulării fluxului: 6 match-uri brute, 2 proiecții de profil, **0** de atestare, o atestare
+necheltuită pe lanț, proiector raportând `following` cu `last_error: null`.
+
+Comentariul funcției spunea *„e același predicat peste care `Mg` și `Md4` au fost urcate… a fost
+lăsat pe versiunea veche"* — despre gemenul **on-chain**. Cel off-chain rămăsese tot acolo. Iar
+fixture-urile din `Projections.hs` dădeau id-urilor de atestare **eticheta de profil**: testul și
+bug-ul aveau aceeași greșeală. `5ae17bf`, +5 cazuri care pin-uiesc fiecare fel sub predicatul lui.
+
+### Numărul publicat greșit
+
+`last_votable_epoch` citea `expiration`. db-sync scrie `expiration = proposed + lifetime + 1`
+(delta 7 pe toate cele 131 de acțiuni, lifetime 6), deci ultima epocă legală e `expiration - 1` —
+ceea ce **`docs/spec/metrics.md` spune în propoziție și contrazice în formula de alături**. Codul a
+implementat formula. Corpusul: din 96 de acțiuni votate, 19 ajung la `expiration - 1`, **niciuna** la
+`expiration`.
+
+| | înainte | după |
+| --- | --- | --- |
+| votabile la 321 | 11 | 7 |
+| `actions_in_flight` | 11 | 7 |
+| DRep-i cu numitor greșit | **462 din 809** | 0 |
+| DRep 19735 | 6/1/0,1667 | 2/1/0,5 |
+
+Plus: `open_actions_unvoted` era 11 pentru **toate** cele 824 de credențiale, inclusiv 523 retrase;
+tally-urile citeau puterea la o epocă din viitor, deci fiecare acțiune în zbor publica putere zero și
+`ratio: null`; `/votes` servea 832 de rânduri pentru 831 de voturi (două credențiale există de două
+ori în `drep_hash`, cheie și script). `ea90f48`.
+
+**Toate cele șapte verificări SQL trec acum**, inclusiv 050, care avea **trei** pin-uri care se mișcă
+cu lanțul — două latente, fiindcă `ASSERT` se oprește la primul. Înlocuite cu invarianți.
+
+### Performanța: trei ecrane erau 503, și cauza era una
+
+Un predicat care nu poate ajunge la cheia de partiționare a unei funcții de fereastră.
+
+| | înainte | după |
+| --- | --- | --- |
+| `/drep/{id}/power` | 503 la timeout-ul de 30 s | **0,02 s** |
+| același, pseudo-DRep cu 46% din stake | 77,5 s | **1,14 s** |
+| `/drep/{id}` (ecranul principal) | 30,8 s | **1,78 s** |
+
+`palmares.drep_delegator_counts` e același calcul cu singurul predicat care **poate** coborî prin
+fereastră — adresele care au delegat vreodată către acel DRep. Verificat contra view-ului pe cei zece
+DRep-i cu cei mai mulți delegatori: **identic**. Pentru `palmares.vote`, cele două conjuncte pe
+cheia de partiționare (`voter_role`, `voter_id_hash`) sunt **redundante intenționat**: nu schimbă
+niciun rând și lasă qual-ul să coboare. 6,2 s → 0,49 s.
+
+**Am renunțat la o reparație** pe care o începusem (același pushdown pe formula de retenție):
+măsurat, 1,73 s vs 1,25 s pe zece DRep-i — zgomot, și ar fi modificat o formulă publicată degeaba.
+
+### Capcana care ținea totul invizibil
+
+Un agent a dovedit prin mutație că **`cabal` nu urmărește dependențele `embedFile`**. Am lovit-o eu
+o oră mai târziu: am repornit query-api după ce am scris view-ul nou și DDL-ul nu se schimbase. Iar
+cheia de cache din CI nu includea `sql/**` — un PR care atinge doar SQL primea cache hit și rula
+versiunea precedentă, inclusiv poarta „documentația nu e stale", care compara vechiul cu vechiul.
+
+Acum un test compară fiecare embed cu fișierul de pe disc **la rulare** — dovedit non-vacuu rulând
+binarul prebuild contra unui fișier schimbat, care cade numindu-l.
+
+### Restul lotului
+
+`/pages/dashboard.total_dreps` = 204 contra 294 pe `/dreps` (găsit de doi agenți independent); 15 din
+29 de rute tipau `items` ca `DisputeRow` în swagger-ul comis — input-ul de codegen al frontend-ului;
+documentul API-ului de scriere publica **licență GPL-3.0** într-un proiect Apache-2.0; `GYAddress`
+documentat ca bech32 când parserul e hex; cele trei headere `X-Attest-*` nu erau expuse către
+browser; `KUPO_URL` avea default pe singurul serviciu care citește lanțul; proiectorul raporta
+sănătate perfectă cu Kupo căzut și arunca în silențiu match-uri pe care nu le putea proiecta; iar
+suita de teste era verde la `-j4` doar fiindcă tasty o rula serial (84 din 706 cădeau).
+
+`ccaa2a1`, `ccb6613`, plus 30 de constatări de documentație cu text de înlocuire exact.
+
+### Documentele de use-case-uri
+
+4.533 de linii în `docs/usecases/`, cu index onest: **nouă** dintre constatările lor au fost reparate
+la ore după ce au fost măsurate, iar cineva care ar construi un workaround pentru `/drep/{id}` ca 503
+ar scrie cod mort. Indexul le listează pe toate nouă contra adevărului de acum, și pe cele șapte care
+rămân deschise. `8d96c40`.
+
+### Ce rămâne deschis
+
+`/votes` e 25-50 s de la pagina 2 și 503 la dimensiunea maximă documentată (3,2 M rânduri, 16 k
+pagini) — fixul cere o restricție completă pe partiție, nu pe cheia primară, altfel `is_final` și
+`revote_count` devin greșite. `/gov-actions` e 2,4 s. Plafonul de pagină se ridică de 50× cu un
+header `Accept`. API-ul de scriere nu are formatori de erori, deci un corp JSON malformat întoarce
+text simplu fără `code`. Plus constatările on-chain care cer redeploy (`updateCIP68DatumMetadata`
+aruncă numele în silențiu, `fcFeeAddress` nevalidat) și una care nu: sweeper-ul de praf nu e de acord
+cu `isUnbackedDatum`, deci oricine poate bloca permanent `cleanupDustTX` pentru ~1,3 ADA.
+
+**Decizia pe care am luat-o și o recomand:** ancora de treasury din spec nu există nicăieri și nicio
+decizie nu o retrage, ceea ce face check-ul 11 nesatisfiabil. O implementăm prin **cheie rezervată în
+`otherMetadata`**, fără redeploy — spec-ul însuși stabilește că rezolvarea e la citire, deci un câmp
+tipat nu cumpără nicio garanție pe lanț, doar un registru nou. Mecanismul de chei rezervate există și
+e deja validat.
