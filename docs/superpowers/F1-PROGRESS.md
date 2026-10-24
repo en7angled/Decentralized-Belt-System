@@ -7013,8 +7013,189 @@ text simplu fără `code`. Plus constatările on-chain care cer redeploy (`updat
 aruncă numele în silențiu, `fcFeeAddress` nevalidat) și una care nu: sweeper-ul de praf nu e de acord
 cu `isUnbackedDatum`, deci oricine poate bloca permanent `cleanupDustTX` pentru ~1,3 ADA.
 
+> **Corecție, scrisă o oră mai târziu:** două propoziții din paragraful de mai sus erau deja false
+> când le-am scris — plafonul de pagină și formatorii de erori de pe API-ul de scriere s-au reparat
+> în `7ab6d6e`, verificate live. Le las în text pentru că jurnalul e datat, nu rescris.
+
 **Decizia pe care am luat-o și o recomand:** ancora de treasury din spec nu există nicăieri și nicio
 decizie nu o retrage, ceea ce face check-ul 11 nesatisfiabil. O implementăm prin **cheie rezervată în
 `otherMetadata`**, fără redeploy — spec-ul însuși stabilește că rezolvarea e la citire, deci un câmp
 tipat nu cumpără nicio garanție pe lanț, doar un registru nou. Mecanismul de chei rezervate există și
 e deja validat.
+
+---
+
+## 2026-10-24 — șapte agenți pe toată lista deschisă, și ce au corectat din ea
+
+Șapte agenți, felii disjuncte de fișiere, **niciunul cu drept să compileze** — un singur lock de
+build, ținut aici. Consecința e că nimic nu era type-checked până la integrare; build-ul de după a
+avut **zero erori**. Apoi: 772 de teste trec serial (87,2 s) și la `-j4` (50,2 s), toate cele patru
+hash-uri pe care blueprint-ul le publică sunt neschimbate, iar `/ready` de pe interaction-api
+răspunde 200 — adică hash-urile configurate se potrivesc cu ce e pe lanț.
+
+Patru dintre lucrurile pe care le-am scris în brief-uri erau greșite, și fiecare a fost corectată cu
+o măsurătoare. Le pun primele, pentru că asta e partea pe care un raport s-ar fi tentat să o ascundă.
+
+### Praful: `Low` era severitatea greșită, și erau două uși
+
+`OF-20` și `F5` descriau amândouă doar jumătatea inofensivă — „selectorul e mai îngust decât regula
+on-chain", adică praf real ratat. Jumătatea care contează lipsea din ambele: un UTxO pe care
+validatorul îl **refuză** era oferit, iar `cleanupDustTX` construiește **o singură tranzacție
+totul-sau-nimic**. Deci un output de min-ADA cu un nume de token prefixat cu eticheta CIP-67 a
+adresei, plus un datum scris de mână, face fiecare măturare să cadă pe `P7`/`A4`/`D8` — permanent,
+permisionless, pe un redeemer care nu e nici pause-gated, deci fără recuperare administrativă. Un DoS
+permanent pentru ~1,3 ADA nu e `Low`.
+
+Codurile le scrisesem greșit și eu: sub `Cleanup` un datum absent nu atinge **niciun** cod — e
+`Nothing -> True` — iar `P0`/`A0`/`D0` sunt codurile de „fără datum" pe **celelalte** redeemere.
+
+A doua ușă, găsită de agent și nu de mine: un plant cu **hash** de datum trece și filtrul corect, dar
+`txMustSpendUTxOFromRefScript` martorizează cu `Nothing`, deci Conway refuză tranzacția înainte să
+ruleze vreun validator — același blocaj, aceeași sumă, și nimeni nu poate furniza un preimage pe care
+un scan de adrese nu-l are. Selectorul sare peste `GYOutDatumHash`, singura abatere deliberată de la
+braț, documentată ca atare.
+
+Și capcana evitată: **nu** s-a adăugat `pid == ourPolicy` din `authenticateStateUTxO`. Ar fi recreat
+blocajul — un token cu prefixul corect dar politica atacatorului citește „neautentic ⇒ praf" off-chain
+și „acoperit ⇒ stare" on-chain. Selectorul oglindește validatorul, nu registrul.
+
+### Premisa pe care am pus-o greșit în brief
+
+Scrisesem că `updateCIP68DatumMetadata` „aruncă `metadataName` în silențiu" și așteaptă un redeploy.
+Funcția e **compilată în Profiles Validator**, iar `P5` cere ca datum-ul de ieșire să fie **egal** cu
+valoarea calculată on-chain — deci un builder care ar scrie numele ar produce exact datum-ul pe care
+`P5` îl refuză. Nu există fix off-chain. Iar partea off-chain e deja corectă în patru locuri
+independente, blueprint-ul inclus. Singura suprafață care anunță câmpul ca setabil e schema de
+redeemer CIP-57, consecință de tip, iar `P4` îi validează lungimea și apoi e ignorat.
+
+S-a aplicat un **tripwire** în loc: trei cazuri care asertează că numele vechi supraviețuiește, că un
+spend care-l schimbă e *acceptat* (absorbit, nu refuzat) și latura care trece a lui `P4` pe calea de
+update. Devine roșu în ziua în care cineva face numele setabil — adică ziua care cere redeploy.
+
+### Restricția prescrisă pentru `/votes` era cea greșită
+
+Prescrisesem „restricție pe id-urile acțiunilor din pagină". Măsurat: pentru pagina de la offset 1000
+păstrează **3.243.765** de rânduri contra 1.513.750 pentru forma corectă — *mai multă* muncă, fiindcă
+cele cinci acțiuni de stress din epoca 187 țin **99,97%** din corpus, deci „acțiunile paginii" sunt
+tot tabelul. Mecanismul era corect (`gov_action_id` e singura coloană de partiționare care e și
+coloană de bază, deci devine condiție de index) — dar coloana care *taie* rândurile e a doua.
+Avertismentul meu despre cheia primară era corect și e acum în cod.
+
+| | înainte | după |
+| --- | --- | --- |
+| `/gov-actions?limit=50` | 2,45 s | **0,012 s** live |
+| `/votes` pagina 1, etapa 4 | 1,51 s | **0,45 s** |
+| `/votes` offset 1000 | 13,2 s | 11,1 s |
+| `is_final=true`, numărătoarea | 7.058 ms (forma evidentă) | **2,4 ms** |
+
+Paginile adânci **nu** sunt reparate, și e o proprietate a datelor: o pagină de 100 de voturi aparține
+a 70-150 de partiții de ~20.000 de rânduri, deci `revote_count` pentru un rând e o numărătoare peste
+~20.000 de frați, și orice restricție completă pe partiție trebuie să citească 1,5-3,2 M rânduri.
+12-18% e sub bara de zgomot pe care am folosit-o chiar eu ca să renunț la o reparație săptămâna
+trecută. Fixul real ar muta flagurile pe matview, ceea ce schimbă o proprietate de identitate a
+ieșirii pe viteză — un vot dat după ultimul refresh ar citi `is_final = NULL`. Agentul a semnalat
+decizia în loc s-o ia.
+
+Verificat live: `total 3244723` fără filtru, **931** cu `is_final=true`, 3.243.792 cu `false`. Suma e
+exactă, deci partiția e exactă.
+
+Și o notă de metodă care merită reținută: **`EXPLAIN ANALYZE` nu poate măsura aceste instrucțiuni** —
+instrumentarea per rând peste trei `WindowAgg` a raportat 36.476 ms pentru ceea ce durează 13.183 ms
+neobservat.
+
+### `x-nullable`: 127 de proprietăți, nu ~30
+
+Subestimasem de peste patru ori. Numărate pe documentul comis: 61 de definiții, **127** de proprietăți
+opționale, **zero** chei `x-nullable`. Și nu se putea rezolva prin `SchemaOptions`: `Schema` din
+swagger2-2.8.9 **nu are câmp de extensie**, deci nu există nicio valoare de niciun tip swagger2 care
+să codifice o cheie `x-`. Alternativa erau ~60 de instanțe scrise de mână. Soluția e o trecere peste
+documentul codificat, ancorată pe faptul deja adevărat: `genericDeclareNamedSchema` scoate o
+proprietate din `required` exact când tipul ei e `Maybe a`. Verificat prin valoare — `StatusResponse`
+numește 5 din 9 proprietăți și cele 4 omise sunt exact cele 4 câmpuri `Maybe`. Ambele documente, ca
+invariant bidirecțional.
+
+### Parametrii oracolului nu puteau sta în query-api
+
+Golul pe care-l numisem „închide trei goluri de frontend dintr-o dată" e imposibil în query-api, din
+trei fapte independente: stanza din `palmares.cabal` spune explicit că serviciul nu interoghează
+lanțul; db-sync-ul de aici e indexat **fără UTxO-uri** (`tx_out` → 0, `multi_asset` → 0, NFT-ul
+oracolului → 0 rânduri); și nimic nu-l proiectează. Au mers pe `interaction-api /status`, unde datum-ul
+e deja citit. Live, acum:
+
+```
+dispute_deposit_lovelace 5000000   dispute_timeout_ms 2592000000 (30 zile)
+min_utxo_lovelace 1000000          arbiter/admin 5a0ea8b2… is_script:false
+profile_creation_fee_lovelace null attestation_fee_lovelace null
+```
+
+Taxele sunt `null` **împreună** — un `FeeConfig` opțional pe care deployment-ul nu-l are, deci taxe
+zero, nu necunoscute. Și sunt citite prin **`feeFor`**, nu prin selectarea câmpurilor: regula de
+vocabular impune ca un câmp `FeeConfig` să fie numit în două locuri, fiindcă „un al doilea sit de
+numire e cum taxa de interval din Belt System a ajuns să taxeze câmpul greșit". Poarta m-a prins și
+avea dreptate — iar numărul publicat e acum produs de aceeași funcție totală care decide taxa.
+
+### Două capcane care au costat câte o rulare întreagă
+
+**Un semn de întrebare într-un comentariu.** `Query/Views.hs` aplică fiecare fișier de schemă
+**întreg**, cu `rawExecute (decodeUtf8 sql) []`, iar postgresql-simple citește `?` ca placeholder în
+textul primit — inclusiv în comentarii: e un formatter de text, nu un parser de SQL. Două comentarii
+au căpătat `/gov-actions?limit=50` documentând fix-ul de performanță, și **toate cele ~20 de cazuri cu
+bază de date** au căzut cu `FormatError {fmtMessage = "2 single '?' characters, but 0 parameters"}`,
+sub o primă linie care nu numea nici fișierul, nici linia. Acum o poartă interzice `?` în cele cinci
+fișiere aplicate întregi și numește fișierul și linia. Nu acoperă `sql/indexes/*`, `sql/050_roles.sql`
+și `sql/checks/*`, verificat: primele două trec prin `splitStatements`, a cărui stare `InComment`
+aruncă textul comentariilor, iar comentariile lor **conțin** `?`.
+
+**Poarta mea de hash grepuia după șase hash-uri într-un document care publică patru.** Politica de
+mint e aplicată la `ProtocolParams` la deployment — tokenul de oracol din ele nu există până la mint —
+deci fiecare deployment are alt hash și blueprint-ul nu publică niciunul; politica NFT a oracolului e
+parametrizată de un `TxOutRef` seed. Zero apariții și în blueprint-ul comis la HEAD. Raportase
+„CHANGED" pentru două scripturi care nu pot fi în document. Cele patru publicate sunt neschimbate, iar
+politica de mint e acoperită prin construcție.
+
+### Atestarea care nu era proiectată — găsită pe drum
+
+Kupo arată tokenul de atestare (`00001070`) nefolosit, creat la slotul **137139962**. Cursorul
+proiectorului era la 137170566 și `attestation_projection` avea **0 rânduri** — în timp ce cele două
+profiluri mintate *înainte* (137139748, 137139877) erau proiectate. Deci procesul care rula atunci a
+văzut slotul și a aruncat atestarea: exact bug-ul reparat în `5ae17bf`. `attest_dead_letter` era gol
+fiindcă scutul a venit și el după acel moment, iar procesul de atunci pornise *după* mint.
+
+Fix-ul era corect în cod și nu avea cum să ajungă la înregistrare: proiectorul merge înainte, și nimic
+nu-l făcea să recitească blocul. Soluția nu e un cursor editat de mână — e **bump-ul de versiune de
+schemă**, care prin ADR 0007 șterge și re-indexează de pe lanț. Iar un bump era oricum necesar pentru
+`stale_after`, deci cele două sarcini sunt o singură operație.
+
+### `stale_after`: deadline-ul unei dispute exista pe lanț și nu era publicat nicăieri
+
+`disputeStaleAfter` e în datum și proiecția îl arunca. Consecința: un client putea doar să calculeze
+`opened_at + timeout-ul curent al oracolului`, ceea ce e greșit pentru orice dispută deschisă înaintea
+unei re-cronometrări — fiindcă deadline-ul din datum e **absolut** și o re-tarifare nu-l mișcă.
+Coloana e acum proiectată și publicată, cu avertismentul lângă câmp.
+
+### Ancora de nivel 1 — ADR 0008, și de ce nu e un câmp în datum
+
+Spec-ul cere ancora și F1 check 11 nu se poate satisface fără ea. Dar același paragraf decide lucrul
+care face un câmp tipat inutil: „validatorul nu verifică dacă faptul există — e un pointer, confruntat
+la citire". Deci un câmp ar purta exact la fel de mult adevăr — zero — la prețul unui **registru nou**
+(ADR 0007: orice schimbare de datum schimbă hash-ul politicii, deci simbolul fiecărui id) și al unui
+datum mai lat pentru totdeauna, inclusiv pe atestările fără ancoră.
+
+Purtătorul e deja validat pe lanț: `validateOtherMetadata` impune 16 intrări, chei de 64 de octeți,
+valori de 256, fără duplicate, fără coliziune cu `name`/`description`/`image`. Un `gov_action1…` are
+65 de caractere, o adresă `stake_test1…` are 64. Iar proiecția stochează deja `other_metadata`.
+
+Parserul are **trei** ieșiri, nu un `Maybe`: fără ancoră, ancoră validă ca formă, sau refuz. Fiindcă
+publicarea unei ancore malformate ca „fără ancoră" e singurul răspuns care minte despre un datum
+permanent. La citire, cele trei stări sunt `resolved`/`unresolved`/`malformed`, niciodată ascunse.
+Interogarea de rezolvare e verificată pe date live, în toate patru cazurile.
+
+### Ce rămâne
+
+Paginile adânci ale lui `/votes` (proprietate de date, documentată). Jumătatea de `fcFeeAddress` care
+cere un `TxBuildingException` nou, cu exploit-ul scris concret: taxele sunt plătite ca output fără
+datum, `Cleanup` acceptă un datum absent necondiționat, deci o adresă de taxă pusă pe una din cele
+trei adrese de stare ale protocolului transformă fiecare taxă în praf pe care oricine îl mătură.
+`/votes` fără `is_final` rămâne lent. Un path neruat răspunde 404 cu corp gol pe ambele servicii —
+aceeași clasă ca 405/406, și singurul hook pe care servant *îl* expune, dar niciun cod de eroare nu
+numește încă un 404 de rutare.
