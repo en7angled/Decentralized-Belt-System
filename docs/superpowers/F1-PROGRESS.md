@@ -7387,9 +7387,34 @@ costă prospețime care ar fi putut exista.
 
 **GV-17** e cel de mai sus, și mecanismul pe care-l dădusem eu în brief era greșit, concluzia bună.
 
+### `GV-17`, închis pe ambele jumătăți
+
+Verificarea indecșilor nu mai rula doar din CLI, și nu mai raportează doar jumătate din problemă.
+`indexProblems` aduce catalogul din `public` și îl intersectează cu setul declarat, deci acoperă și
+**MISSING**; `startIndexWatch` o rulează sincron la boot-ul query-api și o repetă la fiecare 60 s;
+`GET /status.missing_indexes` publică numele, obligatoriu și ne-nulabil, `[]` când e sănătos.
+
+Un watcher și nu o interogare pe cerere, pentru că cei 23 de indecși stau în `public` — schema lui
+db-sync. O migrare sau un re-sync de la geneză îi ia cu ea, nimic de aici nu reaplică fișierul, și
+query-api pornește **perfect** în timp ce fiecare interogare de comitet devine un 503 de 30 s:
+brațul CC al lui `palmares.vote` nu se termină fără `gov_idx_committee_reg_hot`. Cantitatea se
+schimbă la scara unei migrări, nu a unei cereri. Avertizează și nu moare — un cititor fără indecși e
+lent, unul care refuză să pornească e absent, iar remediul e un Job din alt repo.
+
+ADR 0001 primește pasul de re-sync. Fișa auditului: `73 · 47 · 61` → **`72 · 47 · 62`**.
+
+Și poarta de swagger a prins singură adăugarea câmpului, fiindcă aserțiunea verifică setul `required`
+**întreg** și nu prezența unui nume — forma aleasă special ca `null | index("x") == null` să nu poată
+trece. Aserțiunea mea paralelă era redundantă și mai slabă; am șters-o.
+
+### Check 11, re-verificat pe binarele noi
+
+Șapte pași, tranzacții reale pe preprod, ieșire 0. Lanțul, pentru evidență: profil emitent
+`c9783147…`, profil subiect `fbdb5991…`, atestare emisă `c9efa215…`, acceptată `92bc3ab4…`, dispută
+deschisă `e7f04783…`, rezolvată `37dc94fe…`.
+
 ### Ce rămâne
 
 `TD-08` (plafoane de resurse) și arm64-only, ambele decise-sărite cu motiv; re-randarea
-`diagrams/system-overview-*.svg`; `/status.missing_indexes` la query-api; coada `73 OPEN · 47
-PARTIAL`. Nedeschis și cerând decizie proprie: **frontend-ul** — cele trei documente de caz de
-utilizare (~4.600 de linii) există ca intrare a lui.
+`diagrams/system-overview-*.svg`; coada `72 OPEN · 47 PARTIAL`. Nedeschis și cerând decizie proprie:
+**frontend-ul** — cele trei documente de caz de utilizare (~4.600 de linii) există ca intrare a lui.
