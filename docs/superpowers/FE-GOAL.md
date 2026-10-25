@@ -281,5 +281,49 @@ imagini de runtime răspund la pull anonim.
 
 ## 9. Jurnal de execuție
 
-*(gol — fiecare bloc își scrie aici ce a livrat, ce a găsit și ce a greșit, ca în
-`F1-PROGRESS.md`)*
+### 2026-10-25 — Blocul 0 închis, și primele două straturi de cod
+
+Planul de execuție: `docs/superpowers/plans/2026-10-25-palmares-ui-m1a.md`, 14 taskuri.
+Comis în palmares ca `9c6aa7f`. **31 de teste verzi, formatare curată, zero warning-uri.**
+
+**Livrat:** taskurile 1, 2 și 4. `frontend/` e o copie a `cardano-dapp-frontend-template` cu cei
+șase pași de rebranding aplicați; `Capabilities.Query.Gov.Http` e transportul; `Query.Page` sunt
+regulile de paginare. Taskul 3 are `Types.purs` scris (DTO-ul lui `/status`, cu decodoare de mână pe
+chei snake_case literale) și îi rămâne cablarea în AppM/DemoM.
+
+**Trei defecte moștenite din template, prinse la intrare:**
+
+1. **`Dockerfile:35` rula `npm run build`**, care împachetează `MainDemo` — adică imaginea de
+   producție a template-ului servește date mock. Acum `build:prod`. Asta e genul de defect care s-ar
+   fi descoperit abia pe cluster, ca „de ce are explorer-ul exact 3 DRep-i".
+2. **`bff/config.js` avea `'cardano'`/`'lovelace'` hardcodate** ca default-uri prin `getEnv`. Trecut
+   pe `requireEnv`, `getEnv` șters ca orfan. **Verificat prin rulare:** fără variabile, BFF-ul iese
+   cu 1 și numește `PALMARES_QUERY_API_URL`; cu toate patru, înregistrează `query` ca No Auth și
+   `interaction` ca Basic Auth și ascultă.
+3. **`halogen-router` era pe `ref: main`**, țintă mobilă contra deploy-ului reproductibil (check 16).
+   Pinuit pe `e25e7bb`.
+
+**Două capcane de proces, una a mea:**
+
+- **`| tail` înghite exit code-ul.** Două rulări „exit 0" la rând nu însemnau nimic: `spago` eșuase
+  cu `argonaut-parser` inexistent în package set, iar codul de ieșire era al lui `tail`. De acum
+  `set -o pipefail` pe orice pipeline a cărui reușită contează. (`Data.Argonaut.Parser` e în
+  `argonaut-core`; nu există pachet `argonaut-parser` în registry 68.9.0.)
+- **`purs-tidy` reindentează un `where` de după guards sub ultimul guard**, ceea ce îl scoate din
+  scope-ul celorlalte și nu mai compilează. Formă de evitat; `let` în corpul funcției e
+  neambiguu.
+
+**Disciplina de test, aplicată la literă.** Testele n-au putut fi văzute RED înainte de
+implementare, pentru că toolchain-ul se instala în paralel cu scrierea lor. Substitutul, și e la fel
+de bun: după ce au trecut, am făcut **mutația inversă** pe `classifyResponse` — parsare JSON
+necondiționată, exact comportamentul template-ului — și cele patru teste de cale de eroare au picat
+(27/31). Un test care n-a fost văzut picând nu e un test.
+
+**(call) Limba interfeței: engleză.** Produsul e infrastructură publică pentru ecosistemul Cardano,
+deci șirurile vizibile utilizatorului sunt în engleză. Comentariile, commit-urile și documentele
+rămân în română.
+
+**(call) `assertFiltered` scos din plan.** Taskul 4 prevedea o verificare la rulare că un filtru a
+narowit `total`. Dar un filtru *poate* legitim să se potrivească pe tot (`status=active&status=inactive&status=unknown`
+întoarce toate cele 294), deci egalitatea nu dovedește nimic. Verificarea corectă e la test: un
+filtru cunoscut ca narowitor trebuie să scadă `total`. Mai puțin cod și mai multă dovadă.
