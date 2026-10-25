@@ -359,3 +359,110 @@ explorer-ului.
 narowit `total`. Dar un filtru *poate* legitim să se potrivească pe tot (`status=active&status=inactive&status=unknown`
 întoarce toate cele 294), deci egalitatea nu dovedește nimic. Verificarea corectă e la test: un
 filtru cunoscut ca narowitor trebuie să scadă `total`. Mai puțin cod și mai multă dovadă.
+
+### 2026-10-25 — Taskurile 5–11: cele zece ecrane, pe date măsurate
+
+**Toate DTO-urile sunt scrise după ce răspunde serverul, nu după design.** Query-api rula local, deci
+fiecare ecran a început cu un `curl`. A meritat de fiecare dată:
+
+| Ce spunea designul | Ce întoarce serverul |
+| --- | --- |
+| `/pages/dashboard` cu `recent_activity`, `delegator_count`, `total_delegated_lovelace` | `power_epoch`, `inactive_dreps`, `unknown_dreps`, `actions_by_state`, trezoreria în **două** numere |
+| `power_buckets` cu `{label, min_lovelace, max_lovelace, count}` | `{lo, hi, count}`, iar `hi` lipsește la ultimul |
+| `participation_by_epoch` cu `eligible_dreps`/`voting_dreps`/`rate` | `dreps_with_power`/`dreps_voted`/`participation_rate` |
+
+Nullabilitatea la fel: măsurată pe 200 de rânduri reale, nu aleasă din prudență. `given_name` lipsea
+la 154, `rationale_rate` la 172, `last_vote_at` la 166, `anchor_status` la 108.
+
+**Patru fapte din date care au schimbat ecrane, nu doar tipuri:**
+
+1. **Facetele nu se adună la `total`** — 17+187+526+90 = 820 pe un total de 294, pentru că fiecare se
+   numără cu propriul predicat scos. Deci niciun procent nu se calculează dintr-un facet, bara
+   laterală o scrie pe ecran, iar un test fixează faptul ca să nu-l „repare" cineva. `power_buckets`
+   **da** se adună (fiecare DRep cade în exact un interval) — singura desfășurare din care un procent
+   are sens.
+2. **`ratio` poate fi `null` deși s-au exprimat 43 de voturi** — pragul se calculează pe putere de
+   vot, iar când puterea de ambele părți e zero raportul nu există. „0% din 67%" ar fi spus că
+   propunerea a fost respinsă de comunitate. `tallyVerdict` spune „ratio not computable".
+3. **Căutarea „logical" întoarce trei credențiale distincte, toate numite „Logical Mechanism dRep"**,
+   toate cu insigna `script`, cu stări diferite. Regula R3 (ID-ul lângă nume, mereu) nu mai e o
+   precauție teoretică: e singurul lucru care distinge trei profiluri reale pe preprod.
+4. **`top_delegators[4].lovelace` vine `null`** pe un DRep real — suma se citește din `epoch_stake`
+   și epoca poate să n-aibă rândul (limitarea §8.3 din contractul API). Decodorul care cerea un număr
+   a rupt tot ecranul pentru un rând incomplet. **Fixtura nu l-a prins fiindcă o tăiasem la trei
+   delegatori** — lecția e că o fixtură scurtată e o fixtură care minte despre forma datelor.
+
+**(call) R4 se schimbă, pentru că API-ul nu permite varianta din design.** „Randează documentul
+neconform așa cum e" presupune că avem octeții. Măsurat: când documentul nu se potrivește cu hash-ul
+sau nu respectă schema, serverul întoarce `anchor_content: null` — deci nu-i avem. Ce facem în loc:
+arătăm URL-ul, starea, și **ce înseamnă starea aceea în cuvinte** (patru explicații scrise pentru
+cineva care vede „hash_mismatch" și nu știe dacă e vina DRep-ului, a noastră, sau a nimănui).
+
+**Două bug-uri de bibliotecă, amândouă măsurate:**
+
+* **`Routing.Duplex.many (param k)` nu termină.** `Parser.param` reușește fără să consume din stare,
+  iar `many1` se reapelează cu exact aceeași stare, la infinit — suita de teste a atârnat până la
+  timeout pe o singură parsare de URL. Și chiar dacă ar termina, `param` citește doar prima apariție,
+  deci `status=active&status=inactive` ar pierde în silenție jumătate din filtru. `repeatedParam` e
+  scris de mână, opt linii.
+* **`genericShow` pe o rută care poartă un record de unsprezece câmpuri** l-a ținut pe `purs` peste
+  șapte minute pe un singur modul, fără să termine. `Show Route` scris de mână tipărește URL-ul, care
+  e și mai citibil într-un mesaj de test.
+
+**Un defect de server, ocolit pe ecran și rămas de reparat:** `/votes` fără niciun filtru raportează
+`total: 3.244.726` pe o rețea cu ~900 de voturi reale. Orice filtru îl repară (pe acțiune 43, pe
+votant 1, `is_final=true` 934). Explorerul nu interoghează niciodată nefiltrat — default-ul
+`is_final=true` e și înțelesul corect, fiindcă votul care a contat e ultimul — dar **numărătoarea
+nefiltrată rămâne un bug de backend.**
+
+**Un bug de template, moștenit și reparat:** `Components.Home` se abona la rute dar nu citea ruta
+curentă. `mkRouter` notifică prima potrivire în `runAppBase`, înainte ca rădăcina să se aboneze, deci
+evenimentul se pierdea — orice URL deschis direct randa pagina de pornire. Nu se vedea în template
+pentru că avea o singură rută cu conținut.
+
+### 2026-10-25 — Taskul 12: e2e, și un URL necunoscut care randa dashboard-ul
+
+Unsprezece teste Playwright pe bundle-ul demo (fixturi, deci determinist). Fiecare e numit după
+regula pe care o apără, nu după ecranul pe care îl atinge.
+
+A găsit imediat ce nu putea găsi nimic altceva: `/this-does-not-exist` randa **dashboard-ul**.
+`current` din halogen-router întoarce `Nothing` când calea nu se parsează, iar `Nothing` era tratat ca
+„nu știu încă" în loc de „calea nu există" — deci un URL greșit arăta ca un succes, care e mai rău
+decât o pagină de eroare.
+
+Și o capcană de infrastructură: `vite preview` ascultă pe `localhost`, care aici rezolvă la ::1, deci
+verificarea pe 127.0.0.1 nu primea niciodată răspuns (timeout de 60 s). `--host 127.0.0.1` explicit.
+
+### 2026-10-25 — Taskurile 13–14: imaginile și deployul pe preprod
+
+**Imaginile.** `frontend.yml` a trecut verde pe `3fae764` (formatare, 136 de teste unitare, `spago
+build`, bundle-ul de producție, 11 e2e, apoi imaginea multi-arch). `images.yml` e dispatch-uit manual
+pe același SHA — workflow-ul nu se declanșează pe push, pentru că un build musl al întregului arbore
+Cardano ia peste o oră pe arm64 și fiecare push următor l-ar anula.
+
+**Deployul.** `apps/palmares/` în `apps-k8s-configs`: șapte workload-uri, un singur host public
+(`gov.cardano.vip`), un singur backend în HTTPRoute — frontendul, care servește statice **și** face
+proxy la cele două API-uri. De aici vine proprietatea pe care se bazează tot restul: UI-ul și API-urile
+sunt pe aceeași origine, deci CORS nu există în producție și cele opt headere de prospețime ajung la
+browser.
+
+**Ce a trebuit descoperit la fața locului, pentru că D-28 presupunea altceva:** nodul preprod avea
+`configs` și `ipc` ca **emptyDir**, nu hostPath. Un emptyDir există doar în interiorul pod-ului lui,
+deci socketul nodului nu era vizibil pentru niciun alt pod — iar db-sync are nevoie exact de el.
+Amândouă au trecut pe hostPath (`/var/lib/cardano-preprod/{configs,ipc}`), aceeași formă pe care
+mainnet-ul o folosește deja. A repornit o dată pod-ul nodului preprod; Kupo și cele două servicii
+blazar se reconectează singure.
+
+**Trei decizii care arată ca greșeli și nu sunt**, fiecare comentată la locul ei: namespace-ul fără
+`enforce: baseline` (baseline interzice hostPath), `wait: false` pe Kustomization-ul aplicației
+(query-api e Ready abia după Job-ul de roluri, iar db-sync are ~7 ore de primă sincronizare — cu
+`wait: true` Flux ar suna pe Telegram pentru un deployment care merge), și readiness-ul query-api pe
+`/health` în loc de `/ready` (pe `/ready`, în timpul sincronizării, site-ul ar fi **gol**; pe
+`/health` răspunde și spune cât de în urmă sunt datele, ceea ce e chiar rolul chip-ului).
+
+**Și poarta de validare a repo-ului de cluster era ruptă pe propria conductă:** `kustomize build` pe
+`./infrastructure/controllers` randează ~21.000 de linii, ținute într-o variabilă de shell, iar
+următorul `exec` murea cu „Argument list too long" — deși aceeași comandă rulată direct trecea.
+Reparat (randarea merge într-un fișier temporar), fără să se piardă nicio verificare: 39 de căi
+construite + validate. O poartă care blochează push-uri corecte învață pe toată lumea să folosească
+`--no-verify`, și atunci nu mai e o poartă.
