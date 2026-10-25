@@ -542,3 +542,56 @@ vocabularului pe „rationale", nu pe „reason".
 construiești bundle-ul, nu înainte. Doi recenzori au raportat bara de sus ca „blocker" pe baza unor
 capturi deja vechi de douăzeci de minute, iar verificatorii au prins-o: fixul era în working tree.
 Captura e un fapt despre un build, nu despre repo.
+
+### 2026-10-25 — Blocul 3b: cele opt ecrane M1b, graful și fișa de încorporat
+
+Opt ecrane noi, graful Cytoscape (check 13) și widgetul embed (check 15). Toate măsurate pe
+**db-sync-ul local sincronizat** (epoca 321), nu pe deploy — care, în tot acest timp, refăcea
+istoria de la Byron și n-avea nicio dată de guvernanță.
+
+**Ecranele:** operatorii de pool, comitetul constituțional, retragerile din trezorerie, delegările,
+fluxul de activitate, profilurile, atestările, disputele. Plus graful delegărilor și fișa de
+încorporat.
+
+**Ce a ieșit din măsurare și n-ar fi ieșit din design:**
+
+* **`/spos` are două coloane goale pe toate cele 511 rânduri** — `ticker` (metadate off-chain pe
+  care deployul nu le aduce) și `participation_rate` (lipsește numitorul). Rămân pe ecran, cu
+  „n/a" și o propoziție care spune de ce: a le scoate ar ascunde o proprietate a deploymentului,
+  a scrie „0%" ar acuza 511 operatori că n-au votat niciodată.
+* **`enacted_epoch` e null pe toate cele 83 de retrageri**: pe preprod nu s-a plătit niciodată din
+  trezorerie. De-aia ecranul separă *cerut* de *plătit* în loc să dea un singur număr.
+* **Ținta unei delegări nu e întotdeauna un DRep**: 124 din 200 de rânduri merg la
+  `drep_always_abstain`. Verificarea mea căuta `always_abstain`, fără prefix — nu prindea nimic, și
+  ecranul linka 124 de rânduri către o pagină inexistentă. Valoarea e acum cea *măsurată*.
+* **`ChainPoint.slot` e null la evenimentele de graniță de epocă** — o acțiune care expiră nu s-a
+  întâmplat într-un slot. Decodorul cerea un număr și rupea tot fluxul de activitate.
+* **Nimic din `/activity` nu e linkabil**, și asta e o constatare despre backend: DRep-ii vin ca
+  hash în hex (nu `drep1…`), acțiunile ca id *intern* al indexului (131, 109), adresele de stake
+  n-au pagină. Fiecare se *numește* în loc să se linkeze; un „131" singur pe rând s-ar citi ca o
+  epocă.
+
+**Trei defecte prinse în captură, niciunul în teste.** Graful: muchii cu țintă inexistentă, iar
+eroarea lui Cytoscape omora tot ciclul de inițializare al paginii — *inclusiv titlul documentului*,
+care se pune în aceeași secvență. daisyUI 5 emite `oklch(...)`, pe care parserul de culori al lui
+Cytoscape nu-l cunoaște. Și Cytoscape măsoară containerul la `init`, când Halogen abia l-a pus în
+DOM și are 0×0: fără `resize()`, graf de 20px într-un carton de 1232×512.
+
+**Trei decizii de builder:**
+
+1. **Bara de navigare s-a spart în „More".** Patru destinații rămân în linie, restul intră sub un
+   `details`/`summary` — fără stare, fără JavaScript, navigabil de la tastatură din construcție.
+   Pe telefon nu există submeniu: hamburgerul le listează plat, pentru că acolo e deja o coloană
+   care se derulează și un al doilea nivel ar cere două atingeri pentru fiecare ecran.
+2. **FFI-ul grafului e scris de la zero**, nu portat din `bjj-frontend`: acolo sunt 399 de linii din
+   care cele mai multe sunt mașinărie pentru avatare, iar un graf de guvernanță n-are avatare. Ce
+   rămânea după ștergere era mai puțin decât ce am scris.
+3. **Fixturile poartă un plic POSIBIL.** Prima versiune avea `limit: 200` cu șase rânduri și total
+   83 — un răspuns pe care serverul nu-l poate da — iar paginatorul deducea din el că paginile mai
+   adânci sunt refuzate. Două teste cer acum ca `limit` să fie numărul de rânduri.
+
+**Testul care contează cel mai mult** nu e niciunul dintre cele de decodare: e cel care cere ca
+textul randat să nu conțină „Just " sau „Nothing". `Show (Maybe a)` există, deci `show
+a.lastVotableEpoch` e cod perfect valid — iar în minutul în care douăsprezece câmpuri au devenit
+opționale, trei locuri au început să scrie constructorul în pagină. Niciun test nu l-a văzut; o
+captură l-a văzut.
