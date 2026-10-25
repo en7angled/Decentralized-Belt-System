@@ -466,3 +466,40 @@ următorul `exec` murea cu „Argument list too long" — deși aceeași comand�
 Reparat (randarea merge într-un fișier temporar), fără să se piardă nicio verificare: 39 de căi
 construite + validate. O poartă care blochează push-uri corecte învață pe toată lumea să folosească
 `--no-verify`, și atunci nu mai e o poartă.
+
+### 2026-10-25 — Runda de UX: ce s-a măsurat înainte de orice opinie
+
+Capturi reale ale tuturor ecranelor la 1280px și la 390px, apoi măsurători în browser. Primele
+două fapte au ieșit din măsurători, nu din impresii, și amândouă erau invizibile pentru suita de
+teste:
+
+**Fiecare ecran derula orizontal pe telefon.** La 390px lățime: `/gov-actions` 1117px, `/dreps`
+941px, `/votes` 921px, restul 505px. Trei cauze:
+
+1. `card-body` din daisyUI e flex column, iar un element de flex are implicit `min-width: auto` —
+   nu se micșorează sub lățimea conținutului. Un tabel cu opt coloane sau un bloc de SQL punea
+   toată pagina pe derulare, **chiar dacă avea propriul `overflow-x-auto`**. O regulă în
+   `style.css` rezolvă clasa de probleme, nu instanța.
+2. Coloanele de grid ale listelor, aceeași problemă, dar nu sunt copii de `card-body` — `min-w-0`
+   explicit.
+3. Bara de sus: marcă 119px + cinci linkuri + căutare 176px + buton de wallet 160px se terminau la
+   x=505. Bara e în shell, deci lovea **toate** ecranele.
+
+**Tintele de atingere**: filtrele din barele laterale aveau 20px înălțime măsurați; 19 ținte sub
+30px pe un singur ecran. Acum ~36px pe telefon și densitatea de dinainte pe desktop.
+
+**Un 404 la fiecare încărcare**: nu exista niciun favicon, deci browserul cerea `/favicon.ico`.
+Nu s-a văzut în e2e pentru că headless shell-ul nu cere favicon-ul — o categorie întreagă de
+defecte pe care suita nu o poate vedea prin construcție.
+
+**O capcană care se vede doar în captură, nu în cifre:** cu `min-w-0` pe containerul mărcii, acela
+se micșora la 52px în timp ce linkul dinăuntru rămânea 103px (un `btn` nu-și rupe textul), iar
+hamburgerul se desena **peste** cuvântul „Palmares". Măsurătoarea spunea „fără overflow"; ochiul
+spunea „rupt".
+
+Pe lângă reparații: secțiunea activă se vede în bara de navigare (inclusiv pe o pagină de detaliu,
+care marchează secțiunea ei), titlul documentului se schimbă cu ruta, iar scurtătura ⌘K a ieșit din
+placeholder și a devenit etichetă în câmp — pe telefon nu există ⌘.
+
+**Unsprezece teste e2e noi**, dintre care opt verifică exact ce suita nu putea vedea: lățimea de
+derulare a paginii la 390px pe fiecare rută.
