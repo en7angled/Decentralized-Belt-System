@@ -788,3 +788,35 @@ se pune din greșeală.
 Ce rămâne nu e o lipsă tehnică, e o decizie: **trimiterea rămâne manuală prin decizia ta**, iar un
 hook care cere închiderea criteriului nu e aprobarea ta. O comandă o închide, e în
 `docs/deployment/m2-1-browser-attestation.md`, și costă sub 10 tADA.
+
+### Pre-flight: două selectoare greșite, prinse înainte de lanț
+
+Pașii 2 și 3 ai lui M2-1 nu pot rula decât **după** ce pasul 1 a mintuit pe lanț — atestarea cere un
+profil pe care portofelul îl deține. Deci o greșeală în pasul 2 nu se descoperă decât după un mint
+ireversibil, iar rularea se pierde la jumătate, cu un profil orfan pe preprod. Testul n-a rulat
+niciodată, așa că am verificat pe date reale tot ce se poate verifica fără a trimite nimic.
+
+Două greșeli, amândouă fatale rulării:
+
+1. **`/profiles` e o listă de carduri, nu un tabel.** `locator('div', { has: … })` prinde și
+   containerul exterior, deci `.font-mono` `.first()` întorcea id-ul **primului** profil din pagină.
+   Măsurat: pentru al treilea card întorcea `…000643b0f4eff1d6…` în loc de `…000643b06e4117ca…`. Un
+   profil nou-mintuit nu e primul, deci rularea ar fi atestat despre altcineva — după mint.
+2. **Pe `/attestations`, id-ul atestării nu e în rând.** Cele două valori monospațiate sînt
+   subiectul și emitentul, și sînt trunchiate cu elipsă — `648c6a732aa55e…d1458b` — deci
+   inutilizabile ca identificator. Pasul 3 ar fi făcut deep-link cu un profil tăiat.
+
+Amândouă reparate citind identificatorul din **adresa linkului** „Edit" / „Accept". Care e și calea
+unui om: nimeni nu copiază un hex de pe ecran, apasă butonul. Un selector care citește ce vede
+utilizatorul a părut mai „real" și era mai fragil — textul de pe ecran e trunchiat prin design, iar
+adresa nu.
+
+Pre-flight-ul verifică și formele corpurilor pentru pașii 2 și 3, pe serverul adevărat: refuzul
+trebuie să fie `ProfileNotFound` — o respingere de afacere, fiindcă portofelul nu deține niciun
+profil — și nu `invalid_parameter`, care ar însemna un câmp redenumit. Cât scriam sonda, prima
+versiune a întors chiar `invalid_parameter`: îi lipsea `other_metadata`, pe care serverul îl cere în
+`required` chiar gol și pe care clientul îl trimite. Greșeala era în sondă, nu în aplicație — și de
+aceea sonda trăiește în suită și nu într-un terminal.
+
+Ce **nu** se poate pregăti dinainte e ce face serverul când portofelul deține un profil, fiindcă
+pentru asta trebuie mintuit unul. Acolo se termină pregătirea și începe decizia.
