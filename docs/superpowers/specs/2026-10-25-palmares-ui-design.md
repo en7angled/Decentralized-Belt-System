@@ -112,7 +112,10 @@ SVG (vezi §6).
   descrierea `GYAddress` spune bech32 și e greșită, iar corpurile de scriere au camelCase în
   interiorul unor corpuri snake_case. Un client generat documentează formatul greșit și rupe fiecare
   scriere. Codecurile se scriu de mână din §3 și §4 ale screen-map.
-- **Mesh sau CSL în bundle** pentru ceva ce backendul face deja.
+- **Mesh în bundle**, sau CSL folosit pentru ceva ce backendul face deja (construit de tranzacții,
+  codare de adrese). **CSL pentru a decoda** o tranzacție înainte de semnare e altceva și e permis —
+  vezi §8-R8: backendul nu oferă acel serviciu, iar CSL e deja în `package.json`-ul template-ului,
+  marcat `--external` în bundle, și deja folosit în `bjj-frontend/src/App/Utils/WalletBalance.purs`.
 - **Un procent calculat dintr-un facet count.** Facetele se numără cu propriul predicat *scos*, deci
   suma lor depășește `total` — un procent de acolo trece de 100%.
 
@@ -127,7 +130,7 @@ SVG (vezi §6).
 | API-ul de scriere e sub `BasicAuth "user-realm"`, cu un user/parolă partajate | **BFF-ul e parte din arhitectură**, nu un detaliu de dev. §5.10 cerea o decizie de design: aceasta e. |
 | Un 401 trimite `WWW-Authenticate: Basic` → dialogul nativ al browserului | BFF-ul îl șterge pe răspuns. Cel din `bjj-frontend/bff/server.js` o face deja. |
 | Credențiale greșite dau **403, nu 401**, cu corp **gol** | Logica de reauth pe `status === 401` nu se declanșează; `.json()` aruncă. Parsăm corpul ca String întâi. |
-| `CORS_ALLOWED_ORIGINS` e **gol** pe deploymentul actual | Headerele `X-Attest-*` sunt închise în cod (`CORS.hs:61-63`) dar **invizibile** până se setează variabila. Prerechizită de ops pentru M1, nu de cod. |
+| `CORS_ALLOWED_ORIGINS` e **gol** pe deploymentul actual | **(call) Nu-l setăm în producție, și nici nu trebuie.** Browserul vorbește **same-origin**, prin BFF — vezi §6. CORS rămâne relevant doar pentru dev-ul local pe `:5173`, și chiar și acolo `npm run bff` e varianta fără CORS. Asta face și audit-finding-ul `DC-06` irelevant pentru noi, ține query-api în afara internetului public, și e singura formă în care headerele de prospețime `X-*` sunt vizibile fără `Access-Control-Expose-Headers`. |
 | `order_by` fără `sort_order` înseamnă `asc` | „Sortează după putere de vot" arată cei mai slabi DRep-i primii. Trimitem mereu ambele. |
 | Parametrii nedeclarați sunt ignorați silențios | Un filtru cu typo eșuează **deschis**: date nefiltrate sub un UI care arată filtrat. Verificăm împotriva `total`. |
 | `db_unavailable` înseamnă de obicei „prea lent", nu „picat" | **Nu se face retry orb.** Query-urile abandonate macină mai departe. |
@@ -224,9 +227,13 @@ autorizeze boot-uri de producție — vezi comentariul din `palmares/.env.exampl
 
 ### Se scrie de la zero
 
-Tot ce e domeniu BJJ: `Belt/`, `TTM/`, `Chatbot/`, `LineageGraph/`, `MyDojo`, `Promotions`,
-`Achievements`, `Organization`, `Practitioner`, `PromotionCard`, `BeltCertificate`,
-`ActivityHeatmap`. Nimic de acolo nu se adaptează — se șterge.
+Tot ce e domeniu BJJ: `Belt/`, `TTM/`, `Chatbot/`, `MyDojo`, `Promotions`, `Achievements`,
+`Organization`, `Practitioner`, `PromotionCard`, `BeltCertificate`, `ActivityHeatmap`. Nimic de acolo
+nu se adaptează — se șterge.
+
+**Excepție:** `Components/LineageGraph/FFI.{purs,js}` + `Capabilities/LineageGraphRuntime.purs` **se
+păstrează** — e Cytoscape ținut în spatele unei capabilități, și check 13 cere un graf de
+delegări/atestări. Se șterge semantica de lineage BJJ, nu componenta. Vezi §6, M1b.
 
 ### Se extinde în fork-urile ownerului (nu dependențe noi)
 
@@ -257,7 +264,25 @@ cache read-only, nu un checkout de lucru. Deci:
 
 ### M1 — explorer read-only, live pe preprod
 
-Fără wallet, fără BFF, fără scriere. Zece ecrane, toate pe query-api, toate publice.
+Fără wallet, fără scriere. **Dar cu BFF** — corecție față de prima versiune a acestui document, care
+spunea „fără BFF" și în același timp cerea `CORS_ALLOWED_ORIGINS`, două lucruri care nu pot fi
+amândouă adevărate. În template, **BFF-ul *este* serverul de static** (`@fastify/static` pe `../dist`
+plus `setNotFoundHandler`), iar capabilitățile de transport lovesc căi relative same-origin
+(`bjj-frontend/src/AppEnv.purs`: `bjjQueryApiBaseUrl = "/api/bjj-query-api"`). Deci M1 livrează un
+server; pur și simplu nu livrează nicio scriere.
+
+**(call) Prefixele BFF: `/api/query` și `/api/interaction`.** Runbook-urile de deploy presupun
+`/query` și `/api` pe un singur host, unde `/api` **e** interaction-api — o coliziune cu prefixul
+`/api/<service>` al template-ului. Prefixul BFF-ului e intern frontendului, deci câștigă în interiorul
+containerului; dacă rutele publice din runbook trebuie păstrate, se rezolvă în `HTTPRoute`, nu în
+cod.
+
+**(call) M1 se livrează în două felii, nu una.** Ownerul a cerut *„aplicația live pe preprod … nu
+completitudine de ecrane"*, iar cele opt ecrane din „Plus:" de mai jos nu costă design nou, dar costă
+codecuri scrise de mână, fixturi de mock și un spec Playwright fiecare:
+
+- **M1a — cele zece ecrane de guvernanță de mai jos.** Asta e „live pe preprod", și poarta M1.
+- **M1b — restul.** Același pattern, livrat după ce M1a e public.
 
 | Ecran | Apeluri | Note de design |
 | --- | --- | --- |
@@ -272,9 +297,21 @@ Fără wallet, fără BFF, fără scriere. Zece ecrane, toate pe query-api, toat
 | Căutare / ⌘K | `/search` | — |
 | Metodologie | `/metrics/formulas` — array gol de envelope, 8 intrări | Fetch o dată, cache pe sesiune. `null_when` e ce distinge „0%" de „nu se aplică". |
 
-Plus: listă SPO, comitet, retrageri de trezorerie, explorer de delegări, feed de activitate,
-liste/detalii de profil, atestări, dispute — toate pe același pattern de un-apel-pe-ecran, deci
-intră în M1 fără cost de design nou.
+**M1b:** listă SPO, comitet, retrageri de trezorerie, explorer de delegări, feed de activitate,
+liste/detalii de profil, atestări, dispute — toate pe același pattern de un-apel-pe-ecran, plus
+**graful de delegări/atestări** și **widget-ul embed**, ambele cerute de checks 13 și 15:
+
+- **Graful (Cytoscape) rămâne în scope.** Check 13 îl numește explicit. Componenta există —
+  `bjj-frontend/src/Components/LineageGraph/FFI.{purs,js}` plus
+  `Capabilities/LineageGraphRuntime.purs`, Cytoscape ținut în spatele unei capabilități — și
+  Cytoscape e deja în `package.json`-ul lui bjj. **E singura dependență nouă pe care designul o
+  justifică**, fiindcă un graf nu e una din cele trei forme SVG. Ce se șterge e semantica de lineage
+  BJJ, nu componenta.
+- **Widget-ul embed e un `iframe` servit de pe originea noastră, nu un script tag. (call)** Un embed
+  prin script tag pe origini terțe arbitrare e **imposibil** împotriva allowlist-ului fail-closed din
+  `webapi-lib/Palmares/WebAPI/CORS.hs` — potrivire pe egalitate, fără wildcard, prin design. Un
+  script embed ar cere o schimbare de backend, care e non-goal. Iframe-ul satisface check 15
+  („randat într-o pagină externă de test") fără să atingă backendul.
 
 **Grafice.** `Components/Chart/` are `Distribution`, `Pyramid`, `StackedBar` — SVG scris de mână, nicio
 librărie. Palmares are nevoie de: serie `participation_by_epoch` (20 de puncte), histogramă
@@ -282,8 +319,10 @@ librărie. Palmares are nevoie de: serie `participation_by_epoch` (20 de puncte)
 `offset`). **(call)** Rămân SVG scris de mână, în același stil. Nu adăugăm o librărie de grafice
 pentru trei forme.
 
-**Prerechizită de ops pentru M1** (nu cod): `CORS_ALLOWED_ORIGINS` setat pe query-api, altfel
-headerele de prospețime sunt trimise dar invizibile în browser.
+**Nicio prerechizită de CORS.** Prima versiune a acestui document cerea `CORS_ALLOWED_ORIGINS` setat
+pe query-api; same-origin prin BFF o face inutilă, iar headerele de prospețime `X-*` ajung în browser
+fără `Access-Control-Expose-Headers`. Pentru dev local pe `:5173` se folosește `npm run bff`, nu o
+excepție de CORS în producție.
 
 ### M2 — fluxuri de scriere
 
@@ -342,6 +381,24 @@ De aceea CI-ul e condiționat pe cale — `cabal build all` nu trebuie să rulez
 `.purs`. Imaginile de backend sunt `linux/arm64` only; `Dockerfile` din bjj-frontend e deja
 multi-arch, deci FE-ul nu moștenește problema.
 
+### Igiena de licență — de rezolvat în blocul 0, nu la open-sourcing
+
+`palmares` e Apache-2.0, cu un `NOTICE` care relicențiază porțiunile MIT din Belt System și păstrează
+textul original în `licenses/`. Dar:
+
+- `bjj-frontend` **nu are fișier LICENSE** și nu are câmp `license` în `package.json`.
+- **Niciunul** din cele șase fork-uri `mariusgeorgescu/*` nu are LICENSE în checkout.
+- `cardano-dapp-frontend-template` nu are nici el.
+
+Adică exact defectul pentru care §2 respinge `mlabs-haskell/purescript-cip95`. A copia ~10.000 de
+linii nelicențiate într-un repo public Apache-2.0 și apoi a depinde de șase pachete git nelicențiate
+e același eșec de igienă, și e ieftin de reparat fiindcă ownerul e singurul deținător de copyright.
+
+**(call)** Blocul 0 adaugă `LICENSE` (Apache-2.0) și câmp `license` în template, în fork-uri și în
+`frontend/`, plus o intrare în `NOTICE`-ul palmares pentru codul venit din template. **(call)**
+`halogen-router` e pinuit la `ref: main` — o țintă mobilă, care se bate cu reproductibilitatea cerută
+de check 16; trece pe un SHA.
+
 ---
 
 ## 8. Reguli dure de randare
@@ -356,12 +413,48 @@ necontrolate de noi**.
 | R3 | **ID-ul de DRep se afișează lângă numele afișat**, mereu | Amenințarea reală e impersonarea, nu injecția. Două profiluri pot revendica numele „Intersect". |
 | R4 | Documentele de ancoră neconforme se randează **brut**, nu ascunse | Ascunderea face registrul mai puțin util decât lanțul. |
 | R5 | Credențialele CIP-129 se **decodează după byte-ul de header**, niciodată prin prefix | CIP-105 și CIP-129 împart prefixul `drep1`. GovTool a servit `[]` pentru un DRep cu 77 de voturi înregistrate din cauza asta (decizia lor D25). **Verificat în codul nostru 2026-10-25 — e corect, și mai strict decât regula:** `parseCredentialRoleCip129` (`Ids.hs:149-160`) decodează bech32, verifică lungimea de 29 de bytes și **cere ca byte-ul de header să fie de acord cu HRP-ul**, apoi `canonicalGovCredential` (`Attest.hs:159-162`) re-randează din byte în loc să ecoueze textul cererii. Un `drep1…` cu header de comitet e refuzat, nu potrivit silențios. UI-ul moștenește asta gratis; obligația lui e doar conversia CIP-105 → CIP-129 înainte de apel. |
-| R6 | Fără magic de rețea confirmat, fluxul de scriere **nu pornește** | `getNetworkId()` întoarce 0 pentru preprod *și* preview. Un demo care semnează pe rețeaua greșită e un demo pierdut. |
+| R6 | Fluxul de scriere **nu pornește** până rețeaua e stabilită fără echivoc | `getNetworkId()` întoarce 0 pentru preprod *și* preview. Un demo care semnează pe rețeaua greșită e un demo pierdut. **(call) Două căi satisfac regula, nu una:** (a) un `getNetworkMagic` confirmat prin CIP-142; sau (b) un wallet a cărui identitate implică exact o rețea de test — Yoroi-extensie, unde preprod e singura. Orice altceva: refuz. **De ce nu e o slăbire:** prima versiune cerea CIP-142 și numai CIP-142, iar intersecția dintre „implementează CIP-142" (Eternl, Gero, Lace) și „semnează pe `required_signers`" (Yoroi-extensie, Seedelf) e **goală** — deci revendicarea de credențială ar fi fost imposibilă prin construcție. Calea (b) păstrează garanția întreagă: dacă wallet-ul nu poate fi pe preview, ambiguitatea pe care CIP-142 o rezolvă nu există. Pentru Seedelf se **măsoară** înainte de M2 (§9). |
+| R8 | Cardul de semnare arată un **sumar decodat** al tranzacției, nu doar CBOR | Check 14 cere explicit „fără blind-signing", iar rutele de build întorc un **string** de CBOR hex și nimic altceva (§4.3 din screen-map). **(call) Decodăm cu CSL**, care e deja în `package.json`-ul template-ului (`@emurgo/cardano-serialization-lib-browser`, marcat `--external`) și deja folosit în `bjj-frontend/src/App/Utils/WalletBalance.purs` — zero dependențe noi, și nu încalcă anti-goal-ul din §3, care interzice CSL pentru ce *face deja backendul*. Un decode pentru afișare nu e oferit de nicio rută. Ecoul câmpurilor introduse de utilizator **nu e suficient**: nu dovedește ce s-a construit, doar ce s-a cerut. |
 | R7 | Hash-ul de ancoră se face pe **bytes brut**; nicio formă canonică | CIP-100 se contrazice de trei ori și listează canonicalizarea între alternativele **respinse**. Documentele supradimensionate se refuză — niciodată trunchiate-apoi-hash-uite. |
 
 ---
 
-## 9. Ce rămâne builderului
+## 9. Întrebări deschise — ale ownerului
+
+Două, și nu le pot decide eu.
+
+**9.1 Cine face deploymentul public, și e el parte din munca asta?**
+
+G1 spune „un străin deschide URL-ul". Dar **`palmares` nu apare nicăieri în `apps-k8s-configs`** —
+zero potriviri în tot repo-ul: niciun director de app, niciun `Gateway`/`Certificate`, nicio
+`Kustomization`. Iar `F1-PROGRESS.md` spune că manifestele sunt ținute deliberat nepublicate, fiindcă
+blocul care „atinge rack-ul" e condiționat de cifrele de RAM din Experimentul A, pe un `local-path`
+cu `allowVolumeExpansion: false` — PVC-ul se dimensionează o singură dată.
+
+Deci „live pe preprod" are două citiri, și diferența e un bloc de platformă:
+
+- **(a) frontend-only:** M1 înseamnă stiva completă pornită local peste db-sync-ul sincronizat, cu
+  deploy-ul public rămas bloc separat, owner-gated. Atunci M1-1 iese din poarta M1 și G6 se
+  restrânge la „o comandă, local".
+- **(b) frontend + platformă:** munca asta include plasarea db-sync + Postgres, rute Gateway API, un
+  `Certificate`, secrete SOPS, și commit-uri în al doilea repo — unde regula casei e git → Flux,
+  niciodată `kubectl apply`, și unde `prune: true` face din ștergerea unui fișier o ștergere de
+  resursă.
+
+Presupunerea mea până la un răspuns, scrisă ca atare: **(a)**, pentru că e reversibilă și pentru că
+ownerul a parcat explicit ce atinge infrastructura. `FE-GOAL.md` are blocul 3 scris pentru (b); dacă
+răspunsul e (a), blocul 3 se restrânge la „imaginea se construiește și pornește local".
+
+**9.2 Ce era „varianta B"?**
+
+`F1-PROGRESS.md:3777` spune *„Planul C — UI-ul, scope decis ca **varianta B**"*, dar variantele A/B/C
+pentru UI nu sunt scrise nicăieri în niciunul din cele două repo-uri. Documentul ăsta poate fi
+varianta B, sau o rescopare a ei. Dacă există o decizie anterioară despre scope, o respect; dacă era
+doar o notă, documentul ăsta o înlocuiește.
+
+---
+
+## 10. Ce rămâne builderului
 
 Nedecis aici, pe bună dreptate — un builder competent alege fără să revină la owner:
 
@@ -386,7 +479,7 @@ CI pentru instalație.
 
 ---
 
-## 10. Surse
+## 11. Surse
 
 - `docs/usecases/api-screen-map.md` — 1833 de linii, contract măsurat pe serviciul care rulează.
 - `docs/usecases/governance-read-surface.md` (1742), `attestation-protocol.md` (1300).

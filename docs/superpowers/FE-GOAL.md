@@ -20,9 +20,12 @@ aplicația live pe preprod"*). M2 închide checks 13–15.
 
 ### Poarta M1 — explorer public, live pe preprod
 
+**M1 se livrează în două felii** (§6 din design): **M1a** = cele zece ecrane de guvernanță, și e
+poarta de mai jos; **M1b** = celelalte opt plus graful Cytoscape și widget-ul embed.
+
 | # | Criteriu | Cum se verifică |
 | --- | --- | --- |
-| M1-1 | Un URL public servește explorer-ul | `curl -sI <url>` → 200, și un om care nu are repo-ul îl deschide |
+| M1-1 | Un URL public servește explorer-ul — **condiționat de §9.1 din design** | `curl -sI <url>` → 200, și un om care nu are repo-ul îl deschide. **`palmares` nu există în `apps-k8s-configs`**, deci asta poate cere un bloc de platformă care nu e muncă de frontend. Până la răspunsul ownerului, criteriul care ține e: stiva pornește de la zero cu o comandă, local, peste db-sync-ul sincronizat. |
 | M1-2 | Toate ecranele de citire randează date reale de preprod | 294 de DRep-i în listă, 131 de acțiuni, dashboard cu epoca curentă |
 | M1-3 | Chip-ul de status arată prospețimea reală, nu una hardcodată | Se oprește attest-sync → chip-ul trece pe ambar/roșu |
 | M1-4 | Fiecare metrică afișată are „ⓘ" care rezolvă la formula publicată | Toate cele 8 `formula_id` din `/metrics/formulas` apar în UI |
@@ -52,13 +55,17 @@ din afară nu poate deschide URL-ul.
 
 Se merge în ordine. Un bloc blocat nu oprește run-ul: se trece la următorul neblocat (§5).
 
-### Bloc 0 — schelă
+### Bloc 0 — schelă și igienă de licență
 Copiem `/Users/mg/Projects/CardanoProjects/cardano-dapp-frontend-template` → `palmares/frontend/` și
 aplicăm **literal** cei șase pași din §„Customizing for your dApp" al README-ului lui. `bff/config.js`
-capătă două servicii (`query`, `interaction`) și trece pe `requireEnv`. Job de CI condiționat pe
-`frontend/**`.
+capătă două servicii (`query`, `interaction`) pe prefixele `/api/query` și `/api/interaction`, și
+trece pe `requireEnv`. Job de CI condiționat pe `frontend/**`.
+**Plus, în același bloc** (§7 din design): `LICENSE` Apache-2.0 + câmp `license` în template, în
+`frontend/` și în cele șase fork-uri — **niciunul nu are azi** — intrare în `NOTICE`-ul palmares, și
+`halogen-router` mutat de pe `ref: main` pe un SHA.
 **Ieșire:** `npm run dev` servește bundle-ul demo; `npm run build` verde; `cabal build all` **nu** se
-declanșează pe un commit care atinge doar `frontend/**`.
+declanșează pe un commit care atinge doar `frontend/**`; `grep -L` pe fork-uri nu găsește niciunul
+fără LICENSE.
 
 ### Bloc 1 — stratul de transport
 Capabilitatea `MonadQueryGov` în pattern-ul de patru fișiere al template-ului
@@ -68,17 +75,26 @@ Store, regulile de paginare din §4 al designului.
 **Ieșire:** interpretul `Mock` servește forma fiecărui ecran; un test de integrare per familie de
 rute; o aserțiune care prinde filtrul cu typo prin `total`.
 
-### Bloc 2 — ecranele M1
+### Bloc 2 — ecranele M1a
 Fiecare ecran prin `.cursor/skills/add-explorer-page`. Ordinea: chip de status → hub → dashboard →
-listă DRep-i → detaliu DRep → acțiuni (listă + detaliu) → voturi → căutare → metodologie → restul
-(SPO, comitet, trezorerie, delegări, activitate, profiluri, atestări, dispute). Cele trei grafice SVG
-se copiază din `bjj-frontend/src/Components/Chart/`.
-**Ieșire:** M1-2, M1-4, M1-5, M1-7.
+listă DRep-i → detaliu DRep → acțiuni (listă + detaliu) → voturi → căutare → metodologie. Cele trei
+grafice SVG se copiază din `bjj-frontend/src/Components/Chart/`.
+**Ieșire:** M1-2, M1-4, M1-5, M1-7 pe cele zece ecrane.
 
-### Bloc 3 — deploy M1 ← **aici ownerul vede aplicația live**
-Nume de imagine, buildx multi-arch, manifeste prin `apps-k8s-configs` (git → commit → push → Flux,
-**niciodată** `kubectl apply`), `CORS_ALLOWED_ORIGINS` setat pe query-api.
-**Ieșire:** M1-1, M1-3, M1-8. **Run-ul raportează ownerului aici, și continuă.**
+### Bloc 3 — deploy M1a ← **aici ownerul vede aplicația live**
+Nume de imagine, buildx multi-arch. **Scris pentru varianta (b) din §9.1 al designului** — manifeste
+prin `apps-k8s-configs` (git → commit → push → Flux, **niciodată** `kubectl apply`), rute Gateway
+API, `Certificate`, secrete SOPS. **Dacă ownerul răspunde (a)**, blocul se restrânge la „imaginea se
+construiește multi-arch, pornește, și `/health` răspunde 200", iar deploy-ul public rămâne bloc
+separat. Fără `CORS_ALLOWED_ORIGINS`: browserul vorbește same-origin prin BFF.
+**Ieșire:** M1-3, M1-8, plus M1-1 în varianta (b). **Run-ul raportează ownerului aici, și continuă.**
+
+### Bloc 3b — ecranele M1b
+Restul: SPO, comitet, trezorerie, delegări, activitate, profiluri, atestări, dispute. Plus **graful
+de delegări/atestări** (check 13 — Cytoscape prin `LineageGraph/FFI` + `LineageGraphRuntime`, singura
+dependență nouă pe care designul o justifică) și **widget-ul embed ca `iframe`** de pe originea
+noastră (check 15 — un script tag pe origini terțe e imposibil împotriva allowlist-ului fail-closed).
+**Ieșire:** M1-2, M1-4, M1-7 pe tot setul; checks 13 și 15 acoperite.
 
 ### Bloc 4 — CIP-95 + CIP-142 în fork-urile ownerului
 `git clone` pentru `purescript-cip30`, `purescript-cip30-typesafe`,
@@ -187,11 +203,14 @@ teste; (d) actualizare de documentație. În ordinea asta.
 
 ## 7. BLOCKED FOR USER
 
-*(gol la 2026-10-25 — nimic nu blochează; blocul 0 n-a pornit)*
+Nimic nu blochează blocurile 0–2. Două întrebări sunt deschise și **niciuna nu oprește run-ul** —
+ambele au o presupunere scrisă pe care run-ul o urmează până la un răspuns.
 
 | Ce lipsește | Ce s-a încercat | Ce deblochează |
 | --- | --- | --- |
-| — | — | — |
+| **Cine face deploymentul public** (design §9.1). `palmares` nu apare nicăieri în `apps-k8s-configs`; `F1-PROGRESS` ține manifestele nepublicate deliberat, condiționat de cifrele de RAM din Experimentul A (PVC-ul se dimensionează o dată, `allowVolumeExpansion: false`). | Grep pe tot `apps-k8s-configs`: zero potriviri. Verificat în ledger de ce. | Blocul 3 — varianta (b) cu platformă, sau (a) doar imaginea. **Presupunere până la răspuns: (a)**, fiindcă e reversibilă. |
+| **Ce era „varianta B"** pentru scope-ul UI (design §9.2). `F1-PROGRESS.md:3777` o numește; nu e definită în niciunul din repo-uri. | Grep după „varianta A/B/C" în ambele repo-uri: singurul alt hit e un scope de rute, nealăturat. | Scope-ul M1. **Presupunere până la răspuns:** documentul de design o înlocuiește. |
+| **Regulile de permisiuni din §5** — numai ownerul le poate adăuga. | — | Tot blocul 0 înainte, dacă clasificatorul refuză `npm install`. |
 
 ---
 
