@@ -610,3 +610,104 @@ sincronizarea se termină, nu de optimizat acum.
 Iar ecranul comitetului a confirmat pe date reale o alegere făcută pe fixturi: din cei șapte
 membri de pe preprod, **trei n-au cheie fierbinte autorizată** — numiți, dar fără drept de vot — și
 exact ei au zero voturi. „not authorized yet" nu era o celulă goală îmbrăcată frumos.
+
+---
+
+## Blocul 5–6 închis pe deploy: scrierea funcționează, și trei defecte pe care doar deployul le arăta
+
+**Calea de scriere nu funcționase niciodată, și niciun test nu putea să o vadă.** Ecranul construia
+cererea cu `usedAddresses: []` și `changeAddress: ""` — serverul alege intrările și dă restul pe
+baza lor, deci niciuna din cele nouă tranzacții nu se putea construi, pe nicio rețea. Pasul „citește
+adresele din portofel" lipsea pur și simplu.
+
+De ce n-a prins-o nimic: unitarele verifică **serializarea** corpului, nu de unde vin valorile, iar
+suita de fixturi n-are portofel, deci poarta refuză înainte de formular. Testul care o prinde a
+trebuit să fie de al treilea fel — un wallet CIP-30 adevărat, butonul real apăsat, și **corpul
+cererii citit de pe sârmă**:
+
+```js
+await page.route('**/api/interaction/claim-profile', async (route) => {
+  bodies.push(route.request().postDataJSON());
+  await route.fulfill({ status: 503, ... });  // ce face serverul e altă întrebare
+});
+```
+
+Un `**` peste tot `interaction-api` n-ar fi mers: ar fi prins și interogarea oracolului, iar poarta
+de oracol ar fi blocat pe bună dreptate pe „nu știm dacă e pauzat" — adică testul n-ar mai fi ajuns
+niciodată la buton. Iar prima variantă a testului a căzut pe `fill` într-un `<select>`: „Kind" nu e
+un `<input>`, și helperul se uită acum la tag.
+
+Pe lângă asta, calea de după construire, care nu exista: `Signing`, `Submitting`, `Submitted`,
+`Confirmed`. „Trimis" și „confirmat" rămân două stări distincte, pentru că sunt două lucruri
+diferite, iar butonul de semnare stă **sub** sumarul decodat — R8 nu e o preferință de așezare.
+
+### Și apoi deployul a arătat că jumătate din site era gol din două motive, nu din unul
+
+**1. Indexurile nu fuseseră aplicate niciodată.** `/api/query/status` are un câmp `missing_indexes`
+și raporta **22 din 24 lipsă** de la primul boot. `sql/indexes/001_gov_indexes.sql` trebuia aplicat
+de „Job-ul de indexuri al blocului de substrat" — Job care nu exista în `apps-k8s-configs`. Scris
+acum, după tiparul lui `job-palmares-roles`: gate Job, `force: enabled`, fără TTL, script idempotent,
+și **fără `activeDeadlineSeconds`** — un `CREATE INDEX CONCURRENTLY` omorât la mijloc lasă un index
+INVALID pe care `IF NOT EXISTS` îl sare pe veci.
+
+Blocul precedent al jurnalului ăsta spune, despre `/activity`: *„Nu e un index lipsă, e presiunea de
+scriere a db-sync-ului"*. **Era un index lipsă.** Măsurat după aplicare, pe aceeași bază, cu db-sync
+scriind în continuare: **332 s → 2,0 s**. Greșeala n-a fost în măsurătoare, a fost în comparație: am
+pus deployul lângă baza locală sincronizată și am citit diferența ca presiune de scriere, când baza
+locală **avea indexurile** și deployul nu. Două baze care diferă prin mai mult decât ipoteza nu pot
+respinge ipoteza.
+
+**2. Un drept lipsă golea două matview-uri, iar simptomul arăta ca un lanț gol.** Ecranul `/votes`
+scria **„No votes have been recorded yet."** pe un lanț cu 3.244.011 de voturi. Lanțul drumului:
+ecranul cere `?is_final=true` (filtrul implicit), `is_final` e un semi-join pe
+`palmares.vote_partition`, matview-ul avea zero rânduri, iar refresh-ul lui cădea la fiecare tick cu
+`permission denied to create temporary tables`. `REFRESH MATERIALIZED VIEW CONCURRENTLY` își
+construiește conținutul nou într-o tabelă TEMPORARY, iar `REVOKE ALL ON DATABASE cexplorer FROM
+PUBLIC` din `sql/050_roles.sql` luase dreptul de la toată lumea — PUBLIC îl are implicit pe orice
+bază. `drep_metrics` se reîmprospătează **primul** și eșecul scurtcircuitează restul, deci o singură
+permisiune lipsă golea ambele: de aici și „Registered DReps 0" pe pagina de pornire, lângă 58 de
+milioane de ADA delegate.
+
+Un `GRANT TEMPORARY ON DATABASE cexplorer TO palmares_owner`. Doar proprietarul — `palmares_ro`
+citește, iar un rol care citește nu are de ce să creeze nimic, și `check_roles.sh` afirmă acum
+ambele jumătăți.
+
+Singurul loc în care defectul ăsta se vedea era **logul PostgreSQL**. În afară, `/status` servea
+`metrics_as_of_epoch: null`, care se citește ca „metricile n-au fost calculate niciodată" —
+adevărat, dar pentru un motiv pe care nimic nu-l arăta. Refresher-ul loghează eroarea și merge
+înainte, ceea ce e corect pentru o buclă și e exact de ce nu l-a văzut nimeni luni de zile.
+
+**3. `interaction-api` era la `replicas: 0`.** Comentariul lui spunea „se ridică la 1 când M2
+livrează fluxurile de scriere". Le livrase. Până acum `/write` arăta formularul și cădea pe butonul
+de construire, ceea ce e mai rău decât un ecran care spune că nu e disponibil. Ridicat pe **pi5-1**
+anume — citește socketul nodului prin același hostPath ca db-sync, și un socket UNIX nu traversează
+rețeaua — cu `runAsUser: 0`, fiindcă nodul creează socketul `root:root` cu biții de grup `r-x` iar
+`connect()` cere bitul de scriere. Providerul e `node + Kupo`, suprascris în `env` al
+deployment-ului, care bate `envFrom`: valoarea partajată din ConfigMap e forma `ogmios+kupo` și e
+adevărată pentru attest-sync, singurul care o citește și care nu deschide niciodată providerul.
+
+Acum: `/api/interaction/status` răspunde `node-kupo`, `deployed_scripts: true`, oracol nepauzat.
+
+### Ce a corectat o cifră din jurnal
+
+Nota veche spunea că `/votes` nefiltrat raportează 3,2M „în loc de ~900". Ambele numere sunt
+corecte și răspund la întrebări diferite: `public.voting_procedure` are chiar 3.243.997 de rânduri
+pe preprod, din care **3.243.787 sunt voturi de Constitutional Committee de la 648.766 de chei hot
+distincte, înregistrate de doar 43 de chei cold** — trafic de stres pe preprod, pe care lanțul îl
+conține și pe care view-ul nostru îl raportează fidel. Voturile „normale" sînt 163 DRep + 50 SPO.
+Cele ~900 erau `vote_partition`: 931 de rânduri, un vot **final** per (rol, votant, acțiune), adică
+exact ce întoarce `?is_final=true`.
+
+### Cifrele blocului
+
+188 unitare frontend, 58 fixturi, **7 wallet** (dintre care unul nou citește corpul cererii) + 1
+sărit, **34 live împotriva https://gov.cardano.vip**, 798 backend. Frontend pe `894003c`, backend pe
+`59892cf`, plus trei fișiere noi în `apps-k8s-configs`: Job-ul de indexuri, Kustomization-ul lui, și
+patch-ul de plasare al `interaction-api`.
+
+**Ce rămâne și de ce nu-l pot închide singur.** M2-1 — o atestare emisă *și contrasemnată din
+browser* — cere o cheie de preprod cu fonduri. Testul există
+(`e2e-wallet/m2-1-chain.spec.js`, modul chain pornit prin Koios), e sărit fără
+`PALMARES_M2_MNEMONIC`, iar runbook-ul manual e în
+`docs/deployment/m2-1-browser-attestation.md`. Repo-ul nu livrează un semnatar prin decizie, iar
+trimiterea rămâne manuală prin decizia ta.
