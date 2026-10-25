@@ -820,3 +820,76 @@ aceea sonda trăiește în suită și nu într-un terminal.
 
 Ce **nu** se poate pregăti dinainte e ce face serverul când portofelul deține un profil, fiindcă
 pentru asta trebuie mintuit unul. Acolo se termină pregătirea și începe decizia.
+
+---
+
+## M2-1 închis: o atestare emisă și contrasemnată din browser, pe preprod
+
+Patru tranzacții, toate semnate în browser de un wallet CIP-30, toate construite de
+`interaction-api` pe `gov.cardano.vip`, toate proiectate în registru:
+
+| pasul | tranzacția | slot |
+| --- | --- | --- |
+| profil subiect (`person_d_rep`) | `773d343a9907613a6d2dc255bb1de9a03139fc01498d12f7967e3434b9c2d21c` | 137275620 |
+| profil emitent (`auditor`) | `80f97ede58c5bcaf89874b9ceeeac83523725a3aace167a62316e4c608c403bb` | 137276653 |
+| atestarea | `e0a360a11f8c9cb6859a3334426938f0c8f92d506fbbca09a3ca3ceca04ccf93` | — |
+| contrasemnătura | `a2ccfdbc6028f449f5067fd068d6632cdfa60d06e3314889c2e16112db877d69` | 137278322 |
+
+`m2-1-1792961388736-attestation`, `kind: endorsement`, **`accepted: true`**. Registrul: 12→14
+profiluri, 19→20 atestări, **zero** intrări în `attest_dead_letter`.
+
+**Latența proiecției: 45 de secunde**, măsurată, de la „trimis" până când rândul arată `accepted`.
+Toate eșecurile de dinainte, care arătau ca lentoare, erau pagina învechită.
+
+**Patru tranzacții, nu trei**, din cauza unei reguli on-chain pe care n-o știusem:
+
+```haskell
+traceIfFalse "Mr" (isCredentialKind || subject /= issuer)
+  -- An attestation may not be self-issued (Mr)
+```
+
+Presupusesem că „subiect == emitent" e o formă validă fiindcă revendicările de credențială o
+folosesc — dar acelea sînt `isCredentialKind`, iar scutirea aceea e chiar motivul pentru care restul
+nu sînt scutite. Un portofel poate deține oricâte profiluri, deci al doilea profil n-a cerut un al
+doilea portofel: aceeași cheie a semnat emiterea (tokenul emitentului) și acceptarea (tokenul
+subiectului).
+
+### Șase defecte, cinci în teste și unul în produs. Niciunul prins de un test care trecea.
+
+1. **Ecranul trimitea adrese goale** — `usedAddresses: []`, `changeAddress: ""`. *În produs.* Nicio
+   tranzacție nu se putea construi, pe nicio rețea, pentru niciunul din cele nouă fluxuri.
+2. **Două selectoare citeau id-ul greșit.** `/profiles` e o listă de carduri: un `div` prea larg
+   întorcea id-ul PRIMULUI profil. Pe `/attestations`, id-ul atestării nu e în rând deloc, iar cele
+   două valori monospațiate sînt trunchiate cu elipsă. Reparate citind id-ul din adresa linkului —
+   care e și calea unui om: nimeni nu copiază un hex de pe ecran.
+3. **O afirmație vacuă a anulat semnarea.** `/submitted/i` prinde textul introductiv — „nothing here
+   is submitted on your behalf" — înainte de orice semnătură. Zece minute, zero tranzacții, pas
+   „verde".
+4. **Ecranele registrului nu reinterogează.** *Observație despre produs.* Datele se cer o dată, la
+   montare. O așteptare pe o pagină încărcată înainte de proiecție stă pe un DOM înghețat — 25 de
+   minute pe un profil care era deja în API. Pentru un om: cine mintuiește trebuie să reîncarce ca
+   să vadă. Ecranul de scriere ar putea măcar să trimită spre registru după „trimis".
+5. **O atestare auto-emisă**, refuzată pe lanț cu `Mr PT5`. Ecranul a arătat codul de trace corect;
+   greșeala era a testului.
+6. **`page` nu era în scope** în helper-ul mutat în scope-ul `describe`. A picat DUPĂ ce atestarea
+   plecase.
+
+Și, după închidere, un al șaptelea de alt fel: sonda de pre-flight cerea `ProfileNotFound`,
+adevărat cât timp portofelul nu deținea niciun profil. După ce M2-1 a mintuit două, același corp a
+întors `ScriptRefused` și testul a căzut pe o schimbare a **lumii**, nu a codului. Acum afirmă
+invariantul — „corpul ajunge la logică", adică nu `invalid_parameter` — fiindcă un test care fixează
+o stare trecătoare se strică singur.
+
+### Ce a făcut diferența
+
+**Reluarea.** Fiecare pas costă o tranzacție ireversibilă, iar fără
+`PALMARES_M2_PROFILE_ID` / `PALMARES_M2_ISSUER_PROFILE_ID` / `PALMARES_M2_ATTESTATION_ID` fiecare
+din cele șase defecte ar fi cerut re-mintarea a tot ce era deja pe lanț. Primul defect a lăsat exact
+un asemenea orfan; următoarele n-au mai lăsat niciunul.
+
+**Și pre-flight-ul.** Două dintre cele șase au fost prinse împotriva datelor reale **înainte** de
+orice trimitere. Celelalte patru n-au costat nimic pe lanț fiindcă au picat înainte de semnătură sau
+după ce tranzacția era deja o reușită.
+
+Cifrele: **188** unitare, **58** fixturi, **12** wallet (toate împotriva deployului) + M2-1,
+**36** live, **798** backend.
