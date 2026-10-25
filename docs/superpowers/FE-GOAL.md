@@ -503,3 +503,42 @@ placeholder și a devenit etichetă în câmp — pe telefon nu există ⌘.
 
 **Unsprezece teste e2e noi**, dintre care opt verifică exact ce suita nu putea vedea: lățimea de
 derulare a paginii la 390px pe fiecare rută.
+
+### 2026-10-25 — A doua rundă de UX: 112 agenți, 73 de constatări confirmate
+
+Opt recenzori pe dimensiuni separate (ierarhie, mobil, stări, numere, navigație, accesibilitate,
+consistență, texte), fiecare cu capturile reale ale celor zece ecrane la 1280px și la 390px plus
+sursa. Fiecare constatare a fost apoi verificată **advers** de un al doilea agent care avea voie să
+o respingă — și a respins 39 din 112.
+
+**Ce a ieșit și nu se vedea din cod:**
+
+* **Contrast, măsurat:** `opacity-60` dă 3.88:1 și `opacity-50` dă 3.16:1 pe `bg-base-100`, cu
+  pragul la 4.5:1. Iar textul acela e tocmai linia care *califică* fiecare cifră: ID-ul de sub nume,
+  „10 votes of 105", epocile, numerele facetelor. Toate au urcat la `opacity-70`.
+* **`formatAda` schimba convenția la 1000 ADA**, deci aceeași coloană amesteca „1,000,000 ADA",
+  „42.00 ADA" și „0.00 ADA" — într-o coloană monospace aliniată la dreapta, zecimalele nu se
+  aliniau cu nimic.
+* **„until epoch 296" cu epoca curentă 321** se citea „inactiv *până* în 296", adică exact pe dos.
+* **„Slowest 10%"** se citea ca un clasament între DRep-i — adică exact scorul pe care produsul
+  refuză să-l dea.
+* **`badge-ghost` are fundalul `base-200`**, adică exact culoarea cardului în care stă: starea
+  neutră („Expired", 107 din 131 de propuneri) era singura invizibilă.
+* **Banda de stare scria aceeași epocă de trei ori** pe fiecare ecran.
+* **Graficul nu exista** pentru cititoare de ecran (div-uri goale) și nici pe atingere, unde nu
+  există `hover` și deci nici `title`.
+* **Zero rezultate** afișa „showing 1–0" sub un tabel cu capete de coloană și niciun rând.
+* **Orice re-filtrare ștergea tabelul ȘI bara de filtre** de sub degetul utilizatorului.
+* **Niciun ecran de eroare nu avea nimic de apăsat**, deși `isRetryable` exista deja în transport,
+  nefolosit de nimeni.
+
+**Verificatorii advers au corectat recenzorii de trei ori**, iar corecțiile au fost cele
+implementate: meniul de telefon controlat din stare în loc de `<details>` necontrolat (un
+`<details>` rămâne deschis peste ecranul următor, pentru că nodul DOM supraviețuiește schimbării de
+rută); o regulă CSS într-un singur loc în loc de cinci linii de text despre derulare; și unificarea
+vocabularului pe „rationale", nu pe „reason".
+
+**Ce am măsurat singur, înainte de recenzie, și ce m-a învățat:** capturile se fac *după* ce
+construiești bundle-ul, nu înainte. Doi recenzori au raportat bara de sus ca „blocker" pe baza unor
+capturi deja vechi de douăzeci de minute, iar verificatorii au prins-o: fixul era în working tree.
+Captura e un fapt despre un build, nu despre repo.
