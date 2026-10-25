@@ -88,10 +88,14 @@ Decis de owner (2026-10-25): *„în prima fază vreau să deployăm tot pentru 
 de substrat sunt verificate în §9 al designului; nimic nu mai e condiționat. Ordinea, pentru că
 unele părți depind de altele:
 
-1. **Push pe palmares `main` → `images.yml`.** Imaginile publicate sunt la `d55d2cc`, **86 de
-   commit-uri în spatele** HEAD-ului (`b1a4966`); între ele stau exact închiderile din 24 octombrie
-   pe care UI-ul le presupune. O rulare de ~25 de minute, o dată, la început. Manifestele referă
-   **SHA-ul**, niciodată `latest`.
+1. **`gh workflow run images.yml` — NU un push pe `main`.** `images.yml` se declanșează doar pe tag
+   `v*.*.*` sau `workflow_dispatch`, și asta e o decizie măsurată scrisă în fișier: un build musl
+   Haskell al întregului arbore Cardano ia peste o oră pe runner arm64, iar cu trigger pe main plus
+   `cancel-in-progress` fiecare rulare era anulată de commitul următor — workflow-ul nu terminase
+   niciodată. Imaginile publicate sunt la `d55d2cc`, **86 de commit-uri în spatele** HEAD-ului
+   (`b1a4966`); între ele stau închiderile din 24 octombrie pe care UI-ul le presupune. Manifestele
+   referă **SHA-ul**, niciodată `latest`. Frontendul capătă workflow propriu (`frontend.yml`, push pe
+   `frontend/**`), pentru că un build PureScript e minute, nu ore.
 2. **`apps/palmares/`**, copiind forma lui `apps/bjj-belts/`:
    `base/{namespace,config,policies,storage,workloads,services}` + `dev/{kustomization,patches,secrets,networking/{certificates,gateways,routes}}`.
    Șapte workload-uri: `dbsync`, `postgres`, `query-api`, `interaction-api`, `attest-sync`,
