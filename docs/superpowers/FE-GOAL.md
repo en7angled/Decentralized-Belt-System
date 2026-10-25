@@ -711,3 +711,46 @@ browser* — cere o cheie de preprod cu fonduri. Testul există
 `PALMARES_M2_MNEMONIC`, iar runbook-ul manual e în
 `docs/deployment/m2-1-browser-attestation.md`. Repo-ul nu livrează un semnatar prin decizie, iar
 trimiterea rămâne manuală prin decizia ta.
+
+### Adăugire la blocul 5–6: tranzacția nu se putea nici CITI, deci nu se putea semna
+
+După ce calea de scriere a ajuns în cluster, ecranul a răspuns cu ceva ce nicio fixtură nu putea
+produce: *„The server returned a transaction this app could not decode, so it will not be offered
+for signing. Nothing has happened on chain."* Fail-closed, adică exact comportamentul cerut de R8 —
+dar însemnând că drumul nu se putea termina niciodată.
+
+Cauza, măsurată într-un browser pe o tranzacție adevărată de la `interaction-api`:
+
+```
+Deserialization failed in Transaction.body.TransactionBody.inputs.TransactionInputs
+because: Invalid cbor: not the right type, expected `Array' byte received `Tag'
+```
+
+Intrările unei tranzacții Conway vin ca `set` **etichetat** — tag 258 — iar
+`cardano-serialization-lib` era pinat pe 11.5.0, din 2023. Prima încercare de upgrade a dărâmat
+aplicația cu `__.testnet is not a function`: binding-ul PureScript are apeluri de nivel superior,
+iar patru dintre ele dispăruseră din CSL 12, deci aruncau **la import**, nu la folosire. Măsurate
+toate 25: doar acelea patru. Reparate în fork (`compat/csl-15`) — `NetworkInfo.testnet()` → 
+`testnet_preprod()`, iar cele trei constante din `TxBuilderConstants`, clasă ștearsă fără
+înlocuitor, devin valori care aruncă **la citire** printr-un Proxy, nu la import. Ștergerea lor ar
+fi cerut editarea `Csl.purs` generat pentru un API pe care nimic din dependenți nu-l folosește.
+
+Partea pură n-a avut nevoie de nicio schimbare: forma JSON a lui CSL 15 e identică cu cea pe care
+`summariseJson` o aștepta. Verificat pe tranzacția reală: `fee=605673`, două ieșiri, politica
+`648c6a73…` în `mint`.
+
+**Și întreaga aplicație importa 1.900 de funcții pentru trei.** `Csl` apare într-un singur modul al
+nostru, pentru `tx.fromHex`, `tx.body` și `txBody.toJson` — dar binding-ul rămâne în graf fiindcă
+`cardano-capabilities` și componenta de wallet depind de el. De aceea reparația a mers în fork și
+nu într-un FFI propriu de trei linii.
+
+**Închiderea, pe deploy.** Backend `b91fc08`, frontend `0529fbf`, 36/36 live împotriva
+`https://gov.cardano.vip`, iar testul care contează cel mai mult din bloc rulează **împotriva
+deployului**: un wallet CIP-30 adevărat construiește o tranzacție Conway prin `interaction-api`,
+browserul o decodează, sumarul apare — și nimic nu se semnează. Singurul pas rămas e semnătura
+însăși.
+
+Un detaliu de măsurat, nu de ghicit: aceeași construire ia **0,4 s pe stiva locală și peste 30 la
+prima cerere pe deploy**, fiindcă acolo drumul trece prin rețeaua clusterului în timp ce Kupo
+indexează. Prima variantă a testului expira în timeout-ul implicit, cu un `expect` de 120 s
+înăuntru — murea înainte de afirmația pe care o făcea.
