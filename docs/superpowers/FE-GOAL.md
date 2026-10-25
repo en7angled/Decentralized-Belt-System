@@ -25,7 +25,8 @@ poarta de mai jos; **M1b** = celelalte opt plus graful Cytoscape și widget-ul e
 
 | # | Criteriu | Cum se verifică |
 | --- | --- | --- |
-| M1-1 | Un URL public servește explorer-ul — **condiționat de §9.1 din design** | `curl -sI <url>` → 200, și un om care nu are repo-ul îl deschide. **`palmares` nu există în `apps-k8s-configs`**, deci asta poate cere un bloc de platformă care nu e muncă de frontend. Până la răspunsul ownerului, criteriul care ține e: stiva pornește de la zero cu o comandă, local, peste db-sync-ul sincronizat. |
+| M1-1 | Un URL public servește explorer-ul | `curl -sI https://gov.cardano.vip` → 200, și un om care nu are repo-ul îl deschide. **Decis de owner 2026-10-25: deployăm tot pe preprod**, deci platforma e în scop (design §9). Mainnetul nu. |
+| M1-9 | Flux reconciliază curat, fără drift | `flux get kustomization palmares` → Ready=True; `kustomize build` local identic cu ce e în git |
 | M1-2 | Toate ecranele de citire randează date reale de preprod | 294 de DRep-i în listă, 131 de acțiuni, dashboard cu epoca curentă |
 | M1-3 | Chip-ul de status arată prospețimea reală, nu una hardcodată | Se oprește attest-sync → chip-ul trece pe ambar/roșu |
 | M1-4 | Fiecare metrică afișată are „ⓘ" care rezolvă la formula publicată | Toate cele 8 `formula_id` din `/metrics/formulas` apar în UI |
@@ -81,13 +82,36 @@ listă DRep-i → detaliu DRep → acțiuni (listă + detaliu) → voturi → c�
 grafice SVG se copiază din `bjj-frontend/src/Components/Chart/`.
 **Ieșire:** M1-2, M1-4, M1-5, M1-7 pe cele zece ecrane.
 
-### Bloc 3 — deploy M1a ← **aici ownerul vede aplicația live**
-Nume de imagine, buildx multi-arch. **Scris pentru varianta (b) din §9.1 al designului** — manifeste
-prin `apps-k8s-configs` (git → commit → push → Flux, **niciodată** `kubectl apply`), rute Gateway
-API, `Certificate`, secrete SOPS. **Dacă ownerul răspunde (a)**, blocul se restrânge la „imaginea se
-construiește multi-arch, pornește, și `/health` răspunde 200", iar deploy-ul public rămâne bloc
-separat. Fără `CORS_ALLOWED_ORIGINS`: browserul vorbește same-origin prin BFF.
-**Ieșire:** M1-3, M1-8, plus M1-1 în varianta (b). **Run-ul raportează ownerului aici, și continuă.**
+### Bloc 3 — deploy pe preprod ← **aici ownerul vede aplicația live**
+
+Decis de owner (2026-10-25): *„în prima fază vreau să deployăm tot pentru preprod"*. Toate faptele
+de substrat sunt verificate în §9 al designului; nimic nu mai e condiționat. Ordinea, pentru că
+unele părți depind de altele:
+
+1. **Push pe palmares `main` → `images.yml`.** Imaginile publicate sunt la `d55d2cc`, **86 de
+   commit-uri în spatele** HEAD-ului (`b1a4966`); între ele stau exact închiderile din 24 octombrie
+   pe care UI-ul le presupune. O rulare de ~25 de minute, o dată, la început. Manifestele referă
+   **SHA-ul**, niciodată `latest`.
+2. **`apps/palmares/`**, copiind forma lui `apps/bjj-belts/`:
+   `base/{namespace,config,policies,storage,workloads,services}` + `dev/{kustomization,patches,secrets,networking/{certificates,gateways,routes}}`.
+   Șapte workload-uri: `dbsync`, `postgres`, `query-api`, `interaction-api`, `attest-sync`,
+   `frontend` (BFF+SPA), plus un Job de aplicare a schemei dacă e nevoie.
+3. **Plasarea e D-28, nu se re-decide:** db-sync pe **pi5-1** (hostPath la socketul nodului preprod —
+   constrângere dură), `requests 4Gi` / `limits 6.5Gi`; Postgres pe **pi5-2**. PVC
+   `palmares-dbsync-state` **10Gi**, `palmares-postgres` **50Gi**. `local-path` nu se extinde: marja
+   se cumpără o dată. Dacă db-sync e OOM-killed, remediul e limita la 7Gi — config, nu arhitectură.
+4. **Rețea:** `gov.cardano.vip` rezolvă deja la `5.12.70.198`, deci **doar un `Certificate`** plus
+   Gateway + HTTPRoute. Fără intrări CoreDNS (regula e obsoletă). Fără
+   `CORS_ALLOWED_ORIGINS`: browserul vorbește same-origin prin BFF.
+5. **Secrete prin SOPS+age**, cu cheia Kustomization-ului proprietar: `BASIC_USER`/`BASIC_PASS`
+   pentru interaction-api și cele trei parole de Postgres.
+6. **`Kustomization` Flux** în `clusters/minirack/palmares/`, apoi push și reconciliere.
+
+Nodul preprod și `kupo-preprod` **rulează deja** — nu se construiesc. Imaginile sunt `linux/arm64`
+only și clusterul e arm64, deci se potrivesc; problema amd64 e a mainnetului. Pachetele GHCR sunt
+deja publice (verificat: pull anonim → 200), deci elementul din lista BLOCKED a ledger-ului e închis.
+
+**Ieșire:** M1-1, M1-3, M1-8, M1-9. **Run-ul raportează ownerului aici, și continuă.**
 
 ### Bloc 3b — ecranele M1b
 Restul: SPO, comitet, trezorerie, delegări, activitate, profiluri, atestări, dispute. Plus **graful
@@ -124,6 +148,10 @@ Cele șapte reguli R1–R7 din §8 al designului, fiecare cu un test. Accesibili
   `purescript-cardano-capabilities`, `purescript-halogen-daisyui`,
   `halogen-cardano-wallet-connect-component`. Un commit care schimbă un `ref` de pachet în
   `spago.yaml` spune în mesaj de ce.
+- **Deploy-ul pe preprod** (autorizare din 2026-10-25): fișiere noi sub `apps/palmares/**` și
+  `clusters/minirack/palmares/**` în `apps-k8s-configs`, criptate cu SOPS unde e nevoie, validate cu
+  `kubeconform` și `kustomize build` înainte de commit, apoi push → Flux. Push pe palmares `main`
+  pentru a declanșa `images.yml`. Limitele sunt în §4.
 - Build-uri, teste, formatare (`purs-tidy`), `npm install` / `spago install`, pornirea serverului de
   dev și a BFF-ului local.
 - Decizii de implementare, luate și documentate ca `(call)` în §4 de mai jos sau într-un ADR.
@@ -133,9 +161,15 @@ Cele șapte reguli R1–R7 din §8 al designului, fiecare cu un test. Accesibili
 ## 4. NU e pre-autorizat — se predă ownerului și se continuă
 
 - **Submiterea oricărei tranzacții.** Cheltuie fonduri. Rămâne manual pe bună dreptate.
-- **Push de imagine pe GHCR și push de manifeste care șterg resurse** (`prune: true`). Prima oară se
-  cere confirmare; după aprobare explicită, în cadrul aceluiași run, nu se re-cere.
-- **Mainnet.** Parcat. Nimic, în nicio formă.
+- **Mainnet, în orice formă.** Ownerul l-a luat pe el: *„la final mă voi ocupa eu de deploy pe
+  mainnet"* (2026-10-25). Nu se scriu manifeste de mainnet, nu se atinge `chains/cardano/mainnet*`,
+  nu se construiesc imagini amd64.
+- **Orice fișier din `apps-k8s-configs` în afara `apps/palmares/**` și
+  `clusters/minirack/palmares/**`.** Deploy-ul pe preprod e autorizat (vezi §3), dar `prune: true`
+  face din ștergerea unui fișier o ștergere de resursă — deci o editare într-un alt app poate
+  dărâma altceva. Fișiere noi sub cele două căi sunt aditive și nu șterg nimic.
+- **`docker push` manual pe GHCR.** Calea autorizată e `images.yml` declanșat de un push pe palmares
+  `main`. Un push manual de imagine se cere o dată, și doar dacă runner-ul e picat.
 - **Rotația tokenului Maestro.** Decizie închisă de owner (2026-10-22). Nu se re-deschide.
 - **Metrici noi** (inclusiv alinierea cu rezultatul ratificat). E backend; ownerul decide.
 - **`docker compose down -v` în `experiments/dbsync-preprod/`.** Volumele alea sunt singura bază
@@ -216,9 +250,12 @@ ambele au o presupunere scrisă pe care run-ul o urmează până la un răspuns.
 
 | Ce lipsește | Ce s-a încercat | Ce deblochează |
 | --- | --- | --- |
-| **Cine face deploymentul public** (design §9.1). `palmares` nu apare nicăieri în `apps-k8s-configs`; `F1-PROGRESS` ține manifestele nepublicate deliberat, condiționat de cifrele de RAM din Experimentul A (PVC-ul se dimensionează o dată, `allowVolumeExpansion: false`). | Grep pe tot `apps-k8s-configs`: zero potriviri. Verificat în ledger de ce. | Blocul 3 — varianta (b) cu platformă, sau (a) doar imaginea. **Presupunere până la răspuns: (a)**, fiindcă e reversibilă. |
 | **Ce era „varianta B"** pentru scope-ul UI (design §9.2). `F1-PROGRESS.md:3777` o numește; nu e definită în niciunul din repo-uri. | Grep după „varianta A/B/C" în ambele repo-uri: singurul alt hit e un scope de rute, nealăturat. | Scope-ul M1. **Presupunere până la răspuns:** documentul de design o înlocuiește. |
-| **Regulile de permisiuni din §5** — numai ownerul le poate adăuga. | — | Tot blocul 0 înainte, dacă clasificatorul refuză `npm install`. |
+
+**Închise pe 2026-10-25:** (1) cine face deploymentul — ownerul a decis *„deployăm tot pentru
+preprod"*, deci platforma e în scop și blocul 3 e scris executabil; (2) regulile de permisiuni —
+adăugate direct, cu autorizarea ownerului (§5); (3) pachetele GHCR private — verificat, cele patru
+imagini de runtime răspund la pull anonim.
 
 ---
 

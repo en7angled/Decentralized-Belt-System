@@ -419,33 +419,44 @@ necontrolate de noi**.
 
 ---
 
-## 9. Întrebări deschise — ale ownerului
+## 9. Deploymentul pe preprod — decis, și ce înseamnă concret
 
-Două, și nu le pot decide eu.
+**Decizia ownerului (2026-10-25):** *„în prima fază vreau să deployăm tot pentru preprod… la final mă
+voi ocupa eu de deploy pe mainnet"*. Deci **varianta (b)**: munca asta include platforma. Mainnetul
+rămâne al ownerului și nu se atinge.
 
-**9.1 Cine face deploymentul public, și e el parte din munca asta?**
+Întrebarea era deschisă pentru că **`palmares` nu apare nicăieri în `apps-k8s-configs`** — zero
+potriviri în tot repo-ul. Nu e însă un gol de decizie: `F1-PROGRESS.md` ținea manifestele
+nepublicate până la cifrele Experimentului A, iar **Experimentul A s-a închis pe 2026-10-20** și
+decizia de plasare e **D-28**, deja luată și argumentată. Verificat pe 2026-10-25, nimic nu mai
+blochează:
 
-G1 spune „un străin deschide URL-ul". Dar **`palmares` nu apare nicăieri în `apps-k8s-configs`** —
-zero potriviri în tot repo-ul: niciun director de app, niciun `Gateway`/`Certificate`, nicio
-`Kustomization`. Iar `F1-PROGRESS.md` spune că manifestele sunt ținute deliberat nepublicate, fiindcă
-blocul care „atinge rack-ul" e condiționat de cifrele de RAM din Experimentul A, pe un `local-path`
-cu `allowVolumeExpansion: false` — PVC-ul se dimensionează o singură dată.
+| Fapt | Măsurat / verificat |
+| --- | --- |
+| Plasare și dimensionare (D-28) | db-sync pe **pi5-1** (hostPath la socketul nodului preprod — constrângere dură), `requests 4Gi` / `limits 6.5Gi`; Postgres pe **pi5-2**. PVC `palmares-dbsync-state` **10Gi**, `palmares-postgres` **50Gi**. Marjă ~3,4× și ~5× peste cei 2,9 GiB / 10,43 GB măsurați. `local-path` nu se extinde — marja se cumpără o dată. |
+| db-sync încape | 5,90 GiB memorie anonimă din 6 GiB, 4.183 evenimente de reclaim, **zero OOM**, tip atins în ≤7 h. Postgres mutat pe pi5-2 lasă ~1,3 Gi marjă peste limită. Dacă totuși e OOM-killed: ridicarea limitei spre 7Gi, schimbare de config, nu de arhitectură. |
+| DNS | `gov.cardano.vip` **rezolvă deja** la `cardano-vip.go.ro` / `5.12.70.198`, identic cu `dev-bjjbackend.cardano.vip`. Deci, conform `apps-k8s-configs/CLAUDE.md`, host public nou = **doar un `Certificate`**, fără intrări CoreDNS. |
+| Imaginile sunt publice | `palmares-{query-api,interaction-api,attest-sync,admin}` răspund **HTTP 200 la pull anonim** pe GHCR. Elementul „trecerea pachetelor GHCR pe public" din lista BLOCKED a ledger-ului e **închis**. `palmares-base` rămâne privat, și n-are importanță: e imagine de build, nu se trage din cluster. |
+| Arhitectura se potrivește | Imaginile sunt `linux/arm64` only (`images.yml:74,116`). Clusterul **e** arm64 (Pi5 + rockpi). Problema amd64 e a mainnetului din F2, nu a asta. |
+| Substratul de lanț există | Nodul preprod rulează deja pe pi5-1 (`statefulset-cardano-preprod-0`, 3,75 Gi); `kupo-preprod` rulează pe rockpi-4a. Nu se construiesc. |
 
-Deci „live pe preprod" are două citiri, și diferența e un bloc de platformă:
+**Singurul lucru care chiar lipsește, și nu e o decizie:** imaginile publicate sunt la tag-ul
+`d55d2cc`, **86 de commit-uri în spatele HEAD-ului** lui palmares (`b1a4966`). Între ele stau exact
+închiderile din 24 octombrie pe care acest design le presupune — `/drep/{id}` care nu mai dă 503,
+`/profiles/by-user-token`, `/disputes/{id}`, parserul de credențiale cu rol, `X-Attest-*` în CORS.
+**Deci blocul 3 începe cu un push pe palmares `main` care declanșează `images.yml`**, și manifestele
+referă SHA-ul nou, niciodată `latest`. (Un push înseamnă o rulare de CI de ~25 de minute care o
+anulează pe precedenta, deci se face o dată, la început de bloc.)
 
-- **(a) frontend-only:** M1 înseamnă stiva completă pornită local peste db-sync-ul sincronizat, cu
-  deploy-ul public rămas bloc separat, owner-gated. Atunci M1-1 iese din poarta M1 și G6 se
-  restrânge la „o comandă, local".
-- **(b) frontend + platformă:** munca asta include plasarea db-sync + Postgres, rute Gateway API, un
-  `Certificate`, secrete SOPS, și commit-uri în al doilea repo — unde regula casei e git → Flux,
-  niciodată `kubectl apply`, și unde `prune: true` face din ștergerea unui fișier o ștergere de
-  resursă.
+**Șablonul de copiat e `apps/bjj-belts/`**, care e deja forma asta: `base/{namespace,config,policies,storage,workloads,services}`
+plus `dev/{kustomization,patches,secrets,networking/{certificates,gateways,routes}}`, și o
+`Kustomization` Flux în `clusters/minirack/<app>/`. Șapte workload-uri pentru palmares: `dbsync`,
+`postgres`, `query-api`, `interaction-api`, `attest-sync`, `frontend` (BFF+SPA) și, dacă e nevoie,
+un Job de aplicare a schemei.
 
-Presupunerea mea până la un răspuns, scrisă ca atare: **(a)**, pentru că e reversibilă și pentru că
-ownerul a parcat explicit ce atinge infrastructura. `FE-GOAL.md` are blocul 3 scris pentru (b); dacă
-răspunsul e (a), blocul 3 se restrânge la „imaginea se construiește și pornește local".
+**Ce nu se atinge, prin decizia ownerului:** mainnetul, în nicio formă.
 
-**9.2 Ce era „varianta B"?**
+**9.2 Ce era „varianta B"? — singura întrebare rămasă**
 
 `F1-PROGRESS.md:3777` spune *„Planul C — UI-ul, scope decis ca **varianta B**"*, dar variantele A/B/C
 pentru UI nu sunt scrise nicăieri în niciunul din cele două repo-uri. Documentul ăsta poate fi
