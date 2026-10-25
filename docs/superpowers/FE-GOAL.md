@@ -595,3 +595,18 @@ textul randat să nu conțină „Just " sau „Nothing". `Show (Maybe a)` exist
 a.lastVotableEpoch` e cod perfect valid — iar în minutul în care douăsprezece câmpuri au devenit
 opționale, trei locuri au început să scrie constructorul în pagină. Niciun test nu l-a văzut; o
 captură l-a văzut.
+
+**Închiderea blocului, pe deploy.** Backend `59892cf`, frontend `80e4f18`, suita „live" **32/32
+împotriva https://gov.cardano.vip**. Două defecte au apărut abia aici, pentru că nici fixturile
+(răspuns instantaneu) nici baza locală sincronizată (decalaj zero) nu le puteau arăta: un ecran
+lent ținea în loc inițializarea întregii aplicații — `/activity` răspunde în 12,4 s pe baza vie,
+iar tab-ul scria titlul generic 9,3 s — și banda scria decalajul în secunde, „58155804s behind".
+Amândouă reparate și verificate pe deploy: titlul acum în 0 ms, banda scrie „670.9 d behind".
+
+Despre cele 12,4 secunde: aceeași interogare ia **0,8 s pe baza locală sincronizată**. Nu e un
+index lipsă, e presiunea de scriere a db-sync-ului care încă reface istoria. De re-măsurat când
+sincronizarea se termină, nu de optimizat acum.
+
+Iar ecranul comitetului a confirmat pe date reale o alegere făcută pe fixturi: din cei șapte
+membri de pe preprod, **trei n-au cheie fierbinte autorizată** — numiți, dar fără drept de vot — și
+exact ei au zero voturi. „not authorized yet" nu era o celulă goală îmbrăcată frumos.
