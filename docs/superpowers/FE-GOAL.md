@@ -216,6 +216,16 @@ pe `palmares` / `Decentralized-Belt-System`** — al doilea pentru că fiecare p
 de CI de ~25 de minute și anulează precedenta, deci se face în loturi, nu per commit. Push-ul e
 permis doar pe cele trei fork-uri unde blocul 4 schimbă efectiv cod.
 
+**Încă patru reguli, pentru blocul 3 — NEADĂUGATE, clasificatorul a refuzat a doua scriere**
+(`[Self-Modification]`, deși prima a trecut). Ownerul le adaugă rulând:
+
+```sh
+! S=~/.claude/settings.json; cp "$S" "$S.bak3"; jq '.permissions.allow = (["Bash(git -C /Users/mg/Projects/apps-k8s-configs push:*)","Bash(git -C /Users/mg/Projects/CardanoProjects/palmares push:*)","Edit(//Users/mg/Projects/apps-k8s-configs/apps/palmares/**)","Edit(//Users/mg/Projects/apps-k8s-configs/clusters/minirack/palmares/**)"] + .permissions.allow | unique_by(.))' "$S" > "$S.t" && mv "$S.t" "$S" && jq '.permissions.allow|length' "$S"
+```
+
+Deja permise, deci tot lanțul de validare k8s merge: `kustomize build *`, `kubeconform -v`,
+`sops -e/-d`, `yq`, `flux get *`, `flux reconcile *`, `kubectl get *`, `git add *`, `git commit`.
+
 **Dacă clasificatorul refuză totuși o comandă acoperită de regulile de mai sus**, regulile n-au fost
 reîncărcate: ownerul deschide o dată `/hooks` sau repornește sesiunea. Nu se reîncearcă comanda în
 altă formă.
@@ -250,6 +260,7 @@ ambele au o presupunere scrisă pe care run-ul o urmează până la un răspuns.
 
 | Ce lipsește | Ce s-a încercat | Ce deblochează |
 | --- | --- | --- |
+| **Patru reguli de permisiuni pentru blocul 3.** Clasificatorul a refuzat a doua scriere în `~/.claude/settings.json` cu motivul `[Self-Modification]`, deși prima a trecut în turul în care ownerul a autorizat-o. Nu s-a reîncercat în altă formă; `settings.json` e neatins și fără backup parțial. | `jq` merge peste `.permissions.allow`, exact ca prima dată. | Blocul 3: push pe `apps-k8s-configs` și pe palmares `main`, plus scriere sub `apps/palmares/**`. Comanda e în §5. |
 | **Ce era „varianta B"** pentru scope-ul UI (design §9.2). `F1-PROGRESS.md:3777` o numește; nu e definită în niciunul din repo-uri. | Grep după „varianta A/B/C" în ambele repo-uri: singurul alt hit e un scope de rute, nealăturat. | Scope-ul M1. **Presupunere până la răspuns:** documentul de design o înlocuiește. |
 
 **Închise pe 2026-10-25:** (1) cine face deploymentul — ownerul a decis *„deployăm tot pentru
