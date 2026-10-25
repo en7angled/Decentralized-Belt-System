@@ -156,27 +156,35 @@ predă ownerului comanda exactă ca linie `! …`, și **se trece la următorul 
 principal e blocat: (a) următorul bloc neblocat; (b) review pe codul deja scris; (c) extindere de
 teste; (d) actualizare de documentație. În ordinea asta.
 
-**Regulile de permisiuni de care are nevoie blocul de frontend.** Numai ownerul le poate adăuga în
-`~/.claude/settings.json`; nu le adaug eu. De lipit în `permissions.allow`:
+**Regulile de permisiuni.** **ADĂUGATE 2026-10-25**, cu autorizarea explicită a ownerului
+(*„îți dau voie să actualizezi ~/.claude/settings.json cu permisiunile de care ai nevoie"*).
+21 de intrări noi în `permissions.allow` (524 → 545; backup la
+`~/.claude/settings.json.bak-20261025`):
 
 ```json
-"Bash(npm run:*)",
-"Bash(npm install)",
-"Bash(npm ci)",
-"Bash(npx spago:*)",
-"Bash(npx vite:*)",
-"Bash(npx playwright:*)",
-"Bash(npx purs-tidy:*)",
-"Bash(node bff/server.js)",
+"Bash(npm run:*)", "Bash(npx vite:*)", "Bash(npx playwright:*)", "Bash(npx purs-tidy:*)",
+"Bash(node bff/server.js)", "Bash(node --watch bff/server.js)",
 "Bash(git clone https://github.com/mariusgeorgescu/:*)",
-"Bash(docker build:*)",
-"Bash(docker buildx build:*)",
-"Bash(curl -s http://127.0.0.1:8082/:*)",
-"Bash(curl -s http://127.0.0.1:8083/:*)",
-"Bash(curl -s http://localhost:5173/:*)"
+"Bash(git -C …/purescript-cip30 push:*)", "Bash(git -C …/purescript-cip30-typesafe push:*)",
+"Bash(git -C …/purescript-cardano-capabilities push:*)",
+"Bash(curl -s http://{localhost,127.0.0.1}:{8082,8083,5173}/:*)",
+"Read(//Users/mg/Projects/CardanoProjects/**)",
+"Edit(//Users/mg/Projects/CardanoProjects/palmares/frontend/**)",
+"Edit(//Users/mg/Projects/CardanoProjects/purescript-cip30{,-typesafe}/**)",
+"Edit(//Users/mg/Projects/CardanoProjects/purescript-cardano-capabilities/**)"
 ```
 
-`docker buildx build` e inclus pentru build local; **`--push` rămâne sub §4** și se cere o dată.
+Erau deja acolo: `npx spago:*`, `npm install *`, `npm ci *`, `npm test *`, `docker build *`,
+`docker buildx *`, `git add *`, `git commit -m ' *`, `git checkout *`, `git branch *`.
+
+Două lucruri lăsate intenționat în afară, amândouă sub §4: **`docker push` pe GHCR** și **`git push`
+pe `palmares` / `Decentralized-Belt-System`** — al doilea pentru că fiecare push pornește o rulare
+de CI de ~25 de minute și anulează precedenta, deci se face în loturi, nu per commit. Push-ul e
+permis doar pe cele trei fork-uri unde blocul 4 schimbă efectiv cod.
+
+**Dacă clasificatorul refuză totuși o comandă acoperită de regulile de mai sus**, regulile n-au fost
+reîncărcate: ownerul deschide o dată `/hooks` sau repornește sesiunea. Nu se reîncearcă comanda în
+altă formă.
 
 ---
 
