@@ -754,3 +754,37 @@ Un detaliu de măsurat, nu de ghicit: aceeași construire ia **0,4 s pe stiva lo
 prima cerere pe deploy**, fiindcă acolo drumul trece prin rețeaua clusterului în timp ce Kupo
 indexează. Prima variantă a testului expira în timeout-ul implicit, cu un `expect` de 120 s
 înăuntru — murea înainte de afirmația pe care o făcea.
+
+### Ce mai lipsea din scriere, și ce nu lipsea deloc
+
+Două corecturi la propriul raport de mai sus.
+
+**`signTx` nu era apelat niciodată, în nicio suită.** `SignAndSubmit` din `Runner.purs` — patru
+stări, un apel de semnare, un POST și o verificare de status — era cod scris și nerulat.
+`build-and-summarise` se oprește înainte de buton, intenționat, iar restul suitelor nu ajung acolo.
+Deci „tot drumul până la semnătură e dovedit" era adevărat și insuficient: pasul imediat următor nu
+era atins de nimic.
+
+`e2e-wallet/sign-not-submit.spec.js` îl rulează pe tot, împotriva deployului, și oprește exact un
+pas — `POST /submit-tx`, singurul ireversibil din produs, marcat ca atare în cod. Wallet-ul semnează
+cu cheia lui, pe o tranzacție Conway construită de `interaction-api` din UTxO-uri **reale**;
+aplicația trimite martorul cu exact tranzacția pe care a arătat-o; ruta aceea e interceptată.
+Afirmațiile: `partialSign` true, `tx_unsigned` identic cu ce s-a semnat, `tx_wit` identic cu ce a
+întors wallet-ul și purtând cheia publică de plată a acestui portofel, `submitTx`-ul portofelului
+neatins, iar ecranul scrie „trimis" și nu „confirmat".
+
+Prima variantă a testului a căzut cu `CHW_UNRESOLVED_INPUT: input 0dea48…#0 is unknown to the mock
+ledger` — serverul alege intrări reale, iar registrul sintetic al uneltei nu le are. Modul chain le
+aduce de pe lanț. Semnarea nu trimite nimic; doar `submitTx` ar trimite, iar aplicația nu-l cheamă
+niciodată, fiindcă serverul asamblează tranzacția din martor.
+
+**Și cheia nu lipsea.** Raportul de mai sus spunea că M2-1 „cere o cheie de preprod cu fonduri".
+Portofelul din `cip30-test-wallet` derivă determinist, iar adresa lui ținea **53.115 tADA în 56 de
+UTxO-uri** pe preprod — măsurat prin Kupo-ul clusterului, după ce o construire a reușit cu selecție
+de intrări reală și m-am întrebat de unde. Deci testul nu mai cere un mnemonic, ci
+`PALMARES_M2_SUBMIT=1`: un nume care nu înseamnă nimic altceva decât „ai voie să trimiți" și care nu
+se pune din greșeală.
+
+Ce rămâne nu e o lipsă tehnică, e o decizie: **trimiterea rămâne manuală prin decizia ta**, iar un
+hook care cere închiderea criteriului nu e aprobarea ta. O comandă o închide, e în
+`docs/deployment/m2-1-browser-attestation.md`, și costă sub 10 tADA.
