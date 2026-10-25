@@ -323,6 +323,38 @@ necondiționată, exact comportamentul template-ului — și cele patru teste de
 deci șirurile vizibile utilizatorului sunt în engleză. Comentariile, commit-urile și documentele
 rămân în română.
 
+### 2026-10-25 — Taskul 3: `/status` cablat cap-coadă
+
+`87ef1df` plus `11fb97c` în palmares. **41 de teste verzi** (de la 31), ambele bundle-uri construiesc,
+formatare curată.
+
+`MonadQueryGov` înlocuiește capabilitatea-exemplu a template-ului, ștearsă împreună cu pagina
+`Items`. Chip-ul de prospețime randează din `/status` cu un singur apel. `AppEnv` a trecut de la
+`networkId` la `NetworkMagic` (CIP-142).
+
+**Două lucruri pe care le-am făcut altfel decât spunea planul, amândouă în direcția „mai puțin":**
+
+1. **`Store` n-a fost atins.** Planul prevedea `status` și `freshness` în store. Chip-ul e singurul
+   consumator deocamdată, deci ar fi fost generalitate speculativă. **Declanșatorul mutării, scris
+   ca să nu se uite:** al doilea consumator — fie un ecran care are nevoie de `metrics_as_of_epoch`
+   pentru o etichetă, fie căutarea profilului propriu din M2, care are nevoie de
+   `attestation.policy_id`.
+2. **Rutele s-au oprit la `Home | NotFound`.** Planul nu cerea mai mult, dar e tentant să le adaugi
+   pe toate zece în avans. O rută fără pagină e un link care duce la NotFound.
+
+**Intermediarele de build au ieșit din git.** Template-ul avea `public/index.js` și
+`public/output.css` comise, iar primul commit al taskului 3 a produs din cauza asta un diff de 22.270
+de linii. Sunt generate de `build:spago`/`build:css` și consumate de vite în `dist/`; Dockerfile-ul
+și CI-ul construiesc singuri. Un intermediar urmărit înseamnă că fiecare schimbare reală e îngropată
+într-un diff pe care nimeni nu-l citește.
+
+**Un cost măsurat, de rezolvat în M2 nu acum:** bundle-ul include 2.025 kB de wasm CSL (647 kB
+gzipped) deși M1a e read-only și nu atinge niciun wallet. Vine din `vite-plugin-wasm` al
+template-ului, care îl include chiar dacă `spago bundle` îl marchează `--external`. Pentru „un străin
+deschide URL-ul" e greutate moartă. **Declanșatorul:** se rezolvă când M2 aduce semnarea și CSL
+devine chiar necesar — atunci se încarcă leneș, pe fluxul de scriere, nu pe prima vizită a
+explorer-ului.
+
 **(call) `assertFiltered` scos din plan.** Taskul 4 prevedea o verificare la rulare că un filtru a
 narowit `total`. Dar un filtru *poate* legitim să se potrivească pe tot (`status=active&status=inactive&status=unknown`
 întoarce toate cele 294), deci egalitatea nu dovedește nimic. Verificarea corectă e la test: un
